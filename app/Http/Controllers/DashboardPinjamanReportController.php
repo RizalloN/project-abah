@@ -1102,12 +1102,20 @@ class DashboardPinjamanReportController extends Controller
         $comparisonPeriod = $this->resolveComparisonPeriod($selectedPeriod);
         $beforeBucket = trim((string) $request->input('before_bucket', ''));
         $afterBucket = trim((string) $request->input('after_bucket', ''));
+        $afterBucket = match ($afterBucket) {
+            'SML 1' => 'DPK 1',
+            'SML 2' => 'DPK 2',
+            'SML 3' => 'DPK 3',
+            default => $afterBucket,
+        };
         $limit = max(10, min(50, (int) $request->input('limit', 25)));
         $offset = max(0, (int) $request->input('offset', 0));
 
+        $isTotalBefore = in_array(strtoupper($beforeBucket), ['TOTAL', 'ALL'], true);
+
         abort_if(
             !$selectedPeriod
-                || !in_array($beforeBucket, self::BEFORE_ROWS, true)
+                || (!$isTotalBefore && !in_array($beforeBucket, self::BEFORE_ROWS, true))
                 || !in_array($afterBucket, self::QUALITY_BUCKETS, true),
             422,
             'Periode dan bucket pivot wajib valid.'
@@ -1160,8 +1168,16 @@ class DashboardPinjamanReportController extends Controller
         $comparisonPeriod = $this->resolveComparisonPeriod($selectedPeriod);
         $beforeBucket = trim((string) $request->input('before_bucket', ''));
         $afterBucket = trim((string) $request->input('after_bucket', ''));
+        $afterBucket = match ($afterBucket) {
+            'SML 1' => 'DPK 1',
+            'SML 2' => 'DPK 2',
+            'SML 3' => 'DPK 3',
+            default => $afterBucket,
+        };
 
-        if (!in_array($beforeBucket, self::BEFORE_ROWS, true)) {
+        $isTotalBefore = in_array(strtoupper($beforeBucket), ['TOTAL', 'ALL'], true);
+
+        if (!$isTotalBefore && !in_array($beforeBucket, self::BEFORE_ROWS, true)) {
             $beforeBucket = 'L';
         }
         if ($afterBucket !== '' && !in_array($afterBucket, self::QUALITY_BUCKETS, true)) {
@@ -1820,14 +1836,24 @@ class DashboardPinjamanReportController extends Controller
             ->havingRaw("MAX({$currentBucketRankExpression}) BETWEEN 0 AND 8");
 
         if ($afterBucket !== null) {
-            $afterRank = array_search($afterBucket, self::QUALITY_BUCKETS, true);
+            $normalizedAfter = match ($afterBucket) {
+                'SML 1' => 'DPK 1',
+                'SML 2' => 'DPK 2',
+                'SML 3' => 'DPK 3',
+                default => $afterBucket,
+            };
+            $afterRank = array_search($normalizedAfter, self::QUALITY_BUCKETS, true);
             $query->havingRaw("MAX({$currentBucketRankExpression}) = ?", [$afterRank]);
         }
 
-        if ($beforeBucket === 'New Account') {
-            $query->havingRaw("MAX({$previousAlias}.account_number) IS NULL");
-        } else {
-            $query->havingRaw("MAX({$previousAlias}.bucket) = ?", [$beforeBucket]);
+        $isTotalBefore = in_array(strtoupper($beforeBucket), ['TOTAL', 'ALL'], true);
+
+        if (!$isTotalBefore) {
+            if ($beforeBucket === 'New Account') {
+                $query->havingRaw("MAX({$previousAlias}.account_number) IS NULL");
+            } else {
+                $query->havingRaw("MAX({$previousAlias}.bucket) = ?", [$beforeBucket]);
+            }
         }
 
         $query->orderBy($currentAccountKey);

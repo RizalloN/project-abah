@@ -65,4 +65,22 @@ class DashboardPinjamanMatrixViewTest extends TestCase
         $this->assertStringContainsString('max-width: calc(100vw - 2rem)', $view);
         $this->assertStringNotContainsString("window.history.replaceState({}, '', `?\${params.toString()}`)", $view);
     }
+
+    public function test_matrix_footer_supports_drilldown_on_total_columns(): void
+    {
+        $view = file_get_contents(resource_path('views/report/dashboard-pinjaman/matrix.blade.php'));
+        $styles = file_get_contents(resource_path('views/report/dashboard-pinjaman/_partials/_styles.blade.php'));
+
+        $this->assertIsString($view);
+        $this->assertIsString($styles);
+
+        $this->assertStringContainsString('data-before-bucket="TOTAL"', $view);
+        $this->assertStringContainsString("const cellClass = hasValue ? 'loan-drill-cell' : 'matrix-empty';", $view);
+        $this->assertStringContainsString('[body, foot].forEach(container =>', $view);
+        $this->assertStringContainsString("container?.addEventListener('dblclick'", $view);
+        $this->assertStringContainsString('#loanMatrixFoot td.loan-drill-cell', $view);
+        $this->assertStringContainsString("Total Posisi: \${displayBucketLabel(afterBucket)} (Semua Kolek Awal)", $view);
+        $this->assertStringContainsString('.loan-matrix tfoot td.loan-drill-cell', $styles);
+        $this->assertStringContainsString('.loan-matrix tfoot td.loan-drill-cell.is-selected', $styles);
+    }
 }

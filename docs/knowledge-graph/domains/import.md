@@ -7,51 +7,49 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Kind | Count |
 | --- | ---: |
 | command | 8 |
-| file | 163 |
-| function | 2 |
-| method | 2478 |
-| route | 156 |
-| class | 138 |
+| file | 105 |
+| method | 1886 |
+| route | 158 |
+| class | 86 |
 | trait | 7 |
 | interface | 1 |
-| unresolved_symbol | 1 |
-| table | 24 |
+| table | 22 |
 | view | 11 |
 
 ## Main Hubs
 
 | Node | Kind | Degree | Source |
 | --- | --- | ---: | --- |
-| `ImportExcelController` | class | 403 | `app/Http/Controllers/Import/ImportExcelController.php:75` |
-| `import_jobs` | table | 168 | - |
-| `ImportIndexController` | class | 162 | `app/Http/Controllers/Import/ImportIndexController.php:31` |
-| `ImportFileController` | class | 154 | `app/Http/Controllers/Import/ImportFileController.php:32` |
+| `ImportExcelController` | class | 384 | `app/Http/Controllers/Import/ImportExcelController.php:75` |
+| `ImportIndexController` | class | 158 | `app/Http/Controllers/Import/ImportIndexController.php:31` |
+| `ImportFileController` | class | 125 | `app/Http/Controllers/Import/ImportFileController.php:32` |
+| `import_jobs` | table | 113 | - |
 | `ImportProgressService` | class | 102 | `app/Services/Import/ImportProgressService.php:13` |
-| `ImportPerformancePisPerProdukController` | class | 95 | `app/Http/Controllers/Import/ImportPerformancePisPerProdukController.php:23` |
 | `ImportReportPhController` | class | 95 | `app/Http/Controllers/Import/ImportReportPhController.php:30` |
-| `ImportSimpananMultiPnCsvController` | class | 92 | `app/Http/Controllers/Import/ImportSimpananMultiPnCsvController.php:17` |
-| `ImportExecutionService` | class | 75 | `app/Services/Import/ImportExecutionService.php:16` |
-| `ImportCognosRecoveryController` | class | 70 | `app/Http/Controllers/Import/ImportCognosRecoveryController.php:20` |
-| `EnsureImportedSnapshotsFreshJob` | class | 66 | `app/Jobs/EnsureImportedSnapshotsFreshJob.php:30` |
-| `ImportCognosPhController` | class | 61 | `app/Http/Controllers/Import/ImportCognosPhController.php:20` |
+| `ImportPerformancePisPerProdukController` | class | 83 | `app/Http/Controllers/Import/ImportPerformancePisPerProdukController.php:23` |
+| `ImportSimpananMultiPnCsvController` | class | 67 | `app/Http/Controllers/Import/ImportSimpananMultiPnCsvController.php:17` |
+| `ImportCognosRecoveryController` | class | 62 | `app/Http/Controllers/Import/ImportCognosRecoveryController.php:20` |
+| `ImportExecutionService` | class | 57 | `app/Services/Import/ImportExecutionService.php:16` |
+| `ImportCognosPhController` | class | 55 | `app/Http/Controllers/Import/ImportCognosPhController.php:20` |
 | `processImport` | method | 52 | `app/Http/Controllers/Import/ImportFileController.php:5470` |
 | `import.index` | view | 49 | `resources/views/import/index.blade.php:1` |
-| `ImportJobManagementController` | class | 46 | `app/Http/Controllers/Import/ImportJobManagementController.php:17` |
-| `ImportSimpananMultiPnCsvControllerTest` | class | 45 | `tests/Unit/ImportSimpananMultiPnCsvControllerTest.php:21` |
+| `EnsureImportedSnapshotsFreshJob` | class | 46 | `app/Jobs/EnsureImportedSnapshotsFreshJob.php:30` |
 | `processStagedCsvStream` | method | 45 | `app/Http/Controllers/Import/ImportExcelController.php:14562` |
-| `ImportCleanupService` | class | 43 | `app/Services/Import/ImportCleanupService.php:14` |
 | `previewExcel` | method | 42 | `app/Http/Controllers/Import/ImportExcelController.php:12961` |
-| `Gi405RecDhImportExcelController` | class | 41 | `app/Http/Controllers/Import/Gi405RecDhImportExcelController.php:20` |
 | `QueueWorkerControlService` | class | 41 | `app/Services/Import/QueueWorkerControlService.php:10` |
 | `preview` | method | 41 | `app/Http/Controllers/Import/ImportFileController.php:3113` |
-| `ExcelStagingService` | class | 40 | `app/Services/Import/ExcelStagingService.php:7` |
+| `ImportJobManagementController` | class | 40 | `app/Http/Controllers/Import/ImportJobManagementController.php:19` |
 | `processFastPathBulkCsvStream` | method | 40 | `app/Http/Controllers/Import/ImportExcelController.php:9139` |
-| `import.index` | route | 39 | - |
+| `Gi405RecDhImportExcelController` | class | 39 | `app/Http/Controllers/Import/Gi405RecDhImportExcelController.php:20` |
 | `initializeQueuedImportJobForExecution` | method | 39 | `app/Http/Controllers/Import/ImportExcelController.php:13435` |
-| `ImportFileControllerTest` | class | 37 | `tests/Unit/ImportFileControllerTest.php:13` |
-| `MySqlBulkLoadService` | class | 37 | `app/Services/Import/MySqlBulkLoadService.php:11` |
-| `EnsureImportedSnapshotsFreshJobTest` | class | 36 | `tests/Unit/EnsureImportedSnapshotsFreshJobTest.php:18` |
-| `ImportCasaBrilinkController` | class | 36 | `app/Http/Controllers/Import/ImportCasaBrilinkController.php:22` |
+| `import.index` | route | 38 | - |
+| `ExcelStagingService` | class | 37 | `app/Services/Import/ExcelStagingService.php:7` |
+| `buildImportContext` | method | 36 | `app/Http/Controllers/Import/ImportExcelController.php:3717` |
+| `initExcelImport` | method | 36 | `app/Http/Controllers/Import/ImportExcelController.php:13889` |
+| `processImportStream` | method | 36 | `app/Http/Controllers/Import/ImportFileController.php:4941` |
+| `detectCsvDelimiter` | method | 35 | `app/Http/Controllers/Import/ImportExcelController.php:989` |
+| `previewFilterOptions` | method | 35 | `app/Http/Controllers/Import/ImportFileController.php:3557` |
+| `ImportCasaBrilinkController` | class | 33 | `app/Http/Controllers/Import/ImportCasaBrilinkController.php:22` |
 
 ## Route Nodes
 
@@ -147,77 +145,77 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `ConfiguredExcelImportStrategy` - `app/Services/Import/Strategies/ConfiguredExcelImportStrategy.php`
 - `CrasImportStrategy` - `app/Services/Import/Strategies/CrasImportStrategy.php`
 - `CrasSourceService` - `app/Services/Import/CrasSourceService.php`
-- `CriticalDashboardImportLogicContractTest` - `tests/Unit/CriticalDashboardImportLogicContractTest.php`
 - `CsvAutoRepairService` - `app/Services/Import/CsvAutoRepairService.php`
-- `CsvAutoRepairServiceTest` - `tests/Unit/CsvAutoRepairServiceTest.php`
 - `CsvFileProfileService` - `app/Services/Import/CsvFileProfileService.php`
 - `DailyLoanImportStrategy` - `app/Services/Import/Strategies/DailyLoanImportStrategy.php`
 - `DeferSnapshotJobsDuringImport` - `app/Jobs/Middleware/DeferSnapshotJobsDuringImport.php`
-- `DeferSnapshotJobsDuringImportTest` - `tests/Unit/DeferSnapshotJobsDuringImportTest.php`
 - `DirectLargeFileLoadService` - `app/Services/Import/DirectLargeFileLoadService.php`
 - `DlyKapResegmentasiCsvImporter` - `app/Services/Import/DlyKapResegmentasiCsvImporter.php`
 - `DlyKapResegmentasiImportStrategy` - `app/Services/Import/Strategies/DlyKapResegmentasiImportStrategy.php`
 - `EnsureImportedSnapshotsFreshJob` - `app/Jobs/EnsureImportedSnapshotsFreshJob.php`
-- `EnsureImportedSnapshotsFreshJobTest` - `tests/Unit/EnsureImportedSnapshotsFreshJobTest.php`
 - `ExcelImportJobService` - `app/Services/Import/ExcelImportJobService.php`
 - `ExcelQueuedImportService` - `app/Services/Import/ExcelQueuedImportService.php`
 - `ExcelStagingService` - `app/Services/Import/ExcelStagingService.php`
 - `FixImportNotificationSyncCommand` - `app/Console/Commands/FixImportNotificationSyncCommand.php`
 - `GenericCsvImportStrategy` - `app/Services/Import/Strategies/GenericCsvImportStrategy.php`
 - `Gi405RecDhImportExcelController` - `app/Http/Controllers/Import/Gi405RecDhImportExcelController.php`
-- `Gi405RecDhImportExcelControllerTest` - `tests/Unit/Gi405RecDhImportExcelControllerTest.php`
 - `Gi405RecDhImportStrategy` - `app/Services/Import/Strategies/Gi405RecDhImportStrategy.php`
 - `Gi405SingleRowImportStrategy` - `app/Services/Import/Strategies/Gi405SingleRowImportStrategy.php`
-- `Gi405SingleRowImportTest` - `tests/Unit/Gi405SingleRowImportTest.php`
 - `Gi405SingleRowValueNormalizer` - `app/Services/Import/Gi405SingleRowValueNormalizer.php`
 - `HourlyDpkImportStrategy` - `app/Services/Import/Strategies/HourlyDpkImportStrategy.php`
 - `ImportCasaBrilinkController` - `app/Http/Controllers/Import/ImportCasaBrilinkController.php`
-- `ImportCasaBrilinkControllerTest` - `tests/Unit/ImportCasaBrilinkControllerTest.php`
 - `ImportCleanupController` - `app/Http/Controllers/Import/ImportCleanupController.php`
-- `ImportCleanupControllerTest` - `tests/Unit/ImportCleanupControllerTest.php`
 - `ImportCleanupService` - `app/Services/Import/ImportCleanupService.php`
-- `ImportCleanupServiceTest` - `tests/Unit/ImportCleanupServiceTest.php`
 - `ImportCognosPhController` - `app/Http/Controllers/Import/ImportCognosPhController.php`
-- `ImportCognosPhControllerTest` - `tests/Unit/ImportCognosPhControllerTest.php`
 - `ImportCognosRecoveryController` - `app/Http/Controllers/Import/ImportCognosRecoveryController.php`
-- `ImportCognosRecoveryControllerTest` - `tests/Unit/ImportCognosRecoveryControllerTest.php`
 - `ImportCrasController` - `app/Http/Controllers/Import/ImportCrasController.php`
 - `ImportDailyLoanBackendController` - `app/Http/Controllers/Import/ImportDailyLoanBackendController.php`
-- `ImportDataFixtureTest` - `tests/Unit/ImportDataFixtureTest.php`
 - `ImportDlyKapResegmentasiCommand` - `app/Console/Commands/ImportDlyKapResegmentasiCommand.php`
 - `ImportDuplicateGuardService` - `app/Services/Import/ImportDuplicateGuardService.php`
-- `ImportExcelChunkUploadTest` - `tests/Unit/ImportExcelChunkUploadTest.php`
 - `ImportExcelController` - `app/Http/Controllers/Import/ImportExcelController.php`
-- `ImportExcelControllerBrihcTest` - `tests/Unit/ImportExcelControllerBrihcTest.php`
-- `ImportExcelControllerDailyLoanCsvTest` - `tests/Unit/ImportExcelControllerDailyLoanCsvTest.php`
-- `ImportExcelControllerDailyLoanDuplicateGuardTest` - `tests/Unit/ImportExcelControllerDailyLoanDuplicateGuardTest.php`
-- `ImportExcelControllerDecimalNormalizationTest` - `tests/Unit/ImportExcelControllerDecimalNormalizationTest.php`
-- `ImportExcelControllerFastPathEligibilityTest` - `tests/Unit/ImportExcelControllerFastPathEligibilityTest.php`
-- `ImportExcelControllerGi405RecDhTest` - `tests/Unit/ImportExcelControllerGi405RecDhTest.php`
-- `ImportExcelControllerHourlyDpkTest` - `tests/Unit/ImportExcelControllerHourlyDpkTest.php`
-- `ImportExcelControllerLocaleDateScopeTest` - `tests/Unit/ImportExcelControllerLocaleDateScopeTest.php`
-- `ImportExcelControllerLw321PnTest` - `tests/Unit/ImportExcelControllerLw321PnTest.php`
-- `ImportExcelControllerLw325CsvRepairTest` - `tests/Unit/ImportExcelControllerLw325CsvRepairTest.php`
-- `ImportExcelControllerRkaManualKancaTest` - `tests/Unit/ImportExcelControllerRkaManualKancaTest.php`
-- `ImportExcelControllerSnapshotReplaceTest` - `tests/Unit/ImportExcelControllerSnapshotReplaceTest.php`
-- `ImportExcelControllerSsaAlmafactsTest` - `tests/Unit/ImportExcelControllerSsaAlmafactsTest.php`
-- `ImportExcelControllerSsaPinjamanTest` - `tests/Unit/ImportExcelControllerSsaPinjamanTest.php`
-- `ImportExcelControllerSsaSimpananTest` - `tests/Unit/ImportExcelControllerSsaSimpananTest.php`
-- `ImportExcelControllerSsaSourceHeaderGuardTest` - `tests/Unit/ImportExcelControllerSsaSourceHeaderGuardTest.php`
-- `ImportExcelControllerWilayahMbmTest` - `tests/Unit/ImportExcelControllerWilayahMbmTest.php`
-- `ImportExcelQueuedFallbackTest` - `tests/Unit/ImportExcelQueuedFallbackTest.php`
 - `ImportExecutionService` - `app/Services/Import/ImportExecutionService.php`
-- `ImportExecutionServiceTest` - `tests/Unit/ImportExecutionServiceTest.php`
 - `ImportFileBrimoController` - `app/Http/Controllers/Import/ImportFileBrimoController.php`
-- `ImportFileBrimoControllerTest` - `tests/Unit/ImportFileBrimoControllerTest.php`
 - `ImportFileController` - `app/Http/Controllers/Import/ImportFileController.php`
-- `ImportFileControllerTest` - `tests/Unit/ImportFileControllerTest.php`
 - `ImportHealthCheckCommand` - `app/Console/Commands/ImportHealthCheckCommand.php`
-- `ImportHealthCheckCommandTest` - `tests/Unit/ImportHealthCheckCommandTest.php`
 - `ImportIndexController` - `app/Http/Controllers/Import/ImportIndexController.php`
 - `ImportJobManagementController` - `app/Http/Controllers/Import/ImportJobManagementController.php`
-- `ImportJobManagementControllerTest` - `tests/Unit/ImportJobManagementControllerTest.php`
 - `ImportJobStatusController` - `app/Http/Controllers/Import/ImportJobStatusController.php`
+- `ImportL1133Command` - `app/Console/Commands/ImportL1133Command.php`
+- `ImportNotificationSyncService` - `app/Services/Import/ImportNotificationSyncService.php`
+- `ImportPerformancePisPerProdukController` - `app/Http/Controllers/Import/ImportPerformancePisPerProdukController.php`
+- `ImportPeriodGuardService` - `app/Services/Import/ImportPeriodGuardService.php`
+- `ImportPipelineService` - `app/Services/Import/ImportPipelineService.php`
+- `ImportPreviewErrorHandler` - `app/Support/ImportPreviewErrorHandler.php`
+- `ImportProgressService` - `app/Services/Import/ImportProgressService.php`
+- `ImportReferensiUkerCommand` - `app/Console/Commands/ImportReferensiUkerCommand.php`
+- `ImportReportPhController` - `app/Http/Controllers/Import/ImportReportPhController.php`
+- `ImportSimpananMultiPnCsvController` - `app/Http/Controllers/Import/ImportSimpananMultiPnCsvController.php`
+- `ImportStrategyFactory` - `app/Services/Import/ImportStrategyFactory.php`
+- `L1133CsvImporter` - `app/Services/Import/L1133CsvImporter.php`
+- `L1133ImportStrategy` - `app/Services/Import/Strategies/L1133ImportStrategy.php`
+- `Lw321PnImportStrategy` - `app/Services/Import/Strategies/Lw321PnImportStrategy.php`
+- `Lw325PhImportStrategy` - `app/Services/Import/Strategies/Lw325PhImportStrategy.php`
+- `MySqlBulkLoadService` - `app/Services/Import/MySqlBulkLoadService.php`
+- `OptimizedCsvImporter` - `app/Services/Import/OptimizedCsvImporter.php`
+- `PerformanceBrimoController` - `app/Http/Controllers/PerformanceBrimoController.php`
+- `PerformancePisImportStrategy` - `app/Services/Import/Strategies/PerformancePisImportStrategy.php`
+- `PrepareCsvStagingJob` - `app/Jobs/PrepareCsvStagingJob.php`
+- `ProcessPolarsImportPhJob` - `app/Jobs/ProcessPolarsImportPhJob.php`
+- `QueueSupervisorProcessRunner` - `app/Services/Import/QueueSupervisorProcessRunner.php`
+- `QueueWorkerControlService` - `app/Services/Import/QueueWorkerControlService.php`
+- `QueueWorkerMonitorService` - `app/Services/Import/QueueWorkerMonitorService.php`
+- `ReferensiUkerImporter` - `app/Services/Import/ReferensiUkerImporter.php`
+- `RunImportJob` - `app/Jobs/RunImportJob.php`
+- `RunImportJobCommand` - `app/Console/Commands/RunImportJobCommand.php`
+- `SafeWorkerRestartService` - `app/Services/Import/SafeWorkerRestartService.php`
+- `SchemaIntrospectionService` - `app/Services/Import/SchemaIntrospectionService.php`
+- `SerializeImportByTable` - `app/Jobs/Middleware/SerializeImportByTable.php`
+- `SimpananMultiPnImportStrategy` - `app/Services/Import/Strategies/SimpananMultiPnImportStrategy.php`
+- `SmartContentHeaderGuardService` - `app/Services/Import/SmartContentHeaderGuardService.php`
+- `SnapshotAuditController` - `app/Http/Controllers/Import/SnapshotAuditController.php`
+- `SnapshotQueuePauseService` - `app/Services/Import/SnapshotQueuePauseService.php`
+- `SsaPinjamanImportStrategy` - `app/Services/Import/Strategies/SsaPinjamanImportStrategy.php`
+- `SsaPinjamanLazyProcessorService` - `app/Services/Import/Processors/SsaPinjamanLazyProcessorService.php`
 
 ## Interface Nodes
 
@@ -263,7 +261,6 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `brilink_web_laporan_summary_transaksi_brilink_web`
 - `brimo_fin`
 - `brimo_fin_all`
-- `brimo_scope_resolution`
 - `casa_brilink_edc`
 - `casa_brilink_web`
 - `cognos_ph`
@@ -280,7 +277,6 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `merchant_qris`
 - `merchant_qris_volume`
 - `sv_merchant`
-- `tmp_bulk_csv_stage_1_footer`
 - `usak_ibbiz_uker`
 - `user_brimo_fin`
 - `user_brimo_rpt_v2`
@@ -289,33 +285,33 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Direction | Count |
 | --- | ---: |
-| import -> core (calls) | 835 |
-| import -> access-control (protected_by) | 803 |
-| import -> core (instantiates) | 418 |
+| import -> access-control (protected_by) | 815 |
+| import -> core (calls) | 562 |
+| import -> core (instantiates) | 271 |
 | import -> core (accepts) | 189 |
-| import -> jobs-snapshots (calls) | 82 |
-| import -> tests (extends) | 52 |
-| import -> tests (calls) | 47 |
 | database -> import (checks_table) | 43 |
-| import -> dashboard-pinjaman (writes_table) | 37 |
-| jobs-snapshots -> import (instantiates) | 33 |
-| import -> core (reads_table) | 31 |
-| tests -> import (contains) | 30 |
-| import -> core (writes_table) | 27 |
-| import -> core (extends) | 26 |
-| database -> import (defines_table) | 25 |
-| import -> jobs-snapshots (reads_table) | 22 |
-| import -> jobs-snapshots (instantiates) | 22 |
-| import -> core (defines_table) | 21 |
+| import -> jobs-snapshots (calls) | 40 |
+| database -> import (defines_table) | 24 |
+| import -> core (extends) | 24 |
+| import -> core (reads_table) | 23 |
 | core -> import (reads_table) | 21 |
-| import -> dashboard-simpanan (writes_table) | 19 |
-| import -> jobs-snapshots (writes_table) | 18 |
-| jobs-snapshots -> import (contains) | 18 |
+| import -> jobs-snapshots (reads_table) | 19 |
 | import -> jobs-snapshots (uses_trait) | 17 |
-| import -> dashboard-pinjaman (reads_table) | 16 |
-| import -> dashboard-harian (calls) | 16 |
-| tests -> import (defines_table) | 15 |
-| tests -> import (instantiates) | 15 |
-| tests -> import (calls) | 13 |
-| import -> dashboard-pinjaman (defines_table) | 13 |
-| tests -> import (writes_table) | 12 |
+| jobs-snapshots -> import (instantiates) | 16 |
+| import -> jobs-snapshots (checks_table) | 14 |
+| import -> dashboard-harian (calls) | 12 |
+| database -> import (uses_table) | 11 |
+| import -> jobs-snapshots (accepts) | 11 |
+| jobs-snapshots -> import (calls) | 11 |
+| database -> import (alters_table) | 10 |
+| import -> dashboard-harian (accepts) | 10 |
+| import -> platform (extends_view) | 10 |
+| core -> import (calls) | 9 |
+| import -> platform (calls) | 8 |
+| dashboard-harian -> import (reads_table) | 8 |
+| dashboard-simpanan -> import (reads_table) | 7 |
+| dashboard-harian -> import (checks_table) | 7 |
+| import -> jobs-snapshots (implements) | 7 |
+| jobs-snapshots -> import (accepts) | 6 |
+| import -> dashboard-simpanan (calls) | 6 |
+| platform -> import (references_route) | 6 |

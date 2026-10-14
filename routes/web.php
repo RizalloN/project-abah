@@ -39,6 +39,7 @@ use App\Http\Controllers\Report\AlmafactsDashboardController;
 use App\Http\Controllers\Report\DataPhReportController;
 use App\Http\Controllers\Report\DigitalPerformanceController;
 use App\Http\Controllers\Report\KinerjaNonPtpReportController;
+use App\Http\Controllers\Report\InsentifMantriReportController;
 use App\Http\Controllers\Report\KinerjaRmMikroReportController;
 use App\Http\Controllers\Report\KinerjaRmReportController;
 use App\Http\Controllers\Report\KolaborasiReportController;
@@ -238,6 +239,10 @@ Route::middleware(['auth', 'user.branch.scope', 'release.session.lock', 'throttl
         ->name('report.dashboard-pinjaman.kinerjarm.history');
     Route::get('/report/dashboard-pinjaman/kinerjarmmikro', [KinerjaRmMikroReportController::class, 'index'])
         ->name('report.dashboard-pinjaman.kinerjarmmikro');
+    Route::get('/report/kpi/insentif-mantri', [InsentifMantriReportController::class, 'index'])
+        ->name('report.kpi.insentif-mantri');
+    Route::get('/report/kpi/insentif-mantri/nominatif', [InsentifMantriReportController::class, 'export'])
+        ->name('report.kpi.insentif-mantri.export');
     Route::get('/report/dashboard-pinjaman/kinerja-non-ptp', [KinerjaNonPtpReportController::class, 'index'])
         ->name('report.dashboard-pinjaman.kinerja-non-ptp');
     Route::get('/report/dashboard-almafacts/financial-highlight', [AlmafactsDashboardController::class, 'financialHighlight'])

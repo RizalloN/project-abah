@@ -6,12 +6,11 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Kind | Count |
 | --- | ---: |
-| file | 24 |
-| function | 14 |
-| method | 305 |
-| unresolved_symbol | 22 |
+| file | 16 |
+| method | 283 |
+| unresolved_symbol | 21 |
 | route | 24 |
-| class | 21 |
+| class | 16 |
 | table | 2 |
 
 ## Main Hubs
@@ -19,14 +18,14 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Node | Kind | Degree | Source |
 | --- | --- | ---: | --- |
 | `DriveAsixFile` | class | 80 | `app/Models/DriveAsixFile.php:9` |
-| `SpreadsheetWorkbookService` | class | 76 | `app/Services/DriveAsix/SpreadsheetWorkbookService.php:30` |
+| `SpreadsheetWorkbookService` | class | 70 | `app/Services/DriveAsix/SpreadsheetWorkbookService.php:30` |
 | `DriveAsixOfficeException` | class | 52 | `app/Exceptions/DriveAsixOfficeException.php:7` |
 | `OnlyOfficeEditorService` | class | 49 | `app/Services/DriveAsix/OnlyOfficeEditorService.php:15` |
 | `DriveAsixController` | class | 48 | `app/Http/Controllers/DriveAsixController.php:26` |
 | `DriveAsixWorkbookException` | class | 40 | `app/Exceptions/DriveAsixWorkbookException.php:7` |
-| `OfficeDocumentPreviewService` | class | 32 | `app/Services/DriveAsix/OfficeDocumentPreviewService.php:13` |
 | `PipelineWorkbookSummaryService` | class | 32 | `app/Services/DriveAsix/PipelineWorkbookSummaryService.php:15` |
 | `OnlyOfficeDocumentStorageService` | class | 31 | `app/Services/DriveAsix/OnlyOfficeDocumentStorageService.php:19` |
+| `OfficeDocumentPreviewService` | class | 28 | `app/Services/DriveAsix/OfficeDocumentPreviewService.php:13` |
 | `callback` | method | 28 | `app/Http/Controllers/DriveAsixOfficeController.php:181` |
 | `OnlyOfficeJwtService` | class | 24 | `app/Services/DriveAsix/OnlyOfficeJwtService.php:7` |
 | `editor` | method | 24 | `app/Http/Controllers/DriveAsixOfficeController.php:39` |
@@ -35,12 +34,12 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `applyOperation` | method | 21 | `app/Services/DriveAsix/SpreadsheetWorkbookService.php:1212` |
 | `source` | method | 21 | `app/Http/Controllers/DriveAsixOfficeController.php:123` |
 | `buildEditorConfig` | method | 19 | `app/Services/DriveAsix/OnlyOfficeEditorService.php:379` |
-| `drive.index` | route | 18 | - |
 | `previewPresentation` | method | 18 | `app/Services/DriveAsix/OfficeDocumentPreviewService.php:272` |
 | `previewWordDocument` | method | 18 | `app/Services/DriveAsix/OfficeDocumentPreviewService.php:158` |
 | `serializeSheet` | method | 18 | `app/Services/DriveAsix/SpreadsheetWorkbookService.php:887` |
 | `upload` | method | 18 | `app/Http/Controllers/DriveAsixController.php:212` |
 | `DriveAsixOfficeController` | class | 17 | `app/Http/Controllers/DriveAsixOfficeController.php:18` |
+| `drive.index` | route | 17 | - |
 | `openOrReuseSession` | method | 17 | `app/Services/DriveAsix/OnlyOfficeEditorService.php:209` |
 | `replaceUnderLock` | method | 17 | `app/Services/DriveAsix/OnlyOfficeDocumentStorageService.php:671` |
 | `PublicWorkbookController` | class | 16 | `app/Http/Controllers/PublicWorkbookController.php:14` |
@@ -79,19 +78,14 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 ## Class Nodes
 
 - `DriveAsixController` - `app/Http/Controllers/DriveAsixController.php`
-- `DriveAsixDocumentPreviewViewTest` - `tests/Unit/DriveAsixDocumentPreviewViewTest.php`
 - `DriveAsixFile` - `app/Models/DriveAsixFile.php`
 - `DriveAsixFolder` - `app/Models/DriveAsixFolder.php`
 - `DriveAsixOfficeController` - `app/Http/Controllers/DriveAsixOfficeController.php`
 - `DriveAsixOfficeException` - `app/Exceptions/DriveAsixOfficeException.php`
-- `DriveAsixStreamingWorkbookValidationTest` - `tests/Unit/DriveAsixStreamingWorkbookValidationTest.php`
-- `DriveAsixUploadUiContractTest` - `tests/Unit/DriveAsixUploadUiContractTest.php`
 - `DriveAsixVersionConflictException` - `app/Exceptions/DriveAsixVersionConflictException.php`
 - `DriveAsixWorkbookException` - `app/Exceptions/DriveAsixWorkbookException.php`
 - `MicroNettWorkbook` - `app/Support/MicroNettWorkbook.php`
-- `MicroNettWorkbookTest` - `tests/Unit/MicroNettWorkbookTest.php`
 - `MicroRmNettWorkbook` - `app/Support/MicroRmNettWorkbook.php`
-- `MicroRmNettWorkbookTest` - `tests/Unit/MicroRmNettWorkbookTest.php`
 - `OfficeDocumentPreviewService` - `app/Services/DriveAsix/OfficeDocumentPreviewService.php`
 - `OnlyOfficeDocumentStorageService` - `app/Services/DriveAsix/OnlyOfficeDocumentStorageService.php`
 - `OnlyOfficeEditorService` - `app/Services/DriveAsix/OnlyOfficeEditorService.php`
@@ -109,23 +103,17 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Direction | Count |
 | --- | ---: |
-| bank-pipeline -> core (calls) | 170 |
+| bank-pipeline -> core (calls) | 169 |
 | bank-pipeline -> access-control (protected_by) | 114 |
-| bank-pipeline -> core (instantiates) | 64 |
 | bank-pipeline -> core (accepts) | 64 |
+| bank-pipeline -> core (instantiates) | 39 |
 | core -> bank-pipeline (references_route) | 28 |
-| bank-pipeline -> access-control (calls) | 11 |
-| bank-pipeline -> core (extends) | 10 |
-| bank-pipeline -> core (renders) | 6 |
-| bank-pipeline -> tests (calls) | 4 |
-| tests -> bank-pipeline (instantiates) | 3 |
-| tests -> bank-pipeline (contains) | 3 |
-| bank-pipeline -> tests (extends) | 3 |
-| bank-pipeline -> access-control (defines_table) | 2 |
+| bank-pipeline -> access-control (calls) | 8 |
+| bank-pipeline -> core (extends) | 8 |
+| bank-pipeline -> core (renders) | 4 |
 | database -> bank-pipeline (defines_table) | 2 |
 | database -> bank-pipeline (alters_table) | 2 |
 | marketshare -> bank-pipeline (calls) | 2 |
-| presentation -> bank-pipeline (instantiates) | 2 |
 | bank-pipeline -> marketshare (contains) | 2 |
 | core -> bank-pipeline (accepts) | 1 |
 | core -> bank-pipeline (calls) | 1 |
@@ -133,9 +121,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | bank-pipeline -> jobs-snapshots (dispatches) | 1 |
 | jobs-snapshots -> bank-pipeline (accepts) | 1 |
 | jobs-snapshots -> bank-pipeline (calls) | 1 |
-| bank-pipeline -> access-control (instantiates) | 1 |
-| kpi -> bank-pipeline (references_route) | 1 |
+| dashboard-pinjaman -> bank-pipeline (calls) | 1 |
 | bank-pipeline -> core (uses_trait) | 1 |
 | bank-pipeline -> dashboard-pinjaman (contains) | 1 |
-| bank-pipeline -> kpi (contains) | 1 |
 | platform -> bank-pipeline (references_route) | 1 |

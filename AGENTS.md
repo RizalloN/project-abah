@@ -7,7 +7,7 @@
 - **Navigasi Utama**: Mulai investigasi di `PROJECT_MAP.md` dan `docs/knowledge-graph/README.md`.
   - Cek integritas graf: `php artisan knowledge:graph --check`. Rebuild jika stale: `php artisan knowledge:graph --build`.
   - Query lingkungan terkecil: `php artisan knowledge:graph <symbol|path|route|view|table|command> --depth=1 --limit=60`.
-  - Gunakan `--domain=<name>` untuk membatasi ruang lingkup (19 domain terdaftar di `docs/knowledge-graph/domains/`).
+  - Gunakan `--domain=<name>` untuk membatasi ruang lingkup (18 domain terdaftar di `docs/knowledge-graph/domains/`).
   - Graph adalah bukti navigasi; selalu validasi ke kode sumber, schema database, dan pengujian sebelum mengubah logika.
 - **Domain Invariants & Mental Model**:
   1. **`import`** (`ImportExcelController`, `ImportFileController`, `MySqlBulkLoadService`, `ReportDataSyncService`):
@@ -100,3 +100,11 @@ Selalu jawab dengan:
   - Jalankan: `python scripts/markitdown_token_optimizer.py <path_file>` atau `php artisan doc:markdown <path_file>`
   - Untuk langsung salin ke clipboard Windows pengguna: tambahkan flag `-c` atau `--clipboard`
   - Gunakan teks Markdown bersih hasil konversi sebagai satu-satunya bahan pembacaan konteks dokumen oleh AI.
+
+
+## UI/UX Design Guidelines
+
+- Gunakan [frontend-design](.agents/skills/frontend-design/SKILL.md) dari [AgenticSkills / Anthropic](https://agenticskills.io/skills/frontend-design) sebagai acuan desain frontend proyek.
+- Untuk implementasi UI/UX, baca [Web Interface Guidelines Vercel](.agents/skills/web-design-guidelines/references/vercel-web-interface-guidelines.md); sumber terkini: https://vercel.com/design/guidelines. Untuk audit UI, gunakan [web-design-guidelines](.agents/skills/web-design-guidelines/SKILL.md).
+- Terapkan akses keyboard, fokus terlihat, label yang jelas, kontras, responsivitas, reduced motion, state loading/empty/error, dan validasi visual sesuai komponen yang diubah. Preferensi brand khusus Vercel mengikuti bahasa dan identitas aplikasi yang sudah disepakati.
+- Instruksi visual eksplisit pengguna tetap menjadi prioritas. Pertahankan stack Laravel/Blade, istilah finansial, formula bisnis, serta scope perubahan; guideline desain tidak mengizinkan perubahan logic atau dependency lain.

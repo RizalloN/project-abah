@@ -71,6 +71,26 @@ class PerformanceRmIncrementalSnapshotTest extends TestCase
         ]);
     }
 
+    public function test_performance_rm_deposits_pair_with_latest_multipn_not_after_the_loan_period(): void
+    {
+        $builder = new ReportSnapshotBuilder(app(DashboardHarianSnapshotService::class));
+
+        $this->insertDailyLoanRow('R1', 'BRIGUNAKONSUMER', 1000, 800, '123');
+        DB::table('simpanan_multipn')->insert([
+            ['posisi' => '2026-05-05', 'CIFNO' => '123', 'saldo_idr' => 500],
+            // Posisi Multi PN setelah periode pinjaman tidak boleh dipasangkan.
+            ['posisi' => '2026-05-07', 'CIFNO' => '123', 'saldo_idr' => 9999],
+        ]);
+
+        $builder->rebuildPerformanceRm('2026-05-06', true);
+
+        $this->assertEqualsWithDelta(
+            500.0,
+            (float) DB::table('performance_rm_snapshots')->where('periode', '2026-05-06')->sum('total_deposit'),
+            0.001
+        );
+    }
+
     public function test_consumer_realisasi_uses_current_month_realization_minus_previous_closed_cif_os(): void
     {
         $builder = new ReportSnapshotBuilder(app(DashboardHarianSnapshotService::class));

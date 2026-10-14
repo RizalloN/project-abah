@@ -21,7 +21,7 @@ final class LandingMicroPerformanceService
 
     private const PERFORMANCE_RM_SNAPSHOT_TABLE = 'performance_rm_snapshots';
 
-    private const CACHE_VERSION = 'v31-stop-n-go-reference';
+    private const CACHE_VERSION = 'v32-mantri-shared-basis';
 
     private const PERIOD_LOOKUP_INDEXES = [
         'idx_snapshot_filter_optimized',
@@ -215,21 +215,6 @@ final class LandingMicroPerformanceService
         '364101032802102' => ['role' => 'BOH', 'note' => 'BOH override — Tito RSBH (standar MBM).', 'is_override' => true],
         '375801028495108' => ['role' => 'BOH', 'note' => 'BOH override — Tito RSBH (standar MBM).', 'is_override' => true],
         '220401000458108' => ['role' => 'SBOH', 'note' => 'SBOH — klasifikasi dikonfirmasi.', 'is_override' => false],
-    ];
-
-    private const NATIONAL_HOLIDAYS = [
-        2025 => [
-            '2025-01-01', '2025-01-27', '2025-01-29', '2025-03-29', '2025-03-31',
-            '2025-04-01', '2025-04-18', '2025-04-20', '2025-05-01', '2025-05-12',
-            '2025-05-29', '2025-06-01', '2025-06-06', '2025-06-27', '2025-08-17',
-            '2025-09-05', '2025-12-25',
-        ],
-        2026 => [
-            '2026-01-01', '2026-01-16', '2026-02-17', '2026-03-19', '2026-03-21',
-            '2026-03-22', '2026-04-03', '2026-04-05', '2026-05-01', '2026-05-14',
-            '2026-05-27', '2026-05-31', '2026-06-01', '2026-06-16', '2026-08-17',
-            '2026-08-25', '2026-12-25',
-        ],
     ];
 
     /**
@@ -543,12 +528,17 @@ final class LandingMicroPerformanceService
         );
         $netDisbursement = $this->aggregateNetRealization($netRows, $branchScope);
         $burden = $this->buildBurdenPayload($period, $previousPeriod, $ytdPeriod, $branchScope);
+        $mantriNettRoster = collect(app(MantriPerformanceBasis::class)->rosterState()['people'])->values();
+        $mantriNettRows = $this->fetchMantriNettRows($period, $branchScope, $mantriNettRoster);
+        if ($branchScope !== null) {
+            $mantriNettRoster = $mantriNettRoster->where('branch', $this->branchLabel((string) ($branchScope['upper_label'] ?? $branchScope['label'] ?? '')))->values();
+        }
         $mantriPerformance = $this->buildMantriPerformance(
             $period,
-            $plafondRows,
-            $netRows,
+            $mantriNettRows,
+            $mantriNettRows,
             $branchScope,
-            $roster
+            $mantriNettRoster
         );
         $unproductiveMantri = $this->buildUnproductiveMantri($period, $branchScope, $roster);
 
@@ -2228,6 +2218,33 @@ final class LandingMicroPerformanceService
      * @param  array<string, mixed>|null  $branchScope
      * @return array<string, mixed>
      */
+    /** @param array<string,mixed>|null $branchScope @param Collection<int,array<string,string>> $roster */
+    private function fetchMantriNettRows(string $period, ?array $branchScope, Collection $roster): array
+    {
+        $basis = app(MantriPerformanceBasis::class);
+        $byPn = $roster->keyBy('pn');
+        $scopeBranch = $branchScope === null ? null : $this->branchLabel((string) ($branchScope['upper_label'] ?? $branchScope['label'] ?? ''));
+
+        return collect(app(MicroNettDisbursementCalculator::class)->cachedMantriAccounts($period))
+            ->map(function (array $booking) use ($basis, $byPn): object {
+                $pn = $basis->pnKey($booking['owner']);
+                $person = $byPn->get($pn, []);
+
+                return (object) [
+                    'account_key' => $booking['account_key'], 'cif_key' => $booking['cif_key'],
+                    'manager_pn' => $pn, 'manager_raw' => $booking['owner'],
+                    'branch' => $person['branch'] ?? $booking['cabang'],
+                    'unit' => $person['unit'] ?? $booking['unit'],
+                    'branch_code' => $person['bc'] ?? $booking['branch_code'],
+                    'amount' => $booking['plafon'], 'plafon' => $booking['plafon'],
+                    'previous_os' => $booking['previous_os'], 'net_amount' => $booking['net_amount'],
+                    'realization_date' => $booking['realization_date'],
+                ];
+            })
+            ->filter(fn (object $row): bool => $scopeBranch === null || $this->branchLabel($row->branch) === $scopeBranch)
+            ->values()->all();
+    }
+
     private function buildMantriPerformance(
         string $period,
         array $realizationRows,
@@ -3010,18 +3027,7 @@ final class LandingMicroPerformanceService
 
     private function workingDays(string $startDate, string $endDate): int
     {
-        $start = Carbon::parse($startDate)->startOfDay();
-        $end = Carbon::parse($endDate)->startOfDay();
-        $holidays = array_flip(self::NATIONAL_HOLIDAYS[(int) $end->year] ?? []);
-        $total = 0;
-
-        for ($day = $start->copy(); $day->lte($end); $day->addDay()) {
-            if ($day->isWeekday() && ! isset($holidays[$day->toDateString()])) {
-                $total++;
-            }
-        }
-
-        return $total;
+        return app(MantriPerformanceBasis::class)->workingDays($startDate, $endDate);
     }
 
     /**

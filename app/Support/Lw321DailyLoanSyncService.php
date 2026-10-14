@@ -194,23 +194,29 @@ final class Lw321DailyLoanSyncService
                     ? ($usesMysqlLock ? $this->insertWithSelect($period) : $this->insertPortable($period))
                     : 0;
 
-                if ($insertedRows !== $sourceRows) {
+                // Baris tanpa klasifikasi berada di luar cakupan Daily Loan dan tidak dimaterialisasi.
+                $excludedRows = $sourceValidation['unresolved_classification_rows'];
+                $expectedRows = $sourceRows - $excludedRows;
+                $expectedBalance = $sourceValidation['materialized_balance_total'] ?? $sourceValidation['balance_total'];
+
+                if ($insertedRows !== $expectedRows) {
                     throw new RuntimeException(sprintf(
-                        'Materialisasi LW321 periode %s tidak lengkap: %d dari %d baris. Transaksi dibatalkan.',
+                        'Materialisasi LW321 periode %s tidak lengkap: %d dari %d baris (%d baris di luar cakupan). Transaksi dibatalkan.',
                         $period,
                         $insertedRows,
-                        $sourceRows
+                        $expectedRows,
+                        $excludedRows
                     ));
                 }
 
                 $targetValidation = $this->targetValidationMetrics($period);
-                $rowCountMatches = $targetValidation['row_count'] === $sourceRows;
+                $rowCountMatches = $targetValidation['row_count'] === $expectedRows;
                 $balanceTotalMatches = $this->balanceTotalsMatch(
-                    $sourceValidation['balance_total'],
+                    $expectedBalance,
                     $targetValidation['balance_total']
                 );
                 $classificationComplete = $targetValidation['unclassified_rows'] === 0;
-                $expectedUnclassifiedRows = $sourceValidation['unresolved_classification_rows'];
+                $expectedUnclassifiedRows = 0;
                 $classificationMatchesSource = $targetValidation['unclassified_rows'] === $expectedUnclassifiedRows;
                 $qualityComplete = $targetValidation['unresolved_quality_rows'] === 0;
 
@@ -224,9 +230,9 @@ final class Lw321DailyLoanSyncService
                         'Materialisasi LW321 periode %s gagal validasi target: rows %d/%d, saldo %s/%s, rekening kosong %d, saldo NULL %d, klasifikasi kosong %d/%d sesuai sumber, kualitas kosong %d. Transaksi dibatalkan.',
                         $period,
                         $targetValidation['row_count'],
-                        $sourceRows,
+                        $expectedRows,
                         $targetValidation['balance_total'],
-                        $sourceValidation['balance_total'],
+                        $expectedBalance,
                         $targetValidation['blank_account_rows'],
                         $targetValidation['null_balance_rows'],
                         $targetValidation['unclassified_rows'],
@@ -252,6 +258,8 @@ final class Lw321DailyLoanSyncService
                             'classification_matches_source' => $classificationMatchesSource,
                             'expected_unclassified_rows' => $expectedUnclassifiedRows,
                             'quality_complete' => $qualityComplete,
+                            'excluded_out_of_scope_rows' => $excludedRows,
+                            'excluded_out_of_scope_balance' => $sourceValidation['unresolved_classification_balance'] ?? '0.00',
                         ],
                     ],
                 ];
@@ -355,6 +363,8 @@ final class Lw321DailyLoanSyncService
             'classification_evaluated' => false,
             'reference_daily_period' => null,
             'balance_total' => $this->balanceMetric($metrics->balance_total ?? 0),
+            'unresolved_classification_balance' => '0.00',
+            'materialized_balance_total' => $this->balanceMetric($metrics->balance_total ?? 0),
         ];
 
         $canEvaluateClassification = $result['blank_account_rows'] === 0
@@ -378,7 +388,8 @@ final class Lw321DailyLoanSyncService
         $resolved = DB::selectOne(<<<SQL
             SELECT
                 SUM(CASE WHEN {$resolution['segment']} IS NULL OR {$resolution['product']} IS NULL THEN 1 ELSE 0 END) AS unresolved_classification_rows,
-                SUM(CASE WHEN {$resolution['resolution_source']} = 'ACCOUNT' THEN 1 ELSE 0 END) AS account_reference_rows
+                SUM(CASE WHEN {$resolution['resolution_source']} = 'ACCOUNT' THEN 1 ELSE 0 END) AS account_reference_rows,
+                COALESCE(SUM(CASE WHEN {$resolution['segment']} IS NULL OR {$resolution['product']} IS NULL THEN l.balance_dalam_idr ELSE 0 END), 0) AS unresolved_balance
             FROM `lw321pn` l
             {$resolution['joins']}
             WHERE l.periode = {$periodLiteral}
@@ -386,6 +397,10 @@ final class Lw321DailyLoanSyncService
             SQL);
 
         $result['unresolved_classification_rows'] = (int) ($resolved->unresolved_classification_rows ?? 0);
+        $result['unresolved_classification_balance'] = $this->balanceMetric($resolved->unresolved_balance ?? 0);
+        $result['materialized_balance_total'] = $this->balanceMetric(
+            bcsub($result['balance_total'], $result['unresolved_classification_balance'], 2)
+        );
         $result['account_reference_rows'] = (int) ($resolved->account_reference_rows ?? 0);
         $result['classification_evaluated'] = true;
         $result['reference_daily_period'] = $resolution['previous_period'];
@@ -500,6 +515,8 @@ final class Lw321DailyLoanSyncService
         $accountPerformanceProduct = 'NULL';
         $accountCif = 'NULL';
         $accountReferral = 'NULL';
+        $accountRestructuredStatus = 'NULL';
+        $accountNplMethod = 'NULL';
 
         if ($previousPeriod !== null) {
             $previousLiteral = self::quoteSqlLiteral($previousPeriod);
@@ -515,6 +532,17 @@ final class Lw321DailyLoanSyncService
             $performanceClass = "CASE WHEN NULLIF(TRIM(d.segmen_kinerja), '') IS NOT NULL"
                 ." AND NULLIF(TRIM(d.produk_kinerja), '') IS NOT NULL"
                 ." THEN CONCAT(UPPER(TRIM(d.segmen_kinerja)), '|', UPPER(TRIM(d.produk_kinerja))) END";
+
+            // Status rekening 3 dan metode NPL bersifat melekat per rekening pada Daily Loan.
+            $referenceExtraColumns = '';
+            if (Schema::hasColumn(self::TARGET_TABLE, 'status_rekening1')) {
+                $referenceExtraColumns .= ",MAX(CASE WHEN TRIM(COALESCE(d.status_rekening1, '')) = '3' THEN 1 ELSE 0 END) AS restructured_status";
+                $accountRestructuredStatus = 'ar.restructured_status';
+            }
+            if (Schema::hasColumn(self::TARGET_TABLE, 'npl_method')) {
+                $referenceExtraColumns .= ",CASE WHEN COUNT(DISTINCT NULLIF(TRIM(d.npl_method), '')) = 1 THEN MAX(NULLIF(TRIM(d.npl_method), '')) END AS npl_method";
+                $accountNplMethod = 'ar.npl_method';
+            }
 
             $joins .= <<<SQL
                 LEFT JOIN (
@@ -533,6 +561,7 @@ final class Lw321DailyLoanSyncService
                             THEN MAX({$dailyCif}) END AS cif_clean
                         ,CASE WHEN COUNT(DISTINCT NULLIF(NULLIF(TRIM(d.pn_referral1), ''), '-')) = 1
                             THEN MAX(NULLIF(NULLIF(TRIM(d.pn_referral1), ''), '-')) END AS pn_referral
+                        {$referenceExtraColumns}
                     FROM `daily_loan_dinamis` d
                     WHERE d.periode = {$previousLiteral} AND {$authoritative}
                     GROUP BY {$dailyAccountKey}
@@ -554,22 +583,26 @@ final class Lw321DailyLoanSyncService
         $accountIdentity = "({$sourceCif} IS NOT NULL AND {$accountCif} = {$sourceCif})";
         $accountValid = "({$accountIdentity} AND {$accountSegment} IS NOT NULL AND {$accountProduct} IS NOT NULL)";
         $sourceValid = "({$sourceSegment} IS NOT NULL AND {$sourceProduct} IS NOT NULL)";
-        $segment = "CASE WHEN {$sourceValid} THEN {$sourceSegment} WHEN {$accountValid} THEN {$accountSegment} END";
-        $product = "CASE WHEN {$sourceValid} THEN {$sourceProduct} WHEN {$accountValid} THEN {$accountProduct} END";
-        $performanceSegment = "CASE WHEN {$sourceValid} THEN UPPER({$sourceSegment})"
-            ." WHEN {$accountValid} THEN COALESCE({$accountPerformanceSegment}, UPPER({$accountSegment}))"
+        // Rekening yang sudah ada pada Daily Loan otoritatif terakhir (rekening + CIF sama)
+        // memakai klasifikasi & deskripsi Daily Loan agar identik dengan laporan harian;
+        // pemetaan DESCRIPTION LW321 hanya untuk rekening baru.
+        $segment = "CASE WHEN {$accountValid} THEN {$accountSegment} WHEN {$sourceValid} THEN {$sourceSegment} END";
+        $product = "CASE WHEN {$accountValid} THEN {$accountProduct} WHEN {$sourceValid} THEN {$sourceProduct} END";
+        $performanceSegment = "CASE WHEN {$accountValid} THEN COALESCE({$accountPerformanceSegment}, UPPER({$accountSegment}))"
+            ." WHEN {$sourceValid} THEN UPPER({$sourceSegment})"
             ." ELSE '' END";
-        $performanceProduct = "CASE WHEN {$sourceValid} THEN ".Lw321DailyLoanMapper::normalizedTokenSql($sourceProduct)
-            ." WHEN {$accountValid} THEN COALESCE({$accountPerformanceProduct}, "
+        $performanceProduct = "CASE WHEN {$accountValid} THEN COALESCE({$accountPerformanceProduct}, "
             .Lw321DailyLoanMapper::normalizedTokenSql($accountProduct).')'
+            ." WHEN {$sourceValid} THEN ".Lw321DailyLoanMapper::normalizedTokenSql($sourceProduct)
             ." ELSE '' END";
-        $description = "CASE WHEN {$sourceValid} THEN NULLIF(NULLIF(TRIM(l.description), ''), '-')"
-            ." WHEN {$accountValid} THEN COALESCE({$accountDescription}, {$accountProduct})"
+        $description = "CASE WHEN {$accountValid} THEN COALESCE({$accountDescription}, NULLIF(NULLIF(TRIM(l.description), ''), '-'), {$accountProduct})"
             ." ELSE NULLIF(NULLIF(TRIM(l.description), ''), '-') END";
+        $status = "CASE WHEN {$accountIdentity} AND {$accountRestructuredStatus} = 1 THEN '3' ELSE '1' END";
+        $nplMethod = "CASE WHEN {$accountIdentity} THEN {$accountNplMethod} END";
         $referral = "COALESCE(NULLIF(NULLIF(TRIM(l.pn_referral), ''), '-'),"
             ." CASE WHEN {$accountIdentity} THEN {$accountReferral} END)";
-        $resolutionSource = "CASE WHEN {$sourceValid} THEN 'DESCRIPTION'"
-            ." WHEN {$accountValid} THEN 'ACCOUNT'"
+        $resolutionSource = "CASE WHEN {$accountValid} THEN 'ACCOUNT'"
+            ." WHEN {$sourceValid} THEN 'DESCRIPTION'"
             ." ELSE 'UNRESOLVED' END";
 
         return [
@@ -580,6 +613,8 @@ final class Lw321DailyLoanSyncService
             'performance_segment' => $performanceSegment,
             'performance_product' => $performanceProduct,
             'pn_referral' => $referral,
+            'status' => $status,
+            'npl_method' => $nplMethod,
             'resolution_source' => $resolutionSource,
             'previous_period' => $previousPeriod,
         ];
@@ -627,9 +662,12 @@ final class Lw321DailyLoanSyncService
             'raw_kol_mismatch_rows' => 0,
             'reference_daily_period' => $references['previous_period'],
             'balance_total' => '0.00',
+            'unresolved_classification_balance' => '0.00',
+            'materialized_balance_total' => '0.00',
         ];
         $accountCounts = [];
         $balanceTotal = 0.0;
+        $unresolvedBalance = 0.0;
 
         foreach ($rows as $object) {
             $row = (array) $object;
@@ -665,6 +703,7 @@ final class Lw321DailyLoanSyncService
             $resolved = $this->resolvePortableClassification($row, $references);
             if ($resolved['segment'] === null || $resolved['product'] === null) {
                 $metrics['unresolved_classification_rows']++;
+                $unresolvedBalance += (float) ($balance ?? 0);
             }
             $sourceMetric = strtolower($resolved['source']).'_reference_rows';
             if (array_key_exists($sourceMetric, $metrics)) {
@@ -689,6 +728,8 @@ final class Lw321DailyLoanSyncService
         $metrics['duplicate_account_rows'] = array_sum($duplicateCounts);
         $metrics['duplicate_excess_rows'] = $metrics['duplicate_account_rows'] - $metrics['duplicate_account_groups'];
         $metrics['balance_total'] = $this->balanceMetric($balanceTotal);
+        $metrics['unresolved_classification_balance'] = $this->balanceMetric($unresolvedBalance);
+        $metrics['materialized_balance_total'] = $this->balanceMetric($balanceTotal - $unresolvedBalance);
 
         return $metrics;
     }
@@ -737,13 +778,27 @@ final class Lw321DailyLoanSyncService
                 if ($accountKey !== '' && $referral !== null) {
                     $accountCandidates[$accountKey]['referrals'][$referral] = true;
                 }
+                if ($accountKey !== '' && trim((string) ($row['status_rekening1'] ?? '')) === '3') {
+                    $accountCandidates[$accountKey]['restructured_status'] = true;
+                }
+                $nplMethod = $this->stringValue($row['npl_method'] ?? null);
+                if ($accountKey !== '' && $nplMethod !== null) {
+                    $accountCandidates[$accountKey]['npl_methods'][$nplMethod] = true;
+                }
             }
 
             foreach ($accountCandidates as $key => $candidate) {
                 $classes = $candidate['classes'] ?? [];
                 $cifs = $candidate['cifs'] ?? [];
-                if (count($classes) === 1 && count($cifs) === 1) {
-                    $accounts[$key] = array_merge(array_values($classes)[0], [
+                if (count($cifs) === 1) {
+                    $accounts[$key] = array_merge(count($classes) === 1 ? array_values($classes)[0] : [
+                        'description' => null, 'segment' => null, 'product' => null,
+                        'performance_segment' => null, 'performance_product' => null,
+                    ], [
+                        'restructured_status' => (bool) ($candidate['restructured_status'] ?? false),
+                        'npl_method' => count($candidate['npl_methods'] ?? []) === 1
+                            ? (string) array_key_first($candidate['npl_methods'])
+                            : null,
                         'cif' => (string) array_key_first($cifs),
                         'pn_referral' => count($candidate['referrals'] ?? []) === 1
                             ? (string) array_key_first($candidate['referrals'])
@@ -780,6 +835,25 @@ final class Lw321DailyLoanSyncService
             && $sourceCif === ($account['cif'] ?? null);
         $referral = $this->stringValue($row['pn_referral'] ?? null)
             ?? ($accountIdentityMatches ? ($account['pn_referral'] ?? null) : null);
+        $sticky = [
+            'status' => $accountIdentityMatches && ($account['restructured_status'] ?? false) ? '3' : '1',
+            'npl_method' => $accountIdentityMatches ? ($account['npl_method'] ?? null) : null,
+        ];
+
+        // Rekening yang ada di Daily Loan otoritatif terakhir memakai klasifikasi Daily Loan.
+        if ($accountIdentityMatches && ($account['segment'] ?? null) !== null && ($account['product'] ?? null) !== null) {
+            return [
+                'description' => $account['description'] ?? $description ?? $account['product'],
+                'segment' => $account['segment'],
+                'product' => $account['product'],
+                'performance_segment' => $account['performance_segment']
+                    ?? strtoupper((string) $account['segment']),
+                'performance_product' => $account['performance_product']
+                    ?? Lw321DailyLoanMapper::normalizeToken($account['product']),
+                'pn_referral' => $referral,
+                'source' => 'account',
+            ] + $sticky;
+        }
 
         if ($source['matched']) {
             return [
@@ -790,21 +864,7 @@ final class Lw321DailyLoanSyncService
                 'performance_product' => Lw321DailyLoanMapper::normalizeToken($source['product']),
                 'pn_referral' => $referral,
                 'source' => 'description',
-            ];
-        }
-
-        if ($accountIdentityMatches && ($account['segment'] ?? null) !== null && ($account['product'] ?? null) !== null) {
-            return [
-                'description' => $description ?? $account['description'] ?? $account['product'],
-                'segment' => $account['segment'],
-                'product' => $account['product'],
-                'performance_segment' => $account['performance_segment']
-                    ?? strtoupper((string) $account['segment']),
-                'performance_product' => $account['performance_product']
-                    ?? Lw321DailyLoanMapper::normalizeToken($account['product']),
-                'pn_referral' => $referral,
-                'source' => 'account',
-            ];
+            ] + $sticky;
         }
 
         return [
@@ -815,7 +875,7 @@ final class Lw321DailyLoanSyncService
             'performance_product' => null,
             'pn_referral' => $referral,
             'source' => 'unresolved',
-        ];
+        ] + $sticky;
     }
 
     private function canonicalAccountValue(mixed $value): string
@@ -899,7 +959,10 @@ final class Lw321DailyLoanSyncService
         $sql = 'INSERT INTO '.self::quoteIdentifier(self::TARGET_TABLE)." ({$columnSql}) "
             ."SELECT {$selectSql} FROM ".self::quoteIdentifier(self::SOURCE_TABLE).' l '
             .$resolution['joins'].' '
-            .'WHERE l.'.self::quoteIdentifier('periode').' = ?';
+            .'WHERE l.'.self::quoteIdentifier('periode').' = ? '
+            // Baris tanpa klasifikasi (deskripsi kosong & tidak ada di Daily Loan) berada di luar
+            // cakupan nominatif Daily Loan Dinamis sehingga tidak dimaterialisasi.
+            ."AND ({$resolution['segment']}) IS NOT NULL";
 
         return (int) DB::affectingStatement($sql, [$period]);
     }
@@ -916,7 +979,12 @@ final class Lw321DailyLoanSyncService
             ->orderBy('uniqueid_namareport')
             ->chunk(1000, function ($rows) use (&$buffer, &$inserted, $targetColumns, $references): void {
                 foreach ($rows as $row) {
-                    $mapped = array_intersect_key($this->mapPortableRow((array) $row, $references), $targetColumns);
+                    $mapped = $this->mapPortableRow((array) $row, $references);
+                    if ($mapped['segmen_dashboard'] === null) {
+                        // Di luar cakupan nominatif Daily Loan Dinamis.
+                        continue;
+                    }
+                    $mapped = array_intersect_key($mapped, $targetColumns);
                     $buffer[] = $mapped;
 
                     if (count($buffer) >= 1000) {
@@ -943,11 +1011,12 @@ final class Lw321DailyLoanSyncService
         $period = $this->dateValue($row['periode'] ?? null);
         $nextPaymentDate = $this->dateValue($row['next_pmt_date'] ?? null);
         $nextInterestPaymentDate = $this->dateValue($row['next_int_pmt_date'] ?? null);
-        $age = Lw321DailyLoanMapper::resolveArrearsAge($period, $nextPaymentDate, $nextInterestPaymentDate);
-        $quality = Lw321DailyLoanMapper::qualityFromAge($age, $this->stringValue($row['flag_restruk'] ?? null));
+        $rawAge = Lw321DailyLoanMapper::resolveArrearsAge($period, $nextPaymentDate, $nextInterestPaymentDate);
+        $quality = Lw321DailyLoanMapper::qualityFromAge($rawAge, $this->stringValue($row['flag_restruk'] ?? null));
         $classification = $this->resolvePortableClassification($row, $references);
         $balance = $this->numberValue($row['balance_dalam_idr'] ?? null);
-        $kolek = $quality['kolek'];
+        $kolek = Lw321DailyLoanMapper::kolekFromBalances($row) ?? $quality['kolek'];
+        $age = Lw321DailyLoanMapper::dailyArrearsAge($rawAge, $kolek);
         $manager = $this->stringValue($row['pn_pengelola_singlepn'] ?? null)
             ?? $this->stringValue($row['pn_pengelola_1'] ?? null);
         $decisionMaker = $this->stringValue($row['pn_pemutus'] ?? null);
@@ -972,7 +1041,7 @@ final class Lw321DailyLoanSyncService
             'ao_name' => null,
             'cifno' => $this->stringValue($row['cifno'] ?? null),
             'nomor_rekening1' => $this->stringValue($row['no_rekening'] ?? null),
-            'status_rekening1' => '1',
+            'status_rekening1' => $classification['status'],
             'ln_type' => $this->stringValue($row['ln_type'] ?? null),
             'nama_debitur1' => $this->stringValue($row['nama_debitur'] ?? null),
             'rate' => $this->numberValue($row['rate'] ?? null),
@@ -982,7 +1051,7 @@ final class Lw321DailyLoanSyncService
             'baki_debet1' => $balance,
             'nilai_tercatat1' => $balance,
             'kol_adk1' => $this->stringValue($row['kol_adk'] ?? null),
-            'kolek_detail' => $quality['kolek_detail'],
+            'kolek_detail' => Lw321DailyLoanMapper::dailyKolekDetail($kolek, $age),
             'kolek' => $kolek,
             'kolektabilitas_lancar' => $kolek === '1' ? $balance : 0,
             'kolektabilitas_dpk' => $kolek === '2' ? $balance : 0,
@@ -1000,7 +1069,7 @@ final class Lw321DailyLoanSyncService
             'umur_tunggakan' => $age,
             'tgl_realisasi' => $this->dateValue($row['tgl_realisasi'] ?? null),
             'tgl_jatuh_tempo' => $this->dateValue($row['tgl_jatuh_tempo'] ?? null),
-            'tanggal_menunggak' => $this->dateValue($row['tgl_menunggak'] ?? null),
+            'tanggal_menunggak' => Lw321DailyLoanMapper::dailyArrearsStart($period, $nextPaymentDate, $nextInterestPaymentDate, $kolek),
             'next_pmt_date' => $nextPaymentDate,
             'next_pmt_int_date' => $nextInterestPaymentDate,
             'freq_payment' => $this->integerValue($row['freq_payment'] ?? null),
@@ -1021,6 +1090,7 @@ final class Lw321DailyLoanSyncService
             'produk_dashboard' => $product,
             'divisi_segmen_dashboard' => $segment,
             'flag_restruk' => $this->stringValue($row['flag_restruk'] ?? null),
+            'npl_method' => $classification['npl_method'],
             'os_idr' => $balance,
             'segmen_kinerja' => $classification['performance_segment'] ?? '',
             'produk_kinerja' => $classification['performance_product'] ?? '',
@@ -1048,9 +1118,21 @@ final class Lw321DailyLoanSyncService
         $period = $source('periode');
         $nextPayment = $source('next_pmt_date');
         $nextInterest = $source('next_int_pmt_date');
-        $age = Lw321DailyLoanMapper::arrearsAgeSql($period, $nextPayment, $nextInterest);
-        $kolek = Lw321DailyLoanMapper::kolekSql($age);
-        $detail = Lw321DailyLoanMapper::kolekDetailSql($age, $source('flag_restruk'));
+        $rawAge = Lw321DailyLoanMapper::arrearsAgeSql($period, $nextPayment, $nextInterest);
+        // Kolektibilitas mengikuti kolom saldo per kolek LW321 (sama dengan Daily Loan);
+        // aturan jatuh tempo hanya dipakai bila kolom saldo kolek tidak tersedia/kosong.
+        $balanceKolek = Lw321DailyLoanMapper::balanceKolekSql(array_map(
+            $source,
+            array_filter(Lw321DailyLoanMapper::KOLEK_BALANCE_COLUMNS, fn (string $column): bool => Schema::hasColumn(self::SOURCE_TABLE, $column))
+        ));
+        $kolek = "COALESCE({$balanceKolek}, ".Lw321DailyLoanMapper::kolekSql($rawAge).')';
+        $age = Lw321DailyLoanMapper::dailyArrearsAgeSql($rawAge, $kolek);
+        $detail = Lw321DailyLoanMapper::dailyKolekDetailSql($kolek, $age);
+        $arrearsStart = Lw321DailyLoanMapper::dailyArrearsStartSql(
+            $period,
+            Lw321DailyLoanMapper::earliestDueDateSql($nextPayment, $nextInterest),
+            $kolek
+        );
         $segment = $resolution['segment'];
         $product = $resolution['product'];
         $balance = $source('balance_dalam_idr');
@@ -1073,7 +1155,7 @@ final class Lw321DailyLoanSyncService
             'ao_name' => 'NULL',
             'cifno' => $nullableText('cifno'),
             'nomor_rekening1' => $nullableText('no_rekening'),
-            'status_rekening1' => "'1'",
+            'status_rekening1' => $resolution['status'],
             'ln_type' => $nullableText('ln_type'),
             'nama_debitur1' => $nullableText('nama_debitur'),
             'rate' => $source('rate'),
@@ -1097,7 +1179,7 @@ final class Lw321DailyLoanSyncService
             'umur_tunggakan' => $age,
             'tgl_realisasi' => $source('tgl_realisasi'),
             'tgl_jatuh_tempo' => $source('tgl_jatuh_tempo'),
-            'tanggal_menunggak' => $source('tgl_menunggak'),
+            'tanggal_menunggak' => $arrearsStart,
             'next_pmt_date' => $nextPayment,
             'next_pmt_int_date' => $nextInterest,
             'freq_payment' => $source('freq_payment'),
@@ -1118,6 +1200,7 @@ final class Lw321DailyLoanSyncService
             'produk_dashboard' => $product,
             'divisi_segmen_dashboard' => $segment,
             'flag_restruk' => $nullableText('flag_restruk'),
+            'npl_method' => $resolution['npl_method'],
             'os_idr' => $balance,
             'segmen_kinerja' => $resolution['performance_segment'],
             'produk_kinerja' => $resolution['performance_product'],

@@ -55,6 +55,9 @@ class LandingMbmDateInteractionTest extends TestCase
         $this->assertStringContainsString('data-period="2026-09-30"', $html);
         $this->assertStringContainsString('MBM Uji', $html);
         $this->assertStringContainsString('Ranking tersedia', $html);
+        $this->assertStringContainsString('Cakupan PN pemutus: 8 dari 10 rekening Mikro', $html);
+        $this->assertStringContainsString('<details class="micro-ranking-coverage">', $html);
+        $this->assertLessThan(strpos($html, 'micro-ranking-coverage'), strpos($html, 'MBM Uji'));
         $this->assertStringNotContainsString('Data pemutus MBM belum tersedia', $html);
     }
 }

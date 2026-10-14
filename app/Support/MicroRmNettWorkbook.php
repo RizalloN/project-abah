@@ -77,6 +77,7 @@ class MicroRmNettWorkbook
                 $amount <= 1800000000 => 'low', $amount <= 2500000000 => 'mid', default => 'high',
             };
             $person['average_per_debtor'] = $person['realisasi_deb'] > 0 ? $amount / $person['realisasi_deb'] : 0.0;
+            $person['tier'] = $tier;
             $rows[] = $person;
             $type = $person['office_type'];
             $key = strtoupper(trim($person['cabang'])).'|'.($type === 'kcp' ? strtoupper(trim($person['unit'])) : '');

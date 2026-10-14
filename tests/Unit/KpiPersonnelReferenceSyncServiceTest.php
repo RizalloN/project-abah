@@ -220,6 +220,33 @@ class KpiPersonnelReferenceSyncServiceTest extends TestCase
         $this->assertSame(2, DB::table('wilayah_mbm')->count());
     }
 
+    public function test_unchanged_source_refresh_does_not_invalidate_loan_report_caches(): void
+    {
+        $service = app(KpiPersonnelReferenceSyncService::class);
+        $mbm = ['header' => ['BO', 'MBM', 'Score'], 'rows' => [['MADIUN', 'Hendri Nur Wahyudi', '89%']]];
+        $kaUnit = ['header' => ['BO', 'MBM', 'BC', 'Unit Kerja'], 'rows' => [['MADIUN', 'Hendri Nur Wahyudi', '6348', '06348 -- UNIT UTERAN MADIUN']]];
+        $rmSme = ['header' => ['PN', 'NAMA RM', 'KANCA', 'UNIT'], 'rows' => [['00061445', 'Nama Baru', 'KC MADIUN', 'KC MADIUN']]];
+
+        // First sight of the data is a real change.
+        $service->sync('mbm', $mbm);
+        $service->sync('ka-unit', $kaUnit);
+        $service->sync('rm-sme', $rmSme);
+        $afterFirst = \App\Support\ReportCacheVersion::get('pinjaman');
+        $this->assertGreaterThan(1, $afterFirst);
+
+        // The 5-minute refresh of identical sources must not discard caches.
+        $this->travel(5)->minutes();
+        $service->sync('mbm', $mbm);
+        $service->sync('ka-unit', $kaUnit);
+        $service->sync('rm-sme', $rmSme);
+        $this->assertSame($afterFirst, \App\Support\ReportCacheVersion::get('pinjaman'));
+
+        // A genuine reassignment still invalidates them.
+        $kaUnit['rows'][0][1] = 'Rita Auliasari';
+        $service->sync('ka-unit', $kaUnit);
+        $this->assertSame($afterFirst + 1, \App\Support\ReportCacheVersion::get('pinjaman'));
+    }
+
     public function test_same_pn_from_rm_mikro_and_rm_sme_keeps_both_role_references(): void
     {
         $service = app(KpiPersonnelReferenceSyncService::class);

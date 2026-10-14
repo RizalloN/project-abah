@@ -1,0 +1,21 @@
+# Read by ripgrep (Claude Code Grep/Glob, VS Code search) only — git ignores this file's rules.
+# Keeps code searches fast and free of vendored, minified, binary, or generated noise.
+
+# Vendored front-end plugins and build artifacts
+/public/adminlte/plugins/
+/public/vendor/
+*.min.js
+*.min.css
+*.map
+
+# Binary documents dropped into public/
+/public/**/*.pptx
+/public/**/*.pdf
+/public/**/*.docx
+
+# Generated knowledge-graph dumps (query docs/knowledge-graph/*.md instead)
+/docs/knowledge-graph/*.jsonl
+
+# Python caches
+__pycache__/
+*.pyc

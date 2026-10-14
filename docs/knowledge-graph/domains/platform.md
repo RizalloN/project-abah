@@ -6,8 +6,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Kind | Count |
 | --- | ---: |
-| command | 4 |
-| file | 31 |
+| command | 3 |
+| file | 26 |
 | method | 44 |
 | unresolved_symbol | 5 |
 | class | 10 |
@@ -20,10 +20,10 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | --- | --- | ---: | --- |
 | `layouts.admin` | view | 65 | `resources/views/layouts/admin.blade.php:1` |
 | `layouts.sidebar` | view | 53 | `resources/views/layouts/sidebar.blade.php:1` |
-| `composite` | method | 33 | `app/Support/ReportCacheVersion.php:17` |
-| `bump` | method | 26 | `app/Support/ReportCacheVersion.php:31` |
-| `get` | method | 25 | `app/Support/ReportCacheVersion.php:9` |
-| `AppServiceProvider` | class | 17 | `app/Providers/AppServiceProvider.php:25` |
+| `composite` | method | 28 | `app/Support/ReportCacheVersion.php:17` |
+| `get` | method | 23 | `app/Support/ReportCacheVersion.php:9` |
+| `AppServiceProvider` | class | 15 | `app/Providers/AppServiceProvider.php:25` |
+| `bump` | method | 14 | `app/Support/ReportCacheVersion.php:31` |
 | `boot` | method | 11 | `app/Providers/AppServiceProvider.php:68` |
 | `handle` | method | 9 | `app/Http/Middleware/MonitorRequestPerformance.php:15` |
 | `CacheMaintenanceService` | class | 8 | `app/Services/CacheMaintenanceService.php:9` |
@@ -65,7 +65,6 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 ## Command Nodes
 
 - `cache:maintenance` - `app/Console/Commands/MaintainApplicationCacheCommand.php`
-- `config:clear`
 - `logs:maintenance` - `app/Console/Commands/MaintainApplicationLogsCommand.php`
 - `report:warm-cache` - `app/Console/Commands/WarmDashboardCache.php`
 
@@ -87,21 +86,20 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | --- | ---: |
 | platform -> core (calls) | 28 |
 | core -> platform (calls) | 22 |
-| dashboard-pinjaman -> platform (calls) | 21 |
+| dashboard-pinjaman -> platform (calls) | 14 |
 | core -> platform (extends_view) | 14 |
 | dashboard-pinjaman -> platform (extends_view) | 14 |
 | platform -> dashboard-pinjaman (references_route) | 13 |
 | platform -> dashboard-simpanan (references_route) | 12 |
-| jobs-snapshots -> platform (calls) | 11 |
 | import -> platform (extends_view) | 10 |
 | dashboard-simpanan -> platform (calls) | 9 |
 | import -> platform (calls) | 8 |
+| jobs-snapshots -> platform (calls) | 8 |
 | dashboard-simpanan -> platform (extends_view) | 8 |
 | platform -> core (references_route) | 7 |
-| dashboard-harian -> platform (calls) | 6 |
-| tests -> platform (calls) | 6 |
 | core -> platform (contains) | 6 |
 | platform -> import (references_route) | 6 |
+| dashboard-harian -> platform (calls) | 5 |
 | platform -> core (accepts) | 5 |
 | platform -> core (instantiates) | 5 |
 | almafacts -> platform (extends_view) | 5 |
@@ -111,7 +109,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | dashboard-harian -> platform (extends_view) | 4 |
 | platform -> access-control (references_route) | 3 |
 | platform -> jobs-snapshots (instantiates) | 3 |
-| kpi -> platform (calls) | 3 |
 | platform -> core (extends) | 3 |
 | platform -> input-management (references_route) | 3 |
 | database -> platform (uses_table) | 2 |
+| database -> platform (checks_table) | 2 |
+| database -> platform (defines_table) | 2 |

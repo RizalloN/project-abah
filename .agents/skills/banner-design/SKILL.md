@@ -1,6 +1,6 @@
 ---
 name: banner-design
-description: "Design banners for social media, ads, website heroes, creative assets, and print. Multiple art direction options with AI-generated visuals. Actions: design, create, generate banner. Platforms: Facebook, Twitter/X, LinkedIn, YouTube, Instagram, Google Display, website hero, print. Styles: minimalist, gradient, bold typography, photo-based, illustrated, geometric, retro, glassmorphism, 3D, neon, duotone, editorial, collage. Uses ui-ux-pro-max, frontend-design, ai-artist, ai-multimodal skills."
+description: "Design banners for social media, ads, website heroes, creative assets, and print. Multiple art direction options with AI-generated visuals. Actions: design, create, generate banner. Platforms: Facebook, Twitter/X, LinkedIn, YouTube, Instagram, Google Display, website hero, print. Styles: minimalist, gradient, bold typography, photo-based, illustrated, geometric, retro, glassmorphism, 3D, neon, duotone, editorial, collage. Uses frontend-design, ai-artist, ai-multimodal skills."
 argument-hint: "[platform] [style] [dimensions]"
 license: MIT
 metadata:
@@ -39,7 +39,7 @@ Collect via AskUserQuestion:
 
 ### Step 2: Research & Art Direction
 
-1. Activate `ui-ux-pro-max` skill for design intelligence
+1. Activate `frontend-design` skill for design intelligence
 2. Use Chrome browser to research Pinterest for design references:
    ```
    Navigate to pinterest.com → search "[purpose] banner design [style]"

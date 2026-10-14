@@ -18,6 +18,38 @@ class KpiPersonnelReferenceSyncService
     /** @return array<string, int|bool|string> */
     public function sync(string $sheetKey, array $payload): array
     {
+        // The KPI sources refresh every few minutes and the upserts always
+        // touch updated_at. Only an actual reference change may invalidate
+        // the pinjaman report caches; bumping on every refresh discarded all
+        // loan dashboard caches and re-ran the snapshot audits around the clock.
+        $before = $this->referenceFingerprint();
+        $summary = $this->syncReference($sheetKey, $payload);
+        if ($this->referenceFingerprint() !== $before) {
+            ReportCacheVersion::bump('pinjaman');
+        }
+
+        return $summary;
+    }
+
+    /** Content of the personnel references, ignoring bookkeeping timestamps. */
+    private function referenceFingerprint(): string
+    {
+        $parts = [];
+        foreach (['brihc' => 'uniqueid_brihc', 'brihc_pemasar' => 'uniqueid_namareport', 'wilayah_mbm' => 'uniqueid_mbm'] as $table => $key) {
+            if (! Schema::hasTable($table)) {
+                continue;
+            }
+            $columns = array_values(array_diff(Schema::getColumnListing($table), ['created_at', 'updated_at']));
+            $parts[$table] = md5(json_encode(
+                DB::table($table)->orderBy($key)->get($columns)->map(fn ($row): array => (array) $row)->all()
+            ));
+        }
+
+        return md5(json_encode($parts));
+    }
+
+    private function syncReference(string $sheetKey, array $payload): array
+    {
         if ($sheetKey === 'ka-unit') {
             return $this->syncMbmAssignments($payload);
         }
@@ -105,10 +137,6 @@ class KpiPersonnelReferenceSyncService
                 DB::table('brihc_pemasar')->upsert($chunk, ['uniqueid_namareport'], $updateColumns);
             }
         });
-
-        if ($inserted + $updated > 0) {
-            ReportCacheVersion::bump('pinjaman');
-        }
 
         return $this->summary($sheetKey, count($records), $inserted, $updated, false);
     }
@@ -307,7 +335,6 @@ class KpiPersonnelReferenceSyncService
         }
 
         DB::table('brihc')->upsert($rows, ['uniqueid_brihc'], ['pn', 'nama', 'jabatan', 'updated_at']);
-        ReportCacheVersion::bump('pinjaman');
 
         return $this->summary('mbm', count($names), $inserted, $updated, false);
     }
@@ -383,7 +410,6 @@ class KpiPersonnelReferenceSyncService
             ['uniqueid_mbm'],
             ['bc', 'nama_uker', 'cabang', 'nama_mbm', 'updated_at']
         );
-        ReportCacheVersion::bump('pinjaman');
 
         return $this->summary('ka-unit', count($assignments), $inserted, $updated, false);
     }

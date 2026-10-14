@@ -879,8 +879,8 @@
                     </ul>
                 </li>
 
-                <li class="nav-item sidebar-dashboard-kpi {{ request()->routeIs('report.dashboard-almafacts.kpi', 'report.dashboard-pinjaman.kinerjarm', 'report.dashboard-pinjaman.kinerjarmmikro') ? 'menu-open' : '' }}">
-                    <a href="#" class="nav-link {{ request()->routeIs('report.dashboard-almafacts.kpi', 'report.dashboard-pinjaman.kinerjarm', 'report.dashboard-pinjaman.kinerjarmmikro') ? 'active' : '' }}">
+                <li class="nav-item sidebar-dashboard-kpi {{ request()->routeIs('report.dashboard-almafacts.kpi', 'report.dashboard-pinjaman.kinerjarm', 'report.dashboard-pinjaman.kinerjarmmikro', 'report.kpi.insentif-mantri') ? 'menu-open' : '' }}">
+                    <a href="#" class="nav-link {{ request()->routeIs('report.dashboard-almafacts.kpi', 'report.dashboard-pinjaman.kinerjarm', 'report.dashboard-pinjaman.kinerjarmmikro', 'report.kpi.insentif-mantri') ? 'active' : '' }}">
                         <i class="nav-icon fas fa-chart-line"></i>
                         <p>
                             KPI
@@ -934,6 +934,12 @@
                             <a href="{{ route('report.dashboard-pinjaman.kinerjarmmikro') }}" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman.kinerjarmmikro') ? 'active' : '' }}">
                                 <i class="far fa-circle nav-icon"></i>
                                 <p>Kinerja RM Mikro</p>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a href="{{ route('report.kpi.insentif-mantri') }}" class="nav-link {{ request()->routeIs('report.kpi.insentif-mantri') ? 'active' : '' }}">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>Insentif Mantri</p>
                             </a>
                         </li>
                     </ul>

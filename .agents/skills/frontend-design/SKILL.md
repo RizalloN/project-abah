@@ -1,8 +1,7 @@
 ---
 name: frontend-design
-description: "Guidance for distinctive, intentional visual design when building new UI or reshaping an existing one. Helps with aesthetic direction, typography, and making choices that don't read as templated defaults."
-version: 1.0.2
-category: build
+description: Guidance for distinctive, intentional visual design when building new UI or reshaping an existing one. Helps with aesthetic direction, typography, and making choices that don't read as templated defaults.
+license: Complete terms in LICENSE.txt
 ---
 
 # Frontend Design
@@ -70,3 +69,12 @@ Use active voice as default. A CTA says exactly what happens when it is used: "S
 Treat failure and emptiness as moments for direction, not mood. Explain what went wrong and how to fix it, in the interface's voice rather than a person's. Errors don't apologize, and they are never vague about what happened. An empty screen is an invitation to act.
 
 Keep the tone conversational: plain verbs, sentence case, no filler, with tone matched to the brand and the audience. Let each written element do exactly one job.
+
+
+## Project integration
+
+Source: https://agenticskills.io/skills/frontend-design (upstream: https://github.com/anthropics/skills/tree/main/skills/frontend-design).
+
+For UI/UX work in this project, also read ../web-design-guidelines/references/vercel-web-interface-guidelines.md. Apply the framework-agnostic guidelines during implementation. For a requested UI review, use the web-design-guidelines skill and retrieve the current upstream rules; if retrieval fails, disclose that the local snapshot is being used.
+
+Preserve the user's chosen visual direction and existing business behavior. Use the project's existing framework and components; this guidance does not authorize a framework migration, unrelated redesign, dependency change, or changes to financial formulas.

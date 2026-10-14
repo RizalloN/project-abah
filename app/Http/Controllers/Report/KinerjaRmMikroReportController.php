@@ -207,8 +207,9 @@ class KinerjaRmMikroReportController extends Controller
     {
         $reference = app(\App\Support\MicroRmRosterReference::class);
         $referenceVersion = $mantri ? 'mantri' : $reference->fingerprint();
+        $cachePrefix = $mantri ? 'nett_workbook_v7-mantri-shared-basis' : 'nett_workbook_v5-drilldown';
 
-        return Cache::remember($this->cacheKey('nett_workbook_v4-sdm-offices', $period, [$referenceVersion, $mantri ? 'mantri' : 'rm']), 600, function () use ($period, $mantri, $reference): array {
+        return Cache::remember($this->cacheKey($cachePrefix, $period, [$referenceVersion, $mantri ? 'mantri' : 'rm']), 600, function () use ($period, $mantri, $reference): array {
             if (! $mantri) {
                 $scope = UserBranchScope::current();
                 $roster = collect($reference->people($period, $this->landingKurRmRoster()))->filter(fn (array $person): bool => $scope === null
@@ -1113,7 +1114,7 @@ class KinerjaRmMikroReportController extends Controller
             ? ':'.$this->dailyLoanPeriodCacheFingerprint($period)
             : '';
 
-        return Cache::remember('kinerja_rm_mikro_mantri_v16_active_brihc_roster:'.$this->reportCacheVersion().':'.$period.':'.$category.':'.$extremeLowView.$cacheFingerprint, 600, function () use ($category, $period, $extremeLowView): array {
+        return Cache::remember('kinerja_rm_mikro_mantri_v19_shared_basis:'.$this->reportCacheVersion().':'.$period.':'.$category.':'.$extremeLowView.$cacheFingerprint, 600, function () use ($category, $period, $extremeLowView): array {
             return match ($category) {
                 'kuadran' => $this->mantriKuadranPayload($period),
                 'produktivitas_mantri' => $this->mantriProductivityPayload($period),
@@ -1212,15 +1213,9 @@ class KinerjaRmMikroReportController extends Controller
     private function mantriProductivityPayload(string $period): array
     {
         $periodStart = Carbon::parse($period)->startOfMonth()->toDateString();
-        $workingDays = $this->networkDays($periodStart, $period);
+        $workingDays = app(\App\Support\MantriPerformanceBasis::class)->workingDays($periodStart, $period);
         $roster = $this->activeMantriRosterState();
         $nettRows = collect(app(MicroNettDisbursementCalculator::class)->cachedMantri($period))
-            ->filter(function (array $row): bool {
-                $scope = UserBranchScope::current();
-
-                return $scope === null
-                    || $this->normalizeKey((string) ($row['cabang'] ?? '')) === $this->normalizeKey($scope['upper_label']);
-            })
             ->map(function (array $row) use ($roster): ?array {
                 $pnKey = $this->mantriPnKey((string) ($row['owner'] ?? ''));
                 $reference = $roster['people'][$pnKey] ?? null;
@@ -1249,6 +1244,12 @@ class KinerjaRmMikroReportController extends Controller
                 ];
             })
             ->filter()
+            ->filter(function (array $row): bool {
+                $scope = UserBranchScope::current();
+
+                return $scope === null
+                    || $this->normalizeKey((string) ($row['cabang'] ?? '')) === $this->normalizeKey($scope['upper_label']);
+            })
             ->groupBy(fn (array $row): string => implode('|', [
                 $this->normalizeKey($row['cabang']),
                 $this->normalizeKey($row['unit']),
@@ -1364,6 +1365,7 @@ class KinerjaRmMikroReportController extends Controller
                 'working_days' => 0,
                 'bucket_meta' => self::EXTREME_LOW_BUCKETS,
                 'view' => $view,
+                'details' => [],
                 'message' => '',
             ];
         }
@@ -1415,6 +1417,18 @@ class KinerjaRmMikroReportController extends Controller
             'working_days' => $this->networkDays($periodStart, $period),
             'bucket_meta' => self::EXTREME_LOW_BUCKETS,
             'view' => $view,
+            'details' => $rosterRows
+                ->map(fn (array $detail): array => [
+                    'pn' => (string) ($detail['pn_mantri'] ?? '-'),
+                    'nama' => (string) ($detail['nama_mantri'] ?? '-'),
+                    'branch_office' => (string) $detail['branch_office'],
+                    'nama_uker' => (string) $detail['nama_uker'],
+                    'bucket_key' => (string) $detail['bucket_key'],
+                    'realisasi_juta' => round((float) ($detail['realisasi_juta'] ?? 0), 2),
+                ])
+                ->sortBy(fn (array $detail): string => sprintf('%015.2f|%s', $detail['realisasi_juta'], $detail['nama']))
+                ->values()
+                ->all(),
             'message' => '',
         ];
     }
@@ -1818,56 +1832,7 @@ class KinerjaRmMikroReportController extends Controller
     /** @return array{available: bool, keys: array<int, string>, people: array<string, array{pn:string,name:string,branch:string,unit:string,bc:string}>} */
     private function activeMantriRosterState(): array
     {
-        if (! Schema::hasTable('brihc_pemasar')) {
-            return ['available' => false, 'keys' => [], 'people' => []];
-        }
-
-        $columns = array_values(array_intersect([
-            'uniqueid_namareport',
-            'nip',
-            'pernr',
-            'completename',
-            'positiondesc',
-            'psadesc',
-            'orgdesc',
-            'bc',
-            'pn_mantri',
-        ], Schema::getColumnListing('brihc_pemasar')));
-        if (! in_array('positiondesc', $columns, true)
-            || ! in_array('psadesc', $columns, true)
-            || (! in_array('pernr', $columns, true) && ! in_array('pn_mantri', $columns, true))) {
-            return ['available' => false, 'keys' => [], 'people' => []];
-        }
-
-        $rows = DB::table('brihc_pemasar')->select($columns)->get();
-        $people = $rows
-            ->filter(fn ($row): bool => $this->isActiveMantriReference($row))
-            ->filter(fn ($row): bool => in_array(
-                $this->normalizeKey($this->brihcPemasarValue($row, 'psadesc')),
-                self::AREA_BRANCH_ORDER,
-                true
-            ))
-            ->mapWithKeys(function ($row): array {
-                $pn = $this->brihcPemasarMantriKey($row);
-                if ($pn === '') {
-                    return [];
-                }
-
-                return [$pn => [
-                    'pn' => $pn,
-                    'name' => $this->brihcPemasarValue($row, 'completename'),
-                    'branch' => $this->normalizeKey($this->brihcPemasarValue($row, 'psadesc')),
-                    'unit' => $this->brihcPemasarValue($row, 'orgdesc'),
-                    'bc' => $this->brihcPemasarValue($row, 'bc'),
-                ]];
-            })
-            ->all();
-
-        return [
-            'available' => $rows->isNotEmpty(),
-            'keys' => array_map('strval', array_keys($people)),
-            'people' => $people,
-        ];
+        return app(\App\Support\MantriPerformanceBasis::class)->rosterState();
     }
 
     private function isActiveMantriReference(object $row): bool

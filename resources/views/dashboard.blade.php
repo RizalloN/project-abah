@@ -8075,6 +8075,10 @@ body.dashboard-landing-page .content-wrapper .container-fluid {
 .micro-ops-section--ranking { --micro-section-accent: #0b78c9; }
 .micro-ops-section--need { --micro-section-accent: #00a5c8; }
 .micro-ranking-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.micro-ranking-coverage { margin: 0 1rem 1rem; color: #365573; font-size: 0.75rem; line-height: 1.5; overflow-wrap: anywhere; }
+.micro-ranking-coverage summary { padding: 0.5rem 0; cursor: pointer; touch-action: manipulation; }
+.micro-ranking-coverage summary:focus-visible { outline: 3px solid #0b78c9; outline-offset: 2px; }
+.micro-ranking-coverage p { max-width: 80ch; margin: 0.25rem 0 0; }
 .micro-ranking-toggle {
   display: inline-flex;
   flex: 0 0 auto;

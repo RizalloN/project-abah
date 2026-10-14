@@ -6,10 +6,10 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Kind | Count |
 | --- | ---: |
-| file | 15 |
-| method | 258 |
+| file | 10 |
+| method | 225 |
 | unresolved_symbol | 1 |
-| class | 10 |
+| class | 7 |
 | trait | 1 |
 | view | 2 |
 
@@ -17,11 +17,10 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Node | Kind | Degree | Source |
 | --- | --- | ---: | --- |
-| `NativeOpenXmlPowerPointRenderer` | class | 72 | `app/Services/Presentation/NativeOpenXmlPowerPointRenderer.php:9` |
-| `PresentationScopeDataService` | class | 53 | `app/Services/Presentation/PresentationScopeDataService.php:14` |
+| `NativeOpenXmlPowerPointRenderer` | class | 71 | `app/Services/Presentation/NativeOpenXmlPowerPointRenderer.php:9` |
+| `PresentationScopeDataService` | class | 50 | `app/Services/Presentation/PresentationScopeDataService.php:14` |
 | `PresentationFundingStrategyService` | class | 41 | `app/Services/Presentation/PresentationFundingStrategyService.php:16` |
-| `PresentationDeckDataService` | class | 38 | `app/Services/Presentation/PresentationDeckDataService.php:10` |
-| `PresentationPowerPointExportTest` | class | 33 | `tests/Unit/PresentationPowerPointExportTest.php:11` |
+| `PresentationDeckDataService` | class | 35 | `app/Services/Presentation/PresentationDeckDataService.php:10` |
 | `PresentationExportManager` | class | 23 | `app/Services/Presentation/PresentationExportManager.php:11` |
 | `footer` | method | 23 | `app/Services/Presentation/NativeOpenXmlPowerPointRenderer.php:2316` |
 | `header` | method | 22 | `app/Services/Presentation/NativeOpenXmlPowerPointRenderer.php:2300` |
@@ -47,18 +46,16 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `build` | method | 15 | `app/Services/Presentation/PresentationDeckDataService.php:21` |
 | `formatCurrency` | method | 15 | `app/Services/Presentation/PresentationScopeDataService.php:2160` |
 | `structuredCreditOverviewSlide` | method | 15 | `app/Services/Presentation/NativeOpenXmlPowerPointRenderer.php:983` |
+| `build` | method | 14 | `app/Services/Presentation/PresentationFundingStrategyService.php:35` |
 
 ## Class Nodes
 
-- `KinerjaMicroNettPresentationTest` - `tests/Unit/KinerjaMicroNettPresentationTest.php`
 - `NativeOpenXmlPowerPointRenderer` - `app/Services/Presentation/NativeOpenXmlPowerPointRenderer.php`
-- `NativeOpenXmlPowerPointRendererTest` - `tests/Unit/NativeOpenXmlPowerPointRendererTest.php`
 - `PowerPointExportService` - `app/Services/Presentation/PowerPointExportService.php`
 - `PresentationDeckDataService` - `app/Services/Presentation/PresentationDeckDataService.php`
 - `PresentationExportManager` - `app/Services/Presentation/PresentationExportManager.php`
 - `PresentationFundingStrategyService` - `app/Services/Presentation/PresentationFundingStrategyService.php`
 - `PresentationNarrativeService` - `app/Services/Presentation/PresentationNarrativeService.php`
-- `PresentationPowerPointExportTest` - `tests/Unit/PresentationPowerPointExportTest.php`
 - `PresentationScopeDataService` - `app/Services/Presentation/PresentationScopeDataService.php`
 
 ## Trait Nodes
@@ -74,29 +71,20 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Direction | Count |
 | --- | ---: |
-| presentation -> core (calls) | 62 |
-| presentation -> core (instantiates) | 26 |
+| presentation -> core (calls) | 60 |
 | presentation -> core (accepts) | 24 |
-| jobs-snapshots -> presentation (calls) | 10 |
-| presentation -> dashboard-simpanan (references_route) | 8 |
-| dashboard-pinjaman -> presentation (calls) | 6 |
+| presentation -> core (instantiates) | 16 |
+| jobs-snapshots -> presentation (calls) | 9 |
+| presentation -> dashboard-simpanan (references_route) | 7 |
 | dashboard-simpanan -> presentation (accepts) | 4 |
 | access-control -> presentation (calls) | 4 |
 | presentation -> import (reads_table) | 4 |
 | presentation -> core (checks_table) | 3 |
 | jobs-snapshots -> presentation (uses_trait) | 3 |
-| presentation -> dashboard-pinjaman (contains) | 3 |
-| presentation -> tests (extends) | 3 |
-| presentation -> marketshare (contains) | 3 |
 | jobs-snapshots -> presentation (accepts) | 2 |
 | presentation -> dashboard-simpanan (reads_table) | 2 |
-| presentation -> dashboard-pinjaman (renders) | 2 |
-| presentation -> bank-pipeline (instantiates) | 2 |
-| marketshare -> presentation (instantiates) | 2 |
 | input-management -> presentation (uses_trait) | 2 |
 | presentation -> access-control (contains) | 2 |
-| presentation -> jobs-snapshots (contains) | 2 |
-| presentation -> prognosa (contains) | 2 |
 | dashboard-simpanan -> presentation (calls) | 1 |
 | dashboard-simpanan -> presentation (renders) | 1 |
 | presentation -> input-management (injects) | 1 |
@@ -104,3 +92,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | presentation -> core (injects) | 1 |
 | presentation -> input-management (calls) | 1 |
 | presentation -> dashboard-simpanan (checks_table) | 1 |
+| presentation -> dashboard-pinjaman (calls) | 1 |
+| presentation -> core (reads_table) | 1 |
+| import -> presentation (uses_trait) | 1 |
+| access-control -> presentation (uses_trait) | 1 |
+| presentation -> jobs-snapshots (contains) | 1 |

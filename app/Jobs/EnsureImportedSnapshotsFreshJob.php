@@ -330,10 +330,11 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue, ShouldBeUniqueUnti
             $startedAt = microtime(true);
 
             try {
-                $after = (int) $definition['rebuild']();
-                if ($after <= 0) {
-                    $after = $this->snapshotRowCount($snapshotTable, $periodColumn, $period);
-                }
+                $definition['rebuild']();
+                // Record the snapshot's own row count, measured exactly like the
+                // freshness check. Builders return source-row totals for summary
+                // tables, which never matched and re-triggered the rebuild forever.
+                $after = $this->snapshotRowCount($snapshotTable, $periodColumn, $period);
 
                 ReportDataSyncService::analyzeTable($snapshotTable);
                 $rebuiltAny = true;
@@ -531,10 +532,11 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue, ShouldBeUniqueUnti
             $startedAt = microtime(true);
 
             try {
-                $after = (int) $definition['rebuild']();
-                if ($after <= 0) {
-                    $after = $this->snapshotRowCount($snapshotTable, $periodColumn, $period);
-                }
+                $definition['rebuild']();
+                // Record the snapshot's own row count, measured exactly like the
+                // freshness check. Builders return source-row totals for summary
+                // tables, which never matched and re-triggered the rebuild forever.
+                $after = $this->snapshotRowCount($snapshotTable, $periodColumn, $period);
 
                 ReportDataSyncService::analyzeTable($snapshotTable);
                 $rebuiltAny = true;
@@ -646,7 +648,8 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue, ShouldBeUniqueUnti
             return;
         }
 
-        $after = (int) ($dashboardHarian->rebuild($period, false)[$period] ?? 0);
+        $dashboardHarian->rebuild($period, false);
+        $after = $this->snapshotRowCount('dashboard_harian_snapshots', 'snapshot_period', $period);
         ReportDataSyncService::analyzeTable('dashboard_harian_snapshots');
         $rebuiltAny = true;
 
@@ -699,7 +702,8 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue, ShouldBeUniqueUnti
             }
 
             $startedAt = microtime(true);
-            $after = (int) ($dashboardHarian->rebuild($snapshotPeriod, false)[$snapshotPeriod] ?? 0);
+            $dashboardHarian->rebuild($snapshotPeriod, false);
+            $after = $this->snapshotRowCount('dashboard_harian_snapshots', 'snapshot_period', $snapshotPeriod);
             ReportDataSyncService::analyzeTable('dashboard_harian_snapshots');
             $rebuiltAny = true;
 
@@ -754,7 +758,8 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue, ShouldBeUniqueUnti
         }
 
         $startedAt = microtime(true);
-        $after = (int) ($dashboardHarian->rebuild($period, false)[$period] ?? 0);
+        $dashboardHarian->rebuild($period, false);
+        $after = $this->snapshotRowCount('dashboard_harian_snapshots', 'snapshot_period', $period);
         ReportDataSyncService::analyzeTable('dashboard_harian_snapshots');
         $rebuiltAny = true;
 
@@ -852,7 +857,8 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue, ShouldBeUniqueUnti
             return;
         }
 
-        $after = (int) ($dashboardHarian->rebuild($period, false)[$period] ?? 0);
+        $dashboardHarian->rebuild($period, false);
+        $after = $this->snapshotRowCount('dashboard_harian_snapshots', 'snapshot_period', $period);
         ReportDataSyncService::analyzeTable('dashboard_harian_snapshots');
 
         if ($sourceMetadata !== null) {

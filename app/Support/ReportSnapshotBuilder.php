@@ -2465,7 +2465,9 @@ class ReportSnapshotBuilder
     {
         $snapshotTable = $snapshotTable ?? self::PERFORMANCE_RM_SNAPSHOT_TABLE;
         $snapshotColumns = array_flip(Schema::getColumnListing(self::PERFORMANCE_RM_SNAPSHOT_TABLE));
-        $latestSmpnPosisi = DB::table('simpanan_multipn')->max('posisi');
+        // Pasangkan pinjaman (Daily Loan / LW321 yang dinormalisasi) dengan posisi Multi PN
+        // terakhir yang tidak melewati periode pinjaman, bukan posisi Multi PN global terbaru.
+        $latestSmpnPosisi = $this->resolveAvailablePeriod('simpanan_multipn', 'posisi', $period);
 
         foreach (self::KINERJA_RM_SEGMENT_RULES as $segment => $rules) {
             $normalizedRules = $this->normalizeKinerjaRmRules((array) $rules);
@@ -3538,7 +3540,7 @@ class ReportSnapshotBuilder
     {
         $rows = [];
         $periodStart = Carbon::parse($period)->startOfMonth()->toDateString();
-        $latestSmpnPosisi = DB::table('simpanan_multipn')->max('posisi');
+        $latestSmpnPosisi = $this->resolveAvailablePeriod('simpanan_multipn', 'posisi', $period);
         $snapshotColumns = array_flip(Schema::getColumnListing(self::PERFORMANCE_RM_SNAPSHOT_TABLE));
 
         foreach (self::KINERJA_RM_SEGMENT_RULES as $segment => $rules) {
@@ -3869,12 +3871,12 @@ class ReportSnapshotBuilder
     private function fetchDepositsByNormalizedCifs(array $normalizedCifs, ?string $latestPosisi): array
     {
         // CIF is an alphanumeric identifier; keep its full value intact.
-        if (empty($normalizedCifs)) {
+        if (empty($normalizedCifs) || $latestPosisi === null) {
             return [];
         }
 
         $deposits = DB::table('simpanan_multipn')
-            ->where('posisi', $latestPosisi ?? DB::table('simpanan_multipn')->max('posisi'))
+            ->where('posisi', $latestPosisi)
             ->selectRaw('CIFNO as clean_cif')
             ->selectRaw('SUM(COALESCE(saldo_idr, 0)) as total_deposit');
 

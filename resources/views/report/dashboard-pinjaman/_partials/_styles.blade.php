@@ -312,8 +312,13 @@
         cursor: default;
     }
 
-    .loan-matrix tbody td.loan-drill-cell {
+    .loan-matrix tbody td.loan-drill-cell,
+    .loan-matrix tfoot td.loan-drill-cell {
         cursor: zoom-in;
+    }
+
+    .loan-matrix tfoot td.loan-drill-cell:hover:not(.is-selected) {
+        background-color: #eff6ff !important;
     }
 
     .loan-matrix tbody tr.loan-drill-row.is-selected th,
@@ -323,7 +328,8 @@
         background-color: #eff6ff !important;
     }
 
-    .loan-matrix tbody td.loan-drill-cell.is-selected {
+    .loan-matrix tbody td.loan-drill-cell.is-selected,
+    .loan-matrix tfoot td.loan-drill-cell.is-selected {
         outline: 2px solid rgba(8, 87, 195, 0.55);
         outline-offset: -2px;
         background-color: #dbeafe !important;

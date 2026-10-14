@@ -6,71 +6,59 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Kind | Count |
 | --- | ---: |
-| file | 4 |
-| method | 52 |
-| class | 4 |
+| file | 2 |
+| method | 38 |
+| class | 2 |
 
 ## Main Hubs
 
 | Node | Kind | Degree | Source |
 | --- | --- | ---: | --- |
-| `KpiPersonnelReferenceSyncService` | class | 22 | `app/Services/Reports/KpiPersonnelReferenceSyncService.php:9` |
-| `KpiRmSmeDashboardService` | class | 21 | `app/Services/Reports/KpiRmSmeDashboardService.php:7` |
-| `sync` | method | 17 | `app/Services/Reports/KpiPersonnelReferenceSyncService.php:19` |
+| `KpiPersonnelReferenceSyncService` | class | 24 | `app/Services/Reports/KpiPersonnelReferenceSyncService.php:9` |
+| `KpiRmSmeDashboardService` | class | 18 | `app/Services/Reports/KpiRmSmeDashboardService.php:7` |
+| `syncReference` | method | 17 | `app/Services/Reports/KpiPersonnelReferenceSyncService.php:51` |
 | `build` | method | 12 | `app/Services/Reports/KpiRmSmeDashboardService.php:122` |
-| `personnelRecords` | method | 12 | `app/Services/Reports/KpiPersonnelReferenceSyncService.php:117` |
-| `syncMbmAssignments` | method | 12 | `app/Services/Reports/KpiPersonnelReferenceSyncService.php:316` |
-| `syncMbmNames` | method | 12 | `app/Services/Reports/KpiPersonnelReferenceSyncService.php:252` |
-| `KpiPersonnelReferenceSyncServiceTest` | class | 10 | `tests/Unit/KpiPersonnelReferenceSyncServiceTest.php:13` |
-| `KpiRmSmeDashboardServiceTest` | class | 8 | `tests/Unit/KpiRmSmeDashboardServiceTest.php:8` |
-| `test_failed_kpi_refresh_keeps_last_good_payload` | method | 8 | `tests/Unit/RemoteDashboardSourceTest.php:98` |
-| `cell` | method | 7 | `app/Services/Reports/KpiPersonnelReferenceSyncService.php:448` |
-| `headerIndex` | method | 6 | `app/Services/Reports/KpiPersonnelReferenceSyncService.php:391` |
-| `setUp` | method | 6 | `tests/Unit/KpiPersonnelReferenceSyncServiceTest.php:15` |
-| `sources` | method | 6 | `tests/Unit/KpiRmSmeDashboardServiceTest.php:84` |
-| `branchInfo` | method | 5 | `app/Services/Reports/KpiPersonnelReferenceSyncService.php:475` |
-| `personFromRow` | method | 5 | `app/Services/Reports/KpiPersonnelReferenceSyncService.php:202` |
+| `personnelRecords` | method | 12 | `app/Services/Reports/KpiPersonnelReferenceSyncService.php:145` |
+| `syncMbmAssignments` | method | 11 | `app/Services/Reports/KpiPersonnelReferenceSyncService.php:343` |
+| `syncMbmNames` | method | 11 | `app/Services/Reports/KpiPersonnelReferenceSyncService.php:280` |
+| `cell` | method | 7 | `app/Services/Reports/KpiPersonnelReferenceSyncService.php:474` |
+| `headerIndex` | method | 6 | `app/Services/Reports/KpiPersonnelReferenceSyncService.php:417` |
+| `branchInfo` | method | 5 | `app/Services/Reports/KpiPersonnelReferenceSyncService.php:501` |
+| `personFromRow` | method | 5 | `app/Services/Reports/KpiPersonnelReferenceSyncService.php:230` |
 | `personMeta` | method | 5 | `app/Services/Reports/KpiRmSmeDashboardService.php:299` |
-| `summary` | method | 5 | `app/Services/Reports/KpiPersonnelReferenceSyncService.php:512` |
-| `test_default_kpi_links_do_not_overwrite_existing_custom_link` | method | 5 | `tests/Unit/LinkManagementControllerTest.php:84` |
-| `test_mbm_sources_update_names_and_unit_assignments_without_fabricating_pn` | method | 5 | `tests/Unit/KpiPersonnelReferenceSyncServiceTest.php:162` |
-| `test_rm_sme_sync_updates_existing_person_and_adds_new_person_without_deleting_other_rows` | method | 5 | `tests/Unit/KpiPersonnelReferenceSyncServiceTest.php:68` |
+| `summary` | method | 5 | `app/Services/Reports/KpiPersonnelReferenceSyncService.php:538` |
+| `sync` | method | 5 | `app/Services/Reports/KpiPersonnelReferenceSyncService.php:19` |
 | `associateRows` | method | 4 | `app/Services/Reports/KpiRmSmeDashboardService.php:246` |
 | `branchCode` | method | 4 | `app/Services/Reports/KpiRmSmeDashboardService.php:293` |
 | `cleanOrganization` | method | 4 | `app/Services/Reports/KpiRmSmeDashboardService.php:313` |
-| `hasAuthoritativePersonnelReference` | method | 4 | `app/Services/Reports/KpiPersonnelReferenceSyncService.php:418` |
+| `hasAuthoritativePersonnelReference` | method | 4 | `app/Services/Reports/KpiPersonnelReferenceSyncService.php:444` |
 | `identity` | method | 4 | `app/Services/Reports/KpiRmSmeDashboardService.php:268` |
 | `metricValues` | method | 4 | `app/Services/Reports/KpiRmSmeDashboardService.php:326` |
-| `normalizeBc` | method | 4 | `app/Services/Reports/KpiPersonnelReferenceSyncService.php:467` |
-| `normalizePn` | method | 4 | `app/Services/Reports/KpiPersonnelReferenceSyncService.php:460` |
-| `nullableCell` | method | 4 | `app/Services/Reports/KpiPersonnelReferenceSyncService.php:453` |
+| `normalizeBc` | method | 4 | `app/Services/Reports/KpiPersonnelReferenceSyncService.php:493` |
+| `normalizePn` | method | 4 | `app/Services/Reports/KpiPersonnelReferenceSyncService.php:486` |
+| `nullableCell` | method | 4 | `app/Services/Reports/KpiPersonnelReferenceSyncService.php:479` |
+| `number` | method | 4 | `app/Services/Reports/KpiRmSmeDashboardService.php:339` |
+| `period` | method | 4 | `app/Services/Reports/KpiRmSmeDashboardService.php:374` |
+| `rowIsInScope` | method | 4 | `app/Services/Reports/KpiRmSmeDashboardService.php:283` |
+| `sameRole` | method | 4 | `app/Services/Reports/KpiPersonnelReferenceSyncService.php:439` |
+| `stats` | method | 4 | `app/Services/Reports/KpiRmSmeDashboardService.php:528` |
+| `summary` | method | 4 | `app/Services/Reports/KpiRmSmeDashboardService.php:416` |
+| `textKey` | method | 4 | `app/Services/Reports/KpiPersonnelReferenceSyncService.php:434` |
 
 ## Class Nodes
 
 - `KpiPersonnelReferenceSyncService` - `app/Services/Reports/KpiPersonnelReferenceSyncService.php`
-- `KpiPersonnelReferenceSyncServiceTest` - `tests/Unit/KpiPersonnelReferenceSyncServiceTest.php`
 - `KpiRmSmeDashboardService` - `app/Services/Reports/KpiRmSmeDashboardService.php`
-- `KpiRmSmeDashboardServiceTest` - `tests/Unit/KpiRmSmeDashboardServiceTest.php`
 
 ## Cross-Domain Links
 
 | Direction | Count |
 | --- | ---: |
-| kpi -> dashboard-pinjaman (reads_table) | 8 |
-| kpi -> dashboard-pinjaman (writes_table) | 7 |
-| kpi -> core (calls) | 5 |
-| kpi -> core (writes_table) | 4 |
-| kpi -> core (instantiates) | 4 |
-| tests -> kpi (contains) | 4 |
-| kpi -> platform (calls) | 3 |
+| kpi -> dashboard-pinjaman (reads_table) | 4 |
 | kpi -> dashboard-pinjaman (checks_table) | 3 |
-| kpi -> core (reads_table) | 3 |
-| kpi -> tests (calls) | 2 |
-| kpi -> dashboard-pinjaman (defines_table) | 2 |
-| kpi -> tests (extends) | 2 |
+| kpi -> dashboard-pinjaman (writes_table) | 3 |
+| kpi -> platform (calls) | 1 |
 | kpi -> core (checks_table) | 1 |
-| kpi -> bank-pipeline (references_route) | 1 |
-| kpi -> core (defines_table) | 1 |
-| kpi -> almafacts (instantiates) | 1 |
-| bank-pipeline -> kpi (contains) | 1 |
-| kpi -> dashboard-pinjaman (contains) | 1 |
+| kpi -> core (reads_table) | 1 |
+| kpi -> core (writes_table) | 1 |
+| kpi -> core (calls) | 1 |

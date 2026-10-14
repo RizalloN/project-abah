@@ -284,16 +284,6 @@
             </div>
 
             @if(!empty($decisionRanking['available']))
-                @if((int) data_get($decisionIdentityCoverage, 'unresolved_accounts', 0) > 0)
-                    <div class="micro-ops-empty micro-ops-empty--compact" role="status">
-                        <strong>Ranking tersedia · cakupan identitas belum penuh</strong>
-                        <small>
-                            {{ $formatInteger(data_get($decisionIdentityCoverage, 'unresolved_accounts', 0)) }} dari
-                            {{ $formatInteger(data_get($decisionIdentityCoverage, 'total_accounts', 0)) }} rekening realisasi Mikro belum memiliki PN pemutus; angka ini bukan jumlah rekening MBM saja.
-                            Ranking dan PDWK hanya memakai identitas dari posisi berjalan atau rekening yang sama pada posisi sebelumnya dalam bulan ini.
-                        </small>
-                    </div>
-                @endif
                 @foreach((array) data_get($decisionRanking, 'metrics', []) as $rankingMetric)
                     @php $isActiveRankingPanel = data_get($rankingMetric, 'key') === data_get($decisionRanking, 'default_metric', 'plafond'); @endphp
                     <div class="micro-ranking-panel"
@@ -334,6 +324,16 @@
                         </div>
                     </div>
                 @endforeach
+                @if((int) data_get($decisionIdentityCoverage, 'unresolved_accounts', 0) > 0)
+                    <details class="micro-ranking-coverage">
+                        <summary>Cakupan PN pemutus: {{ $formatInteger(data_get($decisionIdentityCoverage, 'covered_accounts', (int) data_get($decisionIdentityCoverage, 'total_accounts', 0) - (int) data_get($decisionIdentityCoverage, 'unresolved_accounts', 0))) }} dari {{ $formatInteger(data_get($decisionIdentityCoverage, 'total_accounts', 0)) }} rekening Mikro</summary>
+                        <p>
+                            Ranking tersedia untuk MBM dengan PN pemutus yang teridentifikasi.
+                            {{ $formatInteger(data_get($decisionIdentityCoverage, 'unresolved_accounts', 0)) }} rekening realisasi Mikro belum memiliki PN pemutus pada posisi ini maupun rekening yang sama pada posisi sebelumnya dalam bulan ini.
+                            Rekening tersebut belum dapat dimasukkan ke kinerja per pemutus; jumlah ini mencakup seluruh Mikro, bukan hanya MBM.
+                        </p>
+                    </details>
+                @endif
             @else
                 <div class="micro-ops-empty micro-ops-empty--compact" role="status">
                     <strong>Data pemutus MBM belum tersedia</strong>

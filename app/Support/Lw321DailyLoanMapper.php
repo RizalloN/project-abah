@@ -236,6 +236,132 @@ final class Lw321DailyLoanMapper
             ." WHEN ({$ageExpression}) <= 180 THEN 'D2' ELSE 'M' END";
     }
 
+    /**
+     * Kolom saldo per kolektibilitas pada LW321, urut dari kualitas terburuk.
+     * Kolom ini identik dengan kolektibilitas Daily Loan Dinamis pada tanggal yang sama.
+     *
+     * @var array<string, string>
+     */
+    public const KOLEK_BALANCE_COLUMNS = [
+        '5' => 'kolektibilitas_macet',
+        '4' => 'kolektibilitas_diragukan',
+        '3' => 'kolektibilitas_kurang_lancar',
+        '2' => 'kolektibilitas_dpk',
+        '1' => 'kolektibilitas_lancar',
+    ];
+
+    /**
+     * @param  array<string, string>  $columnExpressions  kolek => ekspresi kolom saldo yang tersedia
+     */
+    public static function balanceKolekSql(array $columnExpressions): string
+    {
+        $cases = [];
+        foreach (array_keys(self::KOLEK_BALANCE_COLUMNS) as $kolek) {
+            if (isset($columnExpressions[$kolek])) {
+                $cases[] = "WHEN COALESCE({$columnExpressions[$kolek]}, 0) <> 0 THEN '{$kolek}'";
+            }
+        }
+
+        return $cases === [] ? 'NULL' : '(CASE '.implode(' ', $cases).' ELSE NULL END)';
+    }
+
+    /** @param array<string, mixed> $row baris mentah LW321 */
+    public static function kolekFromBalances(array $row): ?string
+    {
+        foreach (self::KOLEK_BALANCE_COLUMNS as $kolek => $column) {
+            $value = $row[$column] ?? null;
+            if (is_numeric($value) && (float) $value != 0.0) {
+                return (string) $kolek;
+            }
+        }
+
+        return null;
+    }
+
+    public static function earliestDueDateSql(string $nextPaymentDateExpression, string $nextInterestPaymentDateExpression): string
+    {
+        return 'CASE'
+            ." WHEN {$nextPaymentDateExpression} IS NOT NULL AND {$nextInterestPaymentDateExpression} IS NOT NULL"
+            ." THEN LEAST({$nextPaymentDateExpression}, {$nextInterestPaymentDateExpression})"
+            ." WHEN {$nextPaymentDateExpression} IS NOT NULL THEN {$nextPaymentDateExpression}"
+            ." WHEN {$nextInterestPaymentDateExpression} IS NOT NULL THEN {$nextInterestPaymentDateExpression}"
+            .' ELSE NULL END';
+    }
+
+    /**
+     * Umur tunggakan versi Daily Loan Dinamis: hari sejak (jatuh tempo terdekat - 1 hari),
+     * dibatasi nol untuk kolektibilitas lancar.
+     */
+    public static function dailyArrearsAgeSql(string $rawAgeExpression, string $kolekExpression): string
+    {
+        return "CASE WHEN ({$rawAgeExpression}) IS NULL THEN NULL"
+            ." WHEN ({$kolekExpression}) = '1' THEN GREATEST(0, ({$rawAgeExpression}) + 1)"
+            ." ELSE ({$rawAgeExpression}) + 1 END";
+    }
+
+    public static function dailyArrearsAge(?int $rawAge, ?string $kolek): ?int
+    {
+        if ($rawAge === null) {
+            return null;
+        }
+
+        return $kolek === '1' ? max(0, $rawAge + 1) : $rawAge + 1;
+    }
+
+    /** Tanggal menunggak versi Daily Loan Dinamis: jatuh tempo - 1 hari, maksimal posisi untuk kredit lancar. */
+    public static function dailyArrearsStartSql(string $periodExpression, string $dueDateExpression, string $kolekExpression): string
+    {
+        return "CASE WHEN ({$dueDateExpression}) IS NULL THEN NULL"
+            ." WHEN ({$kolekExpression}) = '1' THEN LEAST({$periodExpression}, DATE_SUB({$dueDateExpression}, INTERVAL 1 DAY))"
+            ." ELSE DATE_SUB({$dueDateExpression}, INTERVAL 1 DAY) END";
+    }
+
+    public static function dailyArrearsStart(
+        string|DateTimeInterface|null $period,
+        string|DateTimeInterface|null $nextPaymentDate,
+        string|DateTimeInterface|null $nextInterestPaymentDate,
+        ?string $kolek
+    ): ?string {
+        $periodTimestamp = self::dateTimestamp($period);
+        $dueTimestamps = array_values(array_filter([
+            self::dateTimestamp($nextPaymentDate),
+            self::dateTimestamp($nextInterestPaymentDate),
+        ], static fn (?int $timestamp): bool => $timestamp !== null));
+        if ($dueTimestamps === []) {
+            return null;
+        }
+
+        $start = strtotime('-1 day', min($dueTimestamps));
+        if ($kolek === '1' && $periodTimestamp !== null) {
+            $start = min($start, $periodTimestamp);
+        }
+
+        return date('Y-m-d', $start);
+    }
+
+    /** Detail kolektibilitas versi Daily Loan Dinamis (lancar selalu "L"; LR diturunkan laporan dari flag restruk). */
+    public static function dailyKolekDetailSql(string $kolekExpression, string $ageExpression): string
+    {
+        return "CASE ({$kolekExpression})"
+            ." WHEN '1' THEN 'L'"
+            ." WHEN '2' THEN CASE WHEN ({$ageExpression}) <= 30 THEN 'DPK 1' WHEN ({$ageExpression}) <= 60 THEN 'DPK 2' ELSE 'DPK 3' END"
+            ." WHEN '3' THEN 'KL'"
+            ." WHEN '4' THEN CASE WHEN ({$ageExpression}) <= 150 THEN 'D1' ELSE 'D2' END"
+            ." WHEN '5' THEN 'M' ELSE NULL END";
+    }
+
+    public static function dailyKolekDetail(?string $kolek, ?int $age): ?string
+    {
+        return match ($kolek) {
+            '1' => 'L',
+            '2' => ($age ?? 0) <= 30 ? 'DPK 1' : (($age ?? 0) <= 60 ? 'DPK 2' : 'DPK 3'),
+            '3' => 'KL',
+            '4' => ($age ?? 0) <= 150 ? 'D1' : 'D2',
+            '5' => 'M',
+            default => null,
+        };
+    }
+
     private static function classificationSql(string $descriptionExpression, string $field): string
     {
         $tokenSql = self::normalizedTokenSql($descriptionExpression);

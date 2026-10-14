@@ -1586,6 +1586,119 @@ class DashboardPinjamanRecoveryMetricsTest extends TestCase
         $this->assertStringContainsString('row.segmen_dashboard', $view);
     }
 
+    public function test_matrix_drilldown_supports_total_column_across_all_prior_buckets(): void
+    {
+        DB::table('daily_loan_dinamis')->insert([
+            [
+                'periode' => '2026-06-30',
+                'nomor_rekening1' => 'ACC-L',
+                'baki_debet1' => 100,
+                'kolek' => '1',
+                'umur_tunggakan' => 0,
+            ],
+            [
+                'periode' => '2026-06-30',
+                'nomor_rekening1' => 'ACC-LR',
+                'baki_debet1' => 200,
+                'kolek' => '2',
+                'umur_tunggakan' => 0,
+            ],
+            [
+                'periode' => '2026-06-30',
+                'nomor_rekening1' => 'ACC-STAY-L',
+                'baki_debet1' => 300,
+                'kolek' => '1',
+                'umur_tunggakan' => 0,
+            ],
+            [
+                'periode' => '2026-07-10',
+                'nomor_rekening1' => 'ACC-L',
+                'baki_debet1' => 90,
+                'kolek' => '2',
+                'umur_tunggakan' => 45,
+            ],
+            [
+                'periode' => '2026-07-10',
+                'nomor_rekening1' => 'ACC-LR',
+                'baki_debet1' => 190,
+                'kolek' => '2',
+                'umur_tunggakan' => 45,
+            ],
+            [
+                'periode' => '2026-07-10',
+                'nomor_rekening1' => 'ACC-NEW',
+                'baki_debet1' => 400,
+                'kolek' => '2',
+                'umur_tunggakan' => 45,
+            ],
+            [
+                'periode' => '2026-07-10',
+                'nomor_rekening1' => 'ACC-STAY-L',
+                'baki_debet1' => 300,
+                'kolek' => '1',
+                'umur_tunggakan' => 0,
+            ],
+        ]);
+        DB::table('lw325_ph')->insert([
+            'periode' => '2026-07-10',
+            'acctno' => '999000111222333',
+            'pokok' => 0,
+        ]);
+
+        $controller = new DashboardPinjamanReportController();
+        $response = $controller->matrixDetail(Request::create(
+            '/report/dashboard-pinjaman/matrix-pergeseran-kolek/detail',
+            'GET',
+            [
+                'periode' => '2026-07-10',
+                'before_bucket' => 'TOTAL',
+                'after_bucket' => 'DPK 2',
+                'limit' => 25,
+            ]
+        ));
+
+        $this->assertSame(200, $response->getStatusCode());
+        $payload = $response->getData(true);
+        $this->assertSame('TOTAL', $payload['before_bucket']);
+        $this->assertSame('DPK 2', $payload['after_bucket']);
+        $rows = collect($payload['rows'])->keyBy('nomor_rekening1');
+
+        $this->assertCount(3, $rows);
+        $this->assertTrue($rows->has('ACC-L'));
+        $this->assertTrue($rows->has('ACC-LR'));
+        $this->assertTrue($rows->has('ACC-NEW'));
+        $this->assertFalse($rows->has('ACC-STAY-L'));
+
+        $this->assertSame('L', $rows['ACC-L']['pivot_before_bucket']);
+        $this->assertSame('DPK 2', $rows['ACC-L']['pivot_after_bucket']);
+        $this->assertEqualsWithDelta(100.0, (float) $rows['ACC-L']['pivot_previous_balance'], 0.001);
+        $this->assertEqualsWithDelta(90.0, (float) $rows['ACC-L']['baki_debet1'], 0.001);
+
+        $this->assertSame('DPK 1', $rows['ACC-LR']['pivot_before_bucket']);
+        $this->assertSame('DPK 2', $rows['ACC-LR']['pivot_after_bucket']);
+        $this->assertEqualsWithDelta(200.0, (float) $rows['ACC-LR']['pivot_previous_balance'], 0.001);
+        $this->assertEqualsWithDelta(190.0, (float) $rows['ACC-LR']['baki_debet1'], 0.001);
+
+        $this->assertSame('New Account', $rows['ACC-NEW']['pivot_before_bucket']);
+        $this->assertSame('DPK 2', $rows['ACC-NEW']['pivot_after_bucket']);
+        $this->assertEqualsWithDelta(0.0, (float) $rows['ACC-NEW']['pivot_previous_balance'], 0.001);
+        $this->assertEqualsWithDelta(400.0, (float) $rows['ACC-NEW']['baki_debet1'], 0.001);
+
+        $responseAlias = $controller->matrixDetail(Request::create(
+            '/report/dashboard-pinjaman/matrix-pergeseran-kolek/detail',
+            'GET',
+            [
+                'periode' => '2026-07-10',
+                'before_bucket' => 'total',
+                'after_bucket' => 'SML 2',
+                'limit' => 25,
+            ]
+        ));
+        $this->assertSame(200, $responseAlias->getStatusCode());
+        $payloadAlias = $responseAlias->getData(true);
+        $this->assertCount(3, $payloadAlias['rows']);
+    }
+
     private function invokeShouldUseLw325RecoveryMetrics(string $period): bool
     {
         $controller = new DashboardPinjamanReportController();

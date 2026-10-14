@@ -236,6 +236,30 @@ PHP);
         );
     }
 
+    public function test_builder_excludes_non_mvc_files_tests_scripts_and_caches(): void
+    {
+        $this->writeFixture('tests/Feature/ExampleTest.php', '<?php class ExampleTest {}');
+        $this->writeFixture('scripts/processor.py', 'print("data")');
+        $this->writeFixture('scripts/deploy.ps1', 'Write-Host "deploy"');
+        $this->writeFixture('bootstrap/cache/routes-v7.php', '<?php return [];');
+        $this->writeFixture('database/factories/UserFactory.php', '<?php class UserFactory {}');
+        $this->writeFixture('package.json', '{"name": "test"}');
+        $this->writeFixture('phpunit.xml', '<phpunit></phpunit>');
+
+        $result = $this->builder()->build();
+        $nodes = array_column($result['nodes'], null, 'id');
+
+        $this->assertArrayNotHasKey('file:tests/Feature/ExampleTest.php', $nodes);
+        $this->assertArrayNotHasKey('symbol:ExampleTest', $nodes);
+        $this->assertArrayNotHasKey('file:scripts/processor.py', $nodes);
+        $this->assertArrayNotHasKey('file:scripts/deploy.ps1', $nodes);
+        $this->assertArrayNotHasKey('file:bootstrap/cache/routes-v7.php', $nodes);
+        $this->assertArrayNotHasKey('file:database/factories/UserFactory.php', $nodes);
+        $this->assertArrayNotHasKey('symbol:UserFactory', $nodes);
+        $this->assertArrayNotHasKey('file:package.json', $nodes);
+        $this->assertArrayNotHasKey('file:phpunit.xml', $nodes);
+    }
+
     /** @return array<int, array<string, mixed>> */
     private function routes(): array
     {

@@ -4,68 +4,67 @@ This is a compact cross-domain view. Edge labels are static relation counts, not
 
 ```mermaid
 flowchart LR
-    d_d942f64886["import"] -->|811| d_c393a69167["access-control"]
-    d_d942f64886["import"] -->|248| d_0d45f5fd46["core"]
-    d_90026ec21f["dashboard-simpanan"] -->|215| d_c393a69167["access-control"]
-    d_c1933689a3["dashboard-pinjaman"] -->|207| d_c393a69167["access-control"]
-    d_d942f64886["import"] -->|175| d_7c16aa6a77["jobs-snapshots"]
-    d_3549b0028b["database"] -->|173| d_0d45f5fd46["core"]
-    d_59830ebc3a["tests"] -->|128| d_c1933689a3["dashboard-pinjaman"]
-    d_59830ebc3a["tests"] -->|128| d_0d45f5fd46["core"]
-    d_39bcb775e4["bank-pipeline"] -->|117| d_c393a69167["access-control"]
-    d_c1933689a3["dashboard-pinjaman"] -->|106| d_0d45f5fd46["core"]
-    d_3549b0028b["database"] -->|96| d_d942f64886["import"]
-    d_59830ebc3a["tests"] -->|91| d_d942f64886["import"]
-    d_7c16aa6a77["jobs-snapshots"] -->|88| d_c1933689a3["dashboard-pinjaman"]
-    d_d942f64886["import"] -->|83| d_c1933689a3["dashboard-pinjaman"]
-    d_d942f64886["import"] -->|82| d_59830ebc3a["tests"]
-    d_c1933689a3["dashboard-pinjaman"] -->|79| d_7c16aa6a77["jobs-snapshots"]
-    d_7c16aa6a77["jobs-snapshots"] -->|76| d_d942f64886["import"]
-    d_7c16aa6a77["jobs-snapshots"] -->|69| d_0d45f5fd46["core"]
+    d_d942f64886["import"] -->|818| d_c393a69167["access-control"]
+    d_90026ec21f["dashboard-simpanan"] -->|212| d_c393a69167["access-control"]
+    d_c1933689a3["dashboard-pinjaman"] -->|189| d_c393a69167["access-control"]
+    d_3549b0028b["database"] -->|169| d_0d45f5fd46["core"]
+    d_d942f64886["import"] -->|167| d_0d45f5fd46["core"]
+    d_39bcb775e4["bank-pipeline"] -->|114| d_c393a69167["access-control"]
+    d_d942f64886["import"] -->|100| d_7c16aa6a77["jobs-snapshots"]
+    d_3549b0028b["database"] -->|92| d_d942f64886["import"]
     d_0d45f5fd46["core"] -->|67| d_c393a69167["access-control"]
-    d_c1933689a3["dashboard-pinjaman"] -->|63| d_59830ebc3a["tests"]
+    d_c1933689a3["dashboard-pinjaman"] -->|62| d_0d45f5fd46["core"]
     d_3549b0028b["database"] -->|58| d_c1933689a3["dashboard-pinjaman"]
-    d_a0a49fdd98["dashboard-harian"] -->|56| d_c393a69167["access-control"]
-    d_90026ec21f["dashboard-simpanan"] -->|54| d_c1933689a3["dashboard-pinjaman"]
-    d_0d45f5fd46["core"] -->|53| d_c1933689a3["dashboard-pinjaman"]
-    d_59830ebc3a["tests"] -->|50| d_7c16aa6a77["jobs-snapshots"]
-    d_90026ec21f["dashboard-simpanan"] -->|48| d_0d45f5fd46["core"]
-    d_7c16aa6a77["jobs-snapshots"] -->|48| d_59830ebc3a["tests"]
-    d_0d45f5fd46["core"] -->|47| d_7c16aa6a77["jobs-snapshots"]
+    d_a0a49fdd98["dashboard-harian"] -->|54| d_c393a69167["access-control"]
+    d_7c16aa6a77["jobs-snapshots"] -->|52| d_0d45f5fd46["core"]
+    d_0d45f5fd46["core"] -->|50| d_c1933689a3["dashboard-pinjaman"]
     d_0d45f5fd46["core"] -->|46| d_d942f64886["import"]
-    d_d942f64886["import"] -->|45| d_90026ec21f["dashboard-simpanan"]
-    d_0d45f5fd46["core"] -->|44| d_d294fcce0c["platform"]
-    d_7c16aa6a77["jobs-snapshots"] -->|43| d_90026ec21f["dashboard-simpanan"]
-    d_d942f64886["import"] -->|43| d_a0a49fdd98["dashboard-harian"]
-    d_a0a49fdd98["dashboard-harian"] -->|41| d_c1933689a3["dashboard-pinjaman"]
-    d_3549b0028b["database"] -->|36| d_7c16aa6a77["jobs-snapshots"]
+    d_0d45f5fd46["core"] -->|43| d_d294fcce0c["platform"]
+    d_0d45f5fd46["core"] -->|43| d_7c16aa6a77["jobs-snapshots"]
+    d_7c16aa6a77["jobs-snapshots"] -->|40| d_c1933689a3["dashboard-pinjaman"]
+    d_90026ec21f["dashboard-simpanan"] -->|40| d_0d45f5fd46["core"]
+    d_90026ec21f["dashboard-simpanan"] -->|40| d_c1933689a3["dashboard-pinjaman"]
+    d_7c16aa6a77["jobs-snapshots"] -->|39| d_d942f64886["import"]
     d_b70a9d941d["input-management"] -->|36| d_c393a69167["access-control"]
-    d_c1933689a3["dashboard-pinjaman"] -->|35| d_d294fcce0c["platform"]
-    d_90026ec21f["dashboard-simpanan"] -->|35| d_d942f64886["import"]
-    d_a0a49fdd98["dashboard-harian"] -->|35| d_0d45f5fd46["core"]
-    d_b89824cc5a["almafacts"] -->|34| d_c393a69167["access-control"]
+    d_3549b0028b["database"] -->|35| d_7c16aa6a77["jobs-snapshots"]
+    d_c1933689a3["dashboard-pinjaman"] -->|34| d_7c16aa6a77["jobs-snapshots"]
+    d_3549b0028b["database"] -->|33| d_90026ec21f["dashboard-simpanan"]
+    d_0d45f5fd46["core"] -->|30| d_39bcb775e4["bank-pipeline"]
+    d_c1933689a3["dashboard-pinjaman"] -->|28| d_d294fcce0c["platform"]
+    d_7c16aa6a77["jobs-snapshots"] -->|28| d_90026ec21f["dashboard-simpanan"]
+    d_3549b0028b["database"] -->|27| d_c393a69167["access-control"]
+    d_b89824cc5a["almafacts"] -->|27| d_c393a69167["access-control"]
+    d_90026ec21f["dashboard-simpanan"] -->|24| d_7c16aa6a77["jobs-snapshots"]
+    d_c393a69167["access-control"] -->|24| d_0d45f5fd46["core"]
+    d_d942f64886["import"] -->|23| d_a0a49fdd98["dashboard-harian"]
+    d_90026ec21f["dashboard-simpanan"] -->|20| d_d942f64886["import"]
+    d_7c16aa6a77["jobs-snapshots"] -->|19| d_a0a49fdd98["dashboard-harian"]
+    d_d942f64886["import"] -->|19| d_d294fcce0c["platform"]
+    d_d294fcce0c["platform"] -->|18| d_0d45f5fd46["core"]
+    d_90026ec21f["dashboard-simpanan"] -->|17| d_d294fcce0c["platform"]
+    d_a0a49fdd98["dashboard-harian"] -->|16| d_d942f64886["import"]
+    d_3549b0028b["database"] -->|15| d_a0a49fdd98["dashboard-harian"]
 ```
 
 ## Domain Index
 
 | Domain | Nodes | Detail |
 | --- | ---: | --- |
-| import | 2989 | [open](domains/import.md) |
-| core | 1402 | [open](domains/core.md) |
-| dashboard-pinjaman | 1361 | [open](domains/dashboard-pinjaman.md) |
-| jobs-snapshots | 940 | [open](domains/jobs-snapshots.md) |
-| database | 813 | [open](domains/database.md) |
-| dashboard-simpanan | 786 | [open](domains/dashboard-simpanan.md) |
-| dashboard-harian | 518 | [open](domains/dashboard-harian.md) |
-| tests | 509 | [open](domains/tests.md) |
-| bank-pipeline | 412 | [open](domains/bank-pipeline.md) |
-| presentation | 287 | [open](domains/presentation.md) |
-| access-control | 214 | [open](domains/access-control.md) |
-| prognosa | 199 | [open](domains/prognosa.md) |
-| marketshare | 141 | [open](domains/marketshare.md) |
-| almafacts | 139 | [open](domains/almafacts.md) |
-| knowledge-graph | 117 | [open](domains/knowledge-graph.md) |
-| platform | 100 | [open](domains/platform.md) |
-| kpi | 60 | [open](domains/kpi.md) |
-| input-management | 58 | [open](domains/input-management.md) |
+| import | 2284 | [open](domains/import.md) |
+| core | 1310 | [open](domains/core.md) |
+| dashboard-pinjaman | 948 | [open](domains/dashboard-pinjaman.md) |
+| database | 751 | [open](domains/database.md) |
+| jobs-snapshots | 682 | [open](domains/jobs-snapshots.md) |
+| dashboard-simpanan | 634 | [open](domains/dashboard-simpanan.md) |
+| dashboard-harian | 363 | [open](domains/dashboard-harian.md) |
+| bank-pipeline | 362 | [open](domains/bank-pipeline.md) |
+| presentation | 246 | [open](domains/presentation.md) |
+| access-control | 174 | [open](domains/access-control.md) |
+| prognosa | 143 | [open](domains/prognosa.md) |
+| knowledge-graph | 106 | [open](domains/knowledge-graph.md) |
+| almafacts | 104 | [open](domains/almafacts.md) |
+| platform | 94 | [open](domains/platform.md) |
+| marketshare | 94 | [open](domains/marketshare.md) |
+| input-management | 51 | [open](domains/input-management.md) |
+| kpi | 42 | [open](domains/kpi.md) |
 | routing | 2 | [open](domains/routing.md) |

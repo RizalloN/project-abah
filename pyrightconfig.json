@@ -1,0 +1,18 @@
+{
+  "include": ["scripts"],
+  "exclude": [
+    "**/__pycache__",
+    "**/.*",
+    "vendor",
+    "node_modules",
+    "storage",
+    "public",
+    "bootstrap/cache",
+    "database",
+    "resources",
+    "tests",
+    "docs"
+  ],
+  "useLibraryCodeForTypes": false,
+  "typeCheckingMode": "basic"
+}

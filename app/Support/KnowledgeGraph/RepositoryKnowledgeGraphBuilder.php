@@ -3,6 +3,7 @@
 namespace App\Support\KnowledgeGraph;
 
 use FilesystemIterator;
+use RecursiveCallbackFilterIterator;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 use RuntimeException;
@@ -15,17 +16,27 @@ final class RepositoryKnowledgeGraphBuilder
     /** @var array<int, string> */
     private const SOURCE_DIRECTORIES = [
         'app', 'bootstrap', 'config', 'database', 'resources/views', 'routes',
-        'scripts', 'tests', 'tools',
     ];
 
     /** @var array<int, string> */
-    private const ROOT_FILES = [
-        'AGENTS.md', 'PROJECT_MAP.md', 'composer.json', 'package.json', 'phpunit.xml', 'vite.config.js',
-    ];
+    private const ROOT_FILES = [];
 
     /** @var array<int, string> */
     private const EXTENSIONS = [
-        'php', 'blade.php', 'js', 'mjs', 'json', 'md', 'ps1', 'py', 'sql', 'xml',
+        'php', 'blade.php', 'sql',
+    ];
+
+    /** @var array<int, string> */
+    private const EXCLUDED_PATHS = [
+        'bootstrap/cache',
+        'database/factories',
+        'docs/knowledge-graph',
+        'tests',
+        'scripts',
+        'tools',
+        'storage',
+        'vendor',
+        'node_modules',
     ];
 
     /** @var array<string, array<int, string>> */
@@ -45,7 +56,6 @@ final class RepositoryKnowledgeGraphBuilder
         'presentation' => ['presentation', 'ppt', 'powerpoint'],
         'input-management' => ['bod-boc', 'businesscluster', 'business-cluster', 'app/http/controllers/input', 'bodboc', 'rekanan', 'inputrekanan'],
         'database' => ['database/migrations', 'database/seeders', 'schema', 'backup'],
-        'tests' => ['tests/', 'test.php'],
         'routing' => ['routes/', 'route:'],
         'platform' => ['bootstrap/', 'config/', 'provider', 'middleware', 'cache', 'maintenance', 'layout'],
     ];
@@ -221,9 +231,17 @@ final class RepositoryKnowledgeGraphBuilder
                 continue;
             }
 
-            $iterator = new RecursiveIteratorIterator(
-                new RecursiveDirectoryIterator($absolute, FilesystemIterator::SKIP_DOTS)
+            $directoryIterator = new RecursiveDirectoryIterator($absolute, FilesystemIterator::SKIP_DOTS);
+            $filterIterator = new RecursiveCallbackFilterIterator(
+                $directoryIterator,
+                function (SplFileInfo $current): bool {
+                    $relative = $this->relativePath($current->getPathname());
+
+                    return ! $this->isExcludedPath($relative);
+                }
             );
+            $iterator = new RecursiveIteratorIterator($filterIterator);
+
             /** @var SplFileInfo $file */
             foreach ($iterator as $file) {
                 if (! $file->isFile()) {
@@ -248,10 +266,27 @@ final class RepositoryKnowledgeGraphBuilder
         return $files;
     }
 
-    private function isIncludedSource(string $relativePath): bool
+    private function isExcludedPath(string $relativePath): bool
     {
         $normalized = strtolower(str_replace('\\', '/', $relativePath));
-        if (str_starts_with($normalized, 'docs/knowledge-graph/')) {
+        foreach (self::EXCLUDED_PATHS as $excluded) {
+            $prefix = strtolower($excluded).'/';
+            if (str_starts_with($normalized, $prefix) || $normalized === strtolower($excluded)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function isIncludedSource(string $relativePath): bool
+    {
+        if ($this->isExcludedPath($relativePath)) {
+            return false;
+        }
+
+        $normalized = strtolower(str_replace('\\', '/', $relativePath));
+        if (str_ends_with($normalized, '.tmp') || str_ends_with($normalized, '.bak')) {
             return false;
         }
 

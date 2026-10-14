@@ -25,10 +25,10 @@ If stale, rebuild with `php artisan knowledge:graph --build`.
 
 | Metric | Count |
 | --- | ---: |
-| Source files | 958 |
-| Graph nodes | 11,066 |
-| Graph edges | 43,328 |
-| Domains | 19 |
+| Source files | 663 |
+| Graph nodes | 8,408 |
+| Graph edges | 33,401 |
+| Domains | 18 |
 
 ## Read The Right Artifact
 
@@ -45,26 +45,26 @@ If stale, rebuild with `php artisan knowledge:graph --build`.
 
 | Node | Kind | Domain | Degree |
 | --- | --- | --- | ---: |
-| `ImportExcelController` | class | import | 403 |
-| `DashboardSimpananController` | class | dashboard-simpanan | 369 |
-| `daily_loan_dinamis` | table | dashboard-pinjaman | 348 |
-| `DashboardHarianSnapshotService` | class | dashboard-harian | 273 |
-| `TestCase` | class | tests | 216 |
-| `DashboardPinjamanReportController` | class | dashboard-pinjaman | 196 |
-| `nama_report` | table | core | 192 |
-| `import_jobs` | table | import | 168 |
-| `ImportIndexController` | class | import | 162 |
-| `ImportFileController` | class | import | 154 |
-| `KinerjaRmReportController` | class | dashboard-pinjaman | 148 |
-| `ReportSnapshotBuilder` | class | jobs-snapshots | 148 |
-| `lw325_ph` | table | dashboard-pinjaman | 122 |
-| `setUp` | method | tests | 108 |
+| `ImportExcelController` | class | import | 384 |
+| `DashboardSimpananController` | class | dashboard-simpanan | 343 |
+| `DashboardHarianSnapshotService` | class | dashboard-harian | 207 |
+| `DashboardPinjamanReportController` | class | dashboard-pinjaman | 161 |
+| `ImportIndexController` | class | import | 158 |
+| `nama_report` | table | core | 145 |
+| `ReportSnapshotBuilder` | class | jobs-snapshots | 128 |
+| `ImportFileController` | class | import | 125 |
+| `import_jobs` | table | import | 113 |
+| `KinerjaRmReportController` | class | dashboard-pinjaman | 104 |
 | `ImportProgressService` | class | import | 102 |
-| `jobs` | table | jobs-snapshots | 102 |
-| `AlmafactsDashboardController` | class | almafacts | 101 |
-| `KinerjaRmMikroReportController` | class | dashboard-pinjaman | 101 |
-| `ImportPerformancePisPerProdukController` | class | import | 95 |
+| `daily_loan_dinamis` | table | dashboard-pinjaman | 99 |
 | `ImportReportPhController` | class | import | 95 |
+| `AlmafactsDashboardController` | class | almafacts | 89 |
+| `KinerjaRmMikroReportController` | class | dashboard-pinjaman | 86 |
+| `LandingMicroPerformanceService` | class | core | 84 |
+| `ImportPerformancePisPerProdukController` | class | import | 83 |
+| `DriveAsixFile` | class | bank-pipeline | 80 |
+| `NativeOpenXmlPowerPointRenderer` | class | presentation | 71 |
+| `ReportDataSyncService` | class | core | 71 |
 
 ## Edge Semantics
 

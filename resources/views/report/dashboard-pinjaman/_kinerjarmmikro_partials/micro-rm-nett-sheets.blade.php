@@ -2,6 +2,46 @@
     $rmTiers = (array) data_get($rmKurProductivity, 'distribution.tiers', []);
     $rmSections = (array) data_get($rmKurProductivity, 'sections', []);
     $rmDistributionReady = count($rmSections) > 0 && count($rmTiers) > 0;
+    $rmPeople = collect(data_get($rmKurProductivity, 'rows', []));
+    $rmOfficeKey = static fn ($value): string => strtoupper(trim((string) $value));
+    $nettDrill = (object) ['people' => [], 'keys' => [], 'lists' => []];
+    $nettDrillColumns = [
+        ['key' => 'pn', 'label' => 'PN'],
+        ['key' => 'nama', 'label' => 'Nama RM KUR Kecil Mikro'],
+        ['key' => 'cabang', 'label' => 'Branch Office'],
+        ['key' => 'unit', 'label' => 'Unit Kerja'],
+        ['key' => 'kategori', 'label' => 'Kategori Nett'],
+        ['key' => 'rekening', 'label' => 'Rekening', 'align' => 'right', 'format' => 'integer'],
+        ['key' => 'nett', 'label' => 'Nett MTD (Rp Juta)', 'align' => 'right', 'format' => 'juta'],
+    ];
+    // Registers one RM list for the drilldown modal and returns the cell attributes that point to it.
+    $nettDrillAttr = function (iterable $people, string $title, string $scope, bool $ascending = false) use ($nettDrill, $rmTiers): string {
+        $ids = collect($people)
+            ->map(fn ($person) => [
+                'pn' => (string) data_get($person, 'pn', '-'),
+                'nama' => (string) data_get($person, 'nama', '-'),
+                'cabang' => (string) data_get($person, 'cabang', '-'),
+                'unit' => (string) data_get($person, 'unit', '-'),
+                'kategori' => (string) data_get($rmTiers, data_get($person, 'tier').'.label', '-'),
+                'rekening' => (int) data_get($person, 'realisasi_deb', 0),
+                'nett' => round((float) data_get($person, 'realisasi_os', 0)),
+            ])
+            ->sortBy([['nett', $ascending ? 'asc' : 'desc'], ['nama', 'asc']])
+            ->map(function (array $row) use ($nettDrill): int {
+                $key = json_encode($row);
+                if (! isset($nettDrill->keys[$key])) {
+                    $nettDrill->keys[$key] = count($nettDrill->people);
+                    $nettDrill->people[] = $row;
+                }
+
+                return $nettDrill->keys[$key];
+            })
+            ->values()
+            ->all();
+        $nettDrill->lists[] = ['title' => $title, 'scope' => $scope, 'ids' => $ids];
+
+        return 'data-nett-drill="'.(count($nettDrill->lists) - 1).'" tabindex="0" title="Klik 2x untuk melihat daftar RM"';
+    };
 @endphp
 <article class="micro-rm-kur-productivity micro-nett-sheets micro-nett-rm" data-micro-rm-kur-productivity aria-labelledby="micro-rm-kur-title">
     <h4 id="micro-rm-kur-title" class="micro-nett-visually-hidden">Persebaran dan rincian RM KUR Kecil Mikro</h4>
@@ -46,6 +86,12 @@
                     <tbody>
                         @foreach(['kc' => 'KC', 'kcp' => 'KCP'] as $type => $label)
                             @foreach(data_get($rmSections, $type.'.rows', []) as $group)
+                                @php
+                                    $nettDrillPeople = $rmPeople->filter(fn ($person) => ($person['office_type'] ?? 'kc') === $type
+                                        && $rmOfficeKey($person['cabang'] ?? '') === $rmOfficeKey($group['cabang'] ?? '')
+                                        && ($type === 'kc' || $rmOfficeKey($person['unit'] ?? '') === $rmOfficeKey($group['unit'] ?? '')));
+                                    $nettDrillScope = $type === 'kcp' ? $group['cabang'].' • '.$group['unit'] : $group['cabang'];
+                                @endphp
                                 <tr data-office-type="{{ $type }}">
                                     <td class="col-freeze-1">{{ $loop->iteration }}</td>
                                     <th scope="row" class="col-freeze-2">{{ $group['cabang'] }}</th>
@@ -53,10 +99,10 @@
                                     @include('report.dashboard-pinjaman._kinerjarmmikro_partials.micro-rm-nett-values', ['rmMetrics' => $group])
                                 </tr>
                             @endforeach
-                            <tr class="micro-nett-subtotal" data-subtotal="{{ $type }}"><th colspan="3" scope="row" class="col-freeze-total col-freeze-last">Total {{ $label }}</th>@include('report.dashboard-pinjaman._kinerjarmmikro_partials.micro-rm-nett-values', ['rmMetrics' => data_get($rmSections, $type.'.total', [])])</tr>
+                            <tr class="micro-nett-subtotal" data-subtotal="{{ $type }}"><th colspan="3" scope="row" class="col-freeze-total col-freeze-last">Total {{ $label }}</th>@include('report.dashboard-pinjaman._kinerjarmmikro_partials.micro-rm-nett-values', ['rmMetrics' => data_get($rmSections, $type.'.total', []), 'nettDrillPeople' => $rmPeople->where('office_type', $type), 'nettDrillScope' => 'Total '.$label])</tr>
                         @endforeach
                     </tbody>
-                    <tfoot><tr><th colspan="3" scope="row" class="col-freeze-total col-freeze-last">Total RM {{ data_get($rmKurProductivity, 'scope_label', 'Area 6') }}</th>@include('report.dashboard-pinjaman._kinerjarmmikro_partials.micro-rm-nett-values', ['rmMetrics' => data_get($rmKurProductivity, 'assigned_total', [])])</tr></tfoot>
+                    <tfoot><tr><th colspan="3" scope="row" class="col-freeze-total col-freeze-last">Total RM {{ data_get($rmKurProductivity, 'scope_label', 'Area 6') }}</th>@include('report.dashboard-pinjaman._kinerjarmmikro_partials.micro-rm-nett-values', ['rmMetrics' => data_get($rmKurProductivity, 'assigned_total', []), 'nettDrillPeople' => $rmPeople, 'nettDrillScope' => 'Total RM '.data_get($rmKurProductivity, 'scope_label', 'Area 6')])</tr></tfoot>
                 </table>
             </div>
         @else
@@ -104,5 +150,8 @@
     @endif
     @if(count(data_get($rmKurProductivity, 'reference_sources', [])))
         <details class="micro-nett-nominative"><summary>Referensi nama dan penempatan RM</summary><ul>@foreach($rmKurProductivity['reference_sources'] as $source)<li>{{ $source['branch'] }} — posisi {{ $source['position_date'] }} · {{ $source['file'] }}</li>@endforeach</ul></details>
+    @endif
+    @if($rmDistributionReady)
+        @include('report.dashboard-pinjaman._kinerjarmmikro_partials.micro-nett-drilldown')
     @endif
 </article>

@@ -6,69 +6,67 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Kind | Count |
 | --- | ---: |
-| command | 25 |
-| file | 127 |
-| function | 1 |
-| method | 706 |
-| unresolved_symbol | 391 |
-| route | 16 |
-| class | 68 |
-| table | 23 |
-| view | 45 |
+| command | 15 |
+| file | 107 |
+| method | 703 |
+| unresolved_symbol | 344 |
+| route | 15 |
+| class | 67 |
+| table | 15 |
+| view | 44 |
 
 ## Main Hubs
 
 | Node | Kind | Degree | Source |
 | --- | --- | ---: | --- |
-| `nama_report` | table | 192 | - |
-| `ReportDataSyncService` | class | 87 | `app/Support/ReportDataSyncService.php:19` |
-| `LandingMicroPerformanceService` | class | 83 | `app/Support/LandingMicroPerformanceService.php:16` |
-| `normalize` | method | 77 | `app/Support/StrictDateParser.php:29` |
-| `LandingSmeOperationalService` | class | 76 | `app/Support/LandingSmeOperationalService.php:16` |
-| `rka` | table | 73 | - |
-| `ManagedReportManagementService` | class | 71 | `app/Support/ManagedReportManagementService.php:11` |
+| `nama_report` | table | 145 | - |
+| `LandingMicroPerformanceService` | class | 84 | `app/Support/LandingMicroPerformanceService.php:16` |
+| `ReportDataSyncService` | class | 71 | `app/Support/ReportDataSyncService.php:19` |
+| `normalize` | method | 71 | `app/Support/StrictDateParser.php:29` |
+| `LandingSmeOperationalService` | class | 64 | `app/Support/LandingSmeOperationalService.php:16` |
 | `Controller` | class | 53 | `app/Http/Controllers/Controller.php:7` |
-| `RkaLookupService` | class | 46 | `app/Support/RkaLookupService.php:11` |
-| `apply` | method | 42 | `app/Support/SargableDateFilter.php:9` |
-| `DataPhReportController` | class | 40 | `app/Http/Controllers/Report/DataPhReportController.php:15` |
-| `LandingConsumerOperationalService` | class | 40 | `app/Support/LandingConsumerOperationalService.php:15` |
-| `KinerjaNonPtpReportController` | class | 39 | `app/Http/Controllers/Report/KinerjaNonPtpReportController.php:17` |
-| `FileManagementController` | class | 33 | `app/Http/Controllers/Admin/FileManagementController.php:24` |
-| `lw321pn` | table | 33 | - |
+| `ManagedReportManagementService` | class | 51 | `app/Support/ManagedReportManagementService.php:11` |
+| `apply` | method | 41 | `app/Support/SargableDateFilter.php:9` |
+| `LandingConsumerOperationalService` | class | 39 | `app/Support/LandingConsumerOperationalService.php:15` |
+| `DataPhReportController` | class | 37 | `app/Http/Controllers/Report/DataPhReportController.php:15` |
+| `KinerjaNonPtpReportController` | class | 36 | `app/Http/Controllers/Report/KinerjaNonPtpReportController.php:17` |
+| `RkaLookupService` | class | 33 | `app/Support/RkaLookupService.php:11` |
+| `rka` | table | 32 | - |
 | `syncImportedTable` | method | 31 | `app/Support/ReportDataSyncService.php:135` |
-| `dly_kap_resegmentasi` | table | 27 | - |
-| `LinkManagementController` | class | 26 | `app/Http/Controllers/Admin/LinkManagementController.php:17` |
+| `FileManagementController` | class | 29 | `app/Http/Controllers/Admin/FileManagementController.php:24` |
 | `index` | method | 26 | `app/Http/Controllers/Report/DataPhReportController.php:23` |
-| `referensi_uker` | table | 25 | - |
 | `analyzeTable` | method | 24 | `app/Support/ReportDataSyncService.php:21` |
-| `performance_targets` | table | 24 | - |
+| `MicroNettDisbursementCalculator` | class | 23 | `app/Support/MicroNettDisbursementCalculator.php:13` |
+| `buildPayload` | method | 23 | `app/Support/LandingMicroPerformanceService.php:517` |
 | `drive.index` | view | 23 | `resources/views/drive/index.blade.php:1` |
-| `performance_pis_per_produk` | table | 23 | - |
 | `ShadowColumnRuleEngine` | class | 22 | `app/Services/Shadow/ShadowColumnRuleEngine.php:8` |
 | `SppgReportService` | class | 21 | `app/Services/Reports/SppgReportService.php:15` |
-| `buildPayload` | method | 21 | `app/Support/LandingMicroPerformanceService.php:532` |
 | `index` | method | 21 | `app/Http/Controllers/Report/KinerjaNonPtpReportController.php:52` |
-| `fetchPlafondRealizationRows` | method | 20 | `app/Support/LandingMicroPerformanceService.php:1327` |
+| `LinkManagementController` | class | 20 | `app/Http/Controllers/Admin/LinkManagementController.php:17` |
+| `fetchPlafondRealizationRows` | method | 20 | `app/Support/LandingMicroPerformanceService.php:1317` |
 | `quadrantPayload` | method | 20 | `app/Support/LandingConsumerOperationalService.php:629` |
+| `PruneReportDailyHistoryCommand` | class | 19 | `app/Console/Commands/PruneReportDailyHistoryCommand.php:19` |
+| `branchLabel` | method | 18 | `app/Support/LandingMicroPerformanceService.php:3494` |
+| `buildMantriPerformance` | method | 17 | `app/Support/LandingMicroPerformanceService.php:2248` |
+| `handle` | method | 17 | `app/Console/Commands/PruneReportDailyHistoryCommand.php:58` |
 
 ## Route Nodes
 
 - `file-management.destroy` - `file-management/delete`
 - `file-management.download` - `file-management/download`
 - `file-management.index` - `file-management`
+- `generated::SdvcnUDqWZA1cuy6` - `up`
 - `home` - `/`
 - `link-management.index` - `link-management`
 - `link-management.update` - `link-management`
 - `report.data` - `report/data`
 - `report.edc` - `report/optimalisasi-digital/edc`
-- `report.index`
 - `report.kolaborasi.referral` - `report/kolaborasi-perusahaan-anak/program-referral-partner-perusahaan-anak`
 - `report.qlola` - `report/optimalisasi-digital/qlola`
 - `report.qris` - `report/optimalisasi-digital/qris`
 - `report.qris.ukers` - `report/data/qris/ukers`
 - `sheet`
 - `token`
-- `up` - `up`
 
 ## Class Nodes
 
@@ -108,7 +106,6 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `MicroNettDisbursementCalculator` - `app/Support/MicroNettDisbursementCalculator.php`
 - `MicroRmRosterReference` - `app/Support/MicroRmRosterReference.php`
 - `NamaReport` - `app/Models/NamaReport.php`
-- `OptimizationValidator` - `scripts/validate_optimization_impact.php`
 - `OptimizedBulkDeleteService` - `app/Support/OptimizedBulkDeleteService.php`
 - `OptimizedDuplicateCleanupService` - `app/Support/OptimizedDuplicateCleanupService.php`
 - `OptimizedRkaLookupService` - `app/Support/OptimizedRkaLookupService.php`
@@ -151,23 +148,13 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `database:restore-part` - `app/Console/Commands/RestoreDatabasePartCommand.php`
 - `db:recover-safe-dump` - `app/Console/Commands/RecoverSafeDumpCommand.php`
 - `doc:markdown` - `app/Console/Commands/ConvertDocumentToMarkdownCommand.php`
-- `key:generate`
-- `migrate`
-- `migrate:`
-- `optimize`
-- `optimize:clear`
-- `package:discover`
 - `reports:prune-daily-history` - `app/Console/Commands/PruneReportDailyHistoryCommand.php`
 - `rka:sync-breakdown` - `app/Console/Commands/SyncRkaBreakdownCommand.php`
-- `schedule:work`
 - `scheduler:heartbeat` - `app/Console/Commands/SchedulerHeartbeatCommand.php`
-- `serve`
 - `shadow:status` - `app/Console/Commands/ShadowStatusCommand.php`
 - `shadow:validate` - `app/Console/Commands/ValidateShadowColumnsCommand.php`
 - `shadow:validate-consistency` - `app/Console/Commands/ShadowValidateConsistencyCommand.php`
-- `test`
 - `tinker`
-- `vendor:publish`
 
 ## View Nodes
 
@@ -207,7 +194,6 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `input.partials.styles` - `resources/views/input/partials/styles.blade.php`
 - `report._bri-report-ui` - `resources/views/report/_bri-report-ui.blade.php`
 - `report.data-ph` - `resources/views/report/data-ph.blade.php`
-- `report.index`
 - `report.partials.floating-scrollbar` - `resources/views/report/partials/floating-scrollbar.blade.php`
 - `report.partials.sticky-table-viewport-script` - `resources/views/report/partials/sticky-table-viewport-script.blade.php`
 - `report.partials.sticky-table-viewport-style` - `resources/views/report/partials/sticky-table-viewport-style.blade.php`
@@ -219,15 +205,10 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 ## Table Nodes
 
-- `bulk_load_column_listing_test`
-- `bulk_load_php_fallback_test`
 - `current_timestamp`
-- `dated_rows`
 - `dly_kap_resegmentasi`
 - `external_report_links`
 - `l1133`
-- `large_report_fixture`
-- `last_page_report_fixture`
 - `lw321_npd`
 - `lw321_npdd`
 - `lw321pn`
@@ -235,45 +216,42 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `nama_report`
 - `performance_pis_per_produk`
 - `performance_targets`
-- `period_scope_resolution`
 - `referensi_uker`
 - `report_sync_audits`
 - `rka`
-- `tanggal_scope_resolution`
-- `uker_scope_resolution`
 - `wilayah_mbm`
 
 ## Cross-Domain Links
 
 | Direction | Count |
 | --- | ---: |
-| import -> core (calls) | 835 |
-| import -> core (instantiates) | 418 |
-| dashboard-pinjaman -> core (calls) | 332 |
-| dashboard-simpanan -> core (calls) | 225 |
-| jobs-snapshots -> core (calls) | 193 |
+| import -> core (calls) | 562 |
+| import -> core (instantiates) | 271 |
+| dashboard-pinjaman -> core (calls) | 250 |
+| dashboard-simpanan -> core (calls) | 199 |
 | import -> core (accepts) | 189 |
-| bank-pipeline -> core (calls) | 170 |
-| dashboard-pinjaman -> core (instantiates) | 120 |
-| tests -> core (instantiates) | 113 |
-| tests -> core (calls) | 112 |
-| prognosa -> core (calls) | 110 |
-| database -> core (instantiates) | 93 |
+| bank-pipeline -> core (calls) | 169 |
+| jobs-snapshots -> core (calls) | 102 |
 | dashboard-pinjaman -> core (accepts) | 93 |
-| dashboard-harian -> core (calls) | 89 |
-| dashboard-harian -> core (instantiates) | 71 |
-| almafacts -> core (calls) | 69 |
-| database -> core (calls) | 68 |
-| jobs-snapshots -> core (instantiates) | 66 |
-| bank-pipeline -> core (instantiates) | 64 |
+| dashboard-harian -> core (calls) | 79 |
+| database -> core (instantiates) | 73 |
 | bank-pipeline -> core (accepts) | 64 |
 | database -> core (checks_table) | 62 |
-| presentation -> core (calls) | 62 |
-| dashboard-simpanan -> core (instantiates) | 61 |
+| prognosa -> core (calls) | 61 |
 | database -> core (writes_table) | 60 |
-| access-control -> core (calls) | 60 |
+| presentation -> core (calls) | 60 |
 | dashboard-simpanan -> core (accepts) | 59 |
 | core -> access-control (protected_by) | 58 |
-| prognosa -> core (instantiates) | 37 |
-| tests -> core (writes_table) | 34 |
-| dashboard-pinjaman -> core (writes_table) | 33 |
+| access-control -> core (calls) | 57 |
+| dashboard-pinjaman -> core (instantiates) | 44 |
+| bank-pipeline -> core (instantiates) | 39 |
+| jobs-snapshots -> core (uses_trait) | 33 |
+| almafacts -> core (calls) | 31 |
+| database -> core (calls) | 30 |
+| platform -> core (calls) | 28 |
+| prognosa -> core (accepts) | 28 |
+| core -> bank-pipeline (references_route) | 28 |
+| access-control -> core (accepts) | 27 |
+| input-management -> core (calls) | 25 |
+| prognosa -> core (instantiates) | 25 |
+| presentation -> core (accepts) | 24 |

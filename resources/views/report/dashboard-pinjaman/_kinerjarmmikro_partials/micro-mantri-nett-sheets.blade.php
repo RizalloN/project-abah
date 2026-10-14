@@ -5,6 +5,48 @@
         $hasUnknownStatus = data_get($mantriPerformance, 'total.headcount.unknown', 0) > 0;
         $hasBoCode = collect(data_get($mantriPerformance, 'sheet_rows.bo', data_get($mantriPerformance, 'rows', [])))
             ->contains(fn ($row) => !in_array(data_get($row, 'branch_code'), [null, '', '-'], true));
+        $nettDrill = (object) ['people' => [], 'keys' => [], 'lists' => []];
+        $nettDrillColumns = [
+            ['key' => 'pn', 'label' => 'PN'],
+            ['key' => 'nama', 'label' => 'Nama Mantri'],
+            ['key' => 'cabang', 'label' => 'Branch Office'],
+            ['key' => 'unit', 'label' => 'Unit Kerja'],
+            ['key' => 'mbm', 'label' => 'MBM'],
+            ['key' => 'status', 'label' => 'Status'],
+            ['key' => 'kategori', 'label' => 'Kategori Nett'],
+            ['key' => 'nett', 'label' => 'Nett MTD (Rp Juta)', 'align' => 'right', 'format' => 'juta'],
+        ];
+        $mantriStatusLabels = ['pt' => 'PT', 'contract' => 'Kontrak', 'briguna' => 'Briguna', 'unknown' => 'Belum terpetakan'];
+        $mantriTierLabels = ['none' => 'Belum Realisasi', 'extreme_low' => 'Extreme Low', 'low' => 'Low', 'mid' => 'Mid', 'high' => 'High'];
+        // Registers one person list for the drilldown modal and returns the cell attributes that point to it.
+        $nettDrillAttr = function (iterable $people, string $title, string $scope, bool $ascending = false) use ($nettDrill, $mantriStatusLabels, $mantriTierLabels): string {
+            $ids = collect($people)
+                ->map(fn ($person) => [
+                    'pn' => (string) data_get($person, 'pn', '-'),
+                    'nama' => (string) data_get($person, 'name', '-'),
+                    'cabang' => (string) data_get($person, 'branch', '-'),
+                    'unit' => (string) data_get($person, 'unit', '-'),
+                    'mbm' => (string) data_get($person, 'mbm', '-'),
+                    'status' => $mantriStatusLabels[data_get($person, 'category')] ?? '-',
+                    'kategori' => $mantriTierLabels[data_get($person, 'nett_tier')] ?? '-',
+                    'nett' => round((float) data_get($person, 'net_amount', 0)),
+                ])
+                ->sortBy([['nett', $ascending ? 'asc' : 'desc'], ['nama', 'asc']])
+                ->map(function (array $row) use ($nettDrill): int {
+                    $key = json_encode($row);
+                    if (! isset($nettDrill->keys[$key])) {
+                        $nettDrill->keys[$key] = count($nettDrill->people);
+                        $nettDrill->people[] = $row;
+                    }
+
+                    return $nettDrill->keys[$key];
+                })
+                ->values()
+                ->all();
+            $nettDrill->lists[] = ['title' => $title, 'scope' => $scope, 'ids' => $ids];
+
+            return 'data-nett-drill="'.(count($nettDrill->lists) - 1).'" tabindex="0" title="Klik 2x untuk melihat daftar Mantri"';
+        };
     @endphp
     <fieldset class="micro-nett-sheet-nav">
         <legend>Pilih sheet Mantri</legend>
@@ -77,6 +119,13 @@
                         </thead>
                         <tbody>
                             @foreach($sheetRows as $row)
+                                @php
+                                    $nettDrillScope = implode(' • ', array_filter([
+                                        $row['branch'] ?? null,
+                                        $sheet === 'unit' ? ($row['unit'] ?? null) : null,
+                                        $sheet !== 'bo' ? 'MBM '.($row['mbm'] ?? '-') : null,
+                                    ]));
+                                @endphp
                                 <tr>
                                     <td class="col-freeze-1">{{ $loop->iteration }}</td>
                                     @if($sheet === 'bo')
@@ -96,7 +145,7 @@
                                 </tr>
                             @endforeach
                         </tbody>
-                        <tfoot><tr><th colspan="{{ $identityColumns }}" scope="row" class="col-freeze-total col-freeze-last">Total {{ data_get($mantriPerformance, 'total.branch', 'Area 6') }}</th>@include('report.dashboard-pinjaman._kinerjarmmikro_partials.micro-mantri-nett-values', ['nettRow' => $mantriPerformance['total']])</tr></tfoot>
+                        <tfoot><tr><th colspan="{{ $identityColumns }}" scope="row" class="col-freeze-total col-freeze-last">Total {{ data_get($mantriPerformance, 'total.branch', 'Area 6') }}</th>@include('report.dashboard-pinjaman._kinerjarmmikro_partials.micro-mantri-nett-values', ['nettRow' => $mantriPerformance['total'], 'nettDrillScope' => 'Total '.data_get($mantriPerformance, 'total.branch', 'Area 6')])</tr></tfoot>
                     </table>
                 </div>
             @else
@@ -104,5 +153,6 @@
             @endif
         </section>
     @endforeach
-    <p class="micro-nett-help">Nett mengikuti perhitungan KPI dan penempatan roster aktif BRIHC. Ratas / HKE adalah nett dibagi hari kerja efektif. Unit tanpa pemetaan MBM ditandai “Belum dipetakan”.</p>
+    <p class="micro-nett-help">Nett mengikuti perhitungan KPI dan penempatan roster aktif BRIHC. Ratas / HKE adalah nett dibagi hari kerja efektif. Unit tanpa pemetaan MBM ditandai “Belum dipetakan”. Klik 2x pada angka untuk melihat daftar Mantri.</p>
+    @include('report.dashboard-pinjaman._kinerjarmmikro_partials.micro-nett-drilldown')
 </div>

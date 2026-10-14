@@ -479,6 +479,38 @@ class EnsureImportedSnapshotsFreshJobTest extends TestCase
         ));
     }
 
+    public function test_summary_snapshot_is_not_rebuilt_again_when_builder_reports_source_rows(): void
+    {
+        $this->insertReadySimpananRows('2026-05-06', 1000);
+        foreach ([
+            'dashboard_simpanan_snapshots' => 'snapshot_period',
+            'rekening_dormant_snapshots' => 'posisi',
+            'performance_rm_snapshots' => 'periode',
+            'rasio_casa_debitur_snapshots' => 'casa_period',
+        ] as $snapshotTable => $periodColumn) {
+            DB::table($snapshotTable)->insert($this->snapshotRow($periodColumn, '2026-05-06', '2026-05-08 09:00:00'));
+        }
+
+        // Builders of summary tables return source-row totals (2.8M) while the
+        // table holds one row per period; the next check must still be fresh.
+        $builder = Mockery::mock(ReportSnapshotBuilder::class);
+        foreach (['rebuildDashboardSimpanan', 'rebuildRekeningDormant', 'rebuildPerformanceRm', 'rebuildRasioCasa'] as $method) {
+            $builder->shouldReceive($method)->once()->with('2026-05-06', false)->andReturn(['2026-05-06' => 2799373]);
+        }
+        $dashboardHarian = Mockery::mock(DashboardHarianSnapshotService::class);
+        $dashboardHarian->shouldNotReceive('rebuild');
+
+        $job = new EnsureImportedSnapshotsFreshJob('simpanan_multipn', '2026-05-06', 'unit-test');
+        $job->handle($builder, $dashboardHarian, $this->sourceSignatures);
+        // Unchanged source: the second pass must not rebuild anything (once() above).
+        $job->handle($builder, $dashboardHarian, $this->sourceSignatures);
+
+        $context = json_decode((string) DB::table('snapshot_source_signatures')
+            ->where('snapshot_table', 'dashboard_simpanan_snapshots')
+            ->value('context'), true);
+        $this->assertSame(1, $context['rows_after']);
+    }
+
     public function test_simpanan_signature_uses_two_index_ordered_queries_without_changing_payload(): void
     {
         $this->insertReadySimpananRows('2026-05-06', 1000);

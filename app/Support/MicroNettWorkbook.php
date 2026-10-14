@@ -34,6 +34,9 @@ class MicroNettWorkbook
             $person['mbm'] = trim((string) ($territory['nama_mbm'] ?? '')) ?: 'Belum dipetakan';
             $person['unit'] = $normal($territory['nama_uker'] ?? $person['unit']);
             $person['bc'] = (string) ($territory['bc'] ?? $person['bc'] ?? '-');
+            $person['nett_tier'] = $person['counted'] && in_array($person['category'], ['pt', 'contract'], true)
+                ? $this->nettTier($person['category'], (float) $person['net_amount'])
+                : null;
             foreach (['bo' => $branch, 'mbm' => $person['mbm'], 'unit' => $person['unit']] as $sheet => $label) {
                 $groups[$sheet][$branch.'|'.$label] ??= ['group_label' => $label, 'branch' => $branch, 'branch_code' => $sheet === 'unit' ? $person['bc'] : '-', 'unit' => $sheet === 'unit' ? $person['unit'] : '', 'mbm' => $sheet === 'bo' ? '' : $person['mbm'], 'people' => []];
                 $groups[$sheet][$branch.'|'.$label]['people'][] = $person;
@@ -42,6 +45,7 @@ class MicroNettWorkbook
         $summarize = function (array $group) use ($workingDays): array {
             $people = collect($group['people']);
             unset($group['people']);
+            $group['members'] = $people->values()->all();
             $headcount = ['pt_non_briguna' => 0, 'contract' => 0, 'briguna' => 0, 'unknown' => 0];
             foreach ($people->where('counted', true) as $person) {
                 $key = $person['category'] === 'pt' ? 'pt_non_briguna' : $person['category'];
@@ -58,8 +62,7 @@ class MicroNettWorkbook
                 }
                 foreach ($eligible as $person) {
                     $value = $person['net_amount'];
-                    [$low, $mid, $high] = $category === 'contract' ? [350000000, 600000000, 800000000] : [400000000, 800000000, 1000000000];
-                    $key = match (true) { $value <= 0 => 'none', $value < $low => 'extreme_low', $value < $mid => 'low', $value <= $high => 'mid', default => 'high' };
+                    $key = $this->nettTier($category, (float) $value);
                     $buckets[$key]['mantri']++;
                     $buckets[$key]['people'][] = $person;
                 }
@@ -81,5 +84,12 @@ class MicroNettWorkbook
         return ['available' => $people !== [], 'working_days' => $workingDays, 'daily_period' => $period, 'accumulation_label' => substr($period, 0, 7), 'sheet_rows' => $sheets, 'rows' => $sheets['bo'],
             'total' => $summarize(['group_label' => 'TOTAL', 'branch' => 'TOTAL', 'branch_code' => '-', 'people' => array_values($people)]),
             'sheet_basis' => 'Nett mengikuti kalkulator KPI Kinerja RM Mikro dan penempatan roster aktif BRIHC; status kepegawaian tidak lengkap dipisahkan. Realisasi bruto dan nett harian tidak tersedia pada sumber agregat ini.'];
+    }
+
+    private function nettTier(string $category, float $value): string
+    {
+        [$low, $mid, $high] = $category === 'contract' ? [350000000, 600000000, 800000000] : [400000000, 800000000, 1000000000];
+
+        return match (true) { $value <= 0 => 'none', $value < $low => 'extreme_low', $value < $mid => 'low', $value <= $high => 'mid', default => 'high' };
     }
 }

@@ -7,48 +7,47 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Kind | Count |
 | --- | ---: |
 | command | 3 |
-| file | 111 |
-| function | 3 |
-| method | 1094 |
+| file | 75 |
+| method | 746 |
 | route | 35 |
-| class | 56 |
-| table | 16 |
-| view | 43 |
+| class | 31 |
+| table | 14 |
+| view | 44 |
 
 ## Main Hubs
 
 | Node | Kind | Degree | Source |
 | --- | --- | ---: | --- |
-| `daily_loan_dinamis` | table | 348 | - |
-| `DashboardPinjamanReportController` | class | 196 | `app/Http/Controllers/DashboardPinjamanReportController.php:28` |
-| `KinerjaRmReportController` | class | 148 | `app/Http/Controllers/Report/KinerjaRmReportController.php:23` |
-| `lw325_ph` | table | 122 | - |
-| `KinerjaRmMikroReportController` | class | 101 | `app/Http/Controllers/Report/KinerjaRmMikroReportController.php:19` |
-| `brihc_pemasar` | table | 67 | - |
-| `ssa_pinjaman` | table | 63 | - |
+| `DashboardPinjamanReportController` | class | 161 | `app/Http/Controllers/DashboardPinjamanReportController.php:28` |
+| `KinerjaRmReportController` | class | 104 | `app/Http/Controllers/Report/KinerjaRmReportController.php:23` |
+| `daily_loan_dinamis` | table | 99 | - |
+| `KinerjaRmMikroReportController` | class | 86 | `app/Http/Controllers/Report/KinerjaRmMikroReportController.php:19` |
+| `lw325_ph` | table | 51 | - |
 | `SyncBrihcReferenceCommand` | class | 49 | `app/Console/Commands/SyncBrihcReferenceCommand.php:17` |
-| `KinerjaRmSnapshotPeriodResolutionTest` | class | 47 | `tests/Unit/KinerjaRmSnapshotPeriodResolutionTest.php:19` |
-| `SmallRmRealizationCalculator` | class | 41 | `app/Support/SmallRmRealizationCalculator.php:10` |
 | `DashboardPinjamanKreditService` | class | 40 | `app/Support/DashboardPinjamanKreditService.php:11` |
-| `DashboardPinjamanRecoveryMetricsTest` | class | 37 | `tests/Unit/DashboardPinjamanRecoveryMetricsTest.php:16` |
-| `dashboard_pinjaman_snapshots` | table | 35 | - |
 | `Lw321DailyLoanSyncService` | class | 34 | `app/Support/Lw321DailyLoanSyncService.php:9` |
 | `DashboardPinjamanChartPeriodikService` | class | 33 | `app/Support/DashboardPinjamanChartPeriodikService.php:14` |
 | `LandingLoanAnalyticsService` | class | 33 | `app/Support/LandingLoanAnalyticsService.php:14` |
 | `index` | method | 33 | `app/Http/Controllers/Report/KinerjaRmReportController.php:862` |
-| `invokePrivateMethod` | method | 31 | `tests/Unit/KinerjaRmSnapshotPeriodResolutionTest.php:1834` |
-| `KinerjaRmMikroPeriodResolutionTest` | class | 29 | `tests/Unit/KinerjaRmMikroPeriodResolutionTest.php:19` |
 | `MicroPipelineSyncService` | class | 29 | `app/Services/Reports/MicroPipelineSyncService.php:16` |
-| `brihc` | table | 29 | - |
-| `SmallRmRealizationCalculatorTest` | class | 28 | `tests/Unit/SmallRmRealizationCalculatorTest.php:12` |
-| `Lw321DailyLoanSyncServiceTest` | class | 27 | `tests/Unit/Lw321DailyLoanSyncServiceTest.php:23` |
-| `insertRow` | method | 26 | `tests/Unit/SmallRmRealizationCalculatorTest.php:431` |
-| `snapshotRow` | method | 25 | `tests/Unit/KinerjaRmSnapshotPeriodResolutionTest.php:1739` |
+| `brihc_pemasar` | table | 26 | - |
 | `ConsumerRmPositionHistoryStore` | class | 24 | `app/Support/ConsumerRmPositionHistoryStore.php:12` |
 | `RunOffReportService` | class | 24 | `app/Services/Reports/RunOffReportService.php:12` |
 | `sync` | method | 24 | `app/Services/Reports/MicroPipelineSyncService.php:52` |
-| `LandingLoanAnalyticsServiceTest` | class | 23 | `tests/Unit/LandingLoanAnalyticsServiceTest.php:14` |
 | `fetchBranchRows` | method | 23 | `app/Http/Controllers/Report/KinerjaRmReportController.php:2301` |
+| `fetchRetailRealizationPerformance` | method | 23 | `app/Http/Controllers/Report/KinerjaRmReportController.php:1760` |
+| `reportCacheVersion` | method | 22 | `app/Http/Controllers/DashboardPinjamanReportController.php:4587` |
+| `handle` | method | 21 | `app/Console/Commands/SyncBrihcReferenceCommand.php:69` |
+| `report.dashboard-pinjaman.kinerjarmmikro` | view | 21 | `resources/views/report/dashboard-pinjaman/kinerjarmmikro.blade.php:1` |
+| `LandingLoanRiskCacheService` | class | 20 | `app/Support/LandingLoanRiskCacheService.php:11` |
+| `nettWorkbookPayload` | method | 19 | `app/Http/Controllers/Report/KinerjaRmMikroReportController.php:206` |
+| `ssa_pinjaman` | table | 19 | - |
+| `SmallRmRealizationCalculator` | class | 18 | `app/Support/SmallRmRealizationCalculator.php:10` |
+| `buildChartPayload` | method | 18 | `app/Support/DashboardPinjamanChartPeriodikService.php:69` |
+| `Lw321DailyLoanMapper` | class | 17 | `app/Support/Lw321DailyLoanMapper.php:7` |
+| `calculate` | method | 17 | `app/Support/SmallRmRealizationCalculator.php:40` |
+| `index` | method | 17 | `app/Http/Controllers/Report/KinerjaRmMikroReportController.php:87` |
+| `matrixExport` | method | 17 | `app/Http/Controllers/DashboardPinjamanReportController.php:1154` |
 
 ## Route Nodes
 
@@ -92,57 +91,32 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 - `CaptureConsumerRmPositionHistoryJob` - `app/Jobs/CaptureConsumerRmPositionHistoryJob.php`
 - `ConsumerRmKanwilAudit` - `app/Support/ConsumerRmKanwilAudit.php`
-- `ConsumerRmKanwilAuditTest` - `tests/Unit/ConsumerRmKanwilAuditTest.php`
 - `ConsumerRmPositionHistoryStore` - `app/Support/ConsumerRmPositionHistoryStore.php`
-- `ConsumerRmPositionHistoryStoreTest` - `tests/Unit/ConsumerRmPositionHistoryStoreTest.php`
 - `ConsumerRmRealizationCalculator` - `app/Support/ConsumerRmRealizationCalculator.php`
 - `DailyLoanManualSegmentRule` - `app/Support/DailyLoanManualSegmentRule.php`
-- `DailyLoanManualSegmentRuleTest` - `tests/Unit/DailyLoanManualSegmentRuleTest.php`
 - `DashboardPinjamanChartPeriodikService` - `app/Support/DashboardPinjamanChartPeriodikService.php`
-- `DashboardPinjamanKreditCacheTest` - `tests/Unit/DashboardPinjamanKreditCacheTest.php`
-- `DashboardPinjamanKreditCaptureViewTest` - `tests/Unit/DashboardPinjamanKreditCaptureViewTest.php`
 - `DashboardPinjamanKreditService` - `app/Support/DashboardPinjamanKreditService.php`
-- `DashboardPinjamanKreditServiceTest` - `tests/Unit/DashboardPinjamanKreditServiceTest.php`
-- `DashboardPinjamanMatrixViewTest` - `tests/Unit/DashboardPinjamanMatrixViewTest.php`
-- `DashboardPinjamanRecoveryMetricsTest` - `tests/Unit/DashboardPinjamanRecoveryMetricsTest.php`
 - `DashboardPinjamanReportController` - `app/Http/Controllers/DashboardPinjamanReportController.php`
-- `KinerjaRmFormattingTest` - `tests/Unit/KinerjaRmFormattingTest.php`
-- `KinerjaRmMikroPeriodResolutionTest` - `tests/Unit/KinerjaRmMikroPeriodResolutionTest.php`
 - `KinerjaRmMikroReportController` - `app/Http/Controllers/Report/KinerjaRmMikroReportController.php`
 - `KinerjaRmReportController` - `app/Http/Controllers/Report/KinerjaRmReportController.php`
-- `KinerjaRmSnapshotPeriodResolutionTest` - `tests/Unit/KinerjaRmSnapshotPeriodResolutionTest.php`
 - `LandingLoanAnalyticsService` - `app/Support/LandingLoanAnalyticsService.php`
-- `LandingLoanAnalyticsServiceTest` - `tests/Unit/LandingLoanAnalyticsServiceTest.php`
 - `LandingLoanRiskCacheService` - `app/Support/LandingLoanRiskCacheService.php`
-- `LandingLoanRiskCacheServiceTest` - `tests/Unit/LandingLoanRiskCacheServiceTest.php`
-- `LandingLoanSourceFallbackTest` - `tests/Unit/LandingLoanSourceFallbackTest.php`
 - `LandingMicroPipelineService` - `app/Support/LandingMicroPipelineService.php`
 - `LoanQualityBucketMapper` - `app/Support/LoanQualityBucketMapper.php`
-- `LoanQualityBucketMapperSqlParityTest` - `tests/Unit/LoanQualityBucketMapperSqlParityTest.php`
-- `LoanQualityBucketMapperTest` - `tests/Unit/LoanQualityBucketMapperTest.php`
 - `Lw321DailyLoanMapper` - `app/Support/Lw321DailyLoanMapper.php`
-- `Lw321DailyLoanMapperTest` - `tests/Unit/Lw321DailyLoanMapperTest.php`
 - `Lw321DailyLoanSyncService` - `app/Support/Lw321DailyLoanSyncService.php`
-- `Lw321DailyLoanSyncServiceTest` - `tests/Unit/Lw321DailyLoanSyncServiceTest.php`
-- `Lw325IndexOptimizationMigrationTest` - `tests/Unit/Lw325IndexOptimizationMigrationTest.php`
-- `Lw325PhPolarsProcessorTest` - `tests/Unit/Lw325PhPolarsProcessorTest.php`
+- `MantriPerformanceBasis` - `app/Support/MantriPerformanceBasis.php`
 - `MicroPipelineSyncService` - `app/Services/Reports/MicroPipelineSyncService.php`
-- `MicroPipelineSyncTest` - `tests/Feature/MicroPipelineSyncTest.php`
 - `NewPayrollReportController` - `app/Http/Controllers/Report/NewPayrollReportController.php`
 - `NewPayrollReportService` - `app/Services/Reports/NewPayrollReportService.php`
-- `NewPayrollReportServiceTest` - `tests/Unit/NewPayrollReportServiceTest.php`
 - `RebuildLoanChartPeriodikSnapshotJob` - `app/Jobs/RebuildLoanChartPeriodikSnapshotJob.php`
 - `RebuildLoanDashboardSnapshotJob` - `app/Jobs/RebuildLoanDashboardSnapshotJob.php`
 - `RewriteSsaPinjamanYtdReferenceCommand` - `app/Console/Commands/RewriteSsaPinjamanYtdReferenceCommand.php`
 - `RunOffReportController` - `app/Http/Controllers/Report/RunOffReportController.php`
-- `RunOffReportControllerTest` - `tests/Unit/RunOffReportControllerTest.php`
 - `RunOffReportService` - `app/Services/Reports/RunOffReportService.php`
 - `SmallRmRealizationCalculator` - `app/Support/SmallRmRealizationCalculator.php`
-- `SmallRmRealizationCalculatorTest` - `tests/Unit/SmallRmRealizationCalculatorTest.php`
 - `SsaPinjamanDailyLoanRewriteService` - `app/Services/SsaPinjamanDailyLoanRewriteService.php`
-- `SsaPinjamanDailyLoanRewriteServiceTest` - `tests/Unit/SsaPinjamanDailyLoanRewriteServiceTest.php`
 - `SyncBrihcReferenceCommand` - `app/Console/Commands/SyncBrihcReferenceCommand.php`
-- `SyncBrihcReferenceCommandTest` - `tests/Feature/SyncBrihcReferenceCommandTest.php`
 - `SyncMicroPipelineCommand` - `app/Console/Commands/SyncMicroPipelineCommand.php`
 - `WarmKinerjaRmRitelCacheJob` - `app/Jobs/WarmKinerjaRmRitelCacheJob.php`
 - `WarmLandingLoanRiskCacheJob` - `app/Jobs/WarmLandingLoanRiskCacheJob.php`
@@ -172,6 +146,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `report.dashboard-pinjaman._kinerjarmmikro_partials._table_tiering` - `resources/views/report/dashboard-pinjaman/_kinerjarmmikro_partials/_table_tiering.blade.php`
 - `report.dashboard-pinjaman._kinerjarmmikro_partials.micro-mantri-nett-sheets` - `resources/views/report/dashboard-pinjaman/_kinerjarmmikro_partials/micro-mantri-nett-sheets.blade.php`
 - `report.dashboard-pinjaman._kinerjarmmikro_partials.micro-mantri-nett-values` - `resources/views/report/dashboard-pinjaman/_kinerjarmmikro_partials/micro-mantri-nett-values.blade.php`
+- `report.dashboard-pinjaman._kinerjarmmikro_partials.micro-nett-drilldown` - `resources/views/report/dashboard-pinjaman/_kinerjarmmikro_partials/micro-nett-drilldown.blade.php`
 - `report.dashboard-pinjaman._kinerjarmmikro_partials.micro-nett-styles` - `resources/views/report/dashboard-pinjaman/_kinerjarmmikro_partials/micro-nett-styles.blade.php`
 - `report.dashboard-pinjaman._kinerjarmmikro_partials.micro-rm-nett-sheets` - `resources/views/report/dashboard-pinjaman/_kinerjarmmikro_partials/micro-rm-nett-sheets.blade.php`
 - `report.dashboard-pinjaman._kinerjarmmikro_partials.micro-rm-nett-values` - `resources/views/report/dashboard-pinjaman/_kinerjarmmikro_partials/micro-rm-nett-values.blade.php`
@@ -206,8 +181,6 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `daily_loan_dinamis`
 - `dashboard_pinjaman_chart_periodik_snapshots`
 - `dashboard_pinjaman_snapshots`
-- `loan_quality_bucket_samples`
-- `loan_scope_resolution`
 - `loan_type`
 - `lw325_ph`
 - `micro_pipeline_records`
@@ -222,33 +195,33 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Direction | Count |
 | --- | ---: |
-| dashboard-pinjaman -> core (calls) | 332 |
+| dashboard-pinjaman -> core (calls) | 250 |
 | dashboard-pinjaman -> access-control (protected_by) | 175 |
-| dashboard-pinjaman -> core (instantiates) | 120 |
 | dashboard-pinjaman -> core (accepts) | 93 |
-| tests -> dashboard-pinjaman (writes_table) | 48 |
-| dashboard-pinjaman -> tests (calls) | 46 |
-| tests -> dashboard-pinjaman (contains) | 38 |
-| import -> dashboard-pinjaman (writes_table) | 37 |
-| dashboard-pinjaman -> jobs-snapshots (writes_table) | 36 |
-| dashboard-pinjaman -> core (writes_table) | 33 |
-| dashboard-pinjaman -> access-control (calls) | 31 |
-| dashboard-harian -> dashboard-pinjaman (writes_table) | 28 |
-| jobs-snapshots -> dashboard-pinjaman (reads_table) | 27 |
+| dashboard-pinjaman -> core (instantiates) | 44 |
 | database -> dashboard-pinjaman (checks_table) | 26 |
-| core -> dashboard-pinjaman (reads_table) | 25 |
-| jobs-snapshots -> dashboard-pinjaman (writes_table) | 24 |
-| dashboard-pinjaman -> tests (extends) | 23 |
+| core -> dashboard-pinjaman (reads_table) | 23 |
 | dashboard-simpanan -> dashboard-pinjaman (reads_table) | 22 |
-| tests -> dashboard-pinjaman (defines_table) | 22 |
-| dashboard-pinjaman -> platform (calls) | 21 |
-| dashboard-pinjaman -> jobs-snapshots (calls) | 19 |
+| jobs-snapshots -> dashboard-pinjaman (reads_table) | 18 |
 | dashboard-pinjaman -> jobs-snapshots (uses_trait) | 17 |
-| import -> dashboard-pinjaman (reads_table) | 16 |
 | core -> dashboard-pinjaman (checks_table) | 16 |
 | database -> dashboard-pinjaman (alters_table) | 15 |
+| dashboard-pinjaman -> platform (calls) | 14 |
+| dashboard-pinjaman -> access-control (calls) | 14 |
 | dashboard-pinjaman -> platform (extends_view) | 14 |
-| dashboard-pinjaman -> dashboard-harian (writes_table) | 13 |
-| import -> dashboard-pinjaman (defines_table) | 13 |
 | platform -> dashboard-pinjaman (references_route) | 13 |
-| tests -> dashboard-pinjaman (reads_table) | 12 |
+| database -> dashboard-pinjaman (defines_table) | 11 |
+| dashboard-simpanan -> dashboard-pinjaman (checks_table) | 11 |
+| dashboard-pinjaman -> core (reads_table) | 10 |
+| dashboard-pinjaman -> jobs-snapshots (calls) | 8 |
+| dashboard-pinjaman -> jobs-snapshots (uses_queue) | 8 |
+| dashboard-pinjaman -> core (extends) | 8 |
+| dashboard-pinjaman -> jobs-snapshots (implements) | 8 |
+| dashboard-pinjaman -> core (checks_table) | 7 |
+| dashboard-pinjaman -> core (uses_trait) | 7 |
+| jobs-snapshots -> dashboard-pinjaman (calls) | 6 |
+| dashboard-pinjaman -> jobs-snapshots (instantiates) | 6 |
+| database -> dashboard-pinjaman (uses_table) | 5 |
+| dashboard-harian -> dashboard-pinjaman (reads_table) | 5 |
+| jobs-snapshots -> dashboard-pinjaman (checks_table) | 4 |
+| dashboard-simpanan -> dashboard-pinjaman (references_route) | 4 |

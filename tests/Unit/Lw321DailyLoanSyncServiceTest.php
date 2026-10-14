@@ -101,7 +101,8 @@ class Lw321DailyLoanSyncServiceTest extends TestCase
 
         $this->assertSame(1, $first['source_rows']);
         $this->assertSame(1, $first['inserted_rows']);
-        $this->assertSame(7, (int) $mapped->umur_tunggakan);
+        // Daily Loan Dinamis menghitung umur sejak (jatuh tempo - 1 hari): 08/09 - 31/08 = 8.
+        $this->assertSame(8, (int) $mapped->umur_tunggakan);
         $this->assertSame('2', $mapped->kolek);
         $this->assertSame('DPK 1', $mapped->kolek_detail);
         $this->assertEqualsWithDelta(0.0, (float) $mapped->kolektabilitas_lancar, 0.001);
@@ -374,26 +375,36 @@ class Lw321DailyLoanSyncServiceTest extends TestCase
         app(Lw321DailyLoanSyncService::class)->synchronize('2026-09-08');
     }
 
-    public function test_sync_materializes_a_source_blank_description_without_guessing_classification(): void
+    public function test_sync_excludes_unclassifiable_blank_description_rows_outside_daily_loan_scope(): void
     {
-        DB::table('lw321pn')->insert(array_merge($this->sourceRow(), [
-            'description' => '',
-        ]));
+        DB::table('lw321pn')->insert([
+            array_merge($this->sourceRow(), [
+                'uniqueid_namareport' => 'LW:ROW:BLANK',
+                'no_rekening' => 'ACC-BLANK',
+                'cifno' => 'CIF-BLANK',
+                'description' => '',
+                'balance_dalam_idr' => 25,
+            ]),
+            $this->sourceRow(),
+        ]);
 
         $result = app(Lw321DailyLoanSyncService::class)->synchronize('2026-09-08');
-        $mapped = DB::table('daily_loan_dinamis')->where('periode', '2026-09-08')->first();
         $validation = $result['validation']['periods']['2026-09-08'];
 
+        // Rekening tanpa deskripsi & tanpa referensi Daily Loan tidak pernah ada di nominatif
+        // Daily Loan Dinamis, sehingga tidak ikut dimaterialisasi (tidak menambah OS).
         $this->assertSame(1, $result['inserted_rows']);
-        $this->assertNull($mapped->description);
-        $this->assertNull($mapped->segmen_dashboard);
-        $this->assertNull($mapped->produk_dashboard);
+        $this->assertSame(['ACC-001'], DB::table('daily_loan_dinamis')->where('periode', '2026-09-08')->pluck('nomor_rekening1')->all());
+        $this->assertSame('passed', $validation['status']);
         $this->assertSame(1, $validation['source']['blank_description_rows']);
         $this->assertSame(1, $validation['source']['unresolved_classification_rows']);
-        $this->assertSame(1, $validation['target']['unclassified_rows']);
-        $this->assertFalse($validation['parity']['classification_complete']);
-        $this->assertTrue($validation['parity']['classification_matches_source']);
-        $this->assertSame(1, $validation['parity']['expected_unclassified_rows']);
+        $this->assertSame('105.00', $validation['source']['balance_total']);
+        $this->assertSame('80.00', $validation['target']['balance_total']);
+        $this->assertSame(0, $validation['target']['unclassified_rows']);
+        $this->assertTrue($validation['parity']['classification_complete']);
+        $this->assertTrue($validation['parity']['balance_total_matches']);
+        $this->assertSame(1, $validation['parity']['excluded_out_of_scope_rows']);
+        $this->assertSame('25.00', $validation['parity']['excluded_out_of_scope_balance']);
     }
 
     public function test_sync_accepts_zero_balance_rows_when_dataset_has_nonzero_balance_and_reports_parity(): void
@@ -458,7 +469,7 @@ class Lw321DailyLoanSyncServiceTest extends TestCase
         $this->assertSame('00123456 - REFERRAL UJI', $mapped->pn_referral1);
     }
 
-    public function test_prior_daily_fallback_with_different_cif_materializes_without_borrowing_classification(): void
+    public function test_prior_daily_fallback_with_different_cif_does_not_borrow_classification(): void
     {
         DB::table('daily_loan_dinamis')->insert([
             'uniqueid_namareport' => 'DAILY:PRIOR',
@@ -476,16 +487,13 @@ class Lw321DailyLoanSyncServiceTest extends TestCase
         ]));
 
         $result = app(Lw321DailyLoanSyncService::class)->synchronize('2026-09-08');
-        $mapped = DB::table('daily_loan_dinamis')->where('periode', '2026-09-08')->first();
 
-        $this->assertSame(1, $result['inserted_rows']);
-        $this->assertNull($mapped->description);
-        $this->assertNull($mapped->segmen_dashboard);
-        $this->assertNull($mapped->produk_dashboard);
-        $this->assertSame(1, $result['validation']['periods']['2026-09-08']['target']['unclassified_rows']);
+        $this->assertSame(0, $result['inserted_rows']);
+        $this->assertSame(0, DB::table('daily_loan_dinamis')->where('periode', '2026-09-08')->count());
+        $this->assertSame(1, $result['validation']['periods']['2026-09-08']['parity']['excluded_out_of_scope_rows']);
     }
 
-    public function test_current_valid_description_wins_over_prior_daily_classification(): void
+    public function test_prior_daily_classification_wins_for_the_same_account_and_cif(): void
     {
         DB::table('daily_loan_dinamis')->insert([
             'uniqueid_namareport' => 'DAILY:PRIOR',
@@ -502,9 +510,89 @@ class Lw321DailyLoanSyncServiceTest extends TestCase
         app(Lw321DailyLoanSyncService::class)->synchronize('2026-09-08');
         $mapped = DB::table('daily_loan_dinamis')->where('periode', '2026-09-08')->first();
 
+        // Rekening yang sama (rekening + CIF) mengikuti taksonomi Daily Loan otoritatif terakhir.
+        $this->assertSame('01. RITKOM - S/D Rp 50 JUTA', $mapped->description);
+        $this->assertSame('Small', $mapped->segmen_dashboard);
+        $this->assertSame('Commercial', $mapped->produk_dashboard);
+    }
+
+    public function test_new_account_without_prior_daily_uses_lw_description_mapping(): void
+    {
+        DB::table('lw321pn')->insert($this->sourceRow());
+
+        app(Lw321DailyLoanSyncService::class)->synchronize('2026-09-08');
+        $mapped = DB::table('daily_loan_dinamis')->where('periode', '2026-09-08')->first();
+
         $this->assertSame('KREDIT MIKRO - KUR MIKRO BARU', $mapped->description);
         $this->assertSame('Micro', $mapped->segmen_dashboard);
         $this->assertSame('KUR-Mikro', $mapped->produk_dashboard);
+        $this->assertSame('1', $mapped->status_rekening1);
+    }
+
+    public function test_kolek_follows_lw_collectability_balances_like_daily_loan(): void
+    {
+        DB::table('lw321pn')->insert(array_merge($this->sourceRow(), [
+            // Jatuh tempo terlewat 7 hari tetapi saldo LW321 tercatat di kolom lancar.
+            'kolektibilitas_lancar' => 80,
+            'kolektibilitas_dpk' => 0,
+        ]));
+        DB::table('lw321pn')->insert(array_merge($this->sourceRow(), [
+            'uniqueid_namareport' => 'LW:ROW:KL',
+            'no_rekening' => 'ACC-KL',
+            'cifno' => 'CIF-KL',
+            'next_pmt_date' => '2026-05-01',
+            'next_int_pmt_date' => '2026-05-01',
+            'kolektibilitas_kurang_lancar' => 40,
+        ]));
+        DB::table('lw321pn')->insert(array_merge($this->sourceRow(), [
+            'uniqueid_namareport' => 'LW:ROW:CURRENT',
+            'no_rekening' => 'ACC-CUR',
+            'cifno' => 'CIF-CUR',
+            'next_pmt_date' => '2026-09-20',
+            'next_int_pmt_date' => '2026-09-20',
+            'kolektibilitas_lancar' => 50,
+        ]));
+
+        app(Lw321DailyLoanSyncService::class)->synchronize('2026-09-08');
+        $rows = DB::table('daily_loan_dinamis')->where('periode', '2026-09-08')->get()->keyBy('nomor_rekening1');
+
+        $this->assertSame('1', $rows['ACC-001']->kolek);
+        $this->assertSame('L', $rows['ACC-001']->kolek_detail);
+        $this->assertSame(8, (int) $rows['ACC-001']->umur_tunggakan);
+        $this->assertSame('3', $rows['ACC-KL']->kolek);
+        $this->assertSame('KL', $rows['ACC-KL']->kolek_detail);
+        $this->assertEqualsWithDelta(80.0, (float) $rows['ACC-KL']->kolektabilitas_kuranglancar, 0.001);
+        // Kredit lancar yang belum jatuh tempo: umur 0 dan tanggal menunggak = posisi.
+        $this->assertSame('1', $rows['ACC-CUR']->kolek);
+        $this->assertSame(0, (int) $rows['ACC-CUR']->umur_tunggakan);
+        $this->assertSame('2026-09-08', substr((string) $rows['ACC-CUR']->tanggal_menunggak, 0, 10));
+        $this->assertSame('2026-04-30', substr((string) $rows['ACC-KL']->tanggal_menunggak, 0, 10));
+    }
+
+    public function test_restructured_status_and_npl_method_stick_from_prior_daily_for_the_same_account(): void
+    {
+        DB::table('daily_loan_dinamis')->insert([
+            'uniqueid_namareport' => 'DAILY:PRIOR',
+            'periode' => '2026-09-07',
+            'nomor_rekening1' => 'ACC-001',
+            'cifno' => 'CIF-001',
+            'description' => 'KUR Mikro Baru',
+            'segmen_dashboard' => 'Micro',
+            'produk_dashboard' => 'KUR-Mikro',
+            'segmen_kinerja' => 'MICRO',
+            'produk_kinerja' => 'KURMIKRO',
+            'status_rekening1' => '3',
+            'npl_method' => 'N',
+            'baki_debet1' => 90,
+        ]);
+        DB::table('lw321pn')->insert($this->sourceRow());
+
+        app(Lw321DailyLoanSyncService::class)->synchronize('2026-09-08');
+        $mapped = DB::table('daily_loan_dinamis')->where('periode', '2026-09-08')->first();
+
+        $this->assertSame('3', $mapped->status_rekening1);
+        $this->assertSame('N', $mapped->npl_method);
+        $this->assertSame('KUR Mikro Baru', $mapped->description);
     }
 
     public function test_effective_quality_uses_due_dates_but_preserves_raw_kol_for_audit(): void
@@ -597,6 +685,11 @@ class Lw321DailyLoanSyncServiceTest extends TestCase
             $table->string('cifno')->nullable();
             $table->string('description')->nullable();
             $table->string('kol_adk')->nullable();
+            $table->decimal('kolektibilitas_lancar', 20, 2)->nullable();
+            $table->decimal('kolektibilitas_dpk', 20, 2)->nullable();
+            $table->decimal('kolektibilitas_kurang_lancar', 20, 2)->nullable();
+            $table->decimal('kolektibilitas_diragukan', 20, 2)->nullable();
+            $table->decimal('kolektibilitas_macet', 20, 2)->nullable();
             $table->string('pn_pengelola_singlepn')->nullable();
             $table->string('pn_pengelola_1')->nullable();
             $table->string('pn_pemutus')->nullable();
@@ -624,6 +717,8 @@ class Lw321DailyLoanSyncServiceTest extends TestCase
             $table->decimal('kolektabilitas_diragukan', 20, 2)->nullable();
             $table->decimal('kolektabilitas_macet', 20, 2)->nullable();
             $table->string('status_rekening1')->nullable();
+            $table->string('npl_method')->nullable();
+            $table->date('tanggal_menunggak')->nullable();
             $table->string('ln_type')->nullable();
             $table->date('tgl_jatuh_tempo')->nullable();
             $table->date('next_pmt_date')->nullable();

@@ -90,7 +90,10 @@ class SimpananMultiPnSnapshotGate
             . ':'
             . $normalizedPeriod;
 
-        $status = Cache::remember($cacheKey, now()->addMinutes(5), function () use ($normalizedPeriod): array {
+        // The key carries the simpanan data version, which every import or
+        // delete bumps; a short TTL only re-ran this 2.8M-row DISTINCT scan
+        // on every 15-minute freshness cycle for unchanged data.
+        $status = Cache::remember($cacheKey, now()->addHours(6), function () use ($normalizedPeriod): array {
             $availableBranches = $this->collectAvailableBranchKeys($normalizedPeriod);
             $missingBranches = array_values(array_diff(self::REQUIRED_BRANCH_KEYS, $availableBranches));
 

@@ -991,6 +991,8 @@
                 'DPK 1': 'SML 1',
                 'DPK 2': 'SML 2',
                 'DPK 3': 'SML 3',
+                'TOTAL': 'Total',
+                'ALL': 'Semua',
             }[bucket] || bucket || '-';
         }
 
@@ -1046,7 +1048,7 @@
             body.querySelectorAll('tr.loan-drill-row').forEach(row => {
                 row.classList.toggle('is-selected', row.dataset.beforeBucket === beforeBucket);
             });
-            body.querySelectorAll('td.loan-drill-cell').forEach(cell => {
+            document.querySelectorAll('#loanMatrixBody td.loan-drill-cell, #loanMatrixFoot td.loan-drill-cell').forEach(cell => {
                 cell.classList.toggle(
                     'is-selected',
                     cell.dataset.beforeBucket === beforeBucket && cell.dataset.afterBucket === afterBucket
@@ -1064,7 +1066,10 @@
             setSelectedDrillCell(beforeBucket, afterBucket);
 
             if (!append) {
-                drillSubtitle.textContent = `Pergeseran: ${displayBucketLabel(beforeBucket)} -> ${displayBucketLabel(afterBucket)}`;
+                const isTotal = String(beforeBucket).toUpperCase() === 'TOTAL' || String(beforeBucket).toUpperCase() === 'ALL';
+                drillSubtitle.textContent = isTotal
+                    ? `Total Posisi: ${displayBucketLabel(afterBucket)} (Semua Kolek Awal)`
+                    : `Pergeseran: ${displayBucketLabel(beforeBucket)} -> ${displayBucketLabel(afterBucket)}`;
                 drillMeta.innerHTML = '';
                 drillHead.innerHTML = '';
                 drillBody.innerHTML = '';
@@ -1108,11 +1113,13 @@
         function renderDrillRows(payload, append) {
             const columns = payload.columns || [];
             const rows = payload.rows || [];
+            const isTotal = String(payload.before_bucket).toUpperCase() === 'TOTAL' || String(payload.before_bucket).toUpperCase() === 'ALL';
+            const beforeLabel = isTotal ? 'Total (Semua)' : displayBucketLabel(payload.before_bucket);
 
             drillMeta.innerHTML = `
                 <span>Posisi: ${escapeHtml(formatMatrixPeriodDate(payload.selected_period))}</span>
                 <span>Pembanding: ${escapeHtml(formatMatrixPeriodDate(payload.comparison_period))}</span>
-                <span>Dari: ${escapeHtml(displayBucketLabel(payload.before_bucket))}</span>
+                <span>Dari: ${escapeHtml(beforeLabel)}</span>
                 <span>Ke: ${escapeHtml(displayBucketLabel(payload.after_bucket))}</span>
                 <span>Ditampilkan: ${formatNumber(activeDrillRenderedCount + rows.length)}</span>
             `;
@@ -1590,14 +1597,19 @@
             let html = '<tr><th>Grand Total</th>';
             
             for (let i = 0; i < qualityColumns.length; i++) {
-                html += `<td>${formatNumber(totals.matrix[i])}</td>`;
+                const val = totals?.matrix?.[i];
+                const afterBucket = qualityColumns[i];
+                const hasValue = val !== null && val !== undefined && Number(val) !== 0;
+                const cellClass = hasValue ? 'loan-drill-cell' : 'matrix-empty';
+                const cellAttrs = hasValue ? ` data-before-bucket="TOTAL" data-after-bucket="${escapeHtml(afterBucket)}" title="Klik 2x untuk melihat nominatif total ${escapeHtml(displayBucketLabel(afterBucket))}"` : '';
+                html += `<td class="${cellClass}"${cellAttrs}>${formatNumber(val)}</td>`;
             }
             
             html += `<td class="matrix-total-col">${formatNumber(totalVal)}</td>`;
             
             for (let i = 0; i < outputColumns.length; i++) {
                 const col = outputColumns[i];
-                html += `<td>${formatNumber(totals.metrics[col])}</td>`;
+                html += `<td>${formatNumber(totals?.metrics?.[col])}</td>`;
             }
             
             html += '</tr>';
@@ -1629,11 +1641,13 @@
                 loadMatrix(false, false, true);
             }
         });
-        body.addEventListener('dblclick', event => {
-            const cell = event.target.closest('td.loan-drill-cell');
-            if (!cell) return;
-            window.clearTimeout(rowClickTimer);
-            openDrilldown(cell.dataset.beforeBucket, cell.dataset.afterBucket);
+        [body, foot].forEach(container => {
+            container?.addEventListener('dblclick', event => {
+                const cell = event.target.closest('td.loan-drill-cell');
+                if (!cell) return;
+                window.clearTimeout(rowClickTimer);
+                openDrilldown(cell.dataset.beforeBucket, cell.dataset.afterBucket);
+            });
         });
         drillLoadMoreButton.addEventListener('click', () => {
             if (activeDrillBucket && activeDrillNextOffset !== null) {
