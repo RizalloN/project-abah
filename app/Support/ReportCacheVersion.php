@@ -32,7 +32,9 @@ class ReportCacheVersion
     {
         $key = self::key($scope);
 
-        Cache::add($key, 1, now()->addDays(30));
+        // Versions must never expire: a reset makes composite() sums go
+        // backwards and can match keys of older, still-cached payloads.
+        Cache::add($key, 1, now()->addYears(10));
 
         return (int) Cache::increment($key);
     }

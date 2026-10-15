@@ -149,6 +149,10 @@ class ImportJobManagementController extends Controller
 
         $snapshotJobs = $this->resolveSnapshotJobs();
         $managedDeleteJobs = $this->importIndexController->resolveManagedReportDeleteJobs();
+        $managedDeleteJobs = array_merge(
+            $managedDeleteJobs,
+            $this->resolveManagedDeleteHistory(collect($managedDeleteJobs)->pluck('id')->map(fn ($id): string => (string) $id)->all())
+        );
         $rawQueueJobs = $this->resolveRawQueueJobs(
             collect($managedDeleteJobs)->pluck('id')->filter()->map(fn ($id): string => (string) $id)->all(),
             collect($snapshotJobs)->pluck('id')->filter()->map(fn ($id): string => (string) $id)->all()
@@ -1364,6 +1368,110 @@ class ImportJobManagementController extends Controller
         $parsed = $this->safeParseDate($createdAt);
 
         return $parsed ? max(0, now()->diffInSeconds($parsed)) : 0;
+    }
+
+    /**
+     * Finished managed deletes only live in report_sync_audits; surface the
+     * recent ones next to the active delete cards as a read-only record.
+     *
+     * @param array<int, string> $activeDeleteIds
+     * @return array<int, array<string, mixed>>
+     */
+    private function resolveManagedDeleteHistory(array $activeDeleteIds, int $days = 14, int $limit = 20): array
+    {
+        if (!Schema::hasTable('report_sync_audits')) {
+            return [];
+        }
+
+        try {
+            $rows = DB::table('report_sync_audits')
+                ->whereIn('action', ['managed_delete_chunk', 'managed_delete_failed', 'managed_delete_shortcut'])
+                ->where('created_at', '>=', now()->subDays($days))
+                ->orderByDesc('id')
+                ->limit(5000)
+                ->get(['id', 'table_name', 'period_hint', 'action', 'status', 'affected_rows', 'message', 'context', 'created_at']);
+        } catch (\Throwable $exception) {
+            Log::warning('Riwayat delete Job Management gagal dibaca.', ['error' => $exception->getMessage()]);
+
+            return [];
+        }
+
+        $active = array_fill_keys($activeDeleteIds, true);
+
+        return $rows
+            ->groupBy(function ($row): string {
+                $context = json_decode((string) ($row->context ?? ''), true);
+                $deleteId = trim((string) (is_array($context) ? ($context['delete_id'] ?? '') : ''));
+
+                return $deleteId !== '' ? $deleteId : 'audit-' . $row->id;
+            })
+            ->reject(fn ($group, string $deleteId): bool => isset($active[$deleteId]))
+            ->map(function ($group, string $deleteId): array {
+                $ordered = $group->sortBy('id')->values();
+                $last = $ordered->last();
+                $failed = $ordered->first(fn ($row): bool => $row->status !== 'success' || $row->action === 'managed_delete_failed');
+                $deletedRows = (int) $ordered
+                    ->filter(fn ($row): bool => $row->status === 'success')
+                    ->sum(fn ($row): int => (int) ($row->affected_rows ?? 0));
+                $lastContext = json_decode((string) ($last->context ?? ''), true) ?: [];
+                $remaining = (int) ($lastContext['remaining_rows'] ?? 0);
+                $status = $failed !== null ? 'failed' : ($remaining > 0 ? 'failed_partial' : 'completed');
+                $periods = $ordered->pluck('period_hint')->filter()->unique()->sort()->values();
+                $scopeCount = (int) ($lastContext['scope_count'] ?? $ordered->count());
+                $startedAt = $this->safeParseDate($ordered->first()->created_at);
+                $finishedAt = $this->safeParseDate($last->created_at);
+                $duration = $startedAt && $finishedAt ? max(0, (int) $finishedAt->diffInSeconds($startedAt, true)) : null;
+                $message = $failed !== null
+                    ? 'Delete gagal: ' . mb_strimwidth(trim((string) strtok((string) ($failed->message ?? 'tanpa pesan'), "\n")), 0, 180, '…')
+                    : sprintf(
+                        '%s baris dihapus%s.',
+                        number_format($deletedRows, 0, ',', '.'),
+                        $periods->isNotEmpty() ? ' • periode ' . $periods->implode(', ') : ''
+                    );
+
+                return [
+                    'id' => $deleteId,
+                    'report_name' => 'Riwayat Delete Report',
+                    'table_name' => (string) ($last->table_name ?? ''),
+                    'file_name' => 'Delete Report Rows',
+                    'status' => $status,
+                    'status_label' => $this->statusLabel($status),
+                    'status_tone' => $this->statusTone($status),
+                    'percent' => $status === 'completed' ? 100 : 0,
+                    'processed_rows' => $deletedRows,
+                    'total_rows' => max(1, $deletedRows + $remaining),
+                    'total_success' => $deletedRows,
+                    'total_failed' => $failed !== null ? 1 : 0,
+                    'message' => $message,
+                    'phase' => $status,
+                    'stage_label' => 'Riwayat',
+                    'scope_count' => $scopeCount,
+                    'mode' => 'managed_delete',
+                    'termination_requested' => false,
+                    'can_terminate' => false,
+                    'can_cancel' => false,
+                    'can_force_start' => false,
+                    'can_delete' => false,
+                    'created_by_name' => 'System',
+                    'created_at' => $startedAt?->toIso8601String(),
+                    'created_at_label' => $startedAt?->format('d M Y H:i:s'),
+                    'updated_at' => $finishedAt?->toIso8601String(),
+                    'updated_at_label' => $finishedAt?->format('d M Y H:i:s'),
+                    'duration_seconds' => $duration,
+                    'duration_label' => $this->formatDuration($duration),
+                    'kind' => 'managed_delete_history',
+                    'sort_key' => (int) $last->id,
+                ];
+            })
+            ->sortByDesc('sort_key')
+            ->take($limit)
+            ->map(function (array $job): array {
+                unset($job['sort_key']);
+
+                return $job;
+            })
+            ->values()
+            ->all();
     }
 
     private function statusLabel(string $status): string

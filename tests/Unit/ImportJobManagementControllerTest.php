@@ -509,4 +509,47 @@ class ImportJobManagementControllerTest extends TestCase
         $this->assertFalse($terminatedJob['can_force_start']);
         $this->assertTrue($terminatedJob['can_delete']);
     }
+
+    public function test_managed_delete_history_lists_finished_and_failed_deletes_but_skips_active_ones(): void
+    {
+        Schema::create('report_sync_audits', function (Blueprint $table) {
+            $table->increments('id');
+            $table->string('table_name')->nullable();
+            $table->string('period_hint')->nullable();
+            $table->string('action');
+            $table->string('status');
+            $table->bigInteger('affected_rows')->nullable();
+            $table->text('message')->nullable();
+            $table->text('context')->nullable();
+            $table->timestamp('created_at')->nullable();
+        });
+        $audit = fn (string $deleteId, string $action, string $status, int $rows, int $remaining, string $at, ?string $message = null) => DB::table('report_sync_audits')->insert([
+            'table_name' => 'ssa_pinjaman', 'period_hint' => '2026-10-14', 'action' => $action, 'status' => $status,
+            'affected_rows' => $rows, 'message' => $message, 'created_at' => $at,
+            'context' => json_encode(['delete_id' => $deleteId, 'scope_count' => 2, 'remaining_rows' => $remaining]),
+        ]);
+        $audit('done-1', 'managed_delete_chunk', 'success', 600, 400, now()->subMinutes(5)->toDateTimeString());
+        $audit('done-1', 'managed_delete_chunk', 'success', 400, 0, now()->subMinutes(4)->toDateTimeString());
+        $audit('fail-1', 'managed_delete_failed', 'failed', 0, 0, now()->subMinutes(3)->toDateTimeString(), "Lock wait timeout
+SQL");
+        $audit('active-1', 'managed_delete_chunk', 'success', 10, 90, now()->subMinute()->toDateTimeString());
+        $audit('old-1', 'managed_delete_chunk', 'success', 10, 0, now()->subDays(30)->toDateTimeString());
+
+        $controller = new ImportJobManagementController(
+            app(ManagedReportSnapshotRebuildCoordinator::class),
+            app(ImportIndexController::class)
+        );
+        $method = new \ReflectionMethod($controller, 'resolveManagedDeleteHistory');
+        $jobs = collect($method->invoke($controller, ['active-1']))->keyBy('id');
+
+        $this->assertSame(['fail-1', 'done-1'], $jobs->keys()->all());
+        $this->assertSame('completed', $jobs['done-1']['status']);
+        $this->assertSame(1000, $jobs['done-1']['processed_rows']);
+        $this->assertSame(100, $jobs['done-1']['percent']);
+        $this->assertStringContainsString('1.000 baris dihapus', $jobs['done-1']['message']);
+        $this->assertSame('failed', $jobs['fail-1']['status']);
+        $this->assertSame('Delete gagal: Lock wait timeout', $jobs['fail-1']['message']);
+        $this->assertFalse($jobs['done-1']['can_cancel']);
+        $this->assertSame('managed_delete_history', $jobs['done-1']['kind']);
+    }
 }

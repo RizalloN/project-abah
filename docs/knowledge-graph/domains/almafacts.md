@@ -7,7 +7,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Kind | Count |
 | --- | ---: |
 | file | 7 |
-| method | 84 |
+| method | 86 |
 | route | 5 |
 | class | 1 |
 | table | 1 |
@@ -17,36 +17,36 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Node | Kind | Degree | Source |
 | --- | --- | ---: | --- |
-| `AlmafactsDashboardController` | class | 89 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:20` |
+| `AlmafactsDashboardController` | class | 91 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:21` |
 | `ssa_almafacts` | table | 19 | - |
-| `financialHighlight` | method | 18 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:270` |
-| `labaRugi` | method | 18 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:233` |
-| `kpi` | method | 15 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:305` |
-| `timeseries` | method | 12 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:2490` |
-| `parseKpiSheetCsv` | method | 11 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:719` |
+| `financialHighlight` | method | 18 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:279` |
+| `labaRugi` | method | 18 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:242` |
+| `kpi` | method | 16 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:314` |
+| `timeseries` | method | 12 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:2562` |
+| `cachedKpiSheetPayload` | method | 11 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:439` |
+| `fetchKpiSheetPayload` | method | 11 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:599` |
+| `parseKpiSheetCsv` | method | 11 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:781` |
 | `report.dashboard-almafacts.kpi` | route | 11 | - |
-| `cachedKpiSheetPayload` | method | 10 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:428` |
-| `fetchKpiSheetPayload` | method | 10 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:540` |
-| `getTimeseriesPayload` | method | 10 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:2583` |
+| `getTimeseriesPayload` | method | 10 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:2655` |
 | `report.dashboard-almafacts.financial-highlight` | route | 10 | - |
 | `report.dashboard-almafacts.kinerja-laba-rugi` | route | 10 | - |
-| `financialSnapshots` | method | 9 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:1941` |
+| `financialSnapshots` | method | 9 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:2013` |
+| `refreshKpiSourceCaches` | method | 9 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:372` |
 | `report.dashboard-almafacts.timeseries` | route | 9 | - |
 | `report.dashboard-almafacts.timeseries.data` | route | 9 | - |
-| `rkaRows` | method | 9 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:1636` |
-| `fetchFinancialAlmafactsMetrics` | method | 8 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:2032` |
-| `fetchKpiRmSmeDashboardPayload` | method | 8 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:600` |
-| `financialAssetQualityNominals` | method | 8 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:2070` |
-| `normalizeUnitName` | method | 8 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:1741` |
-| `refreshKpiSourceCaches` | method | 8 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:362` |
-| `buildRows` | method | 7 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:1536` |
-| `financialUnitOptions` | method | 7 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:1848` |
-| `persistKpiSheetPayload` | method | 7 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:481` |
+| `rkaRows` | method | 9 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:1708` |
+| `fetchFinancialAlmafactsMetrics` | method | 8 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:2104` |
+| `fetchKpiRmSmeDashboardPayload` | method | 8 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:662` |
+| `financialAssetQualityNominals` | method | 8 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:2142` |
+| `normalizeUnitName` | method | 8 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:1813` |
+| `buildRows` | method | 7 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:1608` |
+| `financialUnitOptions` | method | 7 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:1920` |
+| `persistKpiSheetPayload` | method | 7 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:499` |
 | `report.almafacts.kinerja-laba-rugi` | view | 7 | `resources/views/report/almafacts/kinerja-laba-rugi.blade.php:1` |
-| `rkaPeriodOptions` | method | 7 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:1429` |
-| `timeseriesData` | method | 7 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:2543` |
-| `applyFinancialFilters` | method | 6 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:2230` |
-| `branchOptions` | method | 6 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:1510` |
+| `rkaPeriodOptions` | method | 7 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:1501` |
+| `timeseriesData` | method | 7 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:2615` |
+| `applyFinancialFilters` | method | 6 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:2302` |
+| `branchOptions` | method | 6 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:1582` |
 
 ## Route Nodes
 

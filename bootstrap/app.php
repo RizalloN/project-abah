@@ -27,6 +27,9 @@ return Application::configure(basePath: dirname(__DIR__))
                 | Request::HEADER_X_FORWARDED_PREFIX
         );
 
+        // Outermost, so the explicit Content-Length matches the final body.
+        $middleware->prepend(\App\Http\Middleware\FinishResponseBeforeDeferredCallbacks::class);
+
         $middleware->web(append: [
             \App\Http\Middleware\SecurityHeadersMiddleware::class,
             \App\Http\Middleware\MonitorRequestPerformance::class,

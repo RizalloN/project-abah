@@ -8,6 +8,7 @@ use App\Support\SargableDateFilter;
 use App\Jobs\RefreshRemoteDashboardSourcesJob;
 use App\Services\Reports\KpiPersonnelReferenceSyncService;
 use App\Services\Reports\KpiRmSmeDashboardService;
+use App\Services\Reports\KpiWorkbookSnapshotService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -97,6 +98,7 @@ class AlmafactsDashboardController extends Controller
     ];
     private const KPI_DEFAULT_PERIOD = '2026-07';
     private const KPI_PERIOD_OPTIONS = [
+        '2026-09' => 'September 2026',
         '2026-07' => 'Juli 2026',
         '2026-06' => 'Juni 2026',
     ];
@@ -203,6 +205,13 @@ class AlmafactsDashboardController extends Controller
             'expected_header_any' => ['JG', 'LAMA DI UKER', 'NETT DISBURSEMENT', 'RANK CABANG'],
             'icon' => 'fas fa-user-check',
         ],
+        'mantri-briguna' => [
+            'label' => 'KPI Mantri Briguna',
+            'title' => 'KPI MANTRI BRIGUNA',
+            'sheet' => 'KPI Mantri Briguna',
+            'branch_filter_headers' => ['BO'],
+            'icon' => 'fas fa-user-check',
+        ],
         'consumer' => [
             'label' => 'KPI Konsumer',
             'title' => 'KPI KONSUMER',
@@ -305,7 +314,7 @@ class AlmafactsDashboardController extends Controller
     public function kpi(Request $request, ?string $sheet = null)
     {
         $selectedSheetKey = $this->resolveKpiSheetKey($sheet ?: $request->input('sheet'));
-        $selectedPeriod = $this->resolveKpiPeriod($request->input('periode'));
+        $selectedPeriod = $this->resolveKpiPeriod($request->input('periode'), $selectedSheetKey);
         $cacheKey = $this->kpiSheetCacheKey($selectedSheetKey, $selectedPeriod);
         $selectedSheet = $this->kpiSheetConfig($selectedSheetKey, $selectedPeriod);
 
@@ -334,11 +343,11 @@ class AlmafactsDashboardController extends Controller
             'sheetOptions' => self::KPI_SHEETS,
             'selectedSheetKey' => $selectedSheetKey,
             'selectedSheet' => $selectedSheet,
-            'periodOptions' => self::KPI_PERIOD_OPTIONS,
+            'periodOptions' => $this->kpiPeriodOptions($selectedSheetKey),
             'selectedPeriod' => $selectedPeriod,
             'selectedPeriodLabel' => self::KPI_PERIOD_OPTIONS[$selectedPeriod],
-            'spreadsheetUrl' => $selectedSheet['spreadsheet_url'] ?? self::KPI_SPREADSHEET_URL,
-            'csvUrl' => $this->kpiSheetCsvUrl(
+            'spreadsheetUrl' => ($selectedSheet['source_type'] ?? '') === 'workbook' ? null : ($selectedSheet['spreadsheet_url'] ?? self::KPI_SPREADSHEET_URL),
+            'csvUrl' => ($selectedSheet['source_type'] ?? '') === 'workbook' ? null : $this->kpiSheetCsvUrl(
                 $selectedSheet['sheet'],
                 $selectedSheet['spreadsheet_id'] ?? self::KPI_SPREADSHEET_ID
             ),
@@ -352,6 +361,7 @@ class AlmafactsDashboardController extends Controller
             'error' => $payload['error'] ?? null,
             'fetchedAt' => $payload['fetched_at'] ?? null,
             'rmSmeDashboard' => $rmSmeDashboard,
+            'sourceScores' => $payload['source_scores'] ?? null,
         ]);
     }
 
@@ -365,6 +375,7 @@ class AlmafactsDashboardController extends Controller
         $keys = $sheetKeys === []
             ? array_keys(self::KPI_SHEETS)
             : array_values(array_filter(array_unique($sheetKeys), fn (string $key): bool => isset(self::KPI_SHEETS[$key])));
+        $keys = array_values(array_filter($keys, fn (string $key): bool => isset($this->kpiPeriodOptions($key)[$selectedPeriod])));
         $results = [];
 
         foreach ($keys as $sheetKey) {
@@ -427,6 +438,9 @@ class AlmafactsDashboardController extends Controller
 
     private function cachedKpiSheetPayload(string $sheetKey, string $period, string $cacheKey): array
     {
+        if (app(KpiWorkbookSnapshotService::class)->available($sheetKey, $period)) {
+            return $this->fetchKpiWorkbookPayload($sheetKey, $period);
+        }
         $payload = Cache::get($cacheKey);
         if (!is_array($payload) || empty($payload['header'])) {
             $payload = $this->readPersistedKpiSheetPayload($cacheKey);
@@ -467,6 +481,10 @@ class AlmafactsDashboardController extends Controller
     private function queueKpiSourceRefresh(array $sheetKeys, string $period): void
     {
         $sheetKeys = array_values(array_filter(array_unique($sheetKeys), fn (string $key): bool => isset(self::KPI_SHEETS[$key])));
+        $sheetKeys = array_values(array_filter($sheetKeys, fn (string $key): bool => ! app(KpiWorkbookSnapshotService::class)->available($key, $period)));
+        if ($sheetKeys === []) {
+            return;
+        }
         $pendingKey = $sheetKeys === []
             ? 'dashboard_sources:refresh:kpi:' . $period . ':all:pending'
             : 'dashboard_sources:refresh:kpi:' . $period . ':' . implode(',', $sheetKeys) . ':pending';
@@ -517,28 +535,72 @@ class AlmafactsDashboardController extends Controller
         return array_key_exists($key, self::KPI_SHEETS) ? $key : array_key_first(self::KPI_SHEETS);
     }
 
-    private function resolveKpiPeriod(mixed $value): string
+    private function kpiPeriodOptions(string $sheetKey): array
     {
+        if ($sheetKey === 'mantri-briguna') {
+            return ['2026-09' => self::KPI_PERIOD_OPTIONS['2026-09']];
+        }
+
+        return app(KpiWorkbookSnapshotService::class)->available($sheetKey, '2026-09')
+            ? self::KPI_PERIOD_OPTIONS
+            : array_diff_key(self::KPI_PERIOD_OPTIONS, ['2026-09' => true]);
+    }
+
+    private function resolveKpiPeriod(mixed $value, ?string $sheetKey = null): string
+    {
+        $options = $sheetKey === null ? self::KPI_PERIOD_OPTIONS : $this->kpiPeriodOptions($sheetKey);
         $period = trim((string) $value);
-        if (array_key_exists($period, self::KPI_PERIOD_OPTIONS)) {
+        if (array_key_exists($period, $options)) {
             return $period;
         }
 
         if ($period !== '') {
             try {
                 $normalized = Carbon::parse($period)->format('Y-m');
-                if (array_key_exists($normalized, self::KPI_PERIOD_OPTIONS)) {
+                if (array_key_exists($normalized, $options)) {
                     return $normalized;
                 }
             } catch (\Throwable) {
             }
         }
 
-        return self::KPI_DEFAULT_PERIOD;
+        return $sheetKey === null ? self::KPI_DEFAULT_PERIOD : array_key_first($options);
+    }
+
+    private function fetchKpiWorkbookPayload(string $sheetKey, string $period): array
+    {
+        $snapshot = app(KpiWorkbookSnapshotService::class)->read($sheetKey, $period);
+        $meta = $this->buildKpiSheetHeaderMeta($snapshot['header_rows'][0], $sheetKey, $snapshot['header_rows'][1]);
+        $scoreIndex = array_search('SCORE', array_map('strtoupper', $snapshot['header_rows'][0]), true);
+        $sourceScores = [];
+        if ($scoreIndex !== false) {
+            foreach ($snapshot['rows'] as $index => $row) {
+                $raw = $snapshot['raw_rows'][$index][$scoreIndex];
+                $format = $snapshot['number_formats'][$snapshot['format_ids'][$index][$scoreIndex]];
+                $sourceScores[hash('sha256', json_encode($row))] = is_numeric($raw)
+                    ? (float) $raw * (str_contains($format, '%') ? 100 : 1) : null;
+            }
+        }
+
+        return [
+            'header' => $meta['header'], 'header_columns' => $meta['columns'], 'header_groups' => $meta['groups'],
+            'rows' => $snapshot['rows'], 'source_scores' => $sourceScores,
+            'summary' => [
+                'row_count' => count($snapshot['rows']), 'column_count' => count($meta['header']),
+                'sheet_name' => $snapshot['source']['sheet'],
+                'sheet_title' => $snapshot['source']['sheet'].' — 30 September 2026',
+                'period' => $period, 'source_file' => $snapshot['source']['file'],
+                'source_sha256' => $snapshot['source']['sha256'],
+            ],
+            'fetched_at' => null, 'error' => null,
+        ];
     }
 
     private function fetchKpiSheetPayload(string $sheetKey, string $period): array
     {
+        if (app(KpiWorkbookSnapshotService::class)->available($sheetKey, $period)) {
+            return $this->fetchKpiWorkbookPayload($sheetKey, $period);
+        }
         $sheet = $this->kpiSheetConfig($sheetKey, $period);
         if ($sheetKey === 'rm-sme' && ! empty($sheet['dashboard_mode'])) {
             return $this->fetchKpiRmSmeDashboardPayload($sheet, $period);
@@ -1354,6 +1416,11 @@ class AlmafactsDashboardController extends Controller
 
     private function kpiSheetCacheKey(string $sheetKey, string $period): string
     {
+        if (app(KpiWorkbookSnapshotService::class)->available($sheetKey, $period)) {
+            $source = app(KpiWorkbookSnapshotService::class)->read($sheetKey, $period)['source'];
+
+            return 'dashboard_almafacts:kpi_workbook:v1:'.$period.':'.$sheetKey.':'.$source['sha256'];
+        }
         $sheet = $this->kpiSheetConfig($sheetKey, $period);
         $sheetName = $sheet['sheet'] ?? $sheetKey;
         $spreadsheetId = $sheet['spreadsheet_id'] ?? self::KPI_SPREADSHEET_ID;
@@ -1373,6 +1440,11 @@ class AlmafactsDashboardController extends Controller
     private function kpiSheetConfig(string $sheetKey, string $period): array
     {
         $base = self::KPI_SHEETS[$sheetKey] ?? self::KPI_SHEETS[array_key_first(self::KPI_SHEETS)];
+        if (app(KpiWorkbookSnapshotService::class)->available($sheetKey, $period)) {
+            $source = app(KpiWorkbookSnapshotService::class)->read($sheetKey, $period)['source'];
+
+            return array_replace($base, ['source_type' => 'workbook', 'sheet' => $source['sheet'], 'source_file' => $source['file']]);
+        }
 
         if ($period === '2026-06' && isset(self::KPI_JUNE_SOURCES[$sheetKey])) {
             $base = array_replace($base, self::KPI_JUNE_SOURCES[$sheetKey]);

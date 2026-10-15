@@ -2,127 +2,106 @@
 
 namespace App\Console\Commands;
 
-use App\Support\ReportDataSyncService;
+use App\Support\PeriodSnapshotSyncService;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 class SnapshotForceSyncCommand extends Command
 {
-    protected $signature = 'snapshot:force-sync {--period= : Periode tertentu (YYYY-MM-DD)} {--all : Sync semua tabel, tidak hanya yang berubah} {--sync-id= : ID untuk cache progress tracking}';
+    protected $signature = 'snapshot:force-sync {--period= : Periode (DD-MM-YYYY atau YYYY-MM-DD)} {--all : Diabaikan; semua snapshot periode terpilih selalu dibangun ulang} {--sync-id= : ID untuk cache progress tracking}';
 
-    protected $description = 'Force sync semua snapshot types sekaligus (Pinjaman, Simpanan, SSA, etc) setelah perubahan data manual';
+    protected $description = 'Bangun ulang (force) seluruh snapshot report untuk satu periode, hanya dari sumber yang memiliki data pada tanggal tersebut';
 
-    private const SYNC_TABLES = [
-        'daily_loan_dinamis',
-        'simpanan_multipn',
-        'ssa_simpanan',
-        'ssa_pinjaman',
-        'lw325_ph',
-        'performance_pis_per_produk',
-    ];
-
-    public function handle(): int
+    public function handle(PeriodSnapshotSyncService $service): int
     {
-        try {
-            $period = trim((string) $this->option('period')) ?: null;
-            $syncAll = (bool) $this->option('all');
+        $syncId = trim((string) $this->option('sync-id')) ?: null;
+        $period = PeriodSnapshotSyncService::normalizePeriod((string) $this->option('period'));
 
-            $syncId = trim((string) $this->option('sync-id')) ?: null;
+        if ($period === null) {
+            $this->error('--period wajib diisi dengan tanggal valid. Contoh: --period=14-10-2026');
+            $this->updateCache($syncId, ['status' => 'failed', 'progress' => 100, 'message' => 'Periode tidak valid. Gunakan format DD-MM-YYYY.']);
 
-            if (!$period) {
-                $this->error('--period wajib diisi. Contoh: --period=2026-04-26');
-                if ($syncId) $this->updateCache($syncId, 'failed', 100, 0, count(self::SYNC_TABLES), 0, '--period wajib diisi');
-                return self::FAILURE;
-            }
-
-            $this->info("🔄 Starting force sync untuk period: {$period}");
-
-            if ($syncAll) {
-                $this->line('<fg=yellow>Mode: Sync ALL tables (tidak peduli apakah ada perubahan)</fg=yellow>');
-            } else {
-                $this->line('<fg=cyan>Mode: Smart sync (hanya tabel yang berubah)</fg=cyan>');
-            }
-
-            $this->line('');
-
-            $syncService = app(ReportDataSyncService::class);
-            $startTime = microtime(true);
-            $syncCount = 0;
-            $failCount = 0;
-            $totalTables = count(self::SYNC_TABLES);
-
-            if ($syncId) $this->updateCache($syncId, 'running', 0, 0, $totalTables, 0, 'Memulai proses sinkronisasi...');
-
-            foreach (self::SYNC_TABLES as $index => $table) {
-                try {
-                    $this->line("  ▪ Syncing {$table}...");
-                    
-                    if ($syncId) {
-                        $percent = (int) (($index / $totalTables) * 100);
-                        $this->updateCache($syncId, 'running', $percent, $index, $totalTables, $failCount, "Sinkronisasi tabel {$table}...");
-                    }
-
-                    $syncService->syncImportedTable(
-                        tableName: $table,
-                        periodHint: $period,
-                        jobId: null,
-                        source: 'artisan:snapshot:force-sync',
-                        deleteId: null,
-                        rebuildId: null
-                    );
-
-                    $this->line("    <fg=green>✓ {$table} synced</fg=green>");
-                    $syncCount++;
-                } catch (\Throwable $e) {
-                    $this->line("    <fg=red>✗ {$table} failed: {$e->getMessage()}</fg=red>");
-                    Log::error("snapshot:force-sync failed for {$table}", [
-                        'period' => $period,
-                        'exception' => $e->getMessage(),
-                    ]);
-                    $failCount++;
-                }
-            }
-
-            $elapsed = microtime(true) - $startTime;
-
-            $this->line('');
-            $this->line('<fg=cyan>═══════════════════════════════════════</fg=cyan>');
-            $this->line("  Total: {$syncCount} synced, {$failCount} failed");
-            $this->line("  Duration: " . number_format($elapsed, 2) . " seconds");
-            $this->line('<fg=cyan>═══════════════════════════════════════</fg=cyan>');
-
-            if ($failCount === 0) {
-                $this->info("✓ Semua snapshot untuk periode {$period} telah di-sync!");
-                if ($syncId) $this->updateCache($syncId, 'completed', 100, $syncCount, $totalTables, $failCount, 'Sinkronisasi seluruh tabel selesai dengan sukses.');
-                return self::SUCCESS;
-            }
-
-            $this->warn("⚠ Ada {$failCount} tabel yang gagal di-sync. Periksa log untuk detail.");
-            if ($syncId) $this->updateCache($syncId, 'warning', 100, $syncCount, $totalTables, $failCount, "Sinkronisasi selesai dengan {$failCount} kegagalan tabel.");
-            return self::FAILURE;
-        } catch (\Throwable $e) {
-            $this->error('Force sync failed: ' . $e->getMessage());
-            Log::error('SnapshotForceSyncCommand exception', ['message' => $e->getMessage()]);
-            $syncId = trim((string) $this->option('sync-id')) ?: null;
-            if ($syncId) $this->updateCache($syncId, 'failed', 100, 0, count(self::SYNC_TABLES), 0, 'Terjadi kesalahan sistem: ' . $e->getMessage());
             return self::FAILURE;
         }
+
+        $label = $service->displayDate($period);
+        $this->info("Sinkronisasi snapshot periode {$label}");
+        $this->updateCache($syncId, ['status' => 'running', 'progress' => 0, 'message' => "Memeriksa report yang memiliki data {$label}..."]);
+
+        try {
+            $summary = $service->run($period, function (array $state) use ($syncId): void {
+                $this->line('  ▪ ' . $state['message']);
+                $this->updateCache($syncId, [
+                    'status' => 'running',
+                    'progress' => $state['percent'],
+                    'completed_tables' => $state['completed'],
+                    'total_tables' => $state['total'],
+                    'message' => $state['message'],
+                    'steps' => $this->stepSummary($state['plan']),
+                    'reports' => $state['plan']['reports'],
+                ]);
+            });
+        } catch (\Throwable $e) {
+            Log::error('snapshot:force-sync gagal', ['period' => $period, 'message' => $e->getMessage()]);
+            $this->error($e->getMessage());
+            $this->updateCache($syncId, ['status' => 'failed', 'progress' => 100, 'message' => 'Sinkronisasi gagal: ' . $e->getMessage()]);
+
+            return self::FAILURE;
+        }
+
+        $plan = $summary['plan'];
+        $skipped = collect($plan['steps'])->reject(fn (array $step): bool => $step['available'])->pluck('label')->all();
+        $errors = $summary['errors'];
+        $message = $summary['rebuilt'] === 0 && $errors === []
+            ? "Tidak ada snapshot yang bersumber dari data {$label}. Cache " . count($plan['reports']) . ' report telah disegarkan.'
+            : sprintf(
+                '%d snapshot periode %s dibangun ulang, cache %d report disegarkan.%s%s',
+                $summary['rebuilt'],
+                $label,
+                count($plan['reports']),
+                $errors !== [] ? ' Gagal: ' . implode(', ', array_keys($errors)) . '.' : '',
+                $skipped !== [] ? ' Dilewati (sumber tidak ada data tanggal ini): ' . implode(', ', $skipped) . '.' : ''
+            );
+
+        $this->info($message);
+        $this->updateCache($syncId, [
+            'status' => $errors === [] ? 'completed' : 'warning',
+            'progress' => 100,
+            'completed_tables' => $summary['total_steps'],
+            'total_tables' => $summary['total_steps'],
+            'failed_tables' => count($errors),
+            'message' => $message,
+            'steps' => $this->stepSummary($plan, $summary['results'], $errors),
+            'reports' => $plan['reports'],
+            'finished_at' => now()->toIso8601String(),
+        ]);
+
+        return $errors === [] ? self::SUCCESS : self::FAILURE;
     }
 
-    private function updateCache(string $syncId, string $status, int $progress, int $completed, int $total, int $failed, string $message): void
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function stepSummary(array $plan, array $results = [], array $errors = []): array
     {
-        $cacheKey = "snapshot_force_sync:{$syncId}";
-        $state = \Illuminate\Support\Facades\Cache::get($cacheKey) ?: [];
-        
-        $state['status'] = $status;
-        $state['progress'] = $progress;
-        $state['completed_tables'] = $completed;
-        $state['total_tables'] = $total;
-        $state['failed_tables'] = $failed;
-        $state['message'] = $message;
-        $state['updated_at'] = now()->toIso8601String();
-        
-        \Illuminate\Support\Facades\Cache::put($cacheKey, $state, now()->addHours(6));
+        return array_map(static fn (array $step): array => [
+            'key' => $step['key'],
+            'label' => $step['label'],
+            'available' => $step['available'],
+            'rows' => $results[$step['key']] ?? null,
+            'error' => $errors[$step['key']] ?? null,
+        ], $plan['steps']);
+    }
+
+    private function updateCache(?string $syncId, array $changes): void
+    {
+        if ($syncId === null) {
+            return;
+        }
+
+        $key = PeriodSnapshotSyncService::STATE_PREFIX . $syncId;
+        $state = array_merge(Cache::get($key) ?: [], $changes, ['updated_at' => now()->toIso8601String()]);
+        Cache::put($key, $state, now()->addHours(6));
     }
 }

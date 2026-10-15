@@ -9413,7 +9413,19 @@ class DashboardSimpananController extends Controller
     private function readLandingPayloadCache(string $key, bool $durable = false): ?array
     {
         $payload = Cache::get($key);
+        if (is_array($payload) && !$this->landingLoanSnapshotMatches($payload)) {
+            Cache::forget($key);
+
+            return null;
+        }
         if ($this->landingPayloadIsReady($payload)) {
+            if (!$this->landingLoanSnapshotMatches($payload, true)
+                || (isset($payload['meta']['report_cache_version'])
+                    && $payload['meta']['report_cache_version'] !== $this->reportCacheVersion())) {
+                $payload['meta']['refresh_pending'] = true;
+                $payload['meta']['retry_after'] = now()->addSeconds(30)->timestamp;
+            }
+
             return $payload;
         }
         if (!$durable && is_array($payload)
@@ -9425,6 +9437,47 @@ class DashboardSimpananController extends Controller
         }
 
         return null;
+    }
+
+    /** Re-imported SSA snapshots take precedence over cross-version landing caches. */
+    private function landingLoanSnapshotMatches(array $payload, bool $requireSource = false): bool
+    {
+        $portfolio = $payload['area6_portfolio'] ?? $payload;
+        $period = $portfolio['period'] ?? null;
+        $cards = collect($portfolio['cards'] ?? [])->keyBy('key');
+        if (!$cards->has('os') && !array_key_exists('area6_portfolio', $payload)) {
+            return true;
+        }
+        if (!$period || !$cards->has('os') || !$this->hasTable(self::HARIAN_SNAPSHOT_TABLE)) {
+            return !$requireSource;
+        }
+        $columns = ['os' => 'total_os_non_commercial', 'sml' => 'total_sml_abs_non_commercial', 'npl' => 'total_npl_abs_non_commercial'];
+        if (!collect($columns)->every(fn (string $column): bool => $this->hasColumn(self::HARIAN_SNAPSHOT_TABLE, $column))) {
+            return !$requireSource;
+        }
+        $query = $this->area6HarianSnapshotScopeQuery((string) $period, true)->selectRaw('COUNT(*) as rows_count');
+        if ($this->hasColumn(self::HARIAN_SNAPSHOT_TABLE, 'source_loan_row_count')) {
+            $query->selectRaw('COALESCE(SUM(source_loan_row_count), 0) as source_rows');
+        }
+        foreach ($columns as $key => $column) {
+            $query->selectRaw("COALESCE(SUM({$column}), 0) as {$key}");
+        }
+        $current = $query->first();
+        if (!$current || (int) $current->rows_count === 0) {
+            // Preserve last-valid values while a source is temporarily absent.
+            return !$requireSource;
+        }
+        if (isset($current->source_rows) && (int) $current->source_rows === 0) {
+            return !$requireSource;
+        }
+        foreach ($columns as $key => $column) {
+            $cached = data_get($cards->get($key), 'realization_raw');
+            if (is_numeric($cached) && abs((float) $cached - (float) $current->{$key}) > max(0.01, abs((float) $current->{$key}) * 1e-10)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function buildDashboardPayload(?string $selectedPeriod = null): array
@@ -9442,6 +9495,10 @@ class DashboardSimpananController extends Controller
         // 1. Primary fresh cache (TTL 30 minutes)
         $cachedPayload = $this->readLandingPayloadCache($payloadCacheKey);
         if (is_array($cachedPayload)) {
+            if (\App\Support\LandingPayloadState::pending($cachedPayload)) {
+                $this->deferDashboardPayloadRefresh($payloadCacheKey, $latestCacheKey, $stableLatestCacheKey, $selectedPeriod, $durableFallbackKey);
+            }
+
             return $cachedPayload;
         }
 
@@ -9536,8 +9593,24 @@ class DashboardSimpananController extends Controller
         ?string $selectedPeriod = null,
         ?string $durableFallbackKey = null
     ): array {
+        $buildVersion = $this->reportCacheVersion();
         $freshPayload = $this->buildDashboardPayloadFresh($selectedPeriod);
-        if (!$this->landingPayloadIsReady($freshPayload)) {
+
+        return $this->cacheDashboardPayload($payloadCacheKey, $latestCacheKey, $stableLatestCacheKey, $freshPayload, $buildVersion, $durableFallbackKey);
+    }
+
+    /** Publish only completed data built against the current source generation. */
+    private function cacheDashboardPayload(
+        string $payloadCacheKey,
+        string $latestCacheKey,
+        string $stableLatestCacheKey,
+        array $freshPayload,
+        string $buildVersion,
+        ?string $durableFallbackKey = null
+    ): array {
+        if ($buildVersion !== $this->reportCacheVersion()
+            || !$this->landingPayloadIsReady($freshPayload)
+            || !$this->landingLoanSnapshotMatches($freshPayload, true)) {
             $fallback = $durableFallbackKey ? $this->readLandingPayloadCache($durableFallbackKey, true) : null;
             $freshPayload = $fallback ?? $freshPayload;
             $freshPayload['meta']['refresh_pending'] = true;
@@ -9546,6 +9619,7 @@ class DashboardSimpananController extends Controller
 
             return $freshPayload;
         }
+        $freshPayload['meta']['report_cache_version'] = $buildVersion;
         Cache::put($payloadCacheKey, $freshPayload, now()->addMinutes(self::PAYLOAD_CACHE_MINUTES));
         Cache::put($latestCacheKey, $freshPayload, now()->addMinutes(self::SUMMARY_LATEST_CACHE_MINUTES));
         Cache::put($stableLatestCacheKey, $freshPayload, now()->addMinutes(self::SUMMARY_LATEST_CACHE_MINUTES * 24));
@@ -10074,29 +10148,32 @@ class DashboardSimpananController extends Controller
 
         if ($forceFresh) {
             $freshPayload = $this->buildArea6PortfolioLandingFresh($loanPeriod, $dailyLoanPeriod);
-            $this->cacheLandingPortfolioPayload($cacheKey, $latestCacheKey, $stableLatestCacheKey, $freshPayload);
 
-            return $freshPayload;
+            return $this->cacheLandingPortfolioPayload($cacheKey, $latestCacheKey, $stableLatestCacheKey, $freshPayload, $cacheVersion);
         }
 
-        $cachedPayload = Cache::get($cacheKey);
+        $cachedPayload = $this->readLandingPayloadCache($cacheKey);
 
         if (is_array($cachedPayload)) {
+            if (\App\Support\LandingPayloadState::pending($cachedPayload)) {
+                $this->deferArea6PortfolioRefresh($cacheKey, $latestCacheKey, $stableLatestCacheKey, $loanPeriod, $dailyLoanPeriod);
+            }
+
             return $cachedPayload;
         }
 
-        $latestPayload = Cache::get($latestCacheKey);
+        $latestPayload = $this->readLandingPayloadCache($latestCacheKey, true);
 
-        if (is_array($latestPayload) && !\App\Support\LandingPayloadState::pending($latestPayload)) {
-            Cache::put($cacheKey, $latestPayload, now()->addMinutes(self::PAYLOAD_CACHE_MINUTES));
+        if (is_array($latestPayload)) {
+            Cache::put($cacheKey, $latestPayload, now()->addSeconds(30));
             $this->deferArea6PortfolioRefresh($cacheKey, $latestCacheKey, $stableLatestCacheKey, $loanPeriod, $dailyLoanPeriod);
 
             return $latestPayload;
         }
 
-        $stableLatestPayload = Cache::get($stableLatestCacheKey);
+        $stableLatestPayload = $this->readLandingPayloadCache($stableLatestCacheKey, true);
 
-        if (is_array($stableLatestPayload) && !\App\Support\LandingPayloadState::pending($stableLatestPayload)) {
+        if (is_array($stableLatestPayload)) {
             Cache::put($cacheKey, $stableLatestPayload, now()->addSeconds(30));
             $this->deferArea6PortfolioRefresh($cacheKey, $latestCacheKey, $stableLatestCacheKey, $loanPeriod, $dailyLoanPeriod);
 
@@ -10115,9 +10192,8 @@ class DashboardSimpananController extends Controller
 
             if ($locked) {
                 $freshPayload = $this->buildArea6PortfolioLandingFresh($loanPeriod, $dailyLoanPeriod);
-                $this->cacheLandingPortfolioPayload($cacheKey, $latestCacheKey, $stableLatestCacheKey, $freshPayload);
 
-                return $freshPayload;
+                return $this->cacheLandingPortfolioPayload($cacheKey, $latestCacheKey, $stableLatestCacheKey, $freshPayload, $cacheVersion);
             }
         } catch (Throwable $e) {
             Log::warning('Dashboard simpanan Area 6 lock failed, generating fresh directly.', [
@@ -10142,17 +10218,25 @@ class DashboardSimpananController extends Controller
         return $this->emptyArea6PortfolioLanding();
     }
 
-    private function cacheLandingPortfolioPayload(string $cacheKey, string $latestKey, string $stableKey, array $payload): void
+    private function cacheLandingPortfolioPayload(string $cacheKey, string $latestKey, string $stableKey, array $payload, ?string $buildVersion = null): array
     {
-        if (\App\Support\LandingPayloadState::pending($payload)) {
+        $buildVersion ??= $this->reportCacheVersion();
+        if ($buildVersion !== $this->reportCacheVersion()
+            || !$this->landingPayloadIsReady($payload)
+            || !$this->landingLoanSnapshotMatches($payload, true)) {
+            $payload['meta']['refresh_pending'] = true;
+            $payload['meta']['retry_after'] = now()->addSeconds(30)->timestamp;
             Cache::put($cacheKey, $payload, now()->addSeconds(30));
 
-            return;
+            return $payload;
         }
 
+        $payload['meta']['report_cache_version'] = $buildVersion;
         Cache::put($cacheKey, $payload, now()->addMinutes(self::PAYLOAD_CACHE_MINUTES));
         Cache::put($latestKey, $payload, now()->addMinutes(self::SUMMARY_LATEST_CACHE_MINUTES));
         Cache::put($stableKey, $payload, now()->addMinutes(self::SUMMARY_LATEST_CACHE_MINUTES));
+
+        return $payload;
     }
 
     private function deferArea6PortfolioRefresh(string $cacheKey, string $latestCacheKey, string $stableLatestCacheKey, ?string $loanPeriod, ?string $dailyLoanPeriod): void
@@ -10246,18 +10330,20 @@ class DashboardSimpananController extends Controller
             }
 
             if ($type === 'area6-portfolio') {
+                $buildVersion = $this->reportCacheVersion();
                 $freshPayload = $this->buildArea6PortfolioLandingFresh(
                     $context['loanPeriod'] ?? null,
                     $context['dailyLoanPeriod'] ?? null
                 );
-                if (\App\Support\LandingPayloadState::pending($freshPayload)) {
-                    return false;
-                }
-                Cache::put($cacheKey, $freshPayload, now()->addMinutes(self::PAYLOAD_CACHE_MINUTES));
-                Cache::put((string) ($context['latestCacheKey'] ?? ''), $freshPayload, now()->addMinutes(self::SUMMARY_LATEST_CACHE_MINUTES));
-                Cache::put((string) ($context['stableLatestCacheKey'] ?? ''), $freshPayload, now()->addMinutes(self::SUMMARY_LATEST_CACHE_MINUTES));
+                $freshPayload = $this->cacheLandingPortfolioPayload(
+                    $cacheKey,
+                    (string) ($context['latestCacheKey'] ?? ''),
+                    (string) ($context['stableLatestCacheKey'] ?? ''),
+                    $freshPayload,
+                    $buildVersion
+                );
 
-                return true;
+                return $this->landingPayloadIsReady($freshPayload);
             }
 
             if ($type === 'presentation-payload') {
@@ -14880,7 +14966,9 @@ class DashboardSimpananController extends Controller
 
     private function reportCacheVersion(): string
     {
-        return ReportCacheVersion::composite(['simpanan', 'pinjaman', 'harian'])
+        // 'global' covers digital/merchant/PIS/IBBIZ imports rendered on the
+        // landing pages; without it those imports never invalidated the payload.
+        return ReportCacheVersion::composite(['simpanan', 'pinjaman', 'harian', 'global'])
             . ':scope:' . $this->landingBranchCacheKey();
     }
 }

@@ -100,6 +100,7 @@
         'rm-mikro' => ['NAMA', 'NAMA RM'],
         'rm-sme' => ['NAMA RM', 'NAMA', 'UKER'],
         'mantri' => ['NAMA MANTRI', 'NAMA'],
+        'mantri-briguna' => ['NAMA MANTRI', 'NAMA'],
         'consumer' => ['PN PENGELOLA SINGLEPN', 'NAMA', 'UKER'],
     ];
     $identityColumnIndex = null;
@@ -117,7 +118,9 @@
     $topScoreLabel = '-';
     if ($scoreColumnIndex !== null) {
         foreach ($summaryRows as $summaryRow) {
-            $scoreValue = $toNumber($summaryRow[$scoreColumnIndex] ?? null);
+            $scoreValue = ($sourceScores ?? null) !== null
+                ? ($sourceScores[hash('sha256', json_encode($summaryRow))] ?? null)
+                : $toNumber($summaryRow[$scoreColumnIndex] ?? null);
             if ($scoreValue === null) {
                 continue;
             }
@@ -876,7 +879,7 @@
         <div class="kpi-hero-copy">
             <div class="kpi-eyebrow"><i class="fas fa-chart-line"></i> Performance Management</div>
             <h1 id="kpi-page-title">Dashboard {{ $selectedSheet['title'] ?? 'KPI' }}</h1>
-            <p>Monitoring kinerja {{ $selectedPeriodLabel }} berdasarkan data Google Spreadsheet dengan cakupan akses wilayah yang berlaku.</p>
+            <p>Monitoring kinerja {{ $selectedPeriodLabel }} berdasarkan {{ ($selectedSheet['source_type'] ?? '') === 'workbook' ? 'workbook Excel posisi 30 September 2026' : 'data Google Spreadsheet' }} dengan cakupan akses wilayah yang berlaku.</p>
         </div>
         <div class="kpi-hero-facts">
             <div class="kpi-hero-fact"><span>Wilayah</span><strong title="{{ $activeBranchLabel }}">{{ $activeBranchLabel }}</strong></div>
@@ -900,10 +903,17 @@
                 <i class="fas fa-sync-alt"></i>
                 Perbarui
             </a>
+            @if(($selectedSheet['source_type'] ?? '') === 'workbook')
+            <span class="kpi-action" title="{{ $selectedSheet['source_file'] }}">
+                <i class="fas fa-file-excel" aria-hidden="true"></i>
+                Sumber Excel · 30 Sep 2026
+            </span>
+            @else
             <a href="{{ $spreadsheetUrl }}" target="_blank" rel="noopener" class="kpi-action">
                 <i class="fas fa-external-link-alt"></i>
                 Spreadsheet
             </a>
+            @endif
         </div>
     </nav>
 
@@ -986,7 +996,7 @@
             </div>
             <span class="kpi-source-badge">
                 <i class="fas fa-circle" aria-hidden="true"></i>
-                Google Sheets live
+                {{ ($selectedSheet['source_type'] ?? '') === 'workbook' ? 'Excel · 30 Sep 2026' : 'Google Sheets live' }}
             </span>
         </div>
 

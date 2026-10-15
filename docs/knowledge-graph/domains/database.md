@@ -9,18 +9,18 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | command | 4 |
 | file | 155 |
 | function | 380 |
-| method | 181 |
+| method | 186 |
 | unresolved_symbol | 10 |
 | route | 2 |
 | class | 16 |
-| table | 3 |
+| table | 5 |
 
 ## Main Hubs
 
 | Node | Kind | Degree | Source |
 | --- | --- | ---: | --- |
 | `DailyDatabaseBackupService` | class | 45 | `app/Services/DailyDatabaseBackupService.php:14` |
-| `ManagedReportBackupRecoveryService` | class | 33 | `app/Services/ManagedReportBackupRecoveryService.php:14` |
+| `ManagedReportBackupRecoveryService` | class | 38 | `app/Services/ManagedReportBackupRecoveryService.php:15` |
 | `backup` | method | 33 | `app/Services/DailyDatabaseBackupService.php:44` |
 | `up` | function | 28 | `database/migrations/2026_04_01_000003_main_report_data.php:9` |
 | `DatabaseBackupService` | class | 26 | `app/Services/DatabaseBackupService.php:11` |
@@ -32,7 +32,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `CachedMySqlSchemaBuilder` | class | 17 | `app/Support/CachedMySqlSchemaBuilder.php:9` |
 | `SchemaMetadataCache` | class | 15 | `app/Support/SchemaMetadataCache.php:9` |
 | `invalidate` | method | 15 | `app/Support/SchemaMetadataCache.php:62` |
-| `extractTableSqlFromBackup` | method | 14 | `app/Services/ManagedReportBackupRecoveryService.php:172` |
+| `extractTableSqlFromBackup` | method | 14 | `app/Services/ManagedReportBackupRecoveryService.php:316` |
 | `inspectManagedBackupDirectory` | method | 14 | `app/Services/DailyDatabaseBackupService.php:1079` |
 | `handle` | method | 13 | `app/Console/Commands/RestoreDatabaseBackupCommand.php:29` |
 | `performOptimizedBackup` | method | 13 | `app/Console/Commands/ProgressiveBackupCommand.php:107` |
@@ -40,15 +40,15 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `ChunkedBackupPlanner` | class | 12 | `app/Services/DatabaseBackup/ChunkedBackupPlanner.php:14` |
 | `ChunkedDatabaseBackupWriter` | class | 12 | `app/Services/DatabaseBackup/ChunkedDatabaseBackupWriter.php:14` |
 | `handle` | method | 12 | `app/Console/Commands/ProgressiveBackupCommand.php:17` |
-| `recoverReportTable` | method | 12 | `app/Services/ManagedReportBackupRecoveryService.php:25` |
+| `recoverReportTable` | method | 12 | `app/Services/ManagedReportBackupRecoveryService.php:29` |
 | `up` | function | 12 | `database/migrations/2026_04_01_000004_secondary_ssa_cognos_reports.php:10` |
 | `CompressedDatabaseDumpRunner` | class | 10 | `app/Services/DatabaseBackup/CompressedDatabaseDumpRunner.php:9` |
 | `file-management.database-backup` | route | 10 | - |
 | `handle` | method | 10 | `app/Console/Commands/BackupDatabasePartCommand.php:23` |
 | `put` | method | 10 | `app/Support/DatabaseBackupStatusStore.php:16` |
 | `up` | function | 10 | `database/migrations/2026_04_27_optimize_import_indexes.php:20` |
+| `emitProgress` | method | 9 | `app/Services/ManagedReportBackupRecoveryService.php:1191` |
 | `file-management.database-backup.status` | route | 9 | - |
-| `getColumnListing` | method | 9 | `app/Support/SchemaMetadataCache.php:54` |
 
 ## Route Nodes
 
@@ -83,7 +83,9 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 ## Table Nodes
 
+- `information_schema.COLUMNS`
 - `information_schema.KEY_COLUMN_USAGE`
+- `information_schema.TRIGGERS`
 - `information_schema.statistics`
 - `performance_schema.table_io_waits_summary_by_index_usage`
 
@@ -91,11 +93,11 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Direction | Count |
 | --- | ---: |
-| database -> core (instantiates) | 73 |
+| database -> core (instantiates) | 78 |
 | database -> core (checks_table) | 62 |
 | database -> core (writes_table) | 60 |
 | database -> import (checks_table) | 43 |
-| database -> core (calls) | 30 |
+| database -> core (calls) | 31 |
 | database -> dashboard-pinjaman (checks_table) | 26 |
 | database -> import (defines_table) | 24 |
 | database -> core (accepts) | 20 |

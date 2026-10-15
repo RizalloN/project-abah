@@ -7,12 +7,12 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Kind | Count |
 | --- | ---: |
 | command | 16 |
-| file | 61 |
-| method | 509 |
+| file | 62 |
+| method | 520 |
 | unresolved_symbol | 18 |
 | queue | 6 |
 | route | 1 |
-| class | 59 |
+| class | 60 |
 | trait | 1 |
 | table | 11 |
 
@@ -20,7 +20,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Node | Kind | Degree | Source |
 | --- | --- | ---: | --- |
-| `ReportSnapshotBuilder` | class | 128 | `app/Support/ReportSnapshotBuilder.php:12` |
+| `ReportSnapshotBuilder` | class | 129 | `app/Support/ReportSnapshotBuilder.php:12` |
 | `jobs` | table | 59 | - |
 | `ManagedReportSnapshotRebuildCoordinator` | class | 38 | `app/Support/ManagedReportSnapshotRebuildCoordinator.php:15` |
 | `snapshots-parallel` | queue | 33 | - |
@@ -42,11 +42,11 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `SnapshotAuditService` | class | 18 | `app/Support/SnapshotAuditService.php:10` |
 | `SnapshotDirtyPeriodService` | class | 18 | `app/Support/SnapshotDirtyPeriodService.php:11` |
 | `queue` | method | 18 | `app/Support/ManagedReportSnapshotRebuildCoordinator.php:28` |
+| `WarmReportCacheJob` | class | 17 | `app/Jobs/WarmReportCacheJob.php:15` |
 | `performance_rm_snapshots` | table | 17 | - |
 | `ProcessShadowBackfillJob` | class | 16 | `app/Jobs/ProcessShadowBackfillJob.php:19` |
 | `RebuildSnapshotPerformanceRmBatch` | class | 16 | `app/Jobs/RebuildSnapshotPerformanceRmBatch.php:20` |
 | `RebuildSnapshotSimpleBatch` | class | 16 | `app/Jobs/RebuildSnapshotSimpleBatch.php:19` |
-| `WarmReportCacheJob` | class | 16 | `app/Jobs/WarmReportCacheJob.php:15` |
 | `capture` | method | 16 | `app/Support/SnapshotSourceSignatureService.php:61` |
 | `dispatchDailyLoanParallelRebuild` | method | 16 | `app/Support/ParallelSnapshotBatchCoordinator.php:101` |
 | `dispatchParallelRebuild` | method | 16 | `app/Support/ParallelSnapshotBatchCoordinator.php:48` |
@@ -78,6 +78,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `ManagedReportSnapshotRebuildCoordinator` - `app/Support/ManagedReportSnapshotRebuildCoordinator.php`
 - `ManagedReportSnapshotRebuildStore` - `app/Support/ManagedReportSnapshotRebuildStore.php`
 - `ParallelSnapshotBatchCoordinator` - `app/Support/ParallelSnapshotBatchCoordinator.php`
+- `PeriodSnapshotSyncService` - `app/Support/PeriodSnapshotSyncService.php`
 - `ProcessShadowBackfillJob` - `app/Jobs/ProcessShadowBackfillJob.php`
 - `ProcessSnapshotDirtyPeriodJob` - `app/Jobs/ProcessSnapshotDirtyPeriodJob.php`
 - `QueueWorkerWatchdog` - `app/Console/Commands/QueueWorkerWatchdog.php`
@@ -167,8 +168,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Direction | Count |
 | --- | ---: |
-| jobs-snapshots -> core (calls) | 102 |
-| import -> jobs-snapshots (calls) | 40 |
+| jobs-snapshots -> core (calls) | 108 |
+| import -> jobs-snapshots (calls) | 41 |
 | jobs-snapshots -> core (uses_trait) | 33 |
 | dashboard-simpanan -> jobs-snapshots (uses_trait) | 24 |
 | jobs-snapshots -> core (accepts) | 22 |
@@ -178,21 +179,21 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | import -> jobs-snapshots (uses_trait) | 17 |
 | jobs-snapshots -> import (instantiates) | 16 |
 | jobs-snapshots -> core (extends) | 16 |
+| jobs-snapshots -> core (instantiates) | 15 |
 | database -> jobs-snapshots (checks_table) | 14 |
 | import -> jobs-snapshots (checks_table) | 14 |
-| jobs-snapshots -> core (instantiates) | 13 |
 | database -> jobs-snapshots (defines_table) | 12 |
 | import -> jobs-snapshots (accepts) | 11 |
 | jobs-snapshots -> import (calls) | 11 |
 | core -> jobs-snapshots (calls) | 10 |
+| jobs-snapshots -> dashboard-harian (calls) | 9 |
 | jobs-snapshots -> dashboard-simpanan (reads_table) | 9 |
+| jobs-snapshots -> platform (calls) | 9 |
 | jobs-snapshots -> presentation (calls) | 9 |
 | dashboard-simpanan -> jobs-snapshots (implements) | 9 |
 | dashboard-pinjaman -> jobs-snapshots (calls) | 8 |
 | dashboard-pinjaman -> jobs-snapshots (uses_queue) | 8 |
-| jobs-snapshots -> platform (calls) | 8 |
 | dashboard-pinjaman -> jobs-snapshots (implements) | 8 |
-| jobs-snapshots -> dashboard-harian (calls) | 7 |
 | dashboard-simpanan -> jobs-snapshots (calls) | 7 |
 | jobs-snapshots -> access-control (protected_by) | 7 |
 | import -> jobs-snapshots (implements) | 7 |

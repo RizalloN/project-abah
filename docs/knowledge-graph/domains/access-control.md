@@ -19,7 +19,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Node | Kind | Degree | Source |
 | --- | --- | ---: | --- |
-| `current` | method | 54 | `app/Support/UserBranchScope.php:111` |
+| `current` | method | 55 | `app/Support/UserBranchScope.php:111` |
 | `User` | class | 27 | `app/Models/User.php:10` |
 | `update` | method | 21 | `app/Http/Controllers/Admin/UserManagementController.php:173` |
 | `LoginRequest` | class | 20 | `app/Http/Requests/Auth/LoginRequest.php:15` |
@@ -52,8 +52,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 ## Route Nodes
 
-- `generated::ExqIPAhwDvzTzTur` - `login`
-- `generated::uH9UL7XKsBg7PlyS` - `confirm-password`
+- `generated::UdaCiWxoZYkXvyXo` - `login`
+- `generated::p6SPxutm2QkZlKZt` - `confirm-password`
 - `login` - `login`
 - `logout` - `logout`
 - `password.confirm` - `confirm-password`
@@ -120,7 +120,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | dashboard-simpanan -> access-control (protected_by) | 222 |
 | dashboard-pinjaman -> access-control (protected_by) | 222 |
 | bank-pipeline -> access-control (protected_by) | 136 |
-| core -> access-control (protected_by) | 69 |
+| core -> access-control (protected_by) | 75 |
 | access-control -> core (calls) | 61 |
 | dashboard-harian -> access-control (protected_by) | 60 |
 | input-management -> access-control (protected_by) | 42 |
@@ -132,8 +132,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | access-control -> core (uses_component) | 13 |
 | access-control -> core (extends) | 11 |
 | bank-pipeline -> access-control (calls) | 8 |
+| core -> access-control (calls) | 8 |
 | marketshare -> access-control (protected_by) | 8 |
-| core -> access-control (calls) | 7 |
 | jobs-snapshots -> access-control (protected_by) | 7 |
 | prognosa -> access-control (protected_by) | 6 |
 | database -> access-control (defines_table) | 5 |

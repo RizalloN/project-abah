@@ -464,31 +464,42 @@ class ImportIndexController extends Controller
     {
         try {
             $validated = $request->validate([
-                'period' => 'required|string|regex:/^\d{4}-\d{2}-\d{2}$/',
+                'period' => 'required|string|max:20',
             ]);
 
-            $period = (string) $validated['period'];
+            $period = \App\Support\PeriodSnapshotSyncService::normalizePeriod((string) $validated['period']);
 
-            if (!$this->isValidDateString($period)) {
+            if ($period === null) {
                 return response()->json([
                     'status' => 'error',
-                    'message' => 'Format periode tidak valid. Gunakan: YYYY-MM-DD',
+                    'message' => 'Format periode tidak valid. Gunakan: DD-MM-YYYY',
                     'sync_id' => null,
                 ], 422);
             }
 
+            $displayPeriod = Carbon::parse($period)->format('d-m-Y');
+
+            if (app(\App\Services\Import\ActiveImportJobCounter::class)->count() > 0) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Masih ada import yang berjalan. Tunggu import selesai lalu jalankan sinkronisasi periode lagi.',
+                    'sync_id' => null,
+                ], 409);
+            }
+
             $syncId = Str::uuid()->toString();
-            $cacheKey = "snapshot_force_sync:{$syncId}";
+            $cacheKey = \App\Support\PeriodSnapshotSyncService::STATE_PREFIX . $syncId;
 
             Cache::put($cacheKey, [
                 'sync_id' => $syncId,
                 'period' => $period,
+                'period_label' => $displayPeriod,
                 'status' => 'running',
                 'progress' => 0,
-                'total_tables' => 6,
+                'total_tables' => 0,
                 'completed_tables' => 0,
                 'failed_tables' => 0,
-                'message' => 'Memulai sinkronisasi snapshot untuk semua tabel...',
+                'message' => "Menunggu worker memulai sinkronisasi periode {$displayPeriod}...",
                 'started_at' => now()->toIso8601String(),
                 'updated_at' => now()->toIso8601String(),
             ], now()->addHours(6));
@@ -506,7 +517,7 @@ class ImportIndexController extends Controller
 
             return response()->json([
                 'status' => 'queued',
-                'message' => "Sinkronisasi snapshot untuk periode {$period} telah di-queue.",
+                'message' => "Sinkronisasi snapshot periode {$displayPeriod} telah dijadwalkan.",
                 'sync_id' => $syncId,
                 'period' => $period,
             ]);
@@ -545,16 +556,6 @@ class ImportIndexController extends Controller
                 'message' => $e->getMessage(),
                 'sync_id' => $syncId,
             ], 500);
-        }
-    }
-
-    private function isValidDateString(string $dateString): bool
-    {
-        try {
-            Carbon::createFromFormat('Y-m-d', $dateString);
-            return true;
-        } catch (Throwable) {
-            return false;
         }
     }
 
@@ -3293,6 +3294,63 @@ class ImportIndexController extends Controller
     }
 
     private function managedDatabaseBackupOptions(): array
+    {
+        return array_merge($this->managedDailyBackupOptions(), $this->managedSqlFileBackupOptions());
+    }
+
+    /**
+     * Verified chunked daily backups (D:\BACKUP PROJECT ABAH by default); the
+     * recovery service restores one table from its schema and data parts.
+     */
+    private function managedDailyBackupOptions(): array
+    {
+        try {
+            $service = app(\App\Services\DailyDatabaseBackupService::class);
+            $directories = $service->managedBackupDirectories();
+        } catch (Throwable $e) {
+            Log::warning('Daftar backup harian untuk recovery gagal dibaca.', ['error' => $e->getMessage()]);
+
+            return [];
+        }
+
+        $cacheKey = 'import:daily_backup_options:' . md5(implode('|', array_map(
+            static fn (string $directory): string => $directory . ':' . (int) @filemtime($directory . DIRECTORY_SEPARATOR . 'manifest.json'),
+            $directories
+        )));
+
+        return Cache::remember($cacheKey, 60, function () use ($service, $directories): array {
+            $options = [];
+            foreach ($directories as $directory) {
+                try {
+                    $backup = $service->resolveChunkedBackup(basename($directory));
+                } catch (Throwable) {
+                    continue;
+                }
+
+                $manifest = $backup['manifest'];
+                $date = (string) ($manifest['backup_date'] ?? '');
+                $size = (int) ($manifest['compressed_bytes'] ?? 0);
+                $options[] = [
+                    'name' => 'Backup Harian ' . ($date !== '' ? Carbon::parse($date)->format('d-m-Y') : basename($directory)),
+                    'path' => \App\Services\ManagedReportBackupRecoveryService::DAILY_BACKUP_PREFIX . basename($directory),
+                    'size' => $size,
+                    'size_human' => number_format($size / 1024 / 1024, 2, ',', '.') . ' MB',
+                    'modified_at' => isset($manifest['completed_at']) ? Carbon::parse((string) $manifest['completed_at'])->format('d M Y H:i') : '-',
+                    'sort' => $date,
+                ];
+            }
+
+            usort($options, static fn (array $a, array $b): int => strcmp($b['sort'], $a['sort']));
+
+            return array_map(static function (array $option): array {
+                unset($option['sort']);
+
+                return $option;
+            }, $options);
+        });
+    }
+
+    private function managedSqlFileBackupOptions(): array
     {
         $directories = $this->managedDatabaseBackupDirectories();
 

@@ -919,6 +919,12 @@
                             </a>
                         </li>
                         <li class="nav-item">
+                            <a href="{{ route('report.dashboard-almafacts.kpi', ['sheet' => 'mantri-briguna']) }}" class="nav-link {{ request()->routeIs('report.dashboard-almafacts.kpi') && request()->route('sheet') === 'mantri-briguna' ? 'active' : '' }}">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>KPI Mantri Briguna</p>
+                            </a>
+                        </li>
+                        <li class="nav-item">
                             <a href="{{ route('report.dashboard-almafacts.kpi', ['sheet' => 'consumer']) }}" class="nav-link {{ request()->routeIs('report.dashboard-almafacts.kpi') && request()->route('sheet') === 'consumer' ? 'active' : '' }}">
                                 <i class="far fa-circle nav-icon"></i>
                                 <p>KPI Konsumer</p>
@@ -961,6 +967,13 @@
                             </a>
                         </li>
                     </ul>
+                </li>
+
+                <li class="nav-item">
+                    <a href="{{ route('ekosistem.index') }}" class="nav-link {{ request()->routeIs('ekosistem.*') ? 'active' : '' }}">
+                        <i class="nav-icon fas fa-project-diagram"></i>
+                        <p>Ekosistem</p>
+                    </a>
                 </li>
 
                 <li class="nav-item">

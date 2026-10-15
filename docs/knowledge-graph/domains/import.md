@@ -8,7 +8,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | --- | ---: |
 | command | 8 |
 | file | 106 |
-| method | 1887 |
+| method | 1889 |
 | route | 158 |
 | class | 86 |
 | trait | 7 |
@@ -21,7 +21,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Node | Kind | Degree | Source |
 | --- | --- | ---: | --- |
 | `ImportExcelController` | class | 384 | `app/Http/Controllers/Import/ImportExcelController.php:75` |
-| `ImportIndexController` | class | 158 | `app/Http/Controllers/Import/ImportIndexController.php:31` |
+| `ImportIndexController` | class | 159 | `app/Http/Controllers/Import/ImportIndexController.php:31` |
 | `ImportFileController` | class | 125 | `app/Http/Controllers/Import/ImportFileController.php:32` |
 | `import_jobs` | table | 113 | - |
 | `ImportProgressService` | class | 102 | `app/Services/Import/ImportProgressService.php:13` |
@@ -36,9 +36,9 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `EnsureImportedSnapshotsFreshJob` | class | 46 | `app/Jobs/EnsureImportedSnapshotsFreshJob.php:30` |
 | `processStagedCsvStream` | method | 45 | `app/Http/Controllers/Import/ImportExcelController.php:14562` |
 | `previewExcel` | method | 42 | `app/Http/Controllers/Import/ImportExcelController.php:12961` |
+| `ImportJobManagementController` | class | 41 | `app/Http/Controllers/Import/ImportJobManagementController.php:19` |
 | `QueueWorkerControlService` | class | 41 | `app/Services/Import/QueueWorkerControlService.php:10` |
 | `preview` | method | 41 | `app/Http/Controllers/Import/ImportFileController.php:3113` |
-| `ImportJobManagementController` | class | 40 | `app/Http/Controllers/Import/ImportJobManagementController.php:19` |
 | `processFastPathBulkCsvStream` | method | 40 | `app/Http/Controllers/Import/ImportExcelController.php:9139` |
 | `Gi405RecDhImportExcelController` | class | 39 | `app/Http/Controllers/Import/Gi405RecDhImportExcelController.php:20` |
 | `import.index` | route | 39 | - |
@@ -287,14 +287,14 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Direction | Count |
 | --- | ---: |
 | import -> access-control (protected_by) | 973 |
-| import -> core (calls) | 562 |
+| import -> core (calls) | 563 |
 | import -> core (instantiates) | 271 |
 | import -> core (accepts) | 189 |
 | database -> import (checks_table) | 43 |
-| import -> jobs-snapshots (calls) | 40 |
+| import -> jobs-snapshots (calls) | 41 |
 | database -> import (defines_table) | 24 |
+| import -> core (reads_table) | 24 |
 | import -> core (extends) | 24 |
-| import -> core (reads_table) | 23 |
 | core -> import (reads_table) | 21 |
 | import -> jobs-snapshots (reads_table) | 19 |
 | import -> jobs-snapshots (uses_trait) | 17 |

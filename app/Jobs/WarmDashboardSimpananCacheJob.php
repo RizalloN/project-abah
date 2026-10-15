@@ -9,6 +9,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Log;
 
 class WarmDashboardSimpananCacheJob implements ShouldBeUnique, ShouldQueue
 {
@@ -41,6 +42,19 @@ class WarmDashboardSimpananCacheJob implements ShouldBeUnique, ShouldQueue
     {
         $ready = $controller->warmDashboardSimpananCache($this->type, $this->context);
         if (!$ready && in_array($this->type, ['dashboard-payload', 'micro-readiness', 'area6-portfolio', 'sme-quadrants'], true)) {
+            // A source that never becomes ready (e.g. an old period without
+            // Mikro data) is not a failure: releasing on the last attempt made
+            // the worker throw MaxAttemptsExceededException into failed_jobs.
+            if ($this->attempts() >= $this->tries) {
+                Log::warning('Warm cache landing dihentikan: sumber belum siap setelah batas percobaan.', [
+                    'type' => $this->type,
+                    'period' => $this->context['period'] ?? $this->context['selectedPeriod'] ?? $this->context['loanPeriod'] ?? null,
+                    'attempts' => $this->attempts(),
+                ]);
+
+                return;
+            }
+
             $this->release($this->backoff);
         }
     }

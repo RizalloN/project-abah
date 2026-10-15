@@ -7,10 +7,10 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Kind | Count |
 | --- | ---: |
 | command | 3 |
-| file | 26 |
-| method | 44 |
+| file | 27 |
+| method | 51 |
 | unresolved_symbol | 5 |
-| class | 10 |
+| class | 11 |
 | table | 2 |
 | view | 4 |
 
@@ -18,13 +18,16 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Node | Kind | Degree | Source |
 | --- | --- | ---: | --- |
-| `layouts.admin` | view | 67 | `resources/views/layouts/admin.blade.php:1` |
-| `layouts.sidebar` | view | 54 | `resources/views/layouts/sidebar.blade.php:1` |
+| `layouts.admin` | view | 68 | `resources/views/layouts/admin.blade.php:1` |
+| `layouts.sidebar` | view | 55 | `resources/views/layouts/sidebar.blade.php:1` |
 | `composite` | method | 28 | `app/Support/ReportCacheVersion.php:17` |
 | `get` | method | 25 | `app/Support/ReportCacheVersion.php:9` |
 | `AppServiceProvider` | class | 15 | `app/Providers/AppServiceProvider.php:25` |
-| `bump` | method | 14 | `app/Support/ReportCacheVersion.php:31` |
+| `bump` | method | 15 | `app/Support/ReportCacheVersion.php:31` |
 | `boot` | method | 11 | `app/Providers/AppServiceProvider.php:70` |
+| `shouldFinishEarly` | method | 11 | `app/Http/Middleware/FinishResponseBeforeDeferredCallbacks.php:55` |
+| `sendWithExplicitLength` | method | 10 | `app/Http/Middleware/FinishResponseBeforeDeferredCallbacks.php:73` |
+| `FinishResponseBeforeDeferredCallbacks` | class | 9 | `app/Http/Middleware/FinishResponseBeforeDeferredCallbacks.php:21` |
 | `handle` | method | 9 | `app/Http/Middleware/MonitorRequestPerformance.php:15` |
 | `CacheMaintenanceService` | class | 8 | `app/Services/CacheMaintenanceService.php:9` |
 | `PartitionMaintenanceService` | class | 8 | `app/Support/PartitionMaintenanceService.php:8` |
@@ -37,6 +40,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `truncatePartition` | method | 7 | `app/Support/PartitionMaintenanceService.php:52` |
 | `LogMaintenanceService` | class | 6 | `app/Services/LogMaintenanceService.php:9` |
 | `cache` | table | 6 | - |
+| `handle` | method | 6 | `app/Http/Middleware/FinishResponseBeforeDeferredCallbacks.php:27` |
 | `pruneOrphanedDbSessions` | method | 6 | `app/Services/CacheMaintenanceService.php:135` |
 | `refreshSourceCache` | method | 6 | `app/Services/Reports/SppgReportService.php:103` |
 | `registerCustomQueueExtensions` | method | 6 | `app/Providers/AppServiceProvider.php:341` |
@@ -44,15 +48,12 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `supportsPartitionDdl` | method | 6 | `app/Support/PartitionMaintenanceService.php:10` |
 | `components.guest.layout` | view | 5 | - |
 | `handle` | method | 5 | `app/Console/Commands/MaintainApplicationCacheCommand.php:14` |
-| `invalidateReportCaches` | method | 5 | `app/Support/ReportDataSyncService.php:1523` |
-| `key` | method | 5 | `app/Support/ReportCacheVersion.php:40` |
-| `maintain` | method | 5 | `app/Services/LogMaintenanceService.php:17` |
-| `pruneExpiredFileCache` | method | 5 | `app/Services/CacheMaintenanceService.php:40` |
 
 ## Class Nodes
 
 - `AppServiceProvider` - `app/Providers/AppServiceProvider.php`
 - `CacheMaintenanceService` - `app/Services/CacheMaintenanceService.php`
+- `FinishResponseBeforeDeferredCallbacks` - `app/Http/Middleware/FinishResponseBeforeDeferredCallbacks.php`
 - `GuestLayout` - `app/View/Components/GuestLayout.php`
 - `JobHealthSweepMiddleware` - `app/Http/Middleware/JobHealthSweepMiddleware.php`
 - `LogMaintenanceService` - `app/Services/LogMaintenanceService.php`
@@ -84,23 +85,23 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Direction | Count |
 | --- | ---: |
-| platform -> core (calls) | 28 |
+| platform -> core (calls) | 35 |
 | core -> platform (calls) | 23 |
 | dashboard-pinjaman -> platform (calls) | 15 |
+| core -> platform (extends_view) | 15 |
 | dashboard-pinjaman -> platform (extends_view) | 15 |
-| core -> platform (extends_view) | 14 |
 | platform -> dashboard-pinjaman (references_route) | 14 |
 | platform -> dashboard-simpanan (references_route) | 12 |
+| platform -> core (accepts) | 12 |
 | import -> platform (extends_view) | 10 |
 | dashboard-simpanan -> platform (calls) | 9 |
+| jobs-snapshots -> platform (calls) | 9 |
 | import -> platform (calls) | 8 |
-| jobs-snapshots -> platform (calls) | 8 |
 | dashboard-simpanan -> platform (extends_view) | 8 |
-| platform -> core (references_route) | 7 |
+| platform -> core (references_route) | 8 |
 | core -> platform (contains) | 6 |
 | platform -> import (references_route) | 6 |
 | dashboard-harian -> platform (calls) | 5 |
-| platform -> core (accepts) | 5 |
 | platform -> core (instantiates) | 5 |
 | almafacts -> platform (extends_view) | 5 |
 | access-control -> platform (uses_component) | 4 |

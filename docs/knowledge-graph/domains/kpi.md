@@ -6,9 +6,9 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Kind | Count |
 | --- | ---: |
-| file | 2 |
-| method | 38 |
-| class | 2 |
+| file | 3 |
+| method | 40 |
+| class | 3 |
 
 ## Main Hubs
 
@@ -28,6 +28,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `personMeta` | method | 5 | `app/Services/Reports/KpiRmSmeDashboardService.php:299` |
 | `summary` | method | 5 | `app/Services/Reports/KpiPersonnelReferenceSyncService.php:538` |
 | `sync` | method | 5 | `app/Services/Reports/KpiPersonnelReferenceSyncService.php:19` |
+| `KpiWorkbookSnapshotService` | class | 4 | `app/Services/Reports/KpiWorkbookSnapshotService.php:8` |
 | `associateRows` | method | 4 | `app/Services/Reports/KpiRmSmeDashboardService.php:246` |
 | `branchCode` | method | 4 | `app/Services/Reports/KpiRmSmeDashboardService.php:293` |
 | `cleanOrganization` | method | 4 | `app/Services/Reports/KpiRmSmeDashboardService.php:313` |
@@ -39,16 +40,16 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `nullableCell` | method | 4 | `app/Services/Reports/KpiPersonnelReferenceSyncService.php:479` |
 | `number` | method | 4 | `app/Services/Reports/KpiRmSmeDashboardService.php:339` |
 | `period` | method | 4 | `app/Services/Reports/KpiRmSmeDashboardService.php:374` |
+| `read` | method | 4 | `app/Services/Reports/KpiWorkbookSnapshotService.php:17` |
 | `rowIsInScope` | method | 4 | `app/Services/Reports/KpiRmSmeDashboardService.php:283` |
 | `sameRole` | method | 4 | `app/Services/Reports/KpiPersonnelReferenceSyncService.php:439` |
 | `stats` | method | 4 | `app/Services/Reports/KpiRmSmeDashboardService.php:528` |
-| `summary` | method | 4 | `app/Services/Reports/KpiRmSmeDashboardService.php:416` |
-| `textKey` | method | 4 | `app/Services/Reports/KpiPersonnelReferenceSyncService.php:434` |
 
 ## Class Nodes
 
 - `KpiPersonnelReferenceSyncService` - `app/Services/Reports/KpiPersonnelReferenceSyncService.php`
 - `KpiRmSmeDashboardService` - `app/Services/Reports/KpiRmSmeDashboardService.php`
+- `KpiWorkbookSnapshotService` - `app/Services/Reports/KpiWorkbookSnapshotService.php`
 
 ## Cross-Domain Links
 
@@ -62,3 +63,4 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | kpi -> core (reads_table) | 1 |
 | kpi -> core (writes_table) | 1 |
 | kpi -> core (calls) | 1 |
+| kpi -> core (instantiates) | 1 |

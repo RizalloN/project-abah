@@ -7,12 +7,16 @@ use App\Support\ReportDataSyncService;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use RuntimeException;
 use Throwable;
 
 class ManagedReportBackupRecoveryService
 {
+    /** Option value prefix for a verified chunked daily backup folder. */
+    public const DAILY_BACKUP_PREFIX = 'daily:';
+
     private const BACKUP_DIRECTORY = 'private/database_backups';
     private const TEMP_SQL_DIRECTORY = 'private/database_backups/_restore_work';
     private const TOTAL_UNITS = 6;
@@ -24,7 +28,7 @@ class ManagedReportBackupRecoveryService
 
     public function recoverReportTable(int $reportId, string $backupRelativePath, ?callable $progressCallback = null): array
     {
-        [$report, $tableName, $backupPath, $backupName] = $this->validateRecoveryRequest($reportId, $backupRelativePath, $progressCallback);
+        [$report, $tableName, $backupPath, $backupName, $assembledBackupPath] = $this->validateRecoveryRequest($reportId, $backupRelativePath, $progressCallback);
 
         $timestamp = now()->format('Ymd_His');
         $tempToken = substr(md5($tableName . '|' . $backupName . '|' . microtime(true)), 0, 10);
@@ -102,6 +106,9 @@ class ManagedReportBackupRecoveryService
 
             $this->dropTemporaryTable($tempTable);
             @unlink($tempSqlPath);
+            if ($assembledBackupPath !== null) {
+                @unlink($assembledBackupPath);
+            }
 
             $this->emitProgress($progressCallback, [
                 'stage' => 'completed',
@@ -123,6 +130,9 @@ class ManagedReportBackupRecoveryService
             $this->dropTemporaryTable($tempTable);
             if (is_file($tempSqlPath)) {
                 @unlink($tempSqlPath);
+            }
+            if ($assembledBackupPath !== null && is_file($assembledBackupPath)) {
+                @unlink($assembledBackupPath);
             }
 
             throw $e;
@@ -153,6 +163,16 @@ class ManagedReportBackupRecoveryService
             throw new RuntimeException("Tabel report `{$tableName}` tidak ditemukan.");
         }
 
+        if (str_starts_with(trim($backupRelativePath), self::DAILY_BACKUP_PREFIX)) {
+            [$assembledPath, $backupName] = $this->assembleDailyBackupTableDump(
+                substr(trim($backupRelativePath), strlen(self::DAILY_BACKUP_PREFIX)),
+                $tableName,
+                $progressCallback
+            );
+
+            return [$report, $tableName, $assembledPath, $backupName, $assembledPath];
+        }
+
         $backupPath = $this->resolveBackupPath($backupRelativePath);
         if ($backupPath === null || !is_file($backupPath)) {
             throw new RuntimeException('File backup tidak ditemukan atau berada di luar folder backup terkelola.');
@@ -166,7 +186,131 @@ class ManagedReportBackupRecoveryService
             throw new RuntimeException('File backup harus berformat `.sql` atau `.sql.gz`.');
         }
 
-        return [$report, $tableName, $backupPath, $backupName];
+        return [$report, $tableName, $backupPath, $backupName, null];
+    }
+
+    /**
+     * Build a single .sql.gz (multi-member gzip) holding the table's CREATE
+     * statement plus its checksum-verified data parts from a chunked daily
+     * backup, so the regular extract -> staging -> swap pipeline can restore it.
+     *
+     * @return array{0: string, 1: string}
+     */
+    private function assembleDailyBackupTableDump(string $folderName, string $tableName, ?callable $progressCallback): array
+    {
+        $dailyBackups = app(DailyDatabaseBackupService::class);
+        $backup = $dailyBackups->resolveChunkedBackup($folderName);
+        $folder = basename($backup['directory']);
+
+        $dataParts = array_values(array_filter(
+            (array) ($backup['manifest']['parts'] ?? []),
+            static fn ($part): bool => is_array($part) && ($part['kind'] ?? '') === 'data' && ($part['table'] ?? null) === $tableName
+        ));
+        if ($dataParts === []) {
+            throw new RuntimeException("Tabel `{$tableName}` tidak ada di backup harian {$folder}.");
+        }
+
+        $this->emitProgress($progressCallback, [
+            'stage' => 'validating',
+            'message' => sprintf('Memverifikasi checksum %d part backup harian %s...', count($dataParts), $folder),
+            'completed_units' => 0,
+            'total_units' => self::TOTAL_UNITS,
+            'progress_percent' => 8,
+        ]);
+        $dailyBackups->verifyChunkedParts($backup, [$tableName]);
+
+        $createStatement = $this->extractCreateTableStatement(
+            $backup['directory'] . DIRECTORY_SEPARATOR . 'schema.sql.gz',
+            $tableName
+        );
+        $this->assertBackupKeepsCurrentColumns($createStatement, $tableName);
+
+        $outputPath = storage_path('app/' . self::TEMP_SQL_DIRECTORY . '/'
+            . (preg_replace('/[^A-Za-z0-9_-]+/', '_', $tableName) ?: 'report')
+            . '_daily_' . now()->format('Ymd_His') . '_' . substr(md5($folder . microtime(true)), 0, 8) . '.sql.gz');
+        File::ensureDirectoryExists(dirname($outputPath));
+
+        $writer = fopen($outputPath, 'wb');
+        if (!is_resource($writer)) {
+            throw new RuntimeException('File kerja recovery tidak bisa dibuat.');
+        }
+
+        try {
+            fwrite($writer, (string) gzencode(
+                'DROP TABLE IF EXISTS `' . $tableName . "`;\n" . $createStatement . "\n",
+                6
+            ));
+            foreach ($dataParts as $part) {
+                $partPath = $backup['directory'] . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, (string) $part['file']);
+                $reader = fopen($partPath, 'rb');
+                if (!is_resource($reader)) {
+                    throw new RuntimeException('Part backup tidak bisa dibaca: ' . $part['file']);
+                }
+                try {
+                    stream_copy_to_stream($reader, $writer);
+                } finally {
+                    fclose($reader);
+                }
+            }
+        } catch (Throwable $e) {
+            fclose($writer);
+            @unlink($outputPath);
+
+            throw $e;
+        }
+        fclose($writer);
+
+        return [$outputPath, $folder . '/' . $tableName];
+    }
+
+    private function extractCreateTableStatement(string $schemaPath, string $tableName): string
+    {
+        $reader = is_file($schemaPath) ? gzopen($schemaPath, 'rb') : false;
+        if ($reader === false) {
+            throw new RuntimeException('Schema backup harian tidak bisa dibaca.');
+        }
+
+        $statement = '';
+        $capturing = false;
+        try {
+            while (($line = gzgets($reader)) !== false) {
+                if (!$capturing && str_starts_with($line, 'CREATE TABLE `' . $tableName . '` (')) {
+                    $capturing = true;
+                }
+                if ($capturing) {
+                    $statement .= $line;
+                    if ($this->statementEnds($line)) {
+                        break;
+                    }
+                }
+            }
+        } finally {
+            gzclose($reader);
+        }
+
+        if ($statement === '' || !$this->statementEnds($statement)) {
+            throw new RuntimeException("Struktur tabel `{$tableName}` tidak ditemukan di schema backup harian.");
+        }
+
+        return rtrim($statement);
+    }
+
+    private function assertBackupKeepsCurrentColumns(string $createStatement, string $tableName): void
+    {
+        preg_match_all('/^\s+`([^`]+)`\s/m', $createStatement, $matches);
+        $backupColumns = array_map('strtolower', $matches[1] ?? []);
+        $missing = array_values(array_diff(
+            array_map('strtolower', Schema::getColumnListing($tableName)),
+            $backupColumns
+        ));
+
+        if ($missing !== []) {
+            throw new RuntimeException(sprintf(
+                'Struktur tabel `%s` di backup lebih lama dari tabel saat ini (kolom tidak ada di backup: %s). Recovery dibatalkan agar kolom baru tidak hilang.',
+                $tableName,
+                implode(', ', $missing)
+            ));
+        }
     }
 
     private function extractTableSqlFromBackup(
@@ -464,6 +608,9 @@ class ManagedReportBackupRecoveryService
                 Schema::dropIfExists($backupTable);
             }
 
+            // Triggers follow the renamed table and would be dropped with it.
+            $triggers = $this->captureTableTriggers($targetTable);
+
             // Atomic swap: original → backup, staging → original
             DB::statement(
                 'RENAME TABLE ' . $quotedTarget . ' TO ' . $quotedBackup . ', ' . $quotedTemp . ' TO ' . $quotedTarget
@@ -471,6 +618,7 @@ class ManagedReportBackupRecoveryService
 
             // Clean up old backup
             Schema::dropIfExists($backupTable);
+            $this->restoreTableTriggers($triggers, $targetTable);
 
             DB::statement('SET SESSION foreign_key_checks = 1');
 
@@ -490,6 +638,54 @@ class ManagedReportBackupRecoveryService
         }
 
         return $restoredRows;
+    }
+
+    /**
+     * @return array<string, string> trigger name => CREATE TRIGGER statement
+     */
+    private function captureTableTriggers(string $tableName): array
+    {
+        if (DB::getDriverName() !== 'mysql') {
+            return [];
+        }
+
+        $triggers = [];
+        $names = DB::table('information_schema.TRIGGERS')
+            ->where('TRIGGER_SCHEMA', DB::getDatabaseName())
+            ->where('EVENT_OBJECT_TABLE', $tableName)
+            ->orderBy('ACTION_ORDER')
+            ->pluck('TRIGGER_NAME');
+
+        foreach ($names as $name) {
+            $row = (array) DB::selectOne('SHOW CREATE TRIGGER `' . str_replace('`', '``', (string) $name) . '`');
+            $sql = (string) ($row['SQL Original Statement'] ?? '');
+            if ($sql === '') {
+                throw new RuntimeException("Definisi trigger `{$name}` tidak bisa dibaca; recovery dibatalkan.");
+            }
+            $triggers[(string) $name] = $sql;
+        }
+
+        return $triggers;
+    }
+
+    /**
+     * @param array<string, string> $triggers
+     */
+    private function restoreTableTriggers(array $triggers, string $tableName): void
+    {
+        foreach ($triggers as $name => $sql) {
+            try {
+                DB::unprepared($sql);
+            } catch (Throwable $e) {
+                Log::critical('Trigger tabel gagal dipasang ulang setelah recovery.', [
+                    'table' => $tableName,
+                    'trigger' => $name,
+                    'error' => $e->getMessage(),
+                ]);
+
+                throw new RuntimeException("Data `{$tableName}` sudah dipulihkan, tetapi trigger `{$name}` gagal dipasang ulang: " . $e->getMessage());
+            }
+        }
     }
 
     private function statementEnds(string $line): bool

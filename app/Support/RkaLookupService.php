@@ -13,6 +13,7 @@ class RkaLookupService
     private array $loadedRowsCache = [];
     private static array $normalizedScopeValuesMemo = [];
     private static array $flexibleMatchMemo = [];
+    private static array $ukerTokenMatchMemo = [];
 
     /**
      * uker_key values that are kanca-level rollup rows (e.g. '45-KC Madiun'
@@ -132,6 +133,7 @@ class RkaLookupService
         foreach ($definitions as $definitionKey => $definition) {
             $groups[$definitionKey] = [];
         }
+        $compiledDefinitions = $this->compileDefinitions($definitions, $unitsTargetsKancaSummary);
 
         $rowsConsidered = 0;
         $rowsMatched = 0;
@@ -153,13 +155,8 @@ class RkaLookupService
             }
 
             $rowMatchedAny = false;
-            foreach ($definitions as $definitionKey => $definition) {
-                $effectiveDefinition = $definition;
-                if ($unitsTargetsKancaSummary) {
-                    $effectiveDefinition['include_kanca_summary'] = true;
-                }
-
-                if (!$this->matchesDefinition($row, $effectiveDefinition)) {
+            foreach ($compiledDefinitions as $definitionKey => $compiledDefinition) {
+                if (!$this->matchesCompiledDefinition($row, $compiledDefinition)) {
                     continue;
                 }
 
@@ -246,19 +243,18 @@ class RkaLookupService
         foreach (array_keys($definitions) as $definitionKey) {
             $result[$definitionKey] = 0.0;
         }
+        $compiledDefinitions = $this->compileDefinitions(
+            $definitions,
+            $unitTargetsKancaSummary || $kancaTargetsSummaryOnly
+        );
 
         foreach ($rows as $row) {
             if (!$this->matchesScope($row, $kanca, $unit)) {
                 continue;
             }
 
-            foreach ($definitions as $definitionKey => $definition) {
-                $effectiveDefinition = $definition;
-                if ($unitTargetsKancaSummary || $kancaTargetsSummaryOnly) {
-                    $effectiveDefinition['include_kanca_summary'] = true;
-                }
-
-                if (!$this->matchesDefinition($row, $effectiveDefinition)) {
+            foreach ($compiledDefinitions as $definitionKey => $compiledDefinition) {
+                if (!$this->matchesCompiledDefinition($row, $compiledDefinition)) {
                     continue;
                 }
 
@@ -421,6 +417,7 @@ class RkaLookupService
     {
         self::$normalizedScopeValuesMemo = [];
         self::$flexibleMatchMemo = [];
+        self::$ukerTokenMatchMemo = [];
     }
 
     private function normalizeScopeValue($value): ?string
@@ -457,27 +454,70 @@ class RkaLookupService
         return self::$normalizedScopeValuesMemo[$cacheKey] = ($normalized !== '' ? $normalized : null);
     }
 
-    private function matchesDefinition(array $row, array $definition): bool
+    /**
+     * Normalize every definition filter once per aggregate call. The RKA table
+     * holds tens of thousands of rows, so re-normalizing the same definition
+     * lists for every row dominated landing build time.
+     *
+     * @param array<string, array<string, mixed>> $definitions
+     * @return array<string, array<string, mixed>>
+     */
+    private function compileDefinitions(array $definitions, bool $forceIncludeKancaSummary = false): array
     {
-        if (isset($definition['mata_anggaran'])) {
-            $mataAnggarans = $this->normalizeMataAnggaranValues((array) $definition['mata_anggaran']);
-            if (empty($mataAnggarans)) {
+        $compiled = [];
+        foreach ($definitions as $definitionKey => $definition) {
+            if ($forceIncludeKancaSummary) {
+                $definition['include_kanca_summary'] = true;
+            }
+
+            $compiled[$definitionKey] = $this->compileDefinition($definition);
+        }
+
+        return $compiled;
+    }
+
+    /**
+     * @param array<string, mixed> $definition
+     * @return array<string, mixed>
+     */
+    private function compileDefinition(array $definition): array
+    {
+        $hasMataAnggaran = isset($definition['mata_anggaran']);
+        $mataAnggarans = $hasMataAnggaran
+            ? $this->normalizeMataAnggaranValues((array) $definition['mata_anggaran'])
+            : [];
+
+        return [
+            'has_mata_anggaran' => $hasMataAnggaran,
+            'mata_anggaran' => array_fill_keys($mataAnggarans, true),
+            'uker_contains_any' => $this->normalizeLookupValues((array) ($definition['uker_contains_any'] ?? [])),
+            'uker_not_contains_any' => $this->normalizeLookupValues((array) ($definition['uker_not_contains_any'] ?? [])),
+            'include_kanca_summary' => (bool) ($definition['include_kanca_summary'] ?? false),
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $compiled Output of compileDefinition().
+     */
+    private function matchesCompiledDefinition(array $row, array $compiled): bool
+    {
+        if ($compiled['has_mata_anggaran']) {
+            if ($compiled['mata_anggaran'] === []) {
                 return false; // If filter is provided but empty, match nothing (safety)
             }
-            if (!in_array($row['mata_anggaran_key'], $mataAnggarans, true)) {
+            if (!isset($compiled['mata_anggaran'][$row['mata_anggaran_key']])) {
                 return false;
             }
         }
 
-        $ukerContainsAny = $this->normalizeLookupValues((array) ($definition['uker_contains_any'] ?? []));
+        $ukerContainsAny = $compiled['uker_contains_any'];
         if (!empty($ukerContainsAny)) {
             // When a uker_contains_any filter is set, the caller wants detail-uker
             // rows (KC / KCP / UNIT). Kanca-level summary rows (e.g. uker_key
             // 'KC MADIUN') would double-count against KCP/UNIT detail rows that
             // already sum into the same total. Exclude them by default; callers
             // that explicitly want the summary can pass include_kanca_summary=true.
-            $includeKancaSummary = (bool) ($definition['include_kanca_summary'] ?? false);
-            if (!$includeKancaSummary && $this->isKancaSummaryRow($row['uker_key'])) {
+            if (!$compiled['include_kanca_summary'] && $this->isKancaSummaryRow($row['uker_key'])) {
                 return false;
             }
 
@@ -495,14 +535,18 @@ class RkaLookupService
             }
         }
 
-        $ukerNotContainsAny = $this->normalizeLookupValues((array) ($definition['uker_not_contains_any'] ?? []));
-        foreach ($ukerNotContainsAny as $needle) {
+        foreach ($compiled['uker_not_contains_any'] as $needle) {
             if ($needle !== '' && $this->ukerContainsToken($row['uker_key'], $needle)) {
                 return false;
             }
         }
 
         return true;
+    }
+
+    private function matchesDefinition(array $row, array $definition): bool
+    {
+        return $this->matchesCompiledDefinition($row, $this->compileDefinition($definition));
     }
 
     /**
@@ -517,9 +561,13 @@ class RkaLookupService
             return false;
         }
 
+        if (isset(self::$ukerTokenMatchMemo[$needle][$ukerKey])) {
+            return self::$ukerTokenMatchMemo[$needle][$ukerKey];
+        }
+
         $pattern = '/(^|[^A-Z0-9])' . preg_quote($needle, '/') . '([^A-Z0-9]|$)/u';
 
-        return (bool) preg_match($pattern, $ukerKey);
+        return self::$ukerTokenMatchMemo[$needle][$ukerKey] = (bool) preg_match($pattern, $ukerKey);
     }
 
     /**
@@ -587,11 +635,12 @@ class RkaLookupService
         foreach ($definitions as $definitionKey => $definition) {
             $groups[$definitionKey] = [];
         }
+        $compiledDefinitions = $this->compileDefinitions($definitions);
 
         // Process each row and group by regional pattern match
         foreach ($loadedRows as $row) {
-            foreach ($definitions as $definitionKey => $definition) {
-                if (!$this->matchesDefinition($row, $definition)) {
+            foreach ($compiledDefinitions as $definitionKey => $compiledDefinition) {
+                if (!$this->matchesCompiledDefinition($row, $compiledDefinition)) {
                     continue;
                 }
 

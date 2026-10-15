@@ -2,8 +2,8 @@
 
 | Methods | URI | Name | Domain | Handler |
 | --- | --- | --- | --- | --- |
-| POST | `login` | `generated::ExqIPAhwDvzTzTur` | access-control | `App\Http\Controllers\Auth\AuthenticatedSessionController::store` |
-| POST | `confirm-password` | `generated::uH9UL7XKsBg7PlyS` | access-control | `App\Http\Controllers\Auth\ConfirmablePasswordController::store` |
+| POST | `login` | `generated::UdaCiWxoZYkXvyXo` | access-control | `App\Http\Controllers\Auth\AuthenticatedSessionController::store` |
+| POST | `confirm-password` | `generated::p6SPxutm2QkZlKZt` | access-control | `App\Http\Controllers\Auth\ConfirmablePasswordController::store` |
 | GET | `login` | `login` | access-control | `App\Http\Controllers\Auth\AuthenticatedSessionController::create` |
 | POST | `logout` | `logout` | access-control | `App\Http\Controllers\Auth\AuthenticatedSessionController::destroy` |
 | GET | `confirm-password` | `password.confirm` | access-control | `App\Http\Controllers\Auth\ConfirmablePasswordController::show` |
@@ -49,10 +49,11 @@
 | GET | `drive/office/files/{file}/{documentKey}/source` | `drive.office.source` | bank-pipeline | `App\Http\Controllers\DriveAsixOfficeController::source` |
 | GET | `drive/pipeline-summary` | `drive.pipeline-summary` | bank-pipeline | `App\Http\Controllers\DriveAsixController::pipelineSummary` |
 | POST | `drive/upload` | `drive.upload` | bank-pipeline | `App\Http\Controllers\DriveAsixController::upload` |
+| GET | `ekosistem` | `ekosistem.index` | core | `App\Http\Controllers\EkosistemController::index` |
 | POST | `file-management/delete` | `file-management.destroy` | core | `App\Http\Controllers\Admin\FileManagementController::destroy` |
 | GET | `file-management/download` | `file-management.download` | core | `App\Http\Controllers\Admin\FileManagementDownloadController::__invoke` |
 | GET | `file-management` | `file-management.index` | core | `App\Http\Controllers\Admin\FileManagementController::index` |
-| GET | `up` | `generated::bSLEt1OjTLM2Hotr` | core | Closure |
+| GET | `up` | `generated::7Agywk49gaUdpXlx` | core | Closure |
 | GET | `/` | `home` | core | Closure |
 | GET | `link-management` | `link-management.index` | core | `App\Http\Controllers\Admin\LinkManagementController::index` |
 | POST | `link-management` | `link-management.update` | core | `App\Http\Controllers\Admin\LinkManagementController::update` |

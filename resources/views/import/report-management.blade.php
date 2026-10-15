@@ -94,9 +94,9 @@
                             <div class="input-group-prepend">
                                 <span class="input-group-text bg-white border-right-0 text-muted"><i class="far fa-calendar-alt"></i></span>
                             </div>
-                            <input type="text" id="management-force-sync-period" class="form-control border-left-0 pl-0" placeholder="YYYY-MM-DD">
+                            <input type="text" id="management-force-sync-period" class="form-control border-left-0 pl-0" placeholder="DD-MM-YYYY" inputmode="numeric" autocomplete="off" maxlength="10" title="Format tanggal DD-MM-YYYY">
                         </div>
-                        <button type="button" id="btn-management-force-sync" class="btn report-management-icon-btn report-management-icon-btn--warning" title="Sync Sekarang">
+                        <button type="button" id="btn-management-force-sync" class="btn report-management-icon-btn report-management-icon-btn--warning" title="Rebuild seluruh snapshot report yang memiliki data pada tanggal terpilih">
                             <i class="fas fa-bolt"></i>
                         </button>
                     </div>
@@ -243,6 +243,9 @@
 </div>
 @endsection
 @section('scripts')
+<link rel="stylesheet" href="{{ asset('adminlte/plugins/daterangepicker/daterangepicker.css') }}">
+<script src="{{ asset('adminlte/plugins/moment/moment.min.js') }}"></script>
+<script src="{{ asset('adminlte/plugins/daterangepicker/daterangepicker.js') }}"></script>
 @include('import.partials.report-management-scripts')
 <script>
     document.addEventListener('DOMContentLoaded', function () {
@@ -923,7 +926,9 @@
 
                         const pMeta = document.getElementById('force-sync-progress-meta');
                         if (pMeta) {
-                            pMeta.innerText = `${percent}% (${state.completed_tables || 0}/${state.total_tables || 6} tabel selesai)`;
+                            pMeta.innerText = Number(state.total_tables || 0) > 0
+                                ? `${percent}% (${state.completed_tables || 0}/${state.total_tables} langkah)`
+                                : `${percent}%`;
                         }
 
                         if (['completed', 'failed', 'warning', 'error'].includes(status)) {
@@ -945,17 +950,32 @@
             return { status: 'warning', message: 'Sync masih berjalan di background setelah 30 menit polling. Cek Monitoring Antrean Job.' };
         }
 
+        function isValidDisplayDate(value) {
+            const match = /^(\d{2})-(\d{2})-(\d{4})$/.exec(String(value || '').trim());
+            if (!match) return false;
+            const day = Number(match[1]);
+            const month = Number(match[2]);
+            const year = Number(match[3]);
+            const date = new Date(year, month - 1, day);
+            return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
+        }
+
         async function handleForceSync() {
-            if (!managementForceSyncPeriod || !managementForceSyncPeriod.value) {
-                await ImportSwal.warning('Input Tidak Lengkap', 'Silakan isi periode (YYYY-MM-DD) terlebih dahulu.');
+            const period = String(managementForceSyncPeriod?.value || '').trim();
+            if (!period) {
+                await ImportSwal.warning('Input Tidak Lengkap', 'Silakan pilih periode (DD-MM-YYYY) terlebih dahulu.');
                 return;
             }
 
-            const period = managementForceSyncPeriod.value;
+            if (!isValidDisplayDate(period)) {
+                await ImportSwal.warning('Format Tidak Valid', 'Gunakan format tanggal DD-MM-YYYY, contoh 14-10-2026.');
+                return;
+            }
+
             const confirmation = await ImportSwal.confirm({
                 icon: 'question',
-                title: 'Sinkronisasi Spesifik?',
-                html: `Jalankan snapshot force sync untuk periode <b>${escapeHtmlSafe(period)}</b>?`,
+                title: 'Sinkronisasi Periode?',
+                html: `Semua snapshot report yang memiliki data pada <b>${escapeHtmlSafe(period)}</b> akan dibangun ulang dan cache report disegarkan. Report tanpa data di tanggal ini dilewati (tidak dihapus).`,
                 confirmButtonText: 'Ya, Sinkronisasi',
                 cancelButtonText: 'Batal',
             });
@@ -1070,6 +1090,32 @@
             });
         } else {
             console.error('[Recovery] Recovery button not found - cannot attach click handler!');
+        }
+
+        if (managementForceSyncPeriod && window.jQuery && window.jQuery.fn && window.jQuery.fn.daterangepicker) {
+            window.jQuery(managementForceSyncPeriod).daterangepicker({
+                singleDatePicker: true,
+                showDropdowns: true,
+                autoUpdateInput: false,
+                autoApply: true,
+                maxDate: window.moment ? window.moment() : undefined,
+                locale: {
+                    format: 'DD-MM-YYYY',
+                    daysOfWeek: ['Mg', 'Sn', 'Sl', 'Rb', 'Km', 'Jm', 'Sb'],
+                    monthNames: ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'],
+                    firstDay: 1,
+                },
+            }).on('apply.daterangepicker', function (event, picker) {
+                managementForceSyncPeriod.value = picker.startDate.format('DD-MM-YYYY');
+            });
+        }
+
+        if (managementForceSyncPeriod) {
+            managementForceSyncPeriod.addEventListener('input', function () {
+                const digits = this.value.replace(/\D/g, '').slice(0, 8);
+                const parts = [digits.slice(0, 2), digits.slice(2, 4), digits.slice(4, 8)].filter(Boolean);
+                this.value = parts.join('-');
+            });
         }
 
         // Custom Selector Enhancement via jQuery Select2

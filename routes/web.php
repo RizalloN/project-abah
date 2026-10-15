@@ -10,6 +10,7 @@ use App\Http\Controllers\DashboardPinjamanReportController;
 use App\Http\Controllers\DashboardSimpananController;
 use App\Http\Controllers\DriveAsixController;
 use App\Http\Controllers\DriveAsixOfficeController;
+use App\Http\Controllers\EkosistemController;
 use App\Http\Controllers\Import\Gi405RecDhImportExcelController;
 use App\Http\Controllers\Import\ImportCasaBrilinkController;
 use App\Http\Controllers\Import\ImportCleanupController;
@@ -97,6 +98,8 @@ Route::middleware(['auth', 'auth.session', 'user.branch.scope', 'release.session
         ->name('dashboard.harian.export');
     Route::get('/prognosa/weekly/{sheet?}', [PrognosaWeeklyController::class, 'index'])
         ->name('prognosa.weekly');
+    Route::get('/ekosistem', [EkosistemController::class, 'index'])
+        ->name('ekosistem.index');
 
     // ── DriveASIX ──
     Route::prefix('drive')->name('drive.')->group(function () {

@@ -32,7 +32,7 @@ class AlmafactsKpiSheetTest extends TestCase
         $data = $view->getData();
 
         $this->assertSame('mbm', $data['selectedSheetKey']);
-        $this->assertSame(['mbm', 'ka-unit', 'rm-mikro', 'rm-sme', 'mantri', 'consumer'], array_keys($data['sheetOptions']));
+        $this->assertSame(['mbm', 'ka-unit', 'rm-mikro', 'rm-sme', 'mantri', 'mantri-briguna', 'consumer'], array_keys($data['sheetOptions']));
         $this->assertSame('KPI MBM', $data['selectedSheet']['sheet']);
         $this->assertSame('1OmIag7zJ3MdlKMP4hDyUqEvnP1tbbL7j', $data['selectedSheet']['spreadsheet_id']);
         $this->assertSame('2026-07', $data['selectedPeriod']);
@@ -335,7 +335,7 @@ class AlmafactsKpiSheetTest extends TestCase
         $controller->refreshKpiSourceCaches(['mbm']);
         Http::preventStrayRequests();
 
-        $view = $controller->kpi(Request::create('/report/dashboard-almafacts/kpi/mbm', 'GET'), 'mbm');
+        $view = $controller->kpi(Request::create('/report/dashboard-almafacts/kpi/mbm', 'GET', ['periode' => '2026-07']), 'mbm');
 
         $this->assertSame(['BO', 'MBM', 'Score'], $view->getData()['header']);
         Http::assertSentCount(1);
@@ -395,7 +395,7 @@ class AlmafactsKpiSheetTest extends TestCase
         $view = $this->kpiView('mbm');
         $data = $view->getData();
         $this->assertSame('-', $data['rows'][0][2]);
-        $this->assertSame(['2026-07', '2026-06'], array_keys($data['periodOptions']));
+        $this->assertSame(['2026-09', '2026-07', '2026-06'], array_keys($data['periodOptions']));
 
         $this->actingAs(new User([
             'pn' => 'test-kpi-period',
@@ -500,7 +500,7 @@ class AlmafactsKpiSheetTest extends TestCase
         );
 
         return $controller->kpi(
-            Request::create('/report/dashboard-almafacts/kpi/' . $sheet, 'GET'),
+            Request::create('/report/dashboard-almafacts/kpi/' . $sheet, 'GET', ['periode' => '2026-07']),
             $sheet
         );
     }

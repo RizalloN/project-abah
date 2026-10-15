@@ -71,9 +71,9 @@ class LandingWorkerReadinessTest extends TestCase
         $pending['rankings'][0]['refresh_pending'] = true;
         $save = new ReflectionMethod($controller, 'cacheLandingPortfolioPayload');
         $isReady = new ReflectionMethod($controller, 'landingPayloadIsReady');
-        $save->invoke($controller, 'fresh', 'latest', 'stable', $ready);
+        $published = $save->invoke($controller, 'fresh', 'latest', 'stable', $ready);
         $save->invoke($controller, 'fresh', 'latest', 'stable', $pending);
-        $this->assertSame($ready, Cache::get('stable'));
+        $this->assertSame($published, Cache::get('stable'));
         $this->assertFalse($isReady->invoke($controller, $pending));
         $this->assertTrue(LandingPayloadState::pending(['area6_portfolio' => $pending]));
         $this->travel(31)->seconds();
@@ -89,5 +89,19 @@ class LandingWorkerReadinessTest extends TestCase
             'landing_summary' => ['decision' => ['refresh_pending' => true]],
         ]])->render();
         $this->assertStringContainsString('recoverLandingPage(true, window, document)', $html);
+    }
+
+    public function test_worker_stops_quietly_when_source_is_still_pending_on_last_attempt(): void
+    {
+        $controller = $this->createMock(DashboardSimpananController::class);
+        $controller->method('warmDashboardSimpananCache')->willReturn(false);
+        $job = (new WarmDashboardSimpananCacheJob('micro-readiness', ['period' => '2025-08-31']))
+            ->withFakeQueueInteractions();
+        $job->job->attempts = $job->tries;
+
+        $job->handle($controller);
+
+        $job->assertNotReleased();
+        $job->assertNotFailed();
     }
 }
