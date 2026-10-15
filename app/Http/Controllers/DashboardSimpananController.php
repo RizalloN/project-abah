@@ -6217,16 +6217,22 @@ class DashboardSimpananController extends Controller
     /** @return array<string, mixed> */
     private function validatedPresentationExport(Request $request): array
     {
+        $scope = UserBranchScope::forUser($request->user());
+        $allowedScopes = $scope !== null
+            ? [$scope['label']]
+            : ['area6', ...self::AREA_6_BRANCH_LABELS];
+        $scopeRule = \Illuminate\Validation\Rule::in($allowedScopes);
+
         return $request->validate([
             'title' => ['nullable', 'string', 'max:140'],
             'periode' => ['nullable', 'date_format:Y-m-d'],
-            'global_scope' => ['required', 'in:area6,KC Madiun,KC Magetan,KC Ngawi,KC Ponorogo'],
+            'global_scope' => ['required', $scopeRule],
             'use_prognosa' => ['nullable', 'boolean'],
-            'funding_scope' => ['required', 'in:area6,KC Madiun,KC Magetan,KC Ngawi,KC Ponorogo'],
+            'funding_scope' => ['required', $scopeRule],
             'funding_product' => ['required', 'in:total,giro,tabungan,deposito,casa'],
-            'sme_scope' => ['required', 'in:area6,KC Madiun,KC Magetan,KC Ngawi,KC Ponorogo'],
+            'sme_scope' => ['required', $scopeRule],
             'sme_product' => ['required', 'in:total,non_cashcoll,cashcoll'],
-            'consumer_scope' => ['required', 'in:area6,KC Madiun,KC Magetan,KC Ngawi,KC Ponorogo'],
+            'consumer_scope' => ['required', $scopeRule],
             'consumer_product' => ['required', 'in:total,briguna,kpr,kkb'],
         ]);
     }

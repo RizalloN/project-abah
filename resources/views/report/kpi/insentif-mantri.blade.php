@@ -13,6 +13,8 @@
     $mobMonths = $window['mob_months'] ?? [];
     $summaryCount = max(1, $summary['count']);
     $monthStatusLabel = ['final' => 'Final', 'berjalan' => 'Berjalan', 'belum' => 'Belum berjalan'];
+    $missingMonths = collect($months)->filter(fn ($month) => $month['position'] === null && $month['status'] !== 'belum')->pluck('label');
+    $missingMobMonths = collect($mobMonths)->filter(fn ($month) => $month['booking_position'] === null || $month['measure_position'] === null)->pluck('label');
 @endphp
 
 <style>
@@ -111,6 +113,8 @@
         border-radius: 10px; border: 1px solid #bfd4f5; background: #fff; color: var(--im-blue); font-weight: 700; font-size: .82rem;
     }
     .im-btn-outline:hover, .im-btn-outline:focus-visible { background: var(--im-blue-soft); color: var(--im-blue); text-decoration: none; }
+    .im-page .loan-filter-control { background-color: #fff; color: var(--im-ink); }
+    .im-page .loan-filter-control:focus-visible { outline: 2px solid var(--im-blue); outline-offset: 2px; }
 
     .im-table-wrap { overflow: auto; max-height: 72vh; border: 1px solid var(--im-line); border-radius: 12px; }
     .im-table { width: 100%; min-width: 1680px; border-collapse: separate; border-spacing: 0; font-size: .8rem; }
@@ -148,6 +152,7 @@
     @media (max-width: 767.98px) {
         .im-hero { padding: 1.25rem 1rem; }
         .im-hero h1 { font-size: 1.45rem; }
+        .im-page .loan-filter-control { font-size: 1rem; }
         .im-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         .im-grid { grid-template-columns: minmax(0, 1fr); }
         .im-search { min-width: 0; width: 100%; }
@@ -172,10 +177,20 @@
         <div class="card-body p-4">
             <form method="GET" action="{{ route('report.kpi.insentif-mantri') }}" id="im-filter-form">
                 <div class="row loan-filter-grid">
-                    <div class="col-xl-3 col-lg-6">
+                    <div class="col-xl-2 col-lg-6">
+                        <label class="loan-filter-label" for="im-kuartal">Kuartal penilaian</label>
+                        <select id="im-kuartal" name="kuartal" class="form-control loan-filter-control" aria-describedby="im-quarter-help">
+                            @forelse ($quarterOptions as $key => $quarter)
+                                <option value="{{ $key }}" @selected($key === $selectedQuarter) @disabled(empty($quarter['periods']))>{{ $quarter['label'] }}{{ empty($quarter['periods']) ? ' - Belum ada data' : '' }}</option>
+                            @empty
+                                <option value="">Belum ada data</option>
+                            @endforelse
+                        </select>
+                    </div>
+                    <div class="col-xl-2 col-lg-6">
                         <label class="loan-filter-label" for="im-periode">POSISI DATA</label>
                         <select id="im-periode" name="periode" class="form-control loan-filter-control">
-                            @forelse ($periods as $period)
+                            @forelse ($quarterPeriods as $period)
                                 <option value="{{ $period }}" @selected($period === $selectedPeriod)>{{ \Carbon\Carbon::parse($period)->locale('id')->translatedFormat('d F Y') }}</option>
                             @empty
                                 <option value="">Belum ada data</option>
@@ -193,7 +208,7 @@
                             @endforeach
                         </select>
                     </div>
-                    <div class="col-xl-3 col-lg-6">
+                    <div class="col-xl-2 col-lg-6">
                         <label class="loan-filter-label" for="im-unit">UNIT KERJA</label>
                         <select id="im-unit" name="unit" class="form-control loan-filter-control" data-selected="{{ $filters['unit'] }}">
                             <option value="ALL">Semua Unit</option>
@@ -216,6 +231,7 @@
                         </button>
                     </div>
                 </div>
+                <p class="mb-0 mt-2 text-muted" id="im-quarter-help" style="font-size: .78rem;">Pilih Q1 (Jan - Mar), Q2 (Apr - Jun), Q3 (Jul - Sep), atau Q4 (Okt - Des), lalu klik Tampilkan. Posisi data mengikuti kuartal yang dipilih.</p>
             </form>
 
             @if ($window)
@@ -232,6 +248,20 @@
         <div class="im-alert warn" role="status">
             <i class="fas fa-sync-alt mt-1" aria-hidden="true"></i>
             <div>LW321PN posisi <strong>{{ $freshness['latest_lw321'] }}</strong> lebih baru dari Daily Loan Dinamis ({{ $freshness['latest_daily'] ?? '-' }}) namun belum selesai dimaterialisasi. Data akan muncul otomatis setelah sinkronisasi import selesai.</div>
+        </div>
+    @endif
+
+    @if ($missingMonths->isNotEmpty())
+        <div class="im-alert warn" role="status">
+            <i class="fas fa-info-circle mt-1" aria-hidden="true"></i>
+            <div>Data ND untuk <strong>{{ $missingMonths->implode(', ') }}</strong> belum tersedia. Kolom bulan tersebut ditandai "-". Hasil penilaian masih parsial sampai data bulanan tersedia.</div>
+        </div>
+    @endif
+
+    @if ($missingMobMonths->isNotEmpty())
+        <div class="im-alert warn" role="status">
+            <i class="fas fa-info-circle mt-1" aria-hidden="true"></i>
+            <div>Riwayat MOB 6 belum lengkap untuk booking <strong>{{ $missingMobMonths->implode(', ') }}</strong>. Angka kualitas memakai posisi yang tersedia; hasil penilaian masih parsial sampai riwayat booking dan posisi pengukurannya tersedia.</div>
         </div>
     @endif
 
@@ -327,7 +357,7 @@
                             <tr>
                                 <td>{{ $month['label'] }}</td>
                                 <td>{{ $month['position'] ?? '-' }}</td>
-                                <td class="num"><span class="im-pill {{ ['final' => 'ok', 'berjalan' => 'run', 'belum' => 'idle'][$month['status']] }}">{{ $monthStatusLabel[$month['status']] }}</span></td>
+                                <td class="num"><span class="im-pill {{ $month['position'] === null ? 'idle' : ['final' => 'ok', 'berjalan' => 'run', 'belum' => 'idle'][$month['status']] }}">{{ $month['position'] === null && $month['status'] !== 'belum' ? 'Data belum tersedia' : $monthStatusLabel[$month['status']] }}</span></td>
                             </tr>
                         @endforeach
                     </tbody>
@@ -339,7 +369,7 @@
                             <tr>
                                 <td>{{ $mobMonth['label'] }}</td>
                                 <td>{{ $mobMonth['measure_label'] }} <small class="text-muted">({{ $mobMonth['measure_position'] ?? '-' }})</small></td>
-                                <td class="num"><span class="im-pill {{ $mobMonth['final'] ? 'ok' : 'run' }}">{{ $mobMonth['final'] ? 'MOB 6' : 'MOB '.$mobMonth['mob'] }}</span></td>
+                                <td class="num"><span class="im-pill {{ $mobMonth['measure_position'] === null ? 'idle' : ($mobMonth['final'] ? 'ok' : 'run') }}">{{ $mobMonth['measure_position'] === null ? 'Data belum tersedia' : ($mobMonth['final'] ? 'MOB 6' : 'MOB '.$mobMonth['mob']) }}</span></td>
                             </tr>
                         @endforeach
                     </tbody>
@@ -363,7 +393,7 @@
                             <option value="eligible">Berhak</option>
                             <option value="not">Belum berhak</option>
                         </select>
-                        @php $exportQuery = ['periode' => $selectedPeriod, 'cabang' => $filters['cabang'], 'unit' => $filters['unit'], 'status' => $filters['status']]; @endphp
+                        @php $exportQuery = ['kuartal' => $selectedQuarter, 'periode' => $selectedPeriod, 'cabang' => $filters['cabang'], 'unit' => $filters['unit'], 'status' => $filters['status']]; @endphp
                         <a class="im-btn-outline" href="{{ route('report.kpi.insentif-mantri.export', $exportQuery + ['jenis' => 'nd']) }}"><i class="fas fa-file-csv" aria-hidden="true"></i> Nominatif ND</a>
                         <a class="im-btn-outline" href="{{ route('report.kpi.insentif-mantri.export', $exportQuery + ['jenis' => 'mob6']) }}"><i class="fas fa-file-csv" aria-hidden="true"></i> Nominatif MOB 6</a>
                     </div>
@@ -406,7 +436,7 @@
                                         <td class="name">{{ $row['nama'] !== '' ? $row['nama'] : '-' }}<small>PN {{ $row['pn'] }} &middot; {{ $row['status_pekerja'] }}</small></td>
                                         <td>{{ $row['unit'] }}<small class="d-block text-muted">{{ $row['cabang'] }}</small></td>
                                         @foreach ($months as $month)
-                                            <td class="num {{ $month['status'] === 'belum' ? 'cell-muted' : '' }}" title="{{ $row['nd_deb'][$month['key']] }} rekening">{{ $month['status'] === 'belum' ? '-' : $juta($row['nd'][$month['key']]) }}</td>
+                                            <td class="num {{ $month['position'] === null ? 'cell-muted' : '' }}" title="{{ $month['position'] === null ? 'Data belum tersedia' : $row['nd_deb'][$month['key']].' rekening' }}">{{ $month['position'] === null ? '-' : $juta($row['nd'][$month['key']]) }}</td>
                                         @endforeach
                                         <td class="num {{ $row['nd_ok'] ? 'cell-ok' : 'cell-no' }}">{{ $juta($row['nd_avg']) }}</td>
                                         <td class="num" style="min-width: 110px;">
@@ -434,7 +464,7 @@
                                 <tr>
                                     <td colspan="3">Total ({{ number_format($rows->count(), 0, ',', '.') }} mantri)</td>
                                     @foreach ($months as $month)
-                                        <td class="num">{{ $month['status'] === 'belum' ? '-' : $juta($rows->sum(fn ($row) => $row['nd'][$month['key']])) }}</td>
+                                        <td class="num">{{ $month['position'] === null ? '-' : $juta($rows->sum(fn ($row) => $row['nd'][$month['key']])) }}</td>
                                     @endforeach
                                     <td class="num">{{ $juta($rows->avg('nd_avg')) }}</td>
                                     <td class="num">-</td>
@@ -476,6 +506,23 @@
 @push('scripts')
 <script>
     (function () {
+        var quarterOptions = @json($quarterOptions);
+        var quarterSelect = document.getElementById('im-kuartal');
+        var periodSelect = document.getElementById('im-periode');
+
+        if (quarterSelect && periodSelect) quarterSelect.addEventListener('change', function () {
+            var quarter = quarterOptions[quarterSelect.value];
+            var periods = quarter ? quarter.periods : [];
+            periodSelect.innerHTML = '';
+            periods.forEach(function (period, index) {
+                var parts = period.split('-');
+                var date = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+                var label = date.toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' });
+                periodSelect.appendChild(new Option(label, period, false, index === 0));
+            });
+            if (!periods.length) periodSelect.appendChild(new Option('Belum ada data', ''));
+        });
+
         var unitsByBranch = @json($unitsByBranch);
         var branchSelect = document.getElementById('im-cabang');
         var unitSelect = document.getElementById('im-unit');

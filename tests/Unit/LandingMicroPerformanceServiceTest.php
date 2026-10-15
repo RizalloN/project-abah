@@ -106,6 +106,8 @@ class LandingMicroPerformanceServiceTest extends TestCase
 
         Schema::dropIfExists('brihc_pemasar');
         Schema::create('brihc_pemasar', function (Blueprint $table): void {
+            $table->string('uniqueid_namareport')->nullable();
+            $table->string('bc')->nullable();
             $table->string('pernr')->nullable();
             $table->string('pn_mantri')->nullable();
             $table->string('completename')->nullable();
@@ -876,7 +878,7 @@ class LandingMicroPerformanceServiceTest extends TestCase
         $this->assertSame('45', data_get($madiun, 'branch_code'));
         $this->assertSame(2, data_get($madiun, 'headcount.pt_non_briguna'));
         $this->assertSame(1, data_get($madiun, 'headcount.contract'));
-        $this->assertSame(1, data_get($madiun, 'headcount.briguna'));
+        $this->assertSame(0, data_get($madiun, 'headcount.briguna'));
         $this->assertSame(2, data_get($madiun, 'realization.deb'));
         $this->assertSame(1_050_000_000.0, data_get($madiun, 'realization.amount'));
         $this->assertSame(1, data_get($madiun, 'daily_realization.deb'));
@@ -898,6 +900,33 @@ class LandingMicroPerformanceServiceTest extends TestCase
         $this->assertSame(1, data_get($contractBuckets->firstWhere('key', 'low'), 'people.0.net_deb'));
         $this->assertSame(100.0, (float) $ptBuckets->sum('share'));
         $this->assertSame(100.0, (float) $contractBuckets->sum('share'));
+    }
+
+    public function test_mantri_pt_and_contract_tiers_preserve_exact_source_boundaries_and_signed_values(): void
+    {
+        $cases = [
+            'pt' => [[-1, 'none'], [0, 'none'], [1, 'extreme_low'], [399_999_999, 'extreme_low'], [400_000_000, 'low'], [800_000_000, 'low'], [800_000_001, 'mid'], [1_000_000_000, 'mid'], [1_000_000_001, 'high']],
+            'contract' => [[-1, 'none'], [0, 'none'], [1, 'extreme_low'], [174_999_999, 'extreme_low'], [175_000_000, 'low'], [350_000_000, 'low'], [350_000_001, 'mid'], [450_000_000, 'mid'], [450_000_001, 'high']],
+        ];
+        foreach ($cases as $category => $values) {
+            $people = collect();
+            $metrics = [];
+            foreach ($values as $index => [$amount, $tier]) {
+                $pn = (string) ($index + 1);
+                $people->push(['pn' => $pn, 'name' => 'Mantri '.$pn, 'branch' => 'KC MADIUN', 'unit' => 'UNIT A', 'category' => $category]);
+                $metrics[$pn] = ['amount' => (float) $amount, 'accounts' => ['REK-'.$pn => true]];
+            }
+            $payload = $this->invokePrivate(app(LandingMicroPerformanceService::class), 'mantriTierPayload', [$people, $metrics, $category]);
+            $buckets = collect($payload['buckets'])->keyBy('key');
+            $this->assertSame(['none' => 2, 'extreme_low' => 2, 'low' => 2, 'mid' => 2, 'high' => 1], $buckets->map(fn (array $bucket): int => $bucket['mantri'])->all());
+            foreach ($values as $index => [$amount, $tier]) {
+                $person = collect($buckets->get($tier)['people'])->firstWhere('pn', (string) ($index + 1));
+                $this->assertNotNull($person, $category.' '.$amount.' '.$tier);
+                $this->assertSame((float) $amount, $person['net_amount']);
+                $this->assertSame(1, $person['net_deb']);
+            }
+            $this->assertEqualsWithDelta(100, $buckets->sum('share'), 0.00001);
+        }
     }
 
     public function test_unproductive_mantri_uses_consecutive_closed_micro_months_and_current_branch_roster(): void
@@ -962,24 +991,59 @@ class LandingMicroPerformanceServiceTest extends TestCase
         ]);
 
         $this->assertTrue($area['available']);
-        $this->assertSame(5, $area['total_mantri']);
-        $this->assertSame(4, data_get($area, 'totals.month_1.count'));
-        $this->assertSame(3, data_get($area, 'totals.month_3.count'));
-        $this->assertSame(2, data_get($area, 'totals.month_6.count'));
-        $this->assertSame(40.0, data_get($area, 'totals.month_6.percentage'));
-        $this->assertSame('Mantri Nihil Enam Bulan', data_get($area, 'totals.month_6.mantri.0.name'));
+        $this->assertSame(4, $area['total_mantri']);
+        $this->assertSame(3, data_get($area, 'totals.month_1.count'));
+        $this->assertSame(2, data_get($area, 'totals.month_3.count'));
+        $this->assertSame(1, data_get($area, 'totals.month_6.count'));
+        $this->assertSame(25.0, data_get($area, 'totals.month_6.percentage'));
+        $this->assertSame('Mantri Ngawi Nihil', data_get($area, 'totals.month_6.mantri.0.name'));
         $this->assertSame(
             'UNIT C',
             data_get(collect(data_get($area, 'totals.month_3.mantri', []))->firstWhere('pn', '113'), 'unit')
         );
         $this->assertSame(6, count($area['closed_periods']));
 
-        $this->assertSame(4, $madiun['total_mantri']);
-        $this->assertSame(3, data_get($madiun, 'totals.month_1.count'));
-        $this->assertSame(2, data_get($madiun, 'totals.month_3.count'));
-        $this->assertSame(1, data_get($madiun, 'totals.month_6.count'));
+        $this->assertSame(3, $madiun['total_mantri']);
+        $this->assertSame(2, data_get($madiun, 'totals.month_1.count'));
+        $this->assertSame(1, data_get($madiun, 'totals.month_3.count'));
+        $this->assertSame(0, data_get($madiun, 'totals.month_6.count'));
         $this->assertSame(['KC MADIUN'], array_column($madiun['branches'], 'branch'));
-        $this->assertSame(1, data_get($madiun, 'branches.0.metrics.month_6.count'));
+        $this->assertSame(0, data_get($madiun, 'branches.0.metrics.month_6.count'));
+    }
+
+    public function test_hc_mantri_history_retains_realization_before_branch_transfer_without_changing_legacy_history(): void
+    {
+        DB::table('brihc_pemasar')->insert([
+            ['uniqueid_namareport' => 'reference_brihc_hc_111', 'pernr' => '000111', 'completename' => 'HC Pindah Ke Ngawi', 'esgdesc' => 'PT', 'positiondesc' => 'MANTRI', 'orgdesc' => 'UNIT NGAWI BARU', 'psadesc' => 'KC Ngawi', 'tmt_jabatan' => '2024-01-01'],
+            ['uniqueid_namareport' => 'legacy-112', 'pernr' => '000112', 'completename' => 'Legacy Ngawi', 'esgdesc' => 'PT', 'positiondesc' => 'MANTRI', 'orgdesc' => 'UNIT NGAWI LAMA', 'psadesc' => 'KC Ngawi', 'tmt_jabatan' => '2024-01-01'],
+        ]);
+        foreach (['2026-04-30', '2026-05-31', '2026-06-30', '2026-07-31', '2026-08-31', '2026-09-30'] as $closedPeriod) {
+            DB::table('daily_loan_dinamis')->insert($this->dailyLoanRow(
+                'hc-history-'.$closedPeriod, $closedPeriod, 'CIF-'.$closedPeriod, 'REK-'.$closedPeriod, 1, 'MICRO', 'Kupedes', null,
+                ['cabang1' => 'KC Ngawi', 'cabang_normalized' => 'KC NGAWI', 'kode_cabang1' => '57', 'unit1' => 'UNIT NGAWI']
+            ));
+            DB::table('performance_rm_snapshots')->insert([
+                ['periode' => $closedPeriod, 'cabang' => 'KC MADIUN', 'unit' => 'UNIT MADIUN LAMA', 'rm' => '000111 - HC NAMA LAMA', 'segmen' => 'MICRO', 'realisasi_os' => $closedPeriod === '2026-09-30' ? 100_000_000 : 0],
+                ['periode' => $closedPeriod, 'cabang' => 'KC MADIUN', 'unit' => 'UNIT MADIUN LAMA', 'rm' => '000112 - LEGACY NAMA LAMA', 'segmen' => 'MICRO', 'realisasi_os' => $closedPeriod === '2026-09-30' ? 100_000_000 : 0],
+                ['periode' => $closedPeriod, 'cabang' => 'KC NGAWI', 'unit' => 'UNIT NGAWI', 'rm' => '000999 - CAKUPAN SNAPSHOT NGAWI', 'segmen' => 'MICRO', 'realisasi_os' => 0],
+            ]);
+        }
+        $service = app(LandingMicroPerformanceService::class);
+        foreach ([null, UserBranchScope::forKey('ngawi')] as $scope) {
+            $roster = $this->invokePrivate($service, 'mantriRoster', [$scope, '2026-10-13']);
+            $payload = $this->invokePrivate($service, 'buildUnproductiveMantri', ['2026-10-13', $scope, $roster]);
+            $this->assertTrue($payload['available']);
+            $this->assertSame(2, $payload['total_mantri']);
+            $this->assertCount(6, $payload['closed_periods']);
+            foreach (['month_1', 'month_3', 'month_6'] as $metric) {
+                $this->assertSame(2, data_get($payload, 'totals.'.$metric.'.monitored'));
+                $this->assertSame(1, data_get($payload, 'totals.'.$metric.'.count'));
+                $this->assertSame(['112'], array_column(data_get($payload, 'totals.'.$metric.'.mantri'), 'pn'));
+            }
+            $ngawi = collect($payload['branches'])->firstWhere('branch', 'KC NGAWI');
+            $this->assertSame(2, $ngawi['total_mantri']);
+            $this->assertSame('Legacy Ngawi', data_get($ngawi, 'metrics.month_1.mantri.0.name'));
+        }
     }
 
     public function test_unproductive_mantri_uses_daily_loan_assignment_and_does_not_backdate_new_brihc_mantri(): void
@@ -1115,6 +1179,110 @@ class LandingMicroPerformanceServiceTest extends TestCase
         $this->assertSame('contract', $roster->firstWhere('pn', '112')['category']);
         $this->assertCount(2, $roster);
         $this->assertNull($roster->firstWhere('pn', '999'));
+    }
+
+    public function test_hc_mantri_roster_keeps_latest_identity_assignment_and_people_without_daily_accounts(): void
+    {
+        DB::table('brihc_pemasar')->insert([
+            ['uniqueid_namareport' => 'reference_brihc_hc_111', 'pernr' => '000111', 'completename' => 'Nama HC Terbaru', 'esgdesc' => 'PT', 'positiondesc' => 'MANTRI', 'orgdesc' => 'UNIT NGAWI BARU', 'psadesc' => 'KC Ngawi'],
+            ['uniqueid_namareport' => 'reference_brihc_hc_112', 'pernr' => '000112', 'completename' => 'Mantri Baru Tanpa Rekening', 'esgdesc' => 'PT', 'positiondesc' => 'MANTRI', 'orgdesc' => 'UNIT NGAWI BARU', 'psadesc' => 'KC Ngawi'],
+            ['uniqueid_namareport' => 'reference_brihc_hc_113', 'pernr' => '000113', 'completename' => 'Recovery', 'esgdesc' => 'PT', 'positiondesc' => 'MANTRI RECOVERY', 'orgdesc' => 'UNIT NGAWI BARU', 'psadesc' => 'KC Ngawi'],
+            ['uniqueid_namareport' => 'legacy-mantri', 'pernr' => '000211', 'completename' => 'Nama Referensi Legacy', 'esgdesc' => 'PT', 'positiondesc' => 'MANTRI', 'orgdesc' => 'UNIT MADIUN LEGACY', 'psadesc' => 'KC Madiun'],
+        ]);
+        DB::table('daily_loan_dinamis')->insert([
+            $this->dailyLoanRow('hc-old-assignment', '2026-10-13', 'CIF-111', 'REK-111', 10_000_000, 'MICRO', 'Kupedes', null, [
+                'unit1' => 'UNIT MADIUN LAMA', 'pn_pengelola1' => '000111', 'pn_name1' => '000111 - Nama Daily Lama',
+            ]),
+            $this->dailyLoanRow('hc-legacy-assignment', '2026-10-13', 'CIF-211', 'REK-211', 20_000_000, 'MICRO', 'Kupedes', null, [
+                'unit1' => 'UNIT MADIUN DAILY', 'pn_pengelola1' => '000211', 'pn_name1' => '000211 - Nama Daily Legacy',
+            ]),
+        ]);
+        $service = app(LandingMicroPerformanceService::class);
+        $roster = $this->invokePrivate($service, 'mantriRoster', [null, '2026-10-13']);
+        $hc = $roster->firstWhere('pn', '111');
+
+        $this->assertCount(3, $roster);
+        $this->assertSame('Nama HC Terbaru', $hc['name']);
+        $this->assertSame('KC NGAWI', $hc['branch']);
+        $this->assertSame('UNIT NGAWI BARU', $hc['unit']);
+        $this->assertSame('Mantri Baru Tanpa Rekening', $roster->firstWhere('pn', '112')['name']);
+        $this->assertNull($roster->firstWhere('pn', '113'));
+        $this->assertSame('Nama Daily Legacy', $roster->firstWhere('pn', '211')['name']);
+        $this->assertSame('UNIT MADIUN DAILY', $roster->firstWhere('pn', '211')['unit']);
+        $ngawi = $this->invokePrivate($service, 'mantriRoster', [UserBranchScope::forKey('ngawi'), '2026-10-13']);
+        $madiun = $this->invokePrivate($service, 'mantriRoster', [UserBranchScope::forKey('madiun'), '2026-10-13']);
+        $this->assertSame(['111', '112'], $ngawi->pluck('pn')->all());
+        $this->assertSame(['211'], $madiun->pluck('pn')->all());
+    }
+
+    public function test_brihc_only_version_change_refreshes_roster_and_cannot_serve_old_durable_payload(): void
+    {
+        DB::table('brihc_pemasar')->insert([
+            'uniqueid_namareport' => 'reference_brihc_hc_111', 'pernr' => '000111',
+            'completename' => 'Nama HC Awal', 'esgdesc' => 'PT', 'positiondesc' => 'MANTRI',
+            'orgdesc' => 'UNIT A', 'psadesc' => 'KC Madiun',
+        ]);
+        DB::table('daily_loan_dinamis')->insert($this->dailyLoanRow(
+            'hc-cache', '2026-10-13', 'CIF-HC', 'REK-HC', 10_000_000, 'MICRO', 'Kupedes', '2026-10-13',
+            ['pn_pengelola1' => '000111', 'pn_name1' => '000111 - Nama Loan Lama']
+        ));
+        $service = app(LandingMicroPerformanceService::class);
+        $initialKey = $this->invokePrivate($service, 'durablePayloadCacheKey', ['2026-10-13', null]);
+        $first = $service->payload('2026-10-13');
+        $this->assertSame(1, data_get($first, 'realization.mantri_roster.total_active'));
+        Cache::put($initialKey, array_merge($first, ['old_hc_roster_marker' => true]));
+        $pinjamanVersion = ReportCacheVersion::get('pinjaman');
+
+        DB::table('brihc_pemasar')->where('pernr', '000111')->update(['completename' => 'Nama HC Terbaru']);
+        DB::table('brihc_pemasar')->insert([
+            'uniqueid_namareport' => 'reference_brihc_hc_112', 'pernr' => '000112',
+            'completename' => 'Mantri Baru Tanpa Rekening', 'esgdesc' => 'PT', 'positiondesc' => 'MANTRI',
+            'orgdesc' => 'UNIT B', 'psadesc' => 'KC Madiun',
+        ]);
+        ReportCacheVersion::bump('brihc');
+        $latestKey = $this->invokePrivate($service, 'durablePayloadCacheKey', ['2026-10-13', null]);
+        $latest = $service->payload('2026-10-13');
+
+        $this->assertSame($pinjamanVersion, ReportCacheVersion::get('pinjaman'));
+        $this->assertNotSame($initialKey, $latestKey);
+        $this->assertArrayNotHasKey('old_hc_roster_marker', $latest);
+        $this->assertSame(2, data_get($latest, 'realization.mantri_roster.total_active'));
+        $this->assertFalse((bool) data_get($latest, 'meta.cache_stale', false));
+    }
+
+    public function test_queued_micro_refresh_cannot_write_into_a_newer_hc_durable_cache_namespace(): void
+    {
+        DB::table('brihc_pemasar')->insert([
+            'uniqueid_namareport' => 'reference_brihc_hc_111', 'pernr' => '000111',
+            'completename' => 'Mantri Awal', 'esgdesc' => 'PT', 'positiondesc' => 'MANTRI',
+            'orgdesc' => 'UNIT A', 'psadesc' => 'KC Madiun',
+        ]);
+        DB::table('daily_loan_dinamis')->insert($this->dailyLoanRow(
+            'hc-refresh-race', '2026-10-13', 'CIF-RACE', 'REK-RACE', 10_000_000, 'MICRO', 'Kupedes', '2026-10-13',
+            ['pn_pengelola1' => '000111', 'pn_name1' => '000111 - Nama Loan']
+        ));
+        $service = app(LandingMicroPerformanceService::class);
+        $first = $service->payload('2026-10-13');
+        $this->assertSame(1, data_get($first, 'realization.mantri_roster.total_active'));
+        ReportCacheVersion::bump('pinjaman');
+        $pending = $service->payload('2026-10-13');
+        $this->assertTrue(data_get($pending, 'meta.refresh_pending'));
+
+        ReportCacheVersion::bump('brihc');
+        DB::table('brihc_pemasar')->insert([
+            'uniqueid_namareport' => 'reference_brihc_hc_112', 'pernr' => '000112',
+            'completename' => 'Mantri Setelah Update HC', 'esgdesc' => 'PT', 'positiondesc' => 'MANTRI',
+            'orgdesc' => 'UNIT B', 'psadesc' => 'KC Madiun',
+        ]);
+        $latestKey = $this->invokePrivate($service, 'durablePayloadCacheKey', ['2026-10-13', null]);
+        $this->assertFalse(Cache::has($latestKey));
+        app(DeferredCallbackCollection::class)->invoke();
+        $this->assertFalse(Cache::has($latestKey));
+
+        $latest = $service->payload('2026-10-13');
+        $this->assertSame(2, data_get($latest, 'realization.mantri_roster.total_active'));
+        $this->assertTrue(Cache::has($latestKey));
+        $this->assertFalse((bool) data_get($latest, 'meta.cache_stale', false));
     }
 
     public function test_micro_payload_stable_cache_is_invalidated_when_brihc_version_changes(): void
@@ -1266,19 +1434,19 @@ class LandingMicroPerformanceServiceTest extends TestCase
 
         $this->assertSame(1, data_get($products, 'Kupedes.mantri_realized'));
         $this->assertSame(1, data_get($products, 'Kupedes.mantri_not_realized'));
-        $this->assertSame(1, data_get($products, 'Briguna Mikro.mantri_realized'));
+        $this->assertSame(0, data_get($products, 'Briguna Mikro.mantri_realized'));
         $this->assertSame(0, data_get($products, 'Briguna Mikro.mantri_not_realized'));
-        $this->assertSame(['eligible' => 3, 'realized' => 2, 'not_realized' => 1], $payload['mantri']);
-        $this->assertSame(3, data_get($payload, 'mantri_roster.total_active'));
+        $this->assertSame(['eligible' => 2, 'realized' => 1, 'not_realized' => 1], $payload['mantri']);
+        $this->assertSame(2, data_get($payload, 'mantri_roster.total_active'));
         $this->assertSame(2, data_get($payload, 'mantri_roster.kupedes_eligible'));
         $this->assertSame(1, data_get($payload, 'mantri_roster.kupedes_realized'));
         $this->assertSame(1, data_get($payload, 'mantri_roster.kupedes_not_realized'));
         $this->assertSame([
             'branch' => 'KC MADIUN',
-            'total_active' => 3,
+            'total_active' => 2,
             'pt' => 2,
             'contract' => 0,
-            'briguna' => 1,
+            'briguna' => 0,
         ], data_get($payload, 'mantri_roster.branches.0'));
         $this->assertSame([
             [

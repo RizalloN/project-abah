@@ -31,10 +31,10 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `localFallbackPayload` | method | 10 | `app/Services/Presentation/PresentationPrognosaWeeklyService.php:240` |
 | `normaliseLabel` | method | 10 | `app/Services/Presentation/PresentationPrognosaWeeklyService.php:1535` |
 | `parseWorksheetMatrix` | method | 10 | `app/Http/Controllers/PrognosaWeeklyController.php:400` |
+| `prognosa.weekly` | route | 10 | - |
 | `resolvePositionColumns` | method | 10 | `app/Services/Presentation/PresentationPrognosaWeeklyService.php:1190` |
 | `matrixFromCsvResponse` | method | 9 | `app/Http/Controllers/PrognosaWeeklyController.php:305` |
 | `metricRows` | method | 9 | `app/Services/Presentation/PresentationPrognosaWeeklyService.php:1292` |
-| `prognosa.weekly` | route | 9 | - |
 | `resolveCsvLayout` | method | 9 | `app/Services/Presentation/PresentationPrognosaWeeklyService.php:437` |
 | `consolidateAreaRows` | method | 8 | `app/Http/Controllers/PrognosaWeeklyController.php:1349` |
 | `csvMetricRows` | method | 8 | `app/Services/Presentation/PresentationPrognosaWeeklyService.php:629` |
@@ -68,7 +68,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | prognosa -> core (calls) | 61 |
 | prognosa -> core (accepts) | 28 |
 | prognosa -> core (instantiates) | 25 |
-| prognosa -> access-control (protected_by) | 5 |
+| prognosa -> access-control (protected_by) | 6 |
 | prognosa -> access-control (calls) | 2 |
 | prognosa -> dashboard-harian (injects) | 1 |
 | prognosa -> core (extends) | 1 |

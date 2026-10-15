@@ -21,7 +21,7 @@ final class LandingMicroPerformanceService
 
     private const PERFORMANCE_RM_SNAPSHOT_TABLE = 'performance_rm_snapshots';
 
-    private const CACHE_VERSION = 'v32-mantri-shared-basis';
+    private const CACHE_VERSION = 'v35-mantri-source-counters';
 
     private const PERIOD_LOOKUP_INDEXES = [
         'idx_snapshot_filter_optimized',
@@ -243,9 +243,13 @@ final class LandingMicroPerformanceService
                 Carbon::parse($period)->startOfYear()->toDateString(),
                 $branchScope
             );
+            $brihcVersion = ReportCacheVersion::get('brihc');
+            $referenceFingerprint = app(MantriProductivityReference::class)->fingerprint($period);
             $dataVersion = implode('.', [
                 ReportCacheVersion::get('pinjaman'),
                 ReportCacheVersion::get('harian'),
+                $brihcVersion,
+                $referenceFingerprint,
             ]);
             $cacheKey = implode(':', [
                 'landing',
@@ -268,7 +272,7 @@ final class LandingMicroPerformanceService
                 $ytdPeriod ?? 'none',
                 $branchScope['key'] ?? UserBranchScope::AREA_SCOPE,
             ]);
-            $durableCacheKey = $this->durablePayloadCacheKey($period, $branchScope);
+            $durableCacheKey = $this->durablePayloadCacheKey($period, $branchScope, $brihcVersion, $referenceFingerprint);
 
             if ($forceRefresh) {
                 Cache::forget($cacheKey);
@@ -281,7 +285,8 @@ final class LandingMicroPerformanceService
                         $period,
                         $previousPeriod,
                         $ytdPeriod,
-                        $branchScope
+                        $branchScope,
+                        $durableCacheKey
                     );
 
                     return $this->markPayloadAsRefreshing($durable);
@@ -304,7 +309,8 @@ final class LandingMicroPerformanceService
                     $period,
                     $previousPeriod,
                     $ytdPeriod,
-                    $branchScope
+                    $branchScope,
+                    $durableCacheKey
                 );
 
                 return $this->markPayloadAsRefreshing($stable);
@@ -316,7 +322,8 @@ final class LandingMicroPerformanceService
                 $period,
                 $previousPeriod,
                 $ytdPeriod,
-                $branchScope
+                $branchScope,
+                $durableCacheKey
             );
         } catch (Throwable $exception) {
             Log::warning('Landing Mikro gagal dihitung.', [
@@ -399,7 +406,8 @@ final class LandingMicroPerformanceService
         string $period,
         ?string $previousPeriod,
         ?string $ytdPeriod,
-        ?array $branchScope
+        ?array $branchScope,
+        string $durableCacheKey
     ): array {
         $lock = Cache::lock($cacheKey.':build-lock', self::BUILD_LOCK_SECONDS);
 
@@ -410,7 +418,8 @@ final class LandingMicroPerformanceService
                 $period,
                 $previousPeriod,
                 $ytdPeriod,
-                $branchScope
+                $branchScope,
+                $durableCacheKey
             ): array {
                 $cached = Cache::get($cacheKey);
                 if (is_array($cached)) {
@@ -420,13 +429,13 @@ final class LandingMicroPerformanceService
                 $payload = $this->buildPayload($period, $previousPeriod, $ytdPeriod, $branchScope);
                 Cache::put($cacheKey, $payload, now()->addHours(self::PAYLOAD_CACHE_HOURS));
                 Cache::put($stableCacheKey, $payload, now()->addDays(self::STABLE_CACHE_DAYS));
-                Cache::put($this->durablePayloadCacheKey($period, $branchScope), $payload, now()->addDays(self::STABLE_CACHE_DAYS));
+                Cache::put($durableCacheKey, $payload, now()->addDays(self::STABLE_CACHE_DAYS));
 
                 return $payload;
             });
         } catch (LockTimeoutException) {
             $stable = Cache::get($stableCacheKey)
-                ?? Cache::get($this->durablePayloadCacheKey($period, $branchScope));
+                ?? Cache::get($durableCacheKey);
 
             return is_array($stable)
                 ? $this->markPayloadAsRefreshing($stable)
@@ -441,7 +450,8 @@ final class LandingMicroPerformanceService
         string $period,
         ?string $previousPeriod,
         ?string $ytdPeriod,
-        ?array $branchScope
+        ?array $branchScope,
+        string $durableCacheKey
     ): void {
         $pendingKey = $cacheKey.':refresh-pending';
         if (! Cache::add($pendingKey, now()->toIso8601String(), now()->addMinutes(5))) {
@@ -455,6 +465,7 @@ final class LandingMicroPerformanceService
             $previousPeriod,
             $ytdPeriod,
             $branchScope,
+            $durableCacheKey,
             $pendingKey
         ): void {
             $lock = Cache::lock($cacheKey.':build-lock', self::BUILD_LOCK_SECONDS);
@@ -469,7 +480,7 @@ final class LandingMicroPerformanceService
                 $payload = $this->buildPayload($period, $previousPeriod, $ytdPeriod, $branchScope);
                 Cache::put($cacheKey, $payload, now()->addHours(self::PAYLOAD_CACHE_HOURS));
                 Cache::put($stableCacheKey, $payload, now()->addDays(self::STABLE_CACHE_DAYS));
-                Cache::put($this->durablePayloadCacheKey($period, $branchScope), $payload, now()->addDays(self::STABLE_CACHE_DAYS));
+                Cache::put($durableCacheKey, $payload, now()->addDays(self::STABLE_CACHE_DAYS));
             } catch (Throwable $exception) {
                 Log::warning('Refresh cache landing Mikro gagal.', [
                     'period' => $period,
@@ -486,13 +497,15 @@ final class LandingMicroPerformanceService
     }
 
     /** @param array<string, mixed>|null $branchScope */
-    private function durablePayloadCacheKey(string $period, ?array $branchScope): string
+    private function durablePayloadCacheKey(string $period, ?array $branchScope, ?int $brihcVersion = null, ?string $referenceFingerprint = null): string
     {
         return implode(':', [
             'landing',
             'micro-performance',
             self::CACHE_VERSION,
             'last-valid',
+            $brihcVersion ?? ReportCacheVersion::get('brihc'),
+            $referenceFingerprint ?? app(MantriProductivityReference::class)->fingerprint($period),
             $period,
             $branchScope['key'] ?? UserBranchScope::AREA_SCOPE,
         ]);
@@ -524,11 +537,12 @@ final class LandingMicroPerformanceService
         $realization = $this->decorateRealizationWithMantri(
             $this->aggregatePlafondRealization($plafondRows, $branchScope),
             $plafondRows,
-            $roster
+            $roster,
+            $period
         );
         $netDisbursement = $this->aggregateNetRealization($netRows, $branchScope);
         $burden = $this->buildBurdenPayload($period, $previousPeriod, $ytdPeriod, $branchScope);
-        $mantriNettRoster = collect(app(MantriPerformanceBasis::class)->rosterState()['people'])->values();
+        $mantriNettRoster = collect(app(MantriPerformanceBasis::class)->rosterState($period)['people'])->values();
         $mantriNettRows = $this->fetchMantriNettRows($period, $branchScope, $mantriNettRoster);
         if ($branchScope !== null) {
             $mantriNettRoster = $mantriNettRoster->where('branch', $this->branchLabel((string) ($branchScope['upper_label'] ?? $branchScope['label'] ?? '')))->values();
@@ -894,8 +908,20 @@ final class LandingMicroPerformanceService
      * @param  Collection<int, array<string, string>>  $roster
      * @return array<string, mixed>
      */
-    private function decorateRealizationWithMantri(array $realization, array $rows, Collection $roster): array
+    private function decorateRealizationWithMantri(array $realization, array $rows, Collection $roster, ?string $period = null): array
     {
+        if ($period !== null) {
+            $reference = app(MantriProductivityReference::class);
+            $rows = array_map(function (object|array $row) use ($reference, $period): array {
+                $copy = (array) $row;
+                $identity = $reference->accountReference($period, (string) ($copy['account_key'] ?? ''), (string) ($copy['cif_key'] ?? ''), (string) ($copy['realization_date'] ?? ''));
+                if ($identity !== null) {
+                    $copy['manager_pn'] = $identity['pn'];
+                }
+
+                return $copy;
+            }, $rows);
+        }
         $realizedByProduct = collect($rows)
             ->groupBy(fn (object|array $row): string => $this->normaliseToken($this->microProductLabel((string) data_get($row, 'product', ''))))
             ->map(fn (Collection $productRows): array => $productRows
@@ -2407,16 +2433,16 @@ final class LandingMicroPerformanceService
         $definitions = $category === 'contract'
             ? [
                 'none' => 'Belum Realisasi',
-                'extreme_low' => 'Extreme Low < 350 jt',
-                'low' => 'Low 350 - < 600 jt',
-                'mid' => 'Mid 600 - 800 jt',
-                'high' => 'High > 800 jt',
+                'extreme_low' => 'Extreme Low < 175 jt',
+                'low' => 'Low 175 - 350 jt',
+                'mid' => 'Mid >350 - 450 jt',
+                'high' => 'High > 450 jt',
             ]
             : [
                 'none' => 'Belum Realisasi',
                 'extreme_low' => 'Extreme Low < 400 jt',
-                'low' => 'Low 400 - < 800 jt',
-                'mid' => 'Mid 800 jt - 1 M',
+                'low' => 'Low 400 - 800 jt',
+                'mid' => 'Mid >800 jt - 1 M',
                 'high' => 'High > 1 M',
             ];
         $buckets = collect($definitions)->map(fn (string $label, string $key): array => [
@@ -2431,13 +2457,13 @@ final class LandingMicroPerformanceService
             $managerMetric = $netByManager[(string) ($person['pn'] ?? '')] ?? ['amount' => 0.0, 'accounts' => []];
             $amount = (float) ($managerMetric['amount'] ?? 0.0);
             $key = match (true) {
-                $amount <= 0.0 => 'none',
-                $category === 'contract' && $amount < 350_000_000 => 'extreme_low',
-                $category === 'contract' && $amount < 600_000_000 => 'low',
-                $category === 'contract' && $amount <= 800_000_000 => 'mid',
+                $amount <= 0.0 && ($person['roster_source'] ?? '') !== 'workbook_reference' => 'none',
+                $category === 'contract' && $amount < 175_000_000 => 'extreme_low',
+                $category === 'contract' && $amount <= 350_000_000 => 'low',
+                $category === 'contract' && $amount <= 450_000_000 => 'mid',
                 $category === 'contract' => 'high',
                 $amount < 400_000_000 => 'extreme_low',
-                $amount < 800_000_000 => 'low',
+                $amount <= 800_000_000 => 'low',
                 $amount <= 1_000_000_000 => 'mid',
                 default => 'high',
             };
@@ -2483,7 +2509,8 @@ final class LandingMicroPerformanceService
             }
 
             $metrics[$pn] ??= ['amount' => 0.0, 'accounts' => []];
-            $metrics[$pn]['amount'] += max(0.0, (float) ($row->{$amountColumn} ?? 0.0));
+            $amount = (float) ($row->{$amountColumn} ?? 0.0);
+            $metrics[$pn]['amount'] += $amountColumn === 'net_amount' ? $amount : max(0.0, $amount);
             $metrics[$pn]['accounts'][$account] = true;
         }
 
@@ -2505,7 +2532,8 @@ final class LandingMicroPerformanceService
             }
 
             $metrics[$branch] ??= ['amount' => 0.0, 'accounts' => []];
-            $metrics[$branch]['amount'] += max(0.0, (float) ($row->{$amountColumn} ?? 0.0));
+            $amount = (float) ($row->{$amountColumn} ?? 0.0);
+            $metrics[$branch]['amount'] += $amountColumn === 'net_amount' ? $amount : max(0.0, $amount);
             $metrics[$branch]['accounts'][$account] = true;
         }
 
@@ -2525,7 +2553,8 @@ final class LandingMicroPerformanceService
                 continue;
             }
 
-            $metric['amount'] += max(0.0, (float) ($row->{$amountColumn} ?? 0.0));
+            $amount = (float) ($row->{$amountColumn} ?? 0.0);
+            $metric['amount'] += $amountColumn === 'net_amount' ? $amount : max(0.0, $amount);
             $metric['accounts'][$account] = true;
         }
 
@@ -2533,16 +2562,18 @@ final class LandingMicroPerformanceService
     }
 
     /**
-     * Daily Loan Dinamis menetapkan penempatan Mantri periode berjalan.
-     * BRIHC hanya melengkapi kategori, nama cadangan, dan tanggal mulai jabatan
-     * untuk kebutuhan pembacaan histori produktivitas.
+     * Roster HC terbaru menetapkan identitas dan penempatan Mantri aktif.
+     * Referensi lama tetap dapat dilengkapi penempatan dari Daily Loan.
      *
      * @param  array<string, mixed>|null  $branchScope
      * @return Collection<int, array<string, string>>
      */
     private function mantriRoster(?array $branchScope, ?string $period = null): Collection
     {
-        $references = $this->mantriReferenceRoster($branchScope);
+        $references = $this->mantriReferenceRoster($branchScope, $period);
+        if ($references->isNotEmpty() && $references->every(fn (array $person): bool => $person['hc_authoritative'])) {
+            return $references;
+        }
         $dailyAssignments = $period === null ? collect() : $this->dailyMantriAssignments($period, $branchScope);
         if ($dailyAssignments->isEmpty()) {
             return $references;
@@ -2562,6 +2593,9 @@ final class LandingMicroPerformanceService
                 }
                 if (! is_array($reference)) {
                     return null;
+                }
+                if ($reference['hc_authoritative']) {
+                    return $reference;
                 }
 
                 $dailyName = trim((string) ($assignment['name'] ?? ''));
@@ -2586,14 +2620,24 @@ final class LandingMicroPerformanceService
     }
 
     /** @param array<string, mixed>|null $branchScope @return Collection<int, array<string, string>> */
-    private function mantriReferenceRoster(?array $branchScope): Collection
+    private function mantriReferenceRoster(?array $branchScope, ?string $period = null): Collection
     {
+        if ($period !== null && app(MantriProductivityReference::class)->dataForPeriod($period) !== null) {
+            return collect(app(MantriPerformanceBasis::class)->rosterState($period)['people'])
+                ->map(fn (array $person): array => array_merge($person, [
+                    'hc_authoritative' => true,
+                    'branch' => $this->branchLabel($person['branch']),
+                ]))
+                ->when($branchScope !== null, fn (Collection $people): Collection => $people->where('branch', $this->branchLabel((string) ($branchScope['upper_label'] ?? $branchScope['label'] ?? ''))))
+                ->values();
+        }
         if (! $this->hasTable('brihc_pemasar')) {
             return collect();
         }
 
         $available = array_flip($this->columnListing('brihc_pemasar'));
         $columns = array_values(array_filter([
+            isset($available['uniqueid_namareport']) ? 'uniqueid_namareport' : null,
             isset($available['pernr']) ? 'pernr' : null,
             isset($available['pn_mantri']) ? 'pn_mantri' : null,
             isset($available['completename']) ? 'completename' : null,
@@ -2621,7 +2665,7 @@ final class LandingMicroPerformanceService
                     $rawPn = trim((string) ($row->pn_mantri ?? ''));
                 }
                 $pn = $this->normalisePn($rawPn);
-                if ($pn === '' || ! in_array($branch, array_map(fn (string $item): string => 'KC '.$item, self::AREA_BRANCHES), true)) {
+                if ($position !== 'MANTRI' || $pn === '' || ! in_array($branch, array_map(fn (string $item): string => 'KC '.$item, self::AREA_BRANCHES), true)) {
                     return null;
                 }
 
@@ -2646,6 +2690,7 @@ final class LandingMicroPerformanceService
                         $row->tmt_masuk ?? null
                     ),
                     'roster_source' => 'brihc_active_reference',
+                    'hc_authoritative' => str_starts_with((string) ($row->uniqueid_namareport ?? ''), 'reference_brihc_hc_'),
                 ];
             })
             ->filter()
@@ -2674,11 +2719,26 @@ final class LandingMicroPerformanceService
             $columns[] = 'pn_name1';
         }
 
+        // Collapse the period's loan rows to distinct raw tuples in SQL; the
+        // mapping below is per-tuple, so the result is unchanged while PHP no
+        // longer hydrates every Micro account (hundreds of MB per build).
+        // BINARY keeps case/space variants apart, as the PHP keys did.
+        $grammar = DB::connection()->getQueryGrammar();
+        $binary = in_array(DB::connection()->getDriverName(), ['mysql', 'mariadb'], true) ? 'BINARY ' : '';
+        $selects = [];
+        $groups = [];
+        foreach ($columns as $column) {
+            $wrapped = $grammar->wrap($column);
+            $selects[] = "MIN({$wrapped}) AS {$wrapped}";
+            $groups[] = $binary.$wrapped;
+        }
+
         $query = DB::table(self::SOURCE_TABLE)
             ->where('periode', $period)
             ->whereNotNull('pn_pengelola1')
             ->where('pn_pengelola1', '<>', '')
-            ->select($columns);
+            ->selectRaw(implode(', ', $selects))
+            ->groupByRaw(implode(', ', $groups));
         $this->applyDailyMicroFilter($query);
         $this->applyDailyBranchFilter($query, '', $branchScope);
 
@@ -2805,7 +2865,8 @@ final class LandingMicroPerformanceService
         $snapshotQuery = DB::table(self::PERFORMANCE_RM_SNAPSHOT_TABLE)
             ->whereIn('periode', $closedPeriods->all())
             ->whereRaw("UPPER(TRIM(COALESCE(segmen, ''))) = 'MICRO'");
-        $this->applyBranchFilter($snapshotQuery, 'cabang', $branchScope);
+        $hasHcRoster = $roster->contains(fn (array $person): bool => (bool) ($person['hc_authoritative'] ?? false));
+        $this->applyBranchFilter($snapshotQuery, 'cabang', $hasHcRoster ? null : $branchScope);
 
         $snapshotRows = $snapshotQuery
             ->select('periode', 'cabang', 'rm')
@@ -2857,6 +2918,9 @@ final class LandingMicroPerformanceService
             ]);
             $carry[$key] = (float) ($carry[$key] ?? 0.0)
                 + (float) ($row->realization_amount ?? 0.0);
+            $personKey = implode('|', [(string) ($row->periode ?? ''), 'hc', $pn]);
+            $carry[$personKey] = (float) ($carry[$personKey] ?? 0.0)
+                + (float) ($row->realization_amount ?? 0.0);
 
             return $carry;
         }, []);
@@ -2879,7 +2943,7 @@ final class LandingMicroPerformanceService
                     if ($inactiveMonths >= $coveredMonths) {
                         break;
                     }
-                    $activityKey = implode('|', [$closedPeriod, $person['branch'], $person['pn']]);
+                    $activityKey = implode('|', [$closedPeriod, ($person['hc_authoritative'] ?? false) ? 'hc' : $person['branch'], $person['pn']]);
                     if (abs((float) ($activity[$activityKey] ?? 0.0)) > 0.001) {
                         break;
                     }

@@ -37,10 +37,8 @@ final class SpreadsheetFileFormatDetector
         }
 
         try {
-            $contentTypes = $archive->getFromName('[Content_Types].xml');
-            $workbook = $archive->getFromName('xl/workbook.xml');
-            if (! is_string($contentTypes) || $contentTypes === ''
-                || ! is_string($workbook) || $workbook === '') {
+            if (! self::hasReadableMetadata($archive, '[Content_Types].xml')
+                || ! self::hasReadableMetadata($archive, 'xl/workbook.xml')) {
                 return null;
             }
 
@@ -64,6 +62,21 @@ final class SpreadsheetFileFormatDetector
         } finally {
             $archive->close();
         }
+    }
+
+    private static function hasReadableMetadata(ZipArchive $archive, string $name): bool
+    {
+        $entry = $archive->statName($name);
+        $size = $entry['size'] ?? null;
+        if (! is_int($size) || $size < 1) {
+            return false;
+        }
+
+        // Format detection needs only a readable, nonempty entry. Metadata can
+        // legitimately be large; leave content parsing to the existing importer.
+        $contents = $archive->getFromName($name, 1);
+
+        return is_string($contents) && strlen($contents) === 1;
     }
 
     public static function isValidOleContainer(string $path): bool

@@ -2182,6 +2182,7 @@
 <script src="{{ asset('adminlte/dist/js/adminlte.min.js') }}"></script>
 <script src="{{ asset('adminlte/plugins/select2/js/select2.full.min.js') }}"></script>
 <script src="{{ asset('adminlte/plugins/sweetalert2/sweetalert2.all.min.js') }}"></script>
+@include('import.partials.swal-modern')
 <script>
     $(function () {
         $('.select2').select2({

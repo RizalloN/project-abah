@@ -85,7 +85,9 @@ class SpreadsheetWorkbookService
             $file->updated_at?->format('U.u') ?? '',
         ]));
 
-        return Cache::remember($cacheKey, now()->addMinutes(10), function () use (
+        // The key carries the content hash, so a long TTL is safe; a full load
+        // of a large workbook can take minutes and >1 GB of memory.
+        $build = fn (): array => Cache::remember($cacheKey, now()->addHours(12), function () use (
             $file,
             $path,
             $format
@@ -98,6 +100,18 @@ class SpreadsheetWorkbookService
                 $spreadsheet->disconnectWorksheets();
             }
         });
+        $cached = Cache::get($cacheKey);
+        if (is_array($cached)) {
+            return $cached;
+        }
+
+        // Concurrent openers of the same revision wait for one loader instead
+        // of each holding a full PhpSpreadsheet copy in memory.
+        try {
+            return Cache::lock($cacheKey.':build', 600)->block(180, $build);
+        } catch (\Illuminate\Contracts\Cache\LockTimeoutException) {
+            return $build();
+        }
     }
 
     /**

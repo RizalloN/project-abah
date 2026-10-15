@@ -121,11 +121,18 @@ class DriveAsixController extends Controller
                 $file->size_bytes,
             ]))
             ->implode('|'));
-        $summary = Cache::remember(
-            'bank-pipeline:summary:aggregate:'.self::PIPELINE_SUMMARY_CACHE_VERSION.':'.$revisionKey,
-            now()->addMinutes(15),
-            fn (): array => $summaries->summarize($files)
-        );
+        $cacheKey = 'bank-pipeline:summary:aggregate:'.self::PIPELINE_SUMMARY_CACHE_VERSION.':'.$revisionKey;
+        $summarize = fn (): array => Cache::remember($cacheKey, now()->addMinutes(15), fn (): array => $summaries->summarize($files));
+        $summary = Cache::get($cacheKey);
+        if (! is_array($summary)) {
+            // Parsing large workbooks takes seconds; let concurrent requests
+            // wait for one builder instead of each parsing the same files.
+            try {
+                $summary = Cache::lock($cacheKey.':build', 300)->block(120, $summarize);
+            } catch (\Illuminate\Contracts\Cache\LockTimeoutException) {
+                $summary = $summarize();
+            }
+        }
 
         return response()->json($summary);
     }

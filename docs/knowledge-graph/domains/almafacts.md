@@ -24,21 +24,21 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `kpi` | method | 15 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:305` |
 | `timeseries` | method | 12 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:2490` |
 | `parseKpiSheetCsv` | method | 11 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:719` |
+| `report.dashboard-almafacts.kpi` | route | 11 | - |
 | `cachedKpiSheetPayload` | method | 10 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:428` |
 | `fetchKpiSheetPayload` | method | 10 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:540` |
 | `getTimeseriesPayload` | method | 10 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:2583` |
-| `report.dashboard-almafacts.kpi` | route | 10 | - |
+| `report.dashboard-almafacts.financial-highlight` | route | 10 | - |
+| `report.dashboard-almafacts.kinerja-laba-rugi` | route | 10 | - |
 | `financialSnapshots` | method | 9 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:1941` |
-| `report.dashboard-almafacts.financial-highlight` | route | 9 | - |
-| `report.dashboard-almafacts.kinerja-laba-rugi` | route | 9 | - |
+| `report.dashboard-almafacts.timeseries` | route | 9 | - |
+| `report.dashboard-almafacts.timeseries.data` | route | 9 | - |
 | `rkaRows` | method | 9 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:1636` |
 | `fetchFinancialAlmafactsMetrics` | method | 8 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:2032` |
 | `fetchKpiRmSmeDashboardPayload` | method | 8 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:600` |
 | `financialAssetQualityNominals` | method | 8 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:2070` |
 | `normalizeUnitName` | method | 8 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:1741` |
 | `refreshKpiSourceCaches` | method | 8 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:362` |
-| `report.dashboard-almafacts.timeseries` | route | 8 | - |
-| `report.dashboard-almafacts.timeseries.data` | route | 8 | - |
 | `buildRows` | method | 7 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:1536` |
 | `financialUnitOptions` | method | 7 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:1848` |
 | `persistKpiSheetPayload` | method | 7 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:481` |
@@ -78,7 +78,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Direction | Count |
 | --- | ---: |
 | almafacts -> core (calls) | 31 |
-| almafacts -> access-control (protected_by) | 25 |
+| almafacts -> access-control (protected_by) | 30 |
 | almafacts -> core (accepts) | 6 |
 | almafacts -> platform (extends_view) | 5 |
 | platform -> almafacts (references_route) | 4 |

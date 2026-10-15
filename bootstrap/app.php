@@ -33,12 +33,18 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
 
         $middleware->alias([
+            'auth.session' => \App\Http\Middleware\AuthenticateSession::class,
             'role' => \App\Http\Middleware\RoleMiddleware::class,
             'release.session.lock' => \App\Http\Middleware\ReleaseSessionLockMiddleware::class,
             'user.branch.scope' => \App\Http\Middleware\EnforceUserBranchScope::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        $exceptions->respond(function (Response $response, \Throwable $exception, Request $request): Response {
+            return app(\App\Http\Middleware\SecurityHeadersMiddleware::class)
+                ->withSecurityHeaders($response, $request);
+        });
+
         $renderDatabaseUnavailable = function (Request $request): Response {
             if ($request->expectsJson()) {
                 return response()->json([

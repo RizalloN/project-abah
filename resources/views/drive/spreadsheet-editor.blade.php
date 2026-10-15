@@ -1100,6 +1100,10 @@
         bottom: max(1rem, env(safe-area-inset-bottom));
         z-index: 2200;
         width: min(360px, calc(100vw - 2rem));
+        max-height: calc(100vh - 2rem);
+        max-height: calc(100dvh - 2rem);
+        overflow-y: auto;
+        overscroll-behavior: contain;
         display: grid;
         gap: .55rem;
         pointer-events: none;
@@ -1107,6 +1111,7 @@
 
     .asix-sheet-toast {
         display: flex;
+        pointer-events: auto;
         align-items: flex-start;
         gap: .65rem;
         padding: .75rem .85rem;
@@ -1118,6 +1123,44 @@
         font-size: .72rem;
         line-height: 1.5;
         animation: asixSheetToastIn .2s ease-out;
+    }
+
+    .asix-sheet-toast > i {
+        flex: 0 0 auto;
+        margin-top: .2rem;
+    }
+
+    .asix-sheet-toast__text {
+        min-width: 0;
+        flex: 1 1 auto;
+        overflow-wrap: anywhere;
+        white-space: pre-line;
+    }
+
+    .asix-sheet-toast__close {
+        flex: 0 0 44px;
+        width: 44px;
+        height: 44px;
+        display: grid;
+        place-items: center;
+        margin: -.35rem -.45rem -.35rem 0;
+        padding: 0;
+        border: 0;
+        border-radius: 6px;
+        color: #fff;
+        background: transparent;
+        font-size: 1.35rem;
+        line-height: 1;
+        cursor: pointer;
+    }
+
+    .asix-sheet-toast__close:hover {
+        background: rgba(255, 255, 255, .12);
+    }
+
+    .asix-sheet-toast__close:focus-visible {
+        outline: 2px solid #fff;
+        outline-offset: 2px;
     }
 
     .asix-sheet-toast.is-error {
@@ -1782,16 +1825,82 @@
     }
 
     function showToast(message, type = 'info', timeout = 3200) {
+        const stack = elements.toastStack;
+        if (!stack) return;
+        const variant = ['info', 'error', 'success'].includes(type) ? type : 'info';
         const toast = document.createElement('div');
-        toast.className = `asix-sheet-toast is-${type}`;
+        toast.className = `asix-sheet-toast is-${variant}`;
+        toast.setAttribute('role', 'status');
+        toast.setAttribute('aria-atomic', 'true');
         const icon = document.createElement('i');
-        icon.className = type === 'error' ? 'fas fa-exclamation-circle'
-            : type === 'success' ? 'fas fa-check-circle' : 'fas fa-info-circle';
+        icon.className = variant === 'error' ? 'fas fa-exclamation-circle'
+            : variant === 'success' ? 'fas fa-check-circle' : 'fas fa-info-circle';
+        icon.setAttribute('aria-hidden', 'true');
         const copy = document.createElement('span');
-        copy.textContent = message;
-        toast.append(icon, copy);
-        elements.toastStack.appendChild(toast);
-        window.setTimeout(() => toast.remove(), timeout);
+        copy.className = 'asix-sheet-toast__text';
+        copy.textContent = String(message ?? '');
+        const closeButton = document.createElement('button');
+        closeButton.type = 'button';
+        closeButton.className = 'asix-sheet-toast__close';
+        closeButton.textContent = '\u00d7';
+        closeButton.setAttribute('aria-label', 'Tutup notifikasi');
+        toast.append(icon, copy, closeButton);
+
+        const requestedDuration = Number(timeout);
+        const displayDuration = Number.isFinite(requestedDuration) && requestedDuration > 0
+            ? Math.max(1000, Math.min(30000, requestedDuration)) : 3200;
+        let remaining = displayDuration;
+        let startedAt = 0;
+        let dismissTimer = null;
+        let hovered = false;
+        let focused = false;
+        let removed = false;
+        let returnFocus = document.activeElement;
+
+        const dismiss = () => {
+            if (dismissTimer !== null) window.clearTimeout(dismissTimer);
+            dismissTimer = null;
+            if (removed) return;
+            removed = true;
+            if (toast.contains(document.activeElement) && returnFocus?.isConnected
+                && typeof returnFocus.focus === 'function') {
+                returnFocus.focus({ preventScroll: true });
+            }
+            toast.remove();
+        };
+        const pause = () => {
+            if (removed || dismissTimer === null) return;
+            window.clearTimeout(dismissTimer);
+            dismissTimer = null;
+            remaining = Math.max(0, remaining - (Date.now() - startedAt));
+        };
+        const resume = () => {
+            if (removed || hovered || focused || dismissTimer !== null) return;
+            startedAt = Date.now();
+            dismissTimer = window.setTimeout(dismiss, remaining);
+        };
+
+        toast.addEventListener('mouseenter', () => { hovered = true; pause(); });
+        toast.addEventListener('mouseleave', () => { hovered = false; resume(); });
+        toast.addEventListener('focusin', (event) => {
+            if (event.relatedTarget && !toast.contains(event.relatedTarget)) returnFocus = event.relatedTarget;
+            focused = true;
+            pause();
+        });
+        toast.addEventListener('focusout', (event) => {
+            focused = toast.contains(event.relatedTarget);
+            resume();
+        });
+        toast.addEventListener('asix-sheet-toast-dismiss', dismiss);
+        closeButton.addEventListener('click', dismiss);
+
+        while (stack.children.length >= 4) {
+            const oldest = stack.firstElementChild;
+            oldest.dispatchEvent(new Event('asix-sheet-toast-dismiss'));
+            if (oldest.parentNode === stack) oldest.remove();
+        }
+        stack.appendChild(toast);
+        resume();
     }
 
     function setStatus(type, message) {

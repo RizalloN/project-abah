@@ -25,9 +25,9 @@ If stale, rebuild with `php artisan knowledge:graph --build`.
 
 | Metric | Count |
 | --- | ---: |
-| Source files | 663 |
-| Graph nodes | 8,408 |
-| Graph edges | 33,401 |
+| Source files | 670 |
+| Graph nodes | 8,500 |
+| Graph edges | 34,076 |
 | Domains | 18 |
 
 ## Read The Right Artifact
@@ -59,7 +59,7 @@ If stale, rebuild with `php artisan knowledge:graph --build`.
 | `daily_loan_dinamis` | table | dashboard-pinjaman | 99 |
 | `ImportReportPhController` | class | import | 95 |
 | `AlmafactsDashboardController` | class | almafacts | 89 |
-| `KinerjaRmMikroReportController` | class | dashboard-pinjaman | 86 |
+| `KinerjaRmMikroReportController` | class | dashboard-pinjaman | 87 |
 | `LandingMicroPerformanceService` | class | core | 84 |
 | `ImportPerformancePisPerProdukController` | class | import | 83 |
 | `DriveAsixFile` | class | bank-pipeline | 80 |

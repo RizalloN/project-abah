@@ -29,7 +29,8 @@ class InsentifMantriReportController extends Controller
         $this->releaseSessionLockIfNeeded();
 
         $periods = $this->service->availablePeriods();
-        $selectedPeriod = $this->resolvePeriod($periods, $request->input('periode'));
+        $selection = $this->resolveSelection($periods, $request);
+        $selectedPeriod = $selection['selectedPeriod'];
         $filters = $this->resolveFilters($request);
 
         $payload = $selectedPeriod !== null ? $this->service->build($selectedPeriod) : null;
@@ -45,6 +46,9 @@ class InsentifMantriReportController extends Controller
         return view('report.kpi.insentif-mantri', [
             'periods' => $periods,
             'selectedPeriod' => $selectedPeriod,
+            'quarterOptions' => $selection['quarterOptions'],
+            'selectedQuarter' => $selection['selectedQuarter'],
+            'quarterPeriods' => $selection['quarterPeriods'],
             'selectedPeriodLabel' => $selectedPeriod ? Carbon::parse($selectedPeriod)->locale('id')->translatedFormat('d F Y') : '-',
             'positionSource' => $selectedPeriod ? $this->service->positionSource($selectedPeriod) : null,
             'freshness' => $this->service->sourceFreshness(),
@@ -68,7 +72,7 @@ class InsentifMantriReportController extends Controller
         $this->releaseSessionLockIfNeeded();
 
         $periods = $this->service->availablePeriods();
-        $selectedPeriod = $this->resolvePeriod($periods, $request->input('periode'));
+        $selectedPeriod = $this->resolveSelection($periods, $request)['selectedPeriod'];
         abort_if($selectedPeriod === null, 404);
 
         $type = $request->input('jenis') === 'mob6' ? 'mob6' : 'nd';
@@ -135,6 +139,51 @@ class InsentifMantriReportController extends Controller
         $requested = trim((string) $requested);
 
         return in_array($requested, $periods, true) ? $requested : ($periods[0] ?? null);
+    }
+
+    /** @param array<int, string> $periods */
+    private function resolveSelection(array $periods, Request $request): array
+    {
+        $quarterPeriods = [];
+        foreach ($periods as $period) {
+            $quarterPeriods[$this->quarterKey($period)][] = $period;
+        }
+        foreach ($quarterPeriods as &$items) {
+            rsort($items, SORT_STRING);
+        }
+        unset($items);
+
+        $years = array_values(array_unique(array_map(fn (string $period): string => substr($period, 0, 4), $periods)));
+        rsort($years, SORT_STRING);
+        $quarterOptions = [];
+        foreach ($years as $year) {
+            foreach ([1 => 'Jan - Mar', 2 => 'Apr - Jun', 3 => 'Jul - Sep', 4 => 'Okt - Des'] as $quarter => $label) {
+                $key = $year.'-Q'.$quarter;
+                $quarterOptions[$key] = [
+                    'label' => 'Q'.$quarter.' '.$year.' ('.$label.')',
+                    'periods' => $quarterPeriods[$key] ?? [],
+                ];
+            }
+        }
+
+        $requestedQuarter = trim((string) $request->input('kuartal'));
+        $selectedPeriod = $this->resolvePeriod($periods, $request->input('periode'));
+        if (! empty($quarterPeriods[$requestedQuarter])) {
+            $selectedPeriod = $this->resolvePeriod($quarterPeriods[$requestedQuarter], $request->input('periode'));
+        }
+        $selectedQuarter = $selectedPeriod !== null ? $this->quarterKey($selectedPeriod) : null;
+
+        return [
+            'selectedPeriod' => $selectedPeriod,
+            'selectedQuarter' => $selectedQuarter,
+            'quarterOptions' => $quarterOptions,
+            'quarterPeriods' => $selectedQuarter !== null ? $quarterPeriods[$selectedQuarter] : [],
+        ];
+    }
+
+    private function quarterKey(string $period): string
+    {
+        return substr($period, 0, 4).'-Q'.(int) ceil(((int) substr($period, 5, 2)) / 3);
     }
 
     /** @return array{cabang: string, unit: string, status: string} */

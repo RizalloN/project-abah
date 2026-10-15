@@ -263,6 +263,11 @@ class ConsumerRmPositionHistoryStoreTest extends TestCase
             ->where('periode', '2026-07-31')
             ->delete();
 
+        // Verification is memoized per request/job; an out-of-band change is
+        // detected by the next one.
+        $this->app->forgetScopedInstances();
+        $store = app(ConsumerRmPositionHistoryStore::class);
+
         $this->assertFalse($store->hasCapture('2026-07-31'));
         $this->assertSame(
             ['2026-06-30', '2026-08-31'],

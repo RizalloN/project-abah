@@ -409,13 +409,13 @@
                 return;
             }
 
-            const confirmation = await Swal.fire({
+            const confirmation = await ImportSwal.confirm({
                 icon: 'warning',
                 title: 'Hapus Duplikat Simpanan MultiPN?',
                 text: 'Aksi ini akan menghapus baris duplikat exact-match dari tabel Simpanan MultiPN.',
-                showCancelButton: true,
                 confirmButtonText: 'Lanjutkan',
                 cancelButtonText: 'Batal',
+                isDanger: true,
             });
 
             if (!confirmation.isConfirmed) {
@@ -427,11 +427,9 @@
                 throw new Error(payload.message || 'Gagal menghapus duplikat.');
             }
 
-            await Swal.fire({
-                icon: payload.status === 'warning' ? 'warning' : 'success',
-                title: payload.status === 'warning' ? 'Selesai dengan Catatan' : 'Berhasil',
-                text: payload.message || 'Duplikat berhasil diproses.',
-            });
+            await (payload.status === 'warning'
+                ? ImportSwal.warning('Selesai dengan Catatan', payload.message || 'Duplikat selesai diproses dengan catatan.')
+                : ImportSwal.success('Berhasil', payload.message || 'Duplikat berhasil diproses.'));
 
             await refreshCurrentGrid();
         }
@@ -441,13 +439,12 @@
                 return;
             }
 
-            const confirmation = await Swal.fire({
+            const confirmation = await ImportSwal.confirm({
                 icon: 'question',
                 title: managementRebuildForce?.checked ? 'Rebuild dari Awal?' : 'Refresh Snapshot?',
                 text: managementRebuildForce?.checked
                     ? 'Seluruh snapshot akan dibangun ulang dari awal.'
                     : 'Snapshot seluruh report akan direfresh tanpa force rebuild penuh.',
-                showCancelButton: true,
                 confirmButtonText: 'Lanjutkan',
                 cancelButtonText: 'Batal',
             });
@@ -465,18 +462,36 @@
             }
 
             if (!payload.rebuild_id) {
-                await Swal.fire({
-                    icon: payload.status === 'warning' ? 'warning' : 'success',
-                    title: payload.status === 'warning' ? 'Dalam Antrean' : 'Berhasil',
-                    text: payload.message || 'Rebuild snapshot sudah dijadwalkan.',
-                });
+                await (payload.status === 'warning'
+                    ? ImportSwal.warning('Dalam Antrean', payload.message || 'Rebuild snapshot sudah dijadwalkan.')
+                    : ImportSwal.success('Berhasil', payload.message || 'Rebuild snapshot sudah dijadwalkan.'));
                 await refreshCurrentGrid();
                 return;
             }
 
-            Swal.fire({
+            ImportSwal.fire({
                 title: 'Rebuild Snapshot Berjalan',
-                html: `<div class="mb-2">${escapeHtmlSafe(payload.message || 'Rebuild snapshot diantrekan...')}</div><div class="progress" style="height: 12px;"><div class="progress-bar progress-bar-striped progress-bar-animated" style="width: 0%;"></div></div><div class="mt-2 text-muted" style="font-size: 0.85rem;">0% selesai</div>`,
+                html: `
+                    <div class="swal-import-shell">
+                        <div class="swal-import-head">
+                            <span class="swal-import-badge"><i class="fas fa-sync fa-spin mr-1"></i> Snapshot Engine</span>
+                            <div class="swal-import-desc" id="rebuild-progress-message" role="status" aria-live="polite" aria-atomic="true">${escapeHtmlSafe(payload.message || 'Rebuild snapshot sedang diantrekan...')}</div>
+                        </div>
+                        <div class="swal-import-card">
+                            <div class="swal-import-card__top">
+                                <span class="swal-import-label">Progress Snapshot</span>
+                                <span class="swal-import-percent" id="rebuild-progress-percent">0%</span>
+                            </div>
+                            <div class="swal-import-progress">
+                                <div id="rebuild-progress-bar" class="swal-import-progress__bar" role="progressbar" aria-label="Progress Snapshot" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" style="width: 0%;"></div>
+                            </div>
+                            <div class="swal-import-meta">
+                                <span class="swal-import-meta__dot"></span>
+                                <span class="swal-import-meta__status" id="rebuild-progress-status">Memproses snapshot...</span>
+                            </div>
+                        </div>
+                    </div>
+                `,
                 allowOutsideClick: false,
                 allowEscapeKey: false,
                 showConfirmButton: false,
@@ -484,18 +499,18 @@
 
             const statusUrl = templateUrl(reportManagementCard.dataset.rebuildStatusUrlTemplate, payload.rebuild_id);
             const finalState = await pollRebuildStatus(statusUrl);
-            Swal.close();
+            ImportSwal.close();
 
             const finalStatus = String(finalState?.status || '').toLowerCase();
             if (finalStatus === 'error') {
                 throw new Error(finalState.message || 'Progress rebuild gagal dipantau.');
             }
 
-            await Swal.fire({
-                icon: finalStatus === 'completed' ? 'success' : (finalStatus === 'failed' ? 'error' : 'warning'),
-                title: finalStatus === 'completed' ? 'Rebuild Selesai' : (finalStatus === 'failed' ? 'Rebuild Gagal' : 'Rebuild Belum Selesai'),
-                text: finalState?.message || 'Rebuild snapshot selesai diproses.',
-            });
+            await (finalStatus === 'completed'
+                ? ImportSwal.success('Rebuild Selesai', finalState?.message || 'Rebuild snapshot selesai diproses.')
+                : (finalStatus === 'failed'
+                    ? ImportSwal.error('Rebuild Gagal', finalState?.message || 'Rebuild snapshot gagal diproses.')
+                    : ImportSwal.warning('Rebuild Belum Selesai', finalState?.message || 'Rebuild snapshot masih berjalan di background.')));
 
             await refreshCurrentGrid();
         }
@@ -654,11 +669,7 @@
 
             // ✅ Check if both selections are made
             if (!reportId || !backupPath) {
-                await Swal.fire({
-                    icon: 'warning',
-                    title: 'Input Tidak Lengkap',
-                    text: 'Silakan pilih report dan file backup sebelum menjalankan recovery.',
-                });
+                await ImportSwal.warning('Input Tidak Lengkap', 'Silakan pilih report dan file backup sebelum menjalankan recovery.');
                 console.warn('[Recovery] Missing input:', { hasReport: !!reportId, hasBackup: !!backupPath });
                 return;
             }
@@ -669,18 +680,20 @@
             
             console.log('[Recovery] Starting recovery with:', { reportId, backupPath, reportLabel, backupLabel });
             
-            const confirmation = await Swal.fire({
+            const confirmation = await ImportSwal.confirm({
                 icon: 'warning',
                 title: 'Recover Data Report?',
                 html: `
                     <p>Data pada <b>${reportLabel}</b> akan diganti sepenuhnya dari backup:</p>
-                    <p><b>${backupLabel}</b></p>
-                    <p style="color: #dc3545; font-size: 0.9rem;">⚠️ Aksi ini tidak bisa dibatalkan. Pastikan backup dipilih dengan benar.</p>
+                    <div class="swal-import-card my-2 text-left" style="background: #fff1f2; border-color: #fecdd3;">
+                        <span class="swal-import-label" style="color: #be123c;">Target Backup</span>
+                        <div class="font-weight-bold" style="color: #9f1239; font-size: 0.92rem; word-break: break-all;">${backupLabel}</div>
+                    </div>
+                    <p style="color: #dc2626; font-size: 0.85rem; font-weight: 600;">⚠️ Aksi ini tidak bisa dibatalkan. Pastikan file backup sudah benar.</p>
                 `,
-                showCancelButton: true,
                 confirmButtonText: 'Ya, Lanjutkan Recovery',
                 cancelButtonText: 'Batal',
-                confirmButtonColor: '#dc3545',
+                isDanger: true,
             });
 
             if (!confirmation.isConfirmed) {
@@ -729,23 +742,15 @@
                     throw new Error(finalState?.error || finalState?.message || 'Recovery backup gagal dijalankan.');
                 }
 
-                await Swal.fire({
-                    icon: String(finalState?.status || '').toLowerCase() === 'warning' ? 'warning' : 'success',
-                    title: String(finalState?.status || '').toLowerCase() === 'warning' ? 'Recovery Berlanjut' : 'Recovery Selesai',
-                    text: finalState?.message || 'Recovery backup selesai diproses.',
-                    confirmButtonColor: '#28a745',
-                });
+                await (String(finalState?.status || '').toLowerCase() === 'warning'
+                    ? ImportSwal.warning('Recovery Berlanjut', finalState?.message || 'Recovery backup selesai diproses.')
+                    : ImportSwal.success('Recovery Selesai', finalState?.message || 'Recovery backup selesai diproses.'));
 
                 await refreshCurrentGrid();
             } catch (error) {
                 const errorMessage = error instanceof Error ? error.message : 'Error tidak diketahui';
                 
-                await Swal.fire({
-                    icon: 'error',
-                    title: 'Recovery Gagal',
-                    text: errorMessage,
-                    confirmButtonColor: '#dc3545',
-                });
+                await ImportSwal.error('Recovery Gagal', errorMessage);
 
                 console.error('Recovery error:', error);
                 
@@ -793,12 +798,25 @@
                         const state = await response.json().catch(() => ({}));
                         const status = String(state.status || '').toLowerCase();
                         const percent = Math.max(0, Math.min(100, Number(state.progress_percent || 0)));
-                        if (percent !== lastShownPercent && typeof Swal !== 'undefined' && Swal.isVisible()) {
-                            lastShownPercent = percent;
-                            Swal.update({
-                                title: 'Rebuild Snapshot Berjalan',
-                                html: `<div class="mb-2">${escapeHtmlSafe(state.message || 'Memproses snapshot...')}</div><div class="progress" style="height: 12px;"><div class="progress-bar progress-bar-striped progress-bar-animated" style="width: ${percent}%;"></div></div><div class="mt-2 text-muted" style="font-size: 0.85rem;">${percent}% selesai${state.current_report_label ? ' — ' + escapeHtmlSafe(state.current_report_label) : ''}</div>`,
-                            });
+                        if (typeof Swal !== 'undefined' && Swal.isVisible()) {
+                            const pBar = document.getElementById('rebuild-progress-bar');
+                            const pPct = document.getElementById('rebuild-progress-percent');
+                            const pStatus = document.getElementById('rebuild-progress-status');
+                            const pMessage = document.getElementById('rebuild-progress-message');
+                            if (percent !== lastShownPercent) {
+                                lastShownPercent = percent;
+                                if (pBar) {
+                                    pBar.style.width = percent + '%';
+                                    pBar.setAttribute('aria-valuenow', String(percent));
+                                }
+                                if (pPct) pPct.textContent = percent + '%';
+                            }
+                            if (pMessage && state.message && pMessage.textContent !== state.message) {
+                                pMessage.textContent = state.message;
+                            }
+                            if (pStatus) {
+                                pStatus.textContent = `${percent}% selesai${state.current_report_label ? ' — ' + state.current_report_label : ''}`;
+                            }
                         }
                         if (['completed', 'failed', 'warning', 'error'].includes(status)) {
                             return state;
@@ -828,21 +846,32 @@
         async function pollForceSyncStatus(statusUrl) {
             if (!statusUrl) return null;
 
-            Swal.fire({
+            ImportSwal.fire({
                 title: 'Sinkronisasi Berjalan',
                 html: `
-                    <div class="mb-3" id="force-sync-status-text">Memeriksa status...</div>
-                    <div class="progress report-management-progress" style="height: 12px;">
-                        <div id="force-sync-progress-bar" class="progress-bar report-management-progress__bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%;"></div>
+                    <div class="swal-import-shell">
+                        <div class="swal-import-head">
+                            <span class="swal-import-badge"><i class="fas fa-sync fa-spin mr-1"></i> Force Sync Engine</span>
+                            <div class="swal-import-desc">Menjalankan sinkronisasi snapshot spesifik untuk periode terpilih.</div>
+                        </div>
+                        <div class="swal-import-card">
+                            <div class="swal-import-card__top">
+                                <span class="swal-import-label">Status Sinkronisasi</span>
+                                <span class="swal-import-percent" id="force-sync-progress-meta">0%</span>
+                            </div>
+                            <div class="swal-import-progress">
+                                <div id="force-sync-progress-bar" class="swal-import-progress__bar" style="width: 0%;"></div>
+                            </div>
+                            <div class="swal-import-meta">
+                                <span class="swal-import-meta__dot"></span>
+                                <span class="swal-import-meta__status" id="force-sync-status-text">Memeriksa status...</span>
+                            </div>
+                        </div>
                     </div>
-                    <div class="mt-2 text-muted" id="force-sync-progress-meta" style="font-size: 0.85rem;">0% (0/6 tabel selesai)</div>
                 `,
                 allowOutsideClick: false,
                 allowEscapeKey: false,
                 showConfirmButton: false,
-                didOpen: () => {
-                    Swal.showLoading();
-                }
             });
 
             // Force-sync untuk periode bisa berjalan 5-30 menit. Poll sampai 30 menit
@@ -918,16 +947,15 @@
 
         async function handleForceSync() {
             if (!managementForceSyncPeriod || !managementForceSyncPeriod.value) {
-                await Swal.fire({ icon: 'warning', title: 'Input Tidak Lengkap', text: 'Silakan isi periode (YYYY-MM-DD) terlebih dahulu.' });
+                await ImportSwal.warning('Input Tidak Lengkap', 'Silakan isi periode (YYYY-MM-DD) terlebih dahulu.');
                 return;
             }
 
             const period = managementForceSyncPeriod.value;
-            const confirmation = await Swal.fire({
+            const confirmation = await ImportSwal.confirm({
                 icon: 'question',
                 title: 'Sinkronisasi Spesifik?',
-                html: `Jalankan snapshot force sync untuk periode <b>${period}</b>?`,
-                showCancelButton: true,
+                html: `Jalankan snapshot force sync untuk periode <b>${escapeHtmlSafe(period)}</b>?`,
                 confirmButtonText: 'Ya, Sinkronisasi',
                 cancelButtonText: 'Batal',
             });
@@ -946,13 +974,15 @@
                 const statusUrl = templateUrl(reportManagementCard.dataset.forceSyncStatusUrlTemplate, payload.sync_id).replace('__REBUILD_ID__', encodeURIComponent(payload.sync_id)).replace('__SYNC_ID__', encodeURIComponent(payload.sync_id));
                 const finalState = await pollForceSyncStatus(statusUrl);
                 
-                await Swal.fire({
-                    icon: ['failed', 'error'].includes(finalState?.status) ? 'error' : (finalState?.status === 'warning' ? 'warning' : 'success'),
-                    title: ['failed', 'error'].includes(finalState?.status) ? 'Sync Gagal' : (finalState?.status === 'warning' ? 'Selesai dengan Catatan' : 'Berhasil'),
-                    text: finalState?.message || 'Proses force sync selesai.',
-                });
+                const isFail = ['failed', 'error'].includes(finalState?.status);
+                const isWarn = finalState?.status === 'warning';
+                await (isFail
+                    ? ImportSwal.error('Sync Gagal', finalState?.message || 'Proses force sync gagal.')
+                    : (isWarn
+                        ? ImportSwal.warning('Selesai dengan Catatan', finalState?.message || 'Proses force sync selesai dengan catatan.')
+                        : ImportSwal.success('Berhasil', finalState?.message || 'Proses force sync berhasil.')));
             } else {
-                await Swal.fire({ icon: 'success', title: 'Berhasil', text: payload.message || 'Sinkronisasi dijalankan.' });
+                await ImportSwal.success('Berhasil', payload.message || 'Sinkronisasi dijalankan.');
             }
 
             await refreshCurrentGrid();
@@ -990,7 +1020,7 @@
                 try {
                     await handleDeduplicate();
                 } catch (error) {
-                    await Swal.fire({ icon: 'error', title: 'Hapus Duplikat Gagal', text: error.message || 'Terjadi kesalahan saat memproses duplikat.' });
+                    await ImportSwal.error('Hapus Duplikat Gagal', error.message || 'Terjadi kesalahan saat memproses duplikat.');
                 } finally {
                     syncExtraActionState();
                 }
@@ -1003,7 +1033,7 @@
                 try {
                     await handleRebuild();
                 } catch (error) {
-                    await Swal.fire({ icon: 'error', title: 'Rebuild Gagal', text: error.message || 'Terjadi kesalahan saat menjadwalkan rebuild.' });
+                    await ImportSwal.error('Rebuild Gagal', error.message || 'Terjadi kesalahan saat menjadwalkan rebuild.');
                 } finally {
                     syncExtraActionState();
                     btnManagementRebuild.disabled = false;
@@ -1017,7 +1047,7 @@
                 try {
                     await handleForceSync();
                 } catch (error) {
-                    await Swal.fire({ icon: 'error', title: 'Sync Gagal', text: error.message || 'Terjadi kesalahan saat memulai sinkronisasi.' });
+                    await ImportSwal.error('Sync Gagal', error.message || 'Terjadi kesalahan saat memulai sinkronisasi.');
                 } finally {
                     syncExtraActionState();
                     btnManagementForceSync.disabled = false;
@@ -1033,7 +1063,7 @@
                     await handleRecovery();
                 } catch (error) {
                     console.error('[Recovery] Recovery error:', error);
-                    await Swal.fire({ icon: 'error', title: 'Recovery Gagal', text: error.message || 'Terjadi kesalahan saat memproses recovery backup.' });
+                    await ImportSwal.error('Recovery Gagal', error.message || 'Terjadi kesalahan saat memproses recovery backup.');
                 } finally {
                     syncExtraActionState();
                 }

@@ -33,6 +33,9 @@
         }
 
         function themedSwal(options) {
+            if (window.ImportSwal && typeof window.ImportSwal.fire === 'function') {
+                return window.ImportSwal.fire(options);
+            }
             return Swal.fire(Object.assign({
                 customClass: { popup: 'swal-modern-popup', title: 'swal-modern-title', htmlContainer: 'swal-modern-html', confirmButton: 'swal-modern-confirm', cancelButton: 'swal-modern-cancel' },
                 buttonsStyling: false,
@@ -351,8 +354,34 @@
 
         async function runDeleteProgress(processUrl, statusUrl, cancelUrl, initialPayload) {
             themedSwal({
-                title: 'Memproses Delete',
-                html: `<div class="text-center mb-3"><span style="font-size: 14px; color: #64748b;" id="delete-progress-desc">Menginisialisasi delete bertahap...</span></div><div class="progress report-management-progress"><div id="delete-progress-bar" class="progress-bar report-management-progress__bar" role="progressbar" style="width: 0%;"></div></div><div class="text-center mt-2"><small id="delete-progress-value" class="report-management-progress__value">0%</small></div><div class="text-center mt-3"><small id="delete-progress-text" class="report-management-progress__text">Menyiapkan chunk pertama...</small></div><div class="text-center mt-2"><small id="delete-progress-meta" class="report-management-progress__meta"></small></div><div class="text-center mt-3"><button type="button" class="btn btn-sm btn-outline-danger" id="delete-cancel-btn"><i class="fas fa-ban mr-1"></i> Batalkan Delete</button></div>`,
+                title: 'Memproses Delete Partisi',
+                html: `
+                    <div class="swal-import-shell">
+                        <div class="swal-import-head">
+                            <span class="swal-import-badge swal-import-badge--danger"><i class="fas fa-trash-alt mr-1"></i> Partition Cleanup</span>
+                            <div class="swal-import-desc" id="delete-progress-desc">Menginisialisasi pembersihan partisi data...</div>
+                        </div>
+                        <div class="swal-import-card">
+                            <div class="swal-import-card__top">
+                                <span class="swal-import-label">Progress Partisi</span>
+                                <span class="swal-import-percent" id="delete-progress-value">0%</span>
+                            </div>
+                            <div class="swal-import-progress">
+                                <div id="delete-progress-bar" class="swal-import-progress__bar" style="width: 0%;"></div>
+                            </div>
+                            <div class="swal-import-meta">
+                                <span class="swal-import-meta__dot" style="background: #ef4444; box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2);"></span>
+                                <span class="swal-import-meta__status" id="delete-progress-text" style="color: #dc2626;">Menyiapkan chunk pertama...</span>
+                            </div>
+                            <div class="mt-2 text-muted" style="font-size: 0.78rem;" id="delete-progress-meta"></div>
+                        </div>
+                        <div class="text-center mt-2">
+                            <button type="button" class="swal-modern-cancel" id="delete-cancel-btn" style="border-color: #fca5a5; color: #dc2626; background: #fff1f2; font-size: 0.82rem; padding: 0.5rem 1.1rem; min-height: 36px;">
+                                <i class="fas fa-ban mr-1"></i> Batalkan Delete
+                            </button>
+                        </div>
+                    </div>
+                `,
                 allowOutsideClick: false,
                 allowEscapeKey: false,
                 showConfirmButton: false,
@@ -681,7 +710,7 @@
             }).join('');
             const extraInfo = scopes.length > 5 ? `<div class="mt-2 text-muted">+${formatNumber(scopes.length - 5)} grup lainnya</div>` : '';
             const selectedRows = scopes.reduce((sum, scope) => sum + Number(scope.row_count || 0), 0);
-            const confirm = await themedSwal({ icon: 'warning', title: 'Hapus Data?', html: `Data akan dihapus untuk <b>${formatNumber(scopes.length)}</b> grup dengan total <b>${formatNumber(selectedRows)}</b> baris terpilih:<ul class="text-left mb-0 pl-4">${previewItems}</ul>${extraInfo}`, showCancelButton: true, confirmButtonText: 'Ya, Hapus', cancelButtonText: 'Batal' });
+            const confirm = await themedSwal({ icon: 'warning', title: 'Hapus Data?', html: `Data akan dihapus untuk <b>${formatNumber(scopes.length)}</b> grup dengan total <b>${formatNumber(selectedRows)}</b> baris terpilih:<ul class="text-left mb-0 pl-4">${previewItems}</ul>${extraInfo}`, showCancelButton: true, confirmButtonText: 'Ya, Hapus', cancelButtonText: 'Batal', isDanger: true });
             if (!confirm.isConfirmed) return;
             const deletePayload = { id_report: managementReportSelect.value, scopes: scopes.map(function (scope) { return { period_filter: scope.period_filter || scope.period || '', period_label: scope.period_label || '', kanca_filter: scope.kanca_filter || scope.kanca || '', kanca_label: scope.kanca_label || '', period_is_null: !!scope.period_is_null, kanca_is_null: !!scope.kanca_is_null, extra_filters: normalizeExtraFilters(scope.extra_filters || []) }; }) };
             let payload = await postJson(deleteUrl, deletePayload);
@@ -694,7 +723,7 @@
             }
             if (payload.status === 'warning' && payload.requires_force) {
                 const candidateRows = formatNumber(payload.candidate_rows || 0);
-                const forceConfirm = await themedSwal({ icon: 'warning', title: 'Data Sangat Besar', html: `Penghapusan ini akan menghapus sekitar <b>${candidateRows}</b> baris.<br>Lanjutkan hanya jika Anda yakin ingin menghapus seluruh grup tersebut.`, showCancelButton: true, confirmButtonText: 'Lanjutkan Delete', cancelButtonText: 'Batal' });
+                const forceConfirm = await themedSwal({ icon: 'warning', title: 'Data Sangat Besar', html: `Penghapusan ini akan menghapus sekitar <b>${candidateRows}</b> baris.<br>Lanjutkan hanya jika Anda yakin ingin menghapus seluruh grup tersebut.`, showCancelButton: true, confirmButtonText: 'Lanjutkan Delete', cancelButtonText: 'Batal', isDanger: true });
                 if (!forceConfirm.isConfirmed) return;
                 payload = await postJson(deleteUrl, Object.assign({}, deletePayload, { force: true }));
                 if (payload.status === 'error') throw new Error(payload.message || 'Gagal menghapus data report.');
@@ -706,7 +735,7 @@
                 const hardForceHtml = payload.full_table_scope
                     ? `Scope ini akan menghapus <b>seluruh isi tabel</b> (${tableTotalRows} baris).<br><br>Jika ini memang tujuan Anda, lanjutkan konfirmasi final untuk mengosongkan tabel.`
                     : `Delete ini mencakup <b>${candidateRows}</b> dari <b>${tableTotalRows}</b> baris (~ <b>${ratioText}</b>).<br>Guard keamanan aktif untuk memastikan penghapusan besar tetap disengaja.<br><br>Lanjutkan hanya jika benar-benar yakin.`;
-                const hardForceConfirm = await themedSwal({ icon: 'warning', title: payload.full_table_scope ? 'Konfirmasi Kosongkan Tabel' : 'Konfirmasi Final Diperlukan', html: hardForceHtml, showCancelButton: true, confirmButtonText: payload.full_table_scope ? 'Ya, Kosongkan Tabel' : 'Ya, Hapus Besar', cancelButtonText: 'Batal' });
+                const hardForceConfirm = await themedSwal({ icon: 'warning', title: payload.full_table_scope ? 'Konfirmasi Kosongkan Tabel' : 'Konfirmasi Final Diperlukan', html: hardForceHtml, showCancelButton: true, confirmButtonText: payload.full_table_scope ? 'Ya, Kosongkan Tabel' : 'Ya, Hapus Besar', cancelButtonText: 'Batal', isDanger: true });
                 if (!hardForceConfirm.isConfirmed) return;
                 payload = await postJson(deleteUrl, Object.assign({}, deletePayload, { force: true, hard_force: true }));
                 if (payload.status === 'error') throw new Error(payload.message || 'Gagal menghapus data report.');

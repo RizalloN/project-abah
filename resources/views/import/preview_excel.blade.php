@@ -5,8 +5,64 @@
 @section('content')
 @php
     $filtersDisabled = !empty($filtersDisabled);
-    $previewReportTitle = $previewBannerTitle ?? $pageTitle ?? 'Preview Data Import';
-    $previewModeLabel = $filtersDisabled ? 'Import full' : 'Preview dengan filter';
+
+    // 1. Resolve Active Report Model
+    $activeReportModel = null;
+    $activeIdReport = session('active_id_report') ?? session('report_id') ?? null;
+    if ($activeIdReport) {
+        $activeReportModel = \App\Models\NamaReport::find($activeIdReport);
+    }
+
+    // 2. Resolve Report Name
+    $resolvedReportName = null;
+    if (!empty($reportName)) {
+        $resolvedReportName = trim((string) $reportName);
+    } elseif (!empty($namaReport)) {
+        $resolvedReportName = trim((string) $namaReport);
+    } elseif ($activeReportModel && !empty($activeReportModel->nama_report)) {
+        $resolvedReportName = trim((string) $activeReportModel->nama_report);
+    } elseif (session()->has('active_nama_report')) {
+        $resolvedReportName = trim((string) session('active_nama_report'));
+    } elseif (session()->has('excel_report_name')) {
+        $resolvedReportName = trim((string) session('excel_report_name'));
+    }
+
+    // Fallback: extract from previewBannerTitle or pageTitle
+    if (empty($resolvedReportName)) {
+        $candidateTitle = (string) ($previewBannerTitle ?? $pageTitle ?? '');
+        if (preg_match('/\(([^)]+)\)/', $candidateTitle, $m)) {
+            $resolvedReportName = trim($m[1]);
+        } elseif (preg_match('/-\s*([^-]+)$/', $candidateTitle, $m)) {
+            $candidate = trim($m[1]);
+            if (!in_array(strtolower($candidate), ['preview data import', 'filter data excel', 'preview'])) {
+                $resolvedReportName = $candidate;
+            }
+        }
+    }
+
+    if (empty($resolvedReportName)) {
+        $resolvedReportName = $previewBannerTitle ?? $pageTitle ?? 'Laporan Data';
+    }
+
+    // 3. Resolve Table & File Name
+    $resolvedTableName = $tableName ?? $activeReportModel?->table_name ?? session('active_table_name') ?? null;
+    $resolvedFilePath = $path ?? '';
+    $resolvedFileName = !empty($resolvedFilePath) ? basename($resolvedFilePath) : 'File Sumber';
+
+    // 4. Mode & Delimiter
+    $previewReportTitle = $previewBannerTitle ?? $pageTitle ?? ('Preview Data Import (' . $resolvedReportName . ')');
+    $previewModeLabel = $filtersDisabled ? 'Import Full' : 'Preview dengan filter';
+
+    $delim = $currentDelimiter ?? 'auto';
+    $delimLabels = [
+        ',' => 'Koma ( , )',
+        ';' => 'Titik Koma ( ; )',
+        '|' => 'Pipe ( | )',
+        '.' => 'Titik ( . )',
+        "\t" => 'Tab',
+        'auto' => 'Otomatis'
+    ];
+    $currentDelimiterLabel = $fixedDelimiterLabel ?? $delimLabels[$delim] ?? $delim;
 @endphp
 <div class="row">
     <div class="col-12">
@@ -17,25 +73,56 @@
 
         <div class="card border-0 shadow-sm mb-3 import-preview-banner">
             <div class="card-body import-preview-banner__body">
-                <div class="import-preview-heading">
-                    <span class="import-preview-heading__eyebrow">{{ $previewModeLabel }}</span>
-                    <h3 class="import-preview-heading__title">
-                        <i class="fas fa-file-import text-success mr-2"></i>{{ $previewReportTitle }}
-                    </h3>
+                <div class="d-flex flex-column flex-lg-row justify-content-between align-items-start align-items-lg-center gap-3 mb-3">
+                    <div class="import-preview-heading">
+                        <div class="d-flex align-items-center flex-wrap gap-2 mb-2">
+                            <span class="import-report-badge">
+                                <i class="fas fa-layer-group text-primary mr-1"></i> Target Laporan
+                            </span>
+                            <span class="import-preview-heading__eyebrow">{{ $previewModeLabel }}</span>
+                        </div>
+                        <h2 class="import-preview-report-title">
+                            <i class="fas fa-file-invoice text-primary mr-2"></i>{{ $resolvedReportName }}
+                        </h2>
+                        <h3 class="import-preview-heading__title d-none">
+                            <i class="fas fa-file-import text-success mr-2"></i>{{ $previewReportTitle }}
+                        </h3>
+                        <p class="import-preview-report-subtitle mb-0 text-muted">
+                            Pastikan data file yang Anda unggah sudah sesuai dengan target laporan <strong>{{ $resolvedReportName }}</strong> sebelum menjalankan import.
+                        </p>
+                    </div>
+
                     <div class="import-preview-heading__meta">
-                        <span><i class="fas fa-columns mr-1"></i>{{ count($headers) }} kolom</span>
-                        <span><i class="fas fa-eye mr-1"></i>Preview sample</span>
-                        <span><i class="fas fa-filter mr-1"></i>{{ $filtersDisabled ? 'Filter nonaktif' : 'Filter tersedia' }}</span>
+                        <span class="import-meta-chip" title="File yang diunggah">
+                            <i class="fas fa-file-excel text-success mr-1"></i> <strong>{{ $resolvedFileName }}</strong>
+                        </span>
+                        @if(!empty($resolvedTableName))
+                        <span class="import-meta-chip" title="Tabel database tujuan">
+                            <i class="fas fa-database text-info mr-1"></i> <code>{{ $resolvedTableName }}</code>
+                        </span>
+                        @endif
+                        <span class="import-meta-chip" title="Total kolom">
+                            <i class="fas fa-columns text-primary mr-1"></i> {{ count($headers) }} kolom
+                        </span>
+                        <span class="import-meta-chip" title="Pemisah Kolom">
+                            <i class="fas fa-sliders-h text-secondary mr-1"></i> {{ $currentDelimiterLabel }}
+                        </span>
+                        <span class="import-meta-chip" title="Status filter">
+                            <i class="fas fa-filter text-secondary mr-1"></i> {{ $filtersDisabled ? 'Filter nonaktif' : 'Filter tersedia' }}
+                        </span>
                     </div>
                 </div>
-                <div class="import-preview-notice mt-3 mb-0">
+
+                <div class="import-preview-notice mt-2 mb-0">
                     <i class="fas fa-info-circle text-info mt-1"></i>
-                    @if($filtersDisabled)
-                        <strong>Mode Import Full Aktif:</strong> Filter dinonaktifkan untuk report ini agar hasil import tidak ambigu dan selalu memproses seluruh data.
-                    @else
-                        <strong>Smart Parser Aktif:</strong> Struktur kolom file import telah dinormalisasi dan siap difilter.
-                        Opsi filter akan dimuat dari seluruh file saat dropdown dibuka, lalu tabel tetap menampilkan maks 100 baris pertama untuk evaluasi.
-                    @endif
+                    <div>
+                        @if($filtersDisabled)
+                            <strong>Mode Import Full Aktif:</strong> Filter dinonaktifkan untuk report <strong>{{ $resolvedReportName }}</strong> agar hasil import tidak ambigu dan selalu memproses seluruh data.
+                        @else
+                            <strong>Smart Parser Aktif:</strong> Struktur kolom untuk <strong>{{ $resolvedReportName }}</strong> telah dinormalisasi dan siap difilter.
+                            Opsi filter akan dimuat dari seluruh file saat dropdown dibuka, lalu tabel tetap menampilkan maks 100 baris pertama untuk evaluasi visual.
+                        @endif
+                    </div>
                 </div>
             </div>
         </div>
@@ -51,11 +138,16 @@
 
             <div class="card border-0 shadow-sm import-preview-card">
                 <div class="card-header bg-white import-preview-actionbar">
-                    <div class="card-tools w-100 d-flex justify-content-between">
-                        <a href="{{ route('import.index') }}" class="btn btn-outline-secondary import-preview-back">
+                    <div class="card-tools w-100 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                        <a href="{{ $backRoute ?? route('import.index') }}" class="btn btn-outline-secondary import-preview-back">
                             <i class="fas fa-arrow-left mr-1"></i> Kembali
                         </a>
-                        <div class="d-flex align-items-center import-preview-actions">
+                        <div class="d-flex align-items-center flex-wrap gap-2 import-preview-actions">
+                            <div class="import-ready-chip d-none d-md-flex align-items-center mr-2">
+                                <span class="badge-dot-live mr-2"></span>
+                                <span class="text-muted mr-1">Target Import:</span>
+                                <strong class="text-dark">{{ $resolvedReportName }}</strong>
+                            </div>
                             @if(!$filtersDisabled)
                             <button type="button" id="btnResetAllFilters" class="btn btn-outline-warning mr-2 import-preview-secondary">
                                 <i class="fas fa-undo mr-1"></i> Reset Filter
@@ -215,6 +307,9 @@ document.addEventListener('DOMContentLoaded', function () {
     };
 
     function themedSwal(options) {
+        if (window.ImportSwal && typeof window.ImportSwal.fire === 'function') {
+            return window.ImportSwal.fire(options);
+        }
         return Swal.fire(Object.assign({}, swalTheme, options));
     }
 
@@ -1509,7 +1604,37 @@ document.addEventListener('DOMContentLoaded', function () {
             }, 600);
         }
 
+        function handleImportAccessFailure(response) {
+            if ([401, 403, 419].indexOf(response.status) === -1) return false;
+            if (streamDone) return true;
+
+            streamDone = true;
+            terminalVerificationStarted = true;
+            if (evtSource) evtSource.close();
+            resetSubmitBtn();
+
+            var forbidden = response.status === 403;
+            var expiredToken = response.status === 419;
+            themedSwal({
+                icon: 'warning',
+                title: forbidden ? 'Akses Import Dibatasi' : (expiredToken ? 'Halaman Perlu Dimuat Ulang' : 'Sesi Login Berakhir'),
+                text: (forbidden ? 'Akun ini tidak memiliki akses untuk memantau import.' :
+                    (expiredToken ? 'Muat ulang halaman untuk memperbarui sesi sebelum melanjutkan.' :
+                        'Silakan login kembali, lalu buka Manajemen Job untuk memeriksa status import.')) +
+                    ' Pesan ini tidak membatalkan proses yang sudah masuk antrean.',
+                confirmButtonText: forbidden ? 'Kembali ke Dashboard' : (expiredToken ? 'Muat Ulang' : 'Login Kembali'),
+                allowOutsideClick: false,
+                allowEscapeKey: false
+            }).then(function (result) {
+                if (!result.isConfirmed) return;
+                if (expiredToken) window.location.reload();
+                else window.location.href = forbidden ? '{{ route("dashboard") }}' : '{{ route("login") }}';
+            });
+            return true;
+        }
+
         async function inspectImportJob(jobId) {
+            if (streamDone) return null;
             var response = await fetch(statusUrlForJob(jobId), {
                 headers: {
                     'Accept': 'application/json',
@@ -1517,6 +1642,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
             });
 
+            if (streamDone || handleImportAccessFailure(response)) return null;
             if (!response.ok) {
                 return null;
             }
@@ -1525,6 +1651,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         async function triggerForceStart(jobId) {
+            if (streamDone) return false;
             if (forceStartTriggered) return false;
             forceStartTriggered = true;
 
@@ -1539,6 +1666,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 body: JSON.stringify({})
             });
 
+            if (streamDone || handleImportAccessFailure(response)) return false;
             var payload = {};
             try { payload = await response.json(); } catch (_) {}
 
@@ -1559,7 +1687,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         async function pollImportStatus(jobId) {
-            for (;;) {
+            while (!streamDone) {
                 var payload = null;
 
                 try {
@@ -1567,6 +1695,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 } catch (_) {
                     payload = null;
                 }
+
+                if (streamDone) return;
 
                 if (payload) {
                     lastProg = {
@@ -1603,6 +1733,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
             // ── progress event ──────────────────────────────────────────────
             evtSource.addEventListener('progress', function (e) {
+                if (streamDone) return;
                 reconnectAttempts = 0;
                 var d = {};
                 try { d = JSON.parse(e.data); } catch (_) {}
@@ -1634,6 +1765,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
                 var verifiedPayload = null;
                 try { verifiedPayload = await inspectImportJob(jobId); } catch (_) {}
+                if (streamDone) return;
 
                 if (verifiedPayload && verifiedPayload.status === 'completed') {
                     showImportSuccess(Object.assign({}, eventPayload, verifiedPayload));
@@ -1721,6 +1853,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 try {
                     statusPayload = await inspectImportJob(jobId);
                 } catch (_) {}
+                if (streamDone) return;
 
                 var status = String(statusPayload && statusPayload.status ? statusPayload.status : '');
                 if (status === 'completed') {
@@ -1748,9 +1881,11 @@ document.addEventListener('DOMContentLoaded', function () {
                                     await pollImportStatus(jobId);
                                     return;
                                 } catch (forceStartError) {
+                                    if (streamDone) return;
                                     const refreshedStatus = await inspectImportJob(jobId).catch(function () {
                                         return null;
                                     });
+                                    if (streamDone) return;
                                     const refreshedState = String(refreshedStatus && refreshedStatus.status ? refreshedStatus.status : '');
 
                                     if (refreshedState === 'completed') {
@@ -1864,19 +1999,34 @@ document.addEventListener('DOMContentLoaded', function () {
     .import-preview-banner,
     .import-preview-card {
         border: 1px solid rgba(226, 232, 240, 0.95) !important;
-        border-radius: 8px;
+        border-radius: 10px;
         overflow: hidden;
         background: #ffffff;
-        box-shadow: 0 18px 36px -30px rgba(15, 23, 42, 0.28) !important;
+        box-shadow: 0 10px 25px -15px rgba(15, 23, 42, 0.12) !important;
     }
 
     .import-preview-banner__body {
-        padding: 1.2rem 1.35rem;
-        background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+        padding: 1.25rem 1.45rem;
+        background: linear-gradient(135deg, #ffffff 0%, #f8fafc 60%, #f0f7ff 100%);
     }
 
     .import-preview-heading {
         min-width: 0;
+    }
+
+    .import-report-badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 26px;
+        padding: 0.25rem 0.65rem;
+        border-radius: 999px;
+        background: #eef2ff;
+        border: 1px solid #c7d2fe;
+        color: #4338ca;
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
     }
 
     .import-preview-heading__eyebrow {
@@ -1894,6 +2044,21 @@ document.addEventListener('DOMContentLoaded', function () {
         text-transform: uppercase;
     }
 
+    .import-preview-report-title {
+        margin: 0.35rem 0 0.3rem;
+        color: #0f2942;
+        font-size: 1.45rem;
+        font-weight: 800;
+        line-height: 1.28;
+        word-break: break-word;
+    }
+
+    .import-preview-report-subtitle {
+        font-size: 0.85rem;
+        color: #64748b;
+        line-height: 1.45;
+    }
+
     .import-preview-heading__title {
         margin: 0.5rem 0 0.35rem;
         color: #0f172a;
@@ -1909,17 +2074,42 @@ document.addEventListener('DOMContentLoaded', function () {
         gap: 0.5rem;
     }
 
-    .import-preview-heading__meta span {
+    .import-preview-heading__meta span,
+    .import-meta-chip {
         display: inline-flex;
         align-items: center;
-        min-height: 28px;
-        padding: 0.28rem 0.55rem;
+        min-height: 30px;
+        padding: 0.3rem 0.65rem;
         border-radius: 999px;
         background: #ffffff;
         border: 1px solid #e2e8f0;
-        color: #475569;
+        color: #334155;
         font-size: 0.78rem;
-        font-weight: 700;
+        font-weight: 600;
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+        transition: all 120ms ease;
+    }
+
+    .import-meta-chip:hover {
+        border-color: #cbd5e1;
+        background: #f8fafc;
+    }
+
+    .import-ready-chip {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 999px;
+        padding: 0.35rem 0.75rem;
+        font-size: 0.82rem;
+    }
+
+    .badge-dot-live {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #10b981;
+        display: inline-block;
+        box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.25);
     }
 
     .import-preview-notice {
@@ -1935,7 +2125,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     .import-preview-actionbar {
-        padding: 1rem 1.35rem;
+        padding: 0.95rem 1.35rem;
         border-bottom: 1px solid #e2e8f0 !important;
         background: #ffffff !important;
     }
@@ -1954,22 +2144,25 @@ document.addEventListener('DOMContentLoaded', function () {
     .import-preview-back,
     .import-preview-secondary,
     .import-preview-submit {
-        min-height: 42px;
+        min-height: 40px;
         border-radius: 8px;
-        padding: 0.62rem 0.9rem;
+        padding: 0.55rem 0.95rem;
         font-weight: 700;
+        font-size: 0.84rem;
+        transition: all 150ms ease;
     }
 
     .import-preview-submit {
         border: 0;
-        background: #047857;
-        box-shadow: 0 14px 24px -20px rgba(4, 120, 87, 0.55);
+        background: #059669;
+        box-shadow: 0 4px 14px rgba(5, 150, 105, 0.3);
     }
 
     .import-preview-submit:hover,
     .import-preview-submit:focus {
-        background: #065f46;
-        box-shadow: 0 16px 28px -20px rgba(4, 120, 87, 0.6);
+        background: #047857;
+        box-shadow: 0 6px 18px rgba(4, 120, 87, 0.4);
+        transform: translateY(-1px);
     }
 
     .import-preview-table-shell {
@@ -2252,36 +2445,5 @@ document.addEventListener('DOMContentLoaded', function () {
         font-weight: 800;
     }
 
-    .swal-modern-popup {
-        width: min(520px, calc(100vw - 24px)) !important;
-        padding: 0.95rem !important;
-        border-radius: 8px;
-    }
-
-    .swal-import-shell {
-        gap: 0.7rem;
-    }
-
-    .swal-import-head {
-        gap: 0.3rem;
-    }
-
-    .swal-import-desc {
-        font-size: 0.84rem;
-        line-height: 1.4;
-    }
-
-    .swal-import-card,
-    .swal-import-stat {
-        padding: 0.75rem;
-        border: 1px solid #e2e8f0;
-        border-radius: 6px;
-        background: #f8fafc;
-        box-shadow: none;
-    }
-
-    .swal-import-progress__bar {
-        background: #0b5cab;
-    }
 </style>
 @endsection

@@ -100,7 +100,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Direction | Count |
 | --- | ---: |
 | dashboard-harian -> core (calls) | 79 |
-| dashboard-harian -> access-control (protected_by) | 50 |
+| dashboard-harian -> access-control (protected_by) | 60 |
 | dashboard-harian -> core (accepts) | 23 |
 | import -> dashboard-harian (calls) | 12 |
 | import -> dashboard-harian (accepts) | 10 |

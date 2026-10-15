@@ -26,6 +26,10 @@ class QueueWorkerMonitorService
 
     private const FAILED_JOBS_WINDOW_DAYS = 7;
 
+    private const PROCESS_TABLE_CACHE_KEY = 'queue:worker-monitor:process-table:v1';
+
+    private const PROCESS_TABLE_CACHE_SECONDS = 5;
+
     public function __construct(
         private readonly QueueWorkerControlService $workerControl,
         private readonly QueueSupervisorProcessRunner $processRunner
@@ -36,7 +40,7 @@ class QueueWorkerMonitorService
     public function snapshot(): array
     {
         $now = time();
-        $processes = $this->processTable();
+        $processes = $this->sharedProcessTable();
         $signalAt = (int) Cache::get('illuminate:queue:restart', 0);
         $queueStats = $this->queueStats($now);
 
@@ -74,7 +78,7 @@ class QueueWorkerMonitorService
      */
     public function oldestLiveProcessStartedAt(): ?int
     {
-        $processes = $this->processTable();
+        $processes = $this->sharedProcessTable();
         if ($processes === null) {
             return null;
         }
@@ -375,6 +379,34 @@ class QueueWorkerMonitorService
                 'latest' => $recent->take(5)->all(),
             ];
         });
+    }
+
+    /**
+     * Process listing shared for a few seconds. On Windows each listing spawns
+     * PowerShell (~0.5-1s, tens of MB), and one job-management poll needs it
+     * twice (snapshot + safe-restart code-change check).
+     *
+     * @return array<int, array{started_at:?int,memory_mb:?float}>|null
+     */
+    private function sharedProcessTable(): ?array
+    {
+        // The console monitor loop decides restarts from this listing and
+        // must always see live processes; only UI polling is shared.
+        if (app()->runningInConsole() && !app()->runningUnitTests()) {
+            return $this->processTable();
+        }
+
+        $cached = Cache::get(self::PROCESS_TABLE_CACHE_KEY);
+        if (is_array($cached)) {
+            return $cached;
+        }
+
+        $processes = $this->processTable();
+        if ($processes !== null) {
+            Cache::put(self::PROCESS_TABLE_CACHE_KEY, $processes, self::PROCESS_TABLE_CACHE_SECONDS);
+        }
+
+        return $processes;
     }
 
     /**

@@ -184,8 +184,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | database -> jobs-snapshots (defines_table) | 12 |
 | import -> jobs-snapshots (accepts) | 11 |
 | jobs-snapshots -> import (calls) | 11 |
-| jobs-snapshots -> dashboard-simpanan (reads_table) | 11 |
 | core -> jobs-snapshots (calls) | 10 |
+| jobs-snapshots -> dashboard-simpanan (reads_table) | 9 |
 | jobs-snapshots -> presentation (calls) | 9 |
 | dashboard-simpanan -> jobs-snapshots (implements) | 9 |
 | dashboard-pinjaman -> jobs-snapshots (calls) | 8 |
@@ -194,6 +194,6 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | dashboard-pinjaman -> jobs-snapshots (implements) | 8 |
 | jobs-snapshots -> dashboard-harian (calls) | 7 |
 | dashboard-simpanan -> jobs-snapshots (calls) | 7 |
+| jobs-snapshots -> access-control (protected_by) | 7 |
 | import -> jobs-snapshots (implements) | 7 |
 | database -> jobs-snapshots (alters_table) | 6 |
-| jobs-snapshots -> dashboard-pinjaman (calls) | 6 |

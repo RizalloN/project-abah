@@ -22,7 +22,7 @@ final class MicroNettDisbursementCalculator
 
     private const READ_CACHE_VERSION = 'v1';
 
-    private const MANTRI_READ_CACHE_VERSION = 'v3-mantri-account-basis';
+    private const MANTRI_READ_CACHE_VERSION = 'v5-mantri-source-reference';
 
     private const READ_CACHE_SECONDS = 1800;
 
@@ -170,8 +170,12 @@ final class MicroNettDisbursementCalculator
             return [];
         }
 
+        $reference = app(MantriProductivityReference::class);
+        $sourcePreviousOs = $reference->closedPreviousOsByCif($period, $rows->pluck('cifno')->all());
         $previousOs = $this->previousCompleteOsByCif($periodDate, $rows->pluck('cifno')->all());
-        $remainingPreviousOs = $previousOs;
+        if ($sourcePreviousOs !== null) {
+            $previousOs = array_replace($previousOs, $sourcePreviousOs);
+        }
         $bookings = [];
 
         foreach ($rows as $row) {
@@ -185,20 +189,28 @@ final class MicroNettDisbursementCalculator
 
             $account = $this->canonicalAccount($row->nomor_rekening1 ?? null);
             $cif = strtoupper(trim((string) ($row->cifno ?? '')));
+            $identity = $reference->accountReference($period, $account, $cif, (string) $row->tgl_realisasi);
+            if ($identity !== null) {
+                $cabang = strtoupper(trim((string) $identity['branch']));
+                $unit = strtoupper(trim((string) $identity['unit']));
+                $branchCode = trim((string) $identity['bc']);
+                $owner = strtoupper(str_pad((string) $identity['pn'], 8, '0', STR_PAD_LEFT).' - '.trim((string) $identity['name']));
+            }
             $plafond = (float) ($row->plafon ?? 0);
-            // A CIF may produce several account rows for the same monthly
-            // event. Consume its closed prior exposure once across
-            // those rows, after daily-position duplicates were collapsed.
-            $availablePreviousOs = (float) ($remainingPreviousOs[$cif] ?? 0);
-            $nett = max(0.0, $plafond - $availablePreviousOs);
-            $remainingPreviousOs[$cif] = max(0.0, $availablePreviousOs - $plafond);
+            // The source workbook subtracts the complete closed prior CIF
+            // exposure from each distinct booking, including negative nett.
+            $closedPreviousOs = (float) ($previousOs[$cif] ?? 0);
+            $nett = $plafond - $closedPreviousOs;
             $bookings[] = [
                 'periode' => $period, 'cabang' => $cabang, 'unit' => $unit,
                 'branch_code' => $branchCode, 'owner' => $owner,
                 'account_key' => $account !== '' ? $account : ($cif !== '' ? 'CIF:'.$cif : 'ROW:'.count($bookings)),
                 'cif_key' => $cif, 'plafon' => $plafond,
-                'previous_os' => $plafond - $nett, 'net_amount' => $nett,
+                'previous_os' => $closedPreviousOs, 'net_amount' => $nett,
                 'realization_date' => (string) $row->tgl_realisasi,
+                'identity_source' => $identity === null ? self::SOURCE_TABLE : 'mantri_productivity_reference',
+                'baseline_source' => $sourcePreviousOs !== null && array_key_exists($cif, $sourcePreviousOs)
+                    ? 'mantri_productivity_reference' : self::SOURCE_TABLE,
             ];
         }
 
@@ -423,10 +435,14 @@ final class MicroNettDisbursementCalculator
     /** @param callable(): array $compute */
     private function rememberNonEmpty(string $kind, string $period, callable $compute): array
     {
-        $key = implode(':', [
+        $keyParts = [
             'micro-nett', str_starts_with($kind, 'mantri') ? self::MANTRI_READ_CACHE_VERSION : self::READ_CACHE_VERSION, $kind,
             ReportCacheVersion::get('pinjaman'), Carbon::parse($period)->toDateString(),
-        ]);
+        ];
+        if (str_starts_with($kind, 'mantri')) {
+            $keyParts[] = app(MantriProductivityReference::class)->fingerprint($period);
+        }
+        $key = implode(':', $keyParts);
         $cached = Cache::get($key);
         if (is_array($cached) && $cached !== []) {
             return $cached;

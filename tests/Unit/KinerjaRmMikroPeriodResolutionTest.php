@@ -68,6 +68,7 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
             $table->string('esgdesc')->nullable();
             $table->string('psadesc')->nullable();
             $table->string('orgdesc')->nullable();
+            $table->string('bc')->nullable();
             $table->string('positiondesc')->nullable();
             $table->string('pn_mantri')->nullable();
             $table->string('status')->nullable();
@@ -435,7 +436,7 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
         $this->assertSame(2, (int) $payload['total']['jumlah_mantri']);
     }
 
-    public function test_mantri_productivity_uses_active_brihc_roster_and_excludes_collection_role(): void
+    public function test_mantri_productivity_uses_growth_roster_and_excludes_briguna_and_collection_roles(): void
     {
         $this->insertBrihcPemasar([
             'uniqueid_namareport' => 'ACTIVE-MANTRI-1',
@@ -484,17 +485,143 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
         $roster = $this->invokePrivateMethod($controller, 'activeMantriRosterState');
         $sourceRows = $this->invokePrivateMethod($controller, 'mantriSourceQuery', '2026-05-06')->get();
 
-        $this->assertSame(['1', '3'], $roster['keys']);
-        $this->assertSame(['1', '3'], $sourceRows->pluck('owner_pn')->unique()->sort()->values()->all());
+        $this->assertSame(['1'], $roster['keys']);
+        $this->assertSame(['1'], $sourceRows->pluck('owner_pn')->unique()->sort()->values()->all());
 
         $payload = $this->invokePrivateMethod($controller, 'mantriProductivityPayload', '2026-05-06');
         $names = collect($payload['rows'])->pluck('nama_mantri')->all();
 
-        $this->assertSame(['Mantri Aktif', 'Mantri Briguna Aktif'], $names);
+        $this->assertSame(['Mantri Aktif'], $names);
         $this->assertNotContains('Mantri Collection', $names);
-        $this->assertSame(2, (int) $payload['total']['jumlah_mantri']);
-        $this->assertSame(250000000.0, (float) $payload['total']['realisasi_os']);
+        $this->assertNotContains('Mantri Briguna Aktif', $names);
+        $this->assertSame(1, (int) $payload['total']['jumlah_mantri']);
+        $this->assertSame(150000000.0, (float) $payload['total']['realisasi_os']);
         $this->assertSame(150000000.0, (float) collect($payload['rows'])->firstWhere('pn_mantri', '00000001')['realisasi_os']);
+    }
+
+    public function test_mantri_hc_productivity_and_quadrants_include_new_roster_and_use_latest_assignment(): void
+    {
+        foreach ([
+            ['uniqueid_namareport' => 'reference_brihc_hc_1', 'pernr' => '1', 'pn_mantri' => '1', 'completename' => 'Mantri Pindah HC', 'psadesc' => 'KC Ngawi', 'orgdesc' => 'UNIT NGAWI BARU', 'bc' => '3201'],
+            ['uniqueid_namareport' => 'reference_brihc_hc_2', 'pernr' => '2', 'pn_mantri' => '2', 'completename' => 'Mantri Baru Nol', 'psadesc' => 'KC Ngawi', 'orgdesc' => 'UNIT NGAWI BARU', 'bc' => '3201'],
+            ['uniqueid_namareport' => 'reference_brihc_hc_3', 'pernr' => '3', 'pn_mantri' => '3', 'completename' => 'Recovery Terpisah', 'positiondesc' => 'MANTRI RECOVERY', 'psadesc' => 'KC Ngawi', 'orgdesc' => 'UNIT NGAWI BARU', 'bc' => '3201'],
+            ['uniqueid_namareport' => 'reference_brihc_hc_4', 'pernr' => '4', 'pn_mantri' => '4', 'completename' => 'Mantri Briguna HC', 'positiondesc' => 'MANTRI BRIGUNA', 'psadesc' => 'KC Magetan', 'orgdesc' => 'KC MAGETAN', 'bc' => '49'],
+        ] as $reference) {
+            $this->insertBrihcPemasar($reference);
+        }
+        $this->insertDailyLoan([
+            'periode' => '2026-10-13', 'tgl_realisasi' => '2026-10-05', 'pn_pengelola1' => '0001 - Nama Daily Lama',
+            'rm_normalized' => '0001 - NAMA DAILY LAMA', 'nomor_rekening1' => 'HC-PRODUCTIVE', 'plafon' => 150_000_000,
+        ]);
+        $this->insertDailyLoan([
+            'periode' => '2026-10-13', 'tgl_realisasi' => '2026-10-05', 'pn_pengelola1' => '0003 - Recovery Terpisah',
+            'rm_normalized' => '0003 - RECOVERY TERPISAH', 'nomor_rekening1' => 'HC-RECOVERY', 'plafon' => 500_000_000,
+        ]);
+        $this->insertDailyLoan([
+            'periode' => '2026-10-13', 'tgl_realisasi' => '2026-10-05', 'pn_pengelola1' => '0004 - Nama Daily Briguna',
+            'rm_normalized' => '0004 - NAMA DAILY BRIGUNA', 'nomor_rekening1' => 'HC-BRIGUNA', 'plafon' => 100_000_000,
+        ]);
+        $controller = new KinerjaRmMikroReportController;
+        $payload = $this->invokePrivateMethod($controller, 'mantriProductivityPayload', '2026-10-13');
+        $rows = collect($payload['rows'])->keyBy('pn_mantri');
+
+        $this->assertSame(2, (int) $payload['total']['jumlah_mantri']);
+        $this->assertSame(150_000_000.0, (float) $payload['total']['realisasi_os']);
+        $this->assertSame('Mantri Pindah HC', $rows->get('00000001')['nama_mantri']);
+        $this->assertSame('KC NGAWI', $rows->get('00000001')['cabang']);
+        $this->assertSame('UNIT NGAWI BARU', $rows->get('00000001')['unit']);
+        $this->assertSame('3201', $rows->get('00000001')['bc']);
+        $this->assertSame(150_000_000.0, (float) $rows->get('00000001')['realisasi_os']);
+        $this->assertSame('Mantri Baru Nol', $rows->get('00000002')['nama_mantri']);
+        $this->assertSame(0, (int) $rows->get('00000002')['realisasi_deb']);
+        $this->assertSame(0.0, (float) $rows->get('00000002')['realisasi_os']);
+        $this->assertNull($rows->get('00000004'));
+        $this->assertNull($rows->get('00000003'));
+
+        $quadrant = $this->invokePrivateMethod($controller, 'mantriKuadranPayload', '2026-10-13');
+        $ngawi = collect($quadrant['rows'])->firstWhere('unit', 'UNIT NGAWI BARU');
+        $this->assertSame(2, (int) $ngawi['jumlah_mantri']);
+        $this->assertSame(2, (int) $quadrant['total']['jumlah_mantri']);
+        $this->assertGreaterThanOrEqual(1, (int) $ngawi['kuadran_4']);
+    }
+
+    public function test_other_roles_with_same_pn_cannot_recategorize_growth_mantri_and_source_references_remain_intact(): void
+    {
+        foreach ([
+            ['uniqueid_namareport' => 'reference_brihc_hc_growth_1', 'pernr' => '1', 'pn_mantri' => '1', 'completename' => 'Mantri Tumbuh PT', 'esgdesc' => 'PT'],
+            ['uniqueid_namareport' => 'reference_brihc_hc_growth_2', 'pernr' => '2', 'pn_mantri' => '2', 'completename' => 'Mantri Tumbuh Kontrak', 'esgdesc' => 'KONTRAK'],
+            ['uniqueid_namareport' => 'legacy_briguna_same_pn_1', 'pernr' => '1', 'pn_mantri' => '1', 'completename' => 'Legacy Briguna PT', 'positiondesc' => 'MANTRI BRIGUNA', 'esgdesc' => 'KONTRAK'],
+            ['uniqueid_namareport' => 'legacy_briguna_same_pn_2', 'pernr' => '2', 'pn_mantri' => '2', 'completename' => 'Legacy Briguna Kontrak', 'positiondesc' => 'MANTRI BRIGUNA', 'esgdesc' => 'PT'],
+            ['uniqueid_namareport' => 'reference_brihc_hc_briguna_3', 'pernr' => '3', 'pn_mantri' => '3', 'completename' => 'Briguna Terpisah', 'positiondesc' => 'MANTRI BRIGUNA'],
+            ['uniqueid_namareport' => 'reference_brihc_hc_recovery_4', 'pernr' => '4', 'pn_mantri' => '4', 'completename' => 'Recovery Terpisah', 'positiondesc' => 'MANTRI RECOVERY'],
+        ] as $reference) {
+            $this->insertBrihcPemasar($reference);
+        }
+        $before = DB::table('brihc_pemasar')->orderBy('uniqueid_namareport')->get()->all();
+        $controller = new KinerjaRmMikroReportController;
+        $roster = $this->invokePrivateMethod($controller, 'activeMantriRosterState');
+        $this->assertSame(['1', '2'], $roster['keys']);
+        $this->assertSame('pt', $roster['people']['1']['category']);
+        $this->assertSame('contract', $roster['people']['2']['category']);
+        $landingRoster = $this->invokePrivateMethod(app(\App\Support\LandingMicroPerformanceService::class), 'mantriRoster', null);
+        $this->assertCount(2, $landingRoster);
+        $this->assertSame('pt', $landingRoster->firstWhere('pn', '1')['category']);
+        $this->assertSame('contract', $landingRoster->firstWhere('pn', '2')['category']);
+
+        $payload = $this->invokePrivateMethod($controller, 'nettWorkbookPayload', '2026-10-13', true);
+        $headcount = $payload['nett_workbook']['mantriPerformance']['total']['headcount'];
+        $this->assertSame(1, $headcount['pt_non_briguna']);
+        $this->assertSame(1, $headcount['contract']);
+        $this->assertSame(0, $headcount['briguna']);
+        $this->assertEquals($before, DB::table('brihc_pemasar')->orderBy('uniqueid_namareport')->get()->all());
+    }
+
+    public function test_mantri_hc_recap_counts_complete_current_roster_without_changing_realized_metrics_or_legacy_counts(): void
+    {
+        foreach ([
+            ['uniqueid_namareport' => 'reference_brihc_hc_1', 'pernr' => '1', 'pn_mantri' => '1', 'completename' => 'HC Aktif', 'psadesc' => 'KC Ngawi', 'orgdesc' => 'UNIT NGAWI A', 'bc' => '3201'],
+            ['uniqueid_namareport' => 'reference_brihc_hc_2', 'pernr' => '2', 'pn_mantri' => '2', 'completename' => 'HC Nol Satu', 'psadesc' => 'KC Ngawi', 'orgdesc' => 'UNIT NGAWI A', 'bc' => '3201'],
+            ['uniqueid_namareport' => 'reference_brihc_hc_3', 'pernr' => '3', 'pn_mantri' => '3', 'completename' => 'HC Nol Dua', 'psadesc' => 'KC Ngawi', 'orgdesc' => 'UNIT NGAWI B', 'bc' => '3202'],
+            ['uniqueid_namareport' => 'reference_brihc_hc_4', 'pernr' => '4', 'pn_mantri' => '4', 'completename' => 'HC Cabang Tanpa Rekening', 'psadesc' => 'KC Magetan', 'orgdesc' => 'UNIT MAGETAN', 'bc' => '3203'],
+            ['uniqueid_namareport' => 'legacy-mantri-5', 'pernr' => '5', 'pn_mantri' => '5', 'completename' => 'Legacy Aktif', 'psadesc' => 'KC Madiun', 'orgdesc' => 'UNIT MADIUN A', 'bc' => '3204'],
+            ['uniqueid_namareport' => 'legacy-mantri-6', 'pernr' => '6', 'pn_mantri' => '6', 'completename' => 'Legacy Nol', 'psadesc' => 'KC Madiun', 'orgdesc' => 'UNIT MADIUN B', 'bc' => '3205'],
+        ] as $reference) {
+            $this->insertBrihcPemasar($reference);
+        }
+        $this->insertDailyLoan([
+            'periode' => '2026-10-13', 'tgl_realisasi' => '2026-10-05', 'pn_pengelola1' => '0001 - HC Aktif',
+            'rm_normalized' => '0001 - HC AKTIF', 'nomor_rekening1' => 'REK-HC', 'plafon' => 100_000_000,
+            'cabang1' => 'KC NGAWI', 'cabang_normalized' => 'KC NGAWI',
+            'unit1' => 'UNIT NGAWI A', 'unit_normalized' => 'UNIT NGAWI A', 'branch1' => '3201', 'branch_normalized' => '3201',
+        ]);
+        $this->insertDailyLoan([
+            'periode' => '2026-10-13', 'tgl_realisasi' => '2026-10-05', 'pn_pengelola1' => '0005 - Legacy Aktif',
+            'rm_normalized' => '0005 - LEGACY AKTIF', 'nomor_rekening1' => 'REK-LEGACY', 'plafon' => 50_000_000,
+            'unit1' => 'UNIT MADIUN A', 'unit_normalized' => 'UNIT MADIUN A', 'branch1' => '3204', 'branch_normalized' => '3204',
+        ]);
+        $payload = $this->invokePrivateMethod(new KinerjaRmMikroReportController, 'mantriRekapPayload', '2026-10-13');
+        $rows = collect($payload['rows'])->keyBy('cabang');
+        $this->assertCount(3, $rows);
+        $this->assertSame(3, (int) $rows->get('KC NGAWI')['jumlah_mantri']);
+        $this->assertSame(2, (int) $rows->get('KC NGAWI')['jumlah_unit']);
+        $this->assertSame(100_000_000.0, (float) $rows->get('KC NGAWI')['total_realisasi_os']);
+        $this->assertEqualsWithDelta(100 / 3 / $payload['working_days'], $rows->get('KC NGAWI')['ratas_mantri_hk'], 0.00001);
+        $this->assertSame(1, (int) $rows->get('KC MAGETAN')['jumlah_mantri']);
+        $this->assertSame(1, (int) $rows->get('KC MAGETAN')['jumlah_unit']);
+        $this->assertSame(0, (int) $rows->get('KC MAGETAN')['total_realisasi_deb']);
+        $this->assertSame(0.0, (float) $rows->get('KC MAGETAN')['total_realisasi_os']);
+        $this->assertSame(0.0, (float) $rows->get('KC MAGETAN')['ratas_mantri_hk']);
+        $this->assertSame(1, (int) $rows->get('KC MADIUN')['jumlah_mantri']);
+        $this->assertSame(1, (int) $rows->get('KC MADIUN')['jumlah_unit']);
+        $this->assertSame(5, (int) $payload['total']['jumlah_mantri']);
+        $this->assertSame(4, (int) $payload['total']['jumlah_unit']);
+        $this->assertSame(2, (int) $payload['total']['total_realisasi_deb']);
+        $this->assertSame(150_000_000.0, (float) $payload['total']['total_realisasi_os']);
+        $this->assertSame(2, (int) $payload['total']['kaunit_pdwk_deb']);
+        $this->assertSame(150_000_000.0, (float) $payload['total']['kaunit_pdwk_os']);
+        foreach (['kaunit_override_os', 'mbm_total_os', 'pinca_total_os', 'rmbh_override_os'] as $metric) {
+            $this->assertSame(0.0, (float) $payload['total'][$metric], $metric);
+        }
     }
 
     public function test_mantri_quadrant_payload_counts_each_mantri_per_unit(): void
@@ -673,6 +800,51 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
         $this->assertEqualsWithDelta(33.3333, $branchRow['buckets']['el_0_100']['pct'], 0.0001);
         $this->assertEqualsWithDelta(66.6667, $branchRow['extreme_low']['pct'], 0.0001);
         $this->assertEqualsWithDelta(66.6667, $branchRow['under_800']['pct'], 0.0001);
+    }
+
+    public function test_extreme_low_hc_roster_uses_latest_assignment_and_includes_zero_account_pt_people(): void
+    {
+        foreach ([
+            ['uniqueid_namareport' => 'reference_brihc_hc_1', 'pernr' => '1', 'pn_mantri' => '1', 'completename' => 'Nama HC Terbaru', 'psadesc' => 'KC Ngawi', 'orgdesc' => 'UNIT NGAWI BARU'],
+            ['uniqueid_namareport' => 'reference_brihc_hc_2', 'pernr' => '2', 'pn_mantri' => '2', 'completename' => 'Mantri Tanpa Rekening', 'psadesc' => 'KC Ngawi', 'orgdesc' => 'UNIT NGAWI BARU'],
+            ['uniqueid_namareport' => 'reference_brihc_hc_3', 'pernr' => '3', 'pn_mantri' => '3', 'completename' => 'Mantri Kontrak', 'esgdesc' => 'KONTRAK', 'psadesc' => 'KC Ngawi', 'orgdesc' => 'UNIT NGAWI BARU'],
+            ['uniqueid_namareport' => 'reference_brihc_hc_4', 'pernr' => '4', 'pn_mantri' => '4', 'completename' => 'Mantri Recovery', 'positiondesc' => 'MANTRI RECOVERY', 'psadesc' => 'KC Ngawi', 'orgdesc' => 'UNIT NGAWI BARU'],
+            ['uniqueid_namareport' => 'legacy-mantri', 'pernr' => '5', 'pn_mantri' => '5', 'completename' => 'Nama Legacy', 'psadesc' => 'KC Madiun', 'orgdesc' => 'UNIT LEGACY'],
+        ] as $reference) {
+            $this->insertBrihcPemasar($reference);
+        }
+        $this->insertDailyLoan([
+            'periode' => '2026-10-13', 'tgl_realisasi' => '2026-10-05', 'pn_pengelola1' => '0001 - Nama Loan Lama',
+            'rm_normalized' => '0001 - NAMA LOAN LAMA', 'nomor_rekening1' => 'HC-OLD',
+            'unit1' => 'UNIT MADIUN LAMA', 'unit_normalized' => 'UNIT MADIUN LAMA', 'plafon' => 50_000_000,
+        ]);
+        $this->insertDailyLoan([
+            'periode' => '2026-10-13', 'tgl_realisasi' => '2026-10-05', 'pn_pengelola1' => '0005 - Nama Daily Legacy',
+            'rm_normalized' => '0005 - NAMA DAILY LEGACY', 'nomor_rekening1' => 'LEGACY',
+            'unit1' => 'UNIT MADIUN DAILY', 'unit_normalized' => 'UNIT MADIUN DAILY', 'plafon' => 150_000_000,
+        ]);
+        $controller = new KinerjaRmMikroReportController;
+        $roster = $this->invokePrivateMethod($controller, 'extremeLowMantriRosterRows', '2026-10-13');
+        $hc = $roster->firstWhere('nama_mantri', 'Nama HC Terbaru');
+        $zero = $roster->firstWhere('nama_mantri', 'Mantri Tanpa Rekening');
+
+        $this->assertCount(3, $roster);
+        $this->assertNotNull($hc);
+        $this->assertSame('KC NGAWI', $hc['branch_office']);
+        $this->assertSame('UNIT NGAWI BARU', $hc['nama_uker']);
+        $this->assertSame(50_000_000.0, (float) $hc['realisasi_os']);
+        $this->assertNotNull($zero);
+        $this->assertSame(0.0, (float) $zero['realisasi_os']);
+        $this->assertSame('UNIT MADIUN DAILY', $roster->firstWhere('nama_mantri', 'Nama Daily Legacy')['nama_uker']);
+        $this->assertNull($roster->firstWhere('nama_mantri', 'Mantri Kontrak'));
+        $this->assertNull($roster->firstWhere('nama_mantri', 'Mantri Recovery'));
+
+        $payload = $this->invokePrivateMethod($controller, 'mantriExtremeLowPayload', '2026-10-13', 'per_unit_kerja');
+        $ngawi = collect($payload['rows'])->firstWhere('nama_uker', 'UNIT NGAWI BARU');
+        $this->assertSame(2, (int) $ngawi['total_mantri']);
+        $this->assertSame(2, (int) $ngawi['buckets']['el_0_100']['deb']);
+        $this->assertSame(100.0, (float) $ngawi['extreme_low']['pct']);
+        $this->assertSame(3, (int) $payload['total']['total_mantri']);
     }
 
     public function test_extreme_low_mantri_view_offers_unit_kerja_and_branch_modes_without_click_detail(): void

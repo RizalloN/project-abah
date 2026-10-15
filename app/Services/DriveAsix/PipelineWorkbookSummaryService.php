@@ -147,7 +147,9 @@ class PipelineWorkbookSummaryService
             (string) filemtime($path),
         ]));
 
-        return Cache::remember($cacheKey, now()->addHours(12), function () use ($file, $path): array {
+        // The key already changes with the file content, so a long TTL only
+        // avoids re-parsing unchanged multi-MB workbooks every 12 hours.
+        return Cache::remember($cacheKey, now()->addDays(7), function () use ($file, $path): array {
             try {
                 $summary = $file->extension() === 'xlsx'
                     ? $this->summarizeXlsx($file, $path)
@@ -619,6 +621,8 @@ class PipelineWorkbookSummaryService
             return [];
         }
 
+        // Stream text nodes directly: re-parsing every <si> into a DOM
+        // document doubled the XML work for large shared-string tables.
         $reader = $this->openArchiveXml($path, 'xl/sharedStrings.xml');
         $strings = [];
         try {
@@ -626,16 +630,17 @@ class PipelineWorkbookSummaryService
                 if ($reader->nodeType !== XMLReader::ELEMENT || $reader->localName !== 'si') {
                     continue;
                 }
-                $outer = $reader->readOuterXml();
-                $document = new \DOMDocument;
-                if (! $document->loadXML($outer, LIBXML_NONET | LIBXML_COMPACT)) {
-                    $strings[] = '';
-
-                    continue;
-                }
                 $parts = [];
-                foreach ($document->getElementsByTagName('t') as $node) {
-                    $parts[] = $node->textContent;
+                if (! $reader->isEmptyElement) {
+                    $depth = $reader->depth;
+                    while ($reader->read()) {
+                        if ($reader->nodeType === XMLReader::END_ELEMENT && $reader->depth === $depth) {
+                            break;
+                        }
+                        if ($reader->nodeType === XMLReader::ELEMENT && $reader->localName === 't') {
+                            $parts[] = $reader->readString();
+                        }
+                    }
                 }
                 $strings[] = implode('', $parts);
             }
@@ -700,32 +705,55 @@ class PipelineWorkbookSummaryService
     /** @return \Generator<int, array<int, mixed>> */
     private function xlsxRows(string $path, string $entry, array $sharedStrings): \Generator
     {
+        // Single-pass XMLReader walk; avoids building a DOM document per row.
         $reader = $this->openArchiveXml($path, $entry);
+        $columnIndexes = [];
         try {
             while ($reader->read()) {
                 if ($reader->nodeType !== XMLReader::ELEMENT || $reader->localName !== 'row') {
                     continue;
                 }
                 $rowNumber = max(1, (int) $reader->getAttribute('r'));
-                $outer = $reader->readOuterXml();
-                $document = new \DOMDocument;
-                if (! $document->loadXML($outer, LIBXML_NONET | LIBXML_COMPACT)) {
-                    continue;
-                }
                 $values = [];
-                foreach ($document->getElementsByTagName('c') as $cell) {
-                    $reference = (string) $cell->getAttribute('r');
-                    if (preg_match('/^([A-Z]+)\d+$/i', $reference, $match) !== 1) {
-                        continue;
+                if (! $reader->isEmptyElement) {
+                    $rowDepth = $reader->depth;
+                    $cell = null;
+                    while ($reader->read()) {
+                        $nodeType = $reader->nodeType;
+                        if ($nodeType === XMLReader::END_ELEMENT && $reader->depth === $rowDepth) {
+                            break;
+                        }
+                        if ($nodeType !== XMLReader::ELEMENT) {
+                            continue;
+                        }
+                        $name = $reader->localName;
+                        if ($name === 'c') {
+                            $this->collectXlsxCell($values, $cell, $sharedStrings);
+                            $cell = null;
+                            $reference = (string) $reader->getAttribute('r');
+                            if (preg_match('/^([A-Z]+)\d+$/i', $reference, $match) !== 1) {
+                                continue;
+                            }
+                            $letters = strtoupper($match[1]);
+                            $column = $columnIndexes[$letters] ??= Coordinate::columnIndexFromString($letters);
+                            if ($column > self::MAX_COLUMNS) {
+                                continue;
+                            }
+                            $cell = [
+                                'column' => $column,
+                                'type' => (string) $reader->getAttribute('t'),
+                                'value' => null,
+                                'has_value' => false,
+                                'parts' => [],
+                            ];
+                        } elseif ($cell !== null && $name === 'v' && ! $cell['has_value']) {
+                            $cell['value'] = $reader->readString();
+                            $cell['has_value'] = true;
+                        } elseif ($cell !== null && $name === 't') {
+                            $cell['parts'][] = $reader->readString();
+                        }
                     }
-                    $column = Coordinate::columnIndexFromString(strtoupper($match[1]));
-                    if ($column > self::MAX_COLUMNS) {
-                        continue;
-                    }
-                    $value = $this->xlsxCellValue($cell, $sharedStrings);
-                    if ($this->hasValue($value)) {
-                        $values[$column] = $value;
-                    }
+                    $this->collectXlsxCell($values, $cell, $sharedStrings);
                 }
                 yield $rowNumber => $values;
             }
@@ -734,23 +762,34 @@ class PipelineWorkbookSummaryService
         }
     }
 
-    private function xlsxCellValue(\DOMElement $cell, array $sharedStrings): mixed
+    /**
+     * @param  array<int, mixed>  $values
+     * @param  array{column:int,type:string,value:?string,has_value:bool,parts:array<int,string>}|null  $cell
+     */
+    private function collectXlsxCell(array &$values, ?array $cell, array $sharedStrings): void
     {
-        $type = $cell->getAttribute('t');
-        if ($type === 'inlineStr') {
-            $parts = [];
-            foreach ($cell->getElementsByTagName('t') as $text) {
-                $parts[] = $text->textContent;
-            }
-
-            return implode('', $parts);
+        if ($cell === null) {
+            return;
         }
 
-        $values = $cell->getElementsByTagName('v');
-        if ($values->length < 1) {
+        $value = $this->xlsxCellValue($cell, $sharedStrings);
+        if ($this->hasValue($value)) {
+            $values[$cell['column']] = $value;
+        }
+    }
+
+    /** @param  array{type:string,value:?string,has_value:bool,parts:array<int,string>}  $cell */
+    private function xlsxCellValue(array $cell, array $sharedStrings): mixed
+    {
+        $type = $cell['type'];
+        if ($type === 'inlineStr') {
+            return implode('', $cell['parts']);
+        }
+
+        if (! $cell['has_value']) {
             return null;
         }
-        $value = $values->item(0)?->textContent;
+        $value = $cell['value'];
         if ($type === 's') {
             return $sharedStrings[(int) $value] ?? null;
         }

@@ -43,12 +43,12 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `recoverReportTable` | method | 12 | `app/Services/ManagedReportBackupRecoveryService.php:25` |
 | `up` | function | 12 | `database/migrations/2026_04_01_000004_secondary_ssa_cognos_reports.php:10` |
 | `CompressedDatabaseDumpRunner` | class | 10 | `app/Services/DatabaseBackup/CompressedDatabaseDumpRunner.php:9` |
+| `file-management.database-backup` | route | 10 | - |
 | `handle` | method | 10 | `app/Console/Commands/BackupDatabasePartCommand.php:23` |
 | `put` | method | 10 | `app/Support/DatabaseBackupStatusStore.php:16` |
 | `up` | function | 10 | `database/migrations/2026_04_27_optimize_import_indexes.php:20` |
-| `file-management.database-backup` | route | 9 | - |
+| `file-management.database-backup.status` | route | 9 | - |
 | `getColumnListing` | method | 9 | `app/Support/SchemaMetadataCache.php:54` |
-| `importSqlFileIntoCurrentDatabase` | method | 9 | `app/Services/ManagedReportBackupRecoveryService.php:306` |
 
 ## Route Nodes
 
@@ -103,10 +103,10 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | database -> dashboard-simpanan (checks_table) | 15 |
 | database -> dashboard-pinjaman (alters_table) | 15 |
 | database -> jobs-snapshots (checks_table) | 14 |
+| database -> access-control (protected_by) | 13 |
 | database -> jobs-snapshots (defines_table) | 12 |
 | database -> import (uses_table) | 11 |
 | database -> dashboard-pinjaman (defines_table) | 11 |
-| database -> access-control (protected_by) | 11 |
 | database -> core (alters_table) | 10 |
 | database -> import (alters_table) | 10 |
 | database -> core (defines_table) | 9 |

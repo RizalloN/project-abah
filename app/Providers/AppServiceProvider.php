@@ -33,6 +33,8 @@ class AppServiceProvider extends ServiceProvider
         $this->registerSchemaMetadataCache();
 
         $this->app->singleton(LandingLoanRiskCacheService::class);
+        // Scoped: archive verification memo lives for one request or queue job.
+        $this->app->scoped(\App\Support\ConsumerRmPositionHistoryStore::class);
 
         // Bind optimized services for Phase 2
         $this->app->bind(

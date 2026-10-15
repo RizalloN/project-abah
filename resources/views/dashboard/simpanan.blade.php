@@ -2935,6 +2935,12 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+  function escapeNominatifHtml(value) {
+    return String(value).replace(/[&<>"']/g, char => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[char]));
+  }
+
   // Store Data from PHP
   window.simpananDigitalChannelData = @json($digitalChannelStrategy ?? []);
   window.simpananTrendSvgByScope = @json($trendScopesSvg ?? []);
@@ -3587,11 +3593,11 @@ document.addEventListener('DOMContentLoaded', function() {
         html += `
           <tr>
             <td class="text-center font-weight-bold text-muted" style="font-size: 0.72rem;">${rowNo}</td>
-            <td><span class="badge-kc-pill">${r.cabang || '-'}</span></td>
-            <td><span class="badge ${bCls} badge-eco-pill">${label}</span></td>
-            <td class="font-weight-bold text-dark">${r.nama || '-'}</td>
-            <td class="text-muted" style="font-size: 0.72rem; font-family: monospace;">${r.norek || '-'}</td>
-            <td class="text-right font-weight-bold" style="color: #0857c3; font-size: 0.85rem;">${saldoFmt}</td>
+            <td><span class="badge-kc-pill">${escapeNominatifHtml(r.cabang || '-')}</span></td>
+            <td><span class="badge ${bCls} badge-eco-pill">${escapeNominatifHtml(label)}</span></td>
+            <td class="font-weight-bold text-dark">${escapeNominatifHtml(r.nama || '-')}</td>
+            <td class="text-muted" style="font-size: 0.72rem; font-family: monospace;">${escapeNominatifHtml(r.norek || '-')}</td>
+            <td class="text-right font-weight-bold" style="color: #0857c3; font-size: 0.85rem;">${escapeNominatifHtml(saldoFmt)}</td>
           </tr>`;
       });
       ecoModalTableBody.innerHTML = html;
@@ -3781,18 +3787,18 @@ document.addEventListener('DOMContentLoaded', function() {
           <tr>
             <td class="text-center font-weight-bold text-muted" style="font-size: 0.72rem;">${idx + 1}</td>
             <td>
-              <div class="font-weight-bold text-dark">${r.partner || r.namaPartner || '-'}</div>
-              <small class="text-muted">${r.bidang_usaha || r.bidangUsaha || '-'}</small>
+              <div class="font-weight-bold text-dark">${escapeNominatifHtml(r.partner || r.namaPartner || '-')}</div>
+              <small class="text-muted">${escapeNominatifHtml(r.bidang_usaha || r.bidangUsaha || '-')}</small>
             </td>
-            <td><span class="badge-kc-pill">${r.kc || r.branchOffice || '-'}</span></td>
-            <td><span class="badge" style="background:#eff6ff; color:#0857c3; font-size:0.75rem; font-weight:700;">${r.perusahaan_anak || r.perusahaanAnak || '-'}</span></td>
+            <td><span class="badge-kc-pill">${escapeNominatifHtml(r.kc || r.branchOffice || '-')}</span></td>
+            <td><span class="badge" style="background:#eff6ff; color:#0857c3; font-size:0.75rem; font-weight:700;">${escapeNominatifHtml(r.perusahaan_anak || r.perusahaanAnak || '-')}</span></td>
             <td class="text-center">
-              <span class="badge ${badgeCls}">${r.status}</span>
+              <span class="badge ${badgeCls}">${escapeNominatifHtml(r.status)}</span>
             </td>
-            <td style="font-family: monospace; font-size: 0.75rem;">${r.cif || r.cifNo || '-'}</td>
-            <td class="text-right text-muted" style="font-size: 0.75rem;">${r.saldo_juli_fmt || 'Rp 0'}</td>
-            <td class="text-right text-muted" style="font-size: 0.75rem;">${r.saldo_agustus_fmt || 'Rp 0'}</td>
-            <td class="text-right font-weight-bold" style="${sepColor}; font-size: 0.85rem;">${r.saldo_september_fmt || 'Rp 0'}</td>
+            <td style="font-family: monospace; font-size: 0.75rem;">${escapeNominatifHtml(r.cif || r.cifNo || '-')}</td>
+            <td class="text-right text-muted" style="font-size: 0.75rem;">${escapeNominatifHtml(r.saldo_juli_fmt || 'Rp 0')}</td>
+            <td class="text-right text-muted" style="font-size: 0.75rem;">${escapeNominatifHtml(r.saldo_agustus_fmt || 'Rp 0')}</td>
+            <td class="text-right font-weight-bold" style="${sepColor}; font-size: 0.85rem;">${escapeNominatifHtml(r.saldo_september_fmt || 'Rp 0')}</td>
           </tr>`;
       });
       paModalTableBody.innerHTML = html;

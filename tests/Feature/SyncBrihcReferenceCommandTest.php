@@ -32,6 +32,7 @@ class SyncBrihcReferenceCommandTest extends TestCase
         Schema::create('brihc_pemasar', function (Blueprint $table): void {
             $table->string('uniqueid_namareport')->primary();
             $table->string('completename')->nullable();
+            $table->string('nip')->nullable();
             $table->string('pernr')->nullable();
             $table->string('sex')->nullable();
             $table->string('age')->nullable();
@@ -47,6 +48,7 @@ class SyncBrihcReferenceCommandTest extends TestCase
             $table->string('pn_mantri')->nullable();
             $table->string('status')->nullable();
             $table->string('jg')->nullable();
+            $table->string('pg')->nullable();
             $table->string('tmt_masuk')->nullable();
             $table->string('tmt_jabatan')->nullable();
             $table->timestamps();
@@ -318,6 +320,195 @@ class SyncBrihcReferenceCommandTest extends TestCase
             'bc' => '552',
             'positiondesc' => 'RM BISNIS KECIL',
         ]);
+    }
+
+    public function test_it_syncs_complete_mantri_hc_roster_and_preserves_unrelated_references_and_tmt(): void
+    {
+        $timestamp = now();
+        $references = [
+            ['id' => 'old-madiun', 'pn' => '200', 'role' => 'MANTRI', 'branch' => 'KC Madiun'],
+            ['id' => 'stale-ngawi', 'pn' => '801', 'role' => 'MANTRI', 'branch' => 'KC Ngawi'],
+            ['id' => 'stale-briguna', 'pn' => '802', 'role' => 'MANTRI BRIGUNA', 'branch' => 'KC Magetan'],
+            ['id' => 'stale-recovery', 'pn' => '803', 'role' => 'MANTRI RECOVERY', 'branch' => 'KC Ponorogo'],
+            ['id' => 'keep-collection', 'pn' => '804', 'role' => 'MANTRI COLLECTION', 'branch' => 'KC Madiun'],
+            ['id' => 'keep-rm-small', 'pn' => '805', 'role' => 'RM BISNIS KECIL', 'branch' => 'KC Madiun'],
+            ['id' => 'keep-kaunit', 'pn' => '806', 'role' => 'KAUNIT', 'branch' => 'KC Ngawi'],
+            ['id' => 'keep-outside-area', 'pn' => '807', 'role' => 'MANTRI', 'branch' => 'KC Situbondo'],
+        ];
+        foreach ($references as $reference) {
+            $this->app['db']->table('brihc')->insert([
+                'uniqueid_brihc' => $reference['id'], 'pn' => $reference['pn'],
+                'nama' => 'Nama Lama '.$reference['pn'], 'jabatan' => $reference['role'],
+                'created_at' => $timestamp, 'updated_at' => $timestamp,
+            ]);
+            $this->app['db']->table('brihc_pemasar')->insert([
+                'uniqueid_namareport' => $reference['id'], 'pernr' => $reference['pn'],
+                'completename' => 'Nama Lama '.$reference['pn'], 'positiondesc' => $reference['role'],
+                'psadesc' => $reference['branch'], 'bc' => '9999', 'orgdesc' => 'UNIT LAMA',
+                'sex' => 'P', 'age' => '37', 'padesc' => 'Region Tersimpan', 'mkj' => '4 tahun',
+                'descprogrammasuk' => 'PDP', 'status' => 'AKTIF',
+                'tmt_masuk' => '2010-02-03', 'tmt_jabatan' => '2024-01-02',
+                'created_at' => $timestamp, 'updated_at' => $timestamp,
+            ]);
+        }
+        $retainedIds = ['keep-collection', 'keep-rm-small', 'keep-kaunit', 'keep-outside-area'];
+        $retainedBefore = $this->app['db']->table('brihc_pemasar')->whereIn('uniqueid_namareport', $retainedIds)->orderBy('uniqueid_namareport')->get()->all();
+        $versions = collect(['pinjaman', 'consumer', 'brihc'])->mapWithKeys(fn (string $name): array => [$name => ReportCacheVersion::get($name)]);
+        $rowsBySheet = $this->mantriHcRows();
+        $path = $this->writeMantriHcWorkbook($rowsBySheet);
+
+        try {
+            $this->artisan('reference:sync-brihc', ['file' => $path])
+                ->expectsOutputToContain('"source_format": "update_hc"')
+                ->assertExitCode(0);
+        } finally {
+            @unlink($path);
+        }
+
+        $expected = collect($rowsBySheet)->flatten(1)->map(fn (array $row): array => [
+            'pn' => ltrim($row[2], '0'), 'name' => $row[3], 'branch' => $row[0],
+            'employment' => $row[4], 'jg' => $row[5], 'pg' => $row[6],
+            'role' => $row[7], 'bc' => ltrim($row[8], '0'), 'unit' => $row[9], 'nip' => $row[1],
+        ])->keyBy('pn');
+        $imported = $this->app['db']->table('brihc_pemasar')->where('uniqueid_namareport', 'like', 'reference_brihc_hc_%')->get()->keyBy('pernr');
+        $this->assertCount($expected->count(), $imported);
+        $this->assertSame($expected->keys()->sort()->values()->all(), $imported->keys()->sort()->values()->all());
+        foreach ($expected as $pn => $source) {
+            $actual = $imported->get($pn);
+            foreach (['name' => 'completename', 'branch' => 'psadesc', 'employment' => 'esgdesc', 'jg' => 'jg', 'pg' => 'pg', 'role' => 'positiondesc', 'bc' => 'bc', 'unit' => 'orgdesc', 'nip' => 'nip'] as $sourceField => $column) {
+                $this->assertSame($source[$sourceField], $actual->{$column}, "PN {$pn}: {$column}");
+            }
+            $this->assertDatabaseHas('brihc', ['pn' => (string) $pn, 'nama' => $source['name'], 'jabatan' => $source['role']]);
+        }
+        $this->assertDatabaseHas('brihc_pemasar', [
+            'pernr' => '200', 'sex' => 'P', 'age' => '37', 'padesc' => 'Region Tersimpan',
+            'mkj' => '4 tahun', 'descprogrammasuk' => 'PDP', 'status' => 'AKTIF',
+            'tmt_masuk' => '2010-02-03', 'tmt_jabatan' => '2024-01-02',
+        ]);
+        foreach (['old-madiun', 'stale-ngawi', 'stale-briguna', 'stale-recovery'] as $id) {
+            $this->assertDatabaseMissing('brihc_pemasar', ['uniqueid_namareport' => $id]);
+            $this->assertDatabaseMissing('brihc', ['uniqueid_brihc' => $id]);
+        }
+        $this->assertEquals($retainedBefore, $this->app['db']->table('brihc_pemasar')->whereIn('uniqueid_namareport', $retainedIds)->orderBy('uniqueid_namareport')->get()->all());
+        foreach ($retainedIds as $id) {
+            $this->assertDatabaseHas('brihc', ['uniqueid_brihc' => $id]);
+        }
+        $this->assertSame($versions['pinjaman'] + 1, ReportCacheVersion::get('pinjaman'));
+        $this->assertSame($versions['brihc'] + 1, ReportCacheVersion::get('brihc'));
+        $this->assertSame($versions['consumer'] + 1, ReportCacheVersion::get('consumer'));
+    }
+
+    public function test_mantri_hc_dry_run_preserves_rows_and_cache_versions(): void
+    {
+        $this->seedMantriHcGuardRow();
+        $before = $this->mantriHcDatabaseState();
+        $path = $this->writeMantriHcWorkbook($this->mantriHcRows());
+        try {
+            $this->artisan('reference:sync-brihc', ['file' => $path, '--dry-run' => true])
+                ->expectsOutputToContain('"dry_run": true')
+                ->assertExitCode(0);
+        } finally {
+            @unlink($path);
+        }
+        $this->assertEquals($before, $this->mantriHcDatabaseState());
+    }
+
+    public function test_mantri_hc_preserves_nonbreaking_spaces_in_source_names(): void
+    {
+        $rows = $this->mantriHcRows();
+        $name = "Rakhit\u{00A0}\u{00A0}Wibawanto";
+        $rows['Mantri Tumbuh'][0][3] = $name;
+        $path = $this->writeMantriHcWorkbook($rows);
+
+        try {
+            $this->artisan('reference:sync-brihc', ['file' => $path])->assertExitCode(0);
+        } finally {
+            @unlink($path);
+        }
+
+        $this->assertSame($name, $this->app['db']->table('brihc_pemasar')->where('pernr', '200')->value('completename'));
+        $this->assertSame($name, $this->app['db']->table('brihc')->where('pn', '200')->value('nama'));
+    }
+
+    public function test_mantri_hc_rejects_conflicting_duplicate_pn_before_any_mutation(): void
+    {
+        $rows = $this->mantriHcRows();
+        $conflict = $rows['Mantri Tumbuh'][0];
+        $conflict[3] = 'Nama Bertentangan';
+        $rows['Mantri Tumbuh'][] = $conflict;
+        $this->assertMantriHcWorkbookRejectedWithoutChanges($rows);
+    }
+
+    public function test_mantri_hc_rejects_missing_required_values_and_role_sheet_mismatch_atomically(): void
+    {
+        foreach ([2, 3, 8, 9] as $column) {
+            $rows = $this->mantriHcRows();
+            $rows['Mantri Tumbuh'][0][$column] = null;
+            $this->assertMantriHcWorkbookRejectedWithoutChanges($rows);
+        }
+        $rows = $this->mantriHcRows();
+        $rows['Mantri Recovery'][0][7] = 'RM BISNIS KECIL';
+        $this->assertMantriHcWorkbookRejectedWithoutChanges($rows);
+    }
+
+    private function assertMantriHcWorkbookRejectedWithoutChanges(array $rows): void
+    {
+        $this->seedMantriHcGuardRow();
+        $before = $this->mantriHcDatabaseState();
+        $path = $this->writeMantriHcWorkbook($rows);
+        try {
+            $this->artisan('reference:sync-brihc', ['file' => $path])->assertExitCode(1);
+            $this->artisan('reference:sync-brihc', ['file' => $path, '--dry-run' => true])->assertExitCode(1);
+        } finally {
+            @unlink($path);
+        }
+        $this->assertEquals($before, $this->mantriHcDatabaseState());
+    }
+
+    private function seedMantriHcGuardRow(): void
+    {
+        $this->app['db']->table('brihc')->updateOrInsert(['uniqueid_brihc' => 'guard-row'], ['pn' => '999', 'nama' => 'Mantri Tetap', 'jabatan' => 'MANTRI']);
+        $this->app['db']->table('brihc_pemasar')->updateOrInsert(['uniqueid_namareport' => 'guard-row'], ['pernr' => '999', 'completename' => 'Mantri Tetap', 'positiondesc' => 'MANTRI', 'psadesc' => 'KC Madiun']);
+    }
+
+    private function mantriHcDatabaseState(): array
+    {
+        return [
+            $this->app['db']->table('brihc')->orderBy('uniqueid_brihc')->get()->all(),
+            $this->app['db']->table('brihc_pemasar')->orderBy('uniqueid_namareport')->get()->all(),
+            collect(['pinjaman', 'consumer', 'brihc'])->mapWithKeys(fn (string $name): array => [$name => ReportCacheVersion::get($name)])->all(),
+        ];
+    }
+
+    private function mantriHcRows(): array
+    {
+        return [
+            'Mantri Tumbuh' => [
+                ['KC Madiun', 'NIP-200', '000200', 'Mantri Madiun Baru', 'PT', 'JG05', 'PG06', 'MANTRI', '003200', 'UNIT MADIUN BARU'],
+                ['KC Ngawi', 'NIP-201', '000201', 'Mantri Ngawi Baru', 'KONTRAK', 'JG04', 'PG05', 'MANTRI', '003201', 'UNIT NGAWI BARU'],
+            ],
+            'Mantri Briguna' => [
+                ['KC Magetan', 'NIP-300', '000300', 'Mantri Briguna Baru', 'PT', 'JG06', 'PG07', 'MANTRI BRIGUNA', '000049', 'KC MAGETAN'],
+            ],
+            'Mantri Recovery' => [
+                ['KC Ponorogo', 'NIP-400', '000400', 'Mantri Recovery Baru', 'PT', 'JG05', 'PG06', 'MANTRI RECOVERY', '003202', 'UNIT PONOROGO BARU'],
+            ],
+        ];
+    }
+
+    private function writeMantriHcWorkbook(array $rowsBySheet): string
+    {
+        $path = tempnam(sys_get_temp_dir(), 'mantri_hc_').'.xlsx';
+        $spreadsheet = new Spreadsheet;
+        $spreadsheet->getActiveSheet()->setTitle('Rekap');
+        $spreadsheet->getActiveSheet()->fromArray([['Ringkasan'], ['Bukan nominatif sumber']]);
+        $headers = ['PSADESC', 'NIP', 'PERNR', 'COMPLETENAME', 'ESGDESC', 'JG', 'PG', 'JOBDESC', 'BC', 'UKER'];
+        foreach ($rowsBySheet as $title => $rows) {
+            $spreadsheet->createSheet()->setTitle($title)->fromArray(array_merge([$headers], $rows));
+        }
+        (new Xlsx($spreadsheet))->save($path);
+
+        return $path;
     }
 
     public function test_it_syncs_update_hc_with_exact_roles_and_preserves_missing_ponorogo_assignment(): void

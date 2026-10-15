@@ -55,6 +55,12 @@ class SyncBrihcReferenceCommand extends Command
 
     private const UPDATE_HC_SHEETS = ['MADIUN', 'MAGETAN', 'NGAWI', 'PONOROGO'];
 
+    private const UPDATE_HC_MANTRI_SHEETS = [
+        'MANTRITUMBUH' => 'MANTRI',
+        'MANTRIBRIGUNA' => 'MANTRI BRIGUNA',
+        'MANTRIRECOVERY' => 'MANTRI RECOVERY',
+    ];
+
     private const HEADER_SCAN_COLUMN_LIMIT = 64;
 
     private const HEADER_SCAN_ROW_LIMIT = 50;
@@ -83,6 +89,7 @@ class SyncBrihcReferenceCommand extends Command
                 throw new RuntimeException('Tidak ada baris BRIHC yang valid untuk disinkronkan.');
             }
 
+            $source = $this->preserveMantriReferenceFields($source);
             $source = $this->resolveIncompleteReferenceFields($source);
             $source['stale_brihc_pairs'] = $source['format'] === 'update_hc'
                 ? $this->scopedReferencePairs($source['role_tokens'], $source['branch_labels'])
@@ -219,6 +226,9 @@ class SyncBrihcReferenceCommand extends Command
         $reader = IOFactory::createReaderForFile($path);
         $reader->setReadDataOnly(true);
         $workbook = $reader->load($path);
+        if ($this->isMantriUpdateHcWorkbook($workbook)) {
+            return $this->readMantriUpdateHcSourceRows($workbook);
+        }
         if ($this->isUpdateHcWorkbook($workbook)) {
             return $this->readUpdateHcSourceRows($workbook);
         }
@@ -320,6 +330,190 @@ class SyncBrihcReferenceCommand extends Command
 
         return collect(array_merge(['REKAP'], self::UPDATE_HC_SHEETS))
             ->every(fn (string $name): bool => $sheetNames->contains($name));
+    }
+
+    private function isMantriUpdateHcWorkbook(Spreadsheet $workbook): bool
+    {
+        foreach ($workbook->getSheetNames() as $name) {
+            if (array_key_exists($this->normalizeHeader($name), self::UPDATE_HC_MANTRI_SHEETS)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** @return array<string, mixed> */
+    private function readMantriUpdateHcSourceRows(Spreadsheet $workbook): array
+    {
+        $sheetsByName = collect($workbook->getWorksheetIterator())
+            ->mapWithKeys(fn (Worksheet $sheet): array => [$this->normalizeHeader($sheet->getTitle()) => $sheet]);
+        foreach (array_merge(['REKAP'], array_keys(self::UPDATE_HC_MANTRI_SHEETS)) as $sheetName) {
+            if (! $sheetsByName->get($sheetName) instanceof Worksheet) {
+                throw new RuntimeException("Sheet Update HC Mantri wajib tidak ditemukan: {$sheetName}");
+            }
+        }
+
+        $records = [];
+        $pnLocations = [];
+        $branchLabels = [];
+        $sourceRows = 0;
+        $duplicates = 0;
+        foreach (self::UPDATE_HC_MANTRI_SHEETS as $sheetName => $expectedRole) {
+            /** @var Worksheet $sheet */
+            $sheet = $sheetsByName->get($sheetName);
+            $headers = $this->headerIndexes($sheet, 1);
+            if (! $this->hasHeaders($headers, self::UPDATE_HC_REQUIRED_HEADERS)) {
+                $missing = array_values(array_diff(self::UPDATE_HC_REQUIRED_HEADERS, array_keys($headers)));
+                throw new RuntimeException('Header sheet '.$sheet->getTitle().' tidak lengkap: '.implode(', ', $missing));
+            }
+            $seenHeaders = [];
+            for ($column = 1; $column <= self::HEADER_SCAN_COLUMN_LIMIT; $column++) {
+                $header = $this->normalizeHeader($sheet->getCell(Coordinate::stringFromColumnIndex($column).'1')->getFormattedValue());
+                if (in_array($header, self::UPDATE_HC_REQUIRED_HEADERS, true) && isset($seenHeaders[$header])) {
+                    throw new RuntimeException('Header ganda pada sheet '.$sheet->getTitle().': '.$header);
+                }
+                $seenHeaders[$header] = true;
+            }
+
+            for ($rowNumber = 2; $rowNumber <= $sheet->getHighestDataRow(); $rowNumber++) {
+                $values = [];
+                foreach (self::UPDATE_HC_REQUIRED_HEADERS as $header) {
+                    $values[$header] = $this->sourceValue($sheet, $rowNumber, $headers, $header);
+                }
+                if (count(array_filter($values, static fn (?string $value): bool => $value !== null)) === 0) {
+                    continue;
+                }
+
+                $sourceRows++;
+                $location = $sheet->getTitle().' baris '.$rowNumber;
+                $pn = $this->normalizePn($values['PERNR']);
+                $name = trim((string) $values['COMPLETENAME']);
+                if ($pn === '' || preg_match('/^\d+$/D', (string) $values['PERNR']) !== 1 || $name === '') {
+                    throw new RuntimeException("PN/nama target kosong atau tidak valid pada sheet {$location}.");
+                }
+                $role = match ($this->normalizeRole($values['JOBDESC'])) {
+                    'ASSOCIATE MANTRI 1', 'ASSOCIATE MANTRI 2', 'JUNIOR ASSOCIATE MANTRI', 'MANTRI' => 'MANTRI',
+                    'MANTRI BRIGUNA' => 'MANTRI BRIGUNA',
+                    'MANTRI RECOVERY' => 'MANTRI RECOVERY',
+                    default => '',
+                };
+                if ($role !== $expectedRole) {
+                    throw new RuntimeException("JOBDESC tidak sesuai sheet {$location}: ".(string) $values['JOBDESC']);
+                }
+                $branch = $this->area6Branch($values['PSADESC']);
+                if ($branch === null || ! in_array(
+                    $this->normalizeHeader($values['PSADESC']),
+                    [$this->normalizeHeader($branch['label']), $this->normalizeHeader(substr($branch['label'], 3))],
+                    true
+                )) {
+                    throw new RuntimeException("PSADESC tidak valid pada sheet {$location}.");
+                }
+                $bc = $this->normalizeCode($values['BC']);
+                if ($bc === '' || preg_match('/^\d+$/D', (string) $values['BC']) !== 1 || $values['UKER'] === null) {
+                    throw new RuntimeException("BC/UKER kosong atau tidak valid pada sheet {$location}.");
+                }
+
+                $record = [
+                    'pn' => $pn,
+                    'nama' => $name,
+                    'jabatan' => $role,
+                    'gender' => null,
+                    'jg' => $values['JG'],
+                    'age' => null,
+                    'esgdesc' => $values['ESGDESC'],
+                    'padesc' => 'Region 13 Malang',
+                    'psadesc' => $branch['label'],
+                    'orgdesc' => $values['UKER'],
+                    'mkj' => null,
+                    'descprogrammasuk' => null,
+                    'bc' => $bc,
+                    'tmt_masuk' => null,
+                    'tmt_jabatan' => null,
+                    'nip' => $values['NIP'],
+                    'pg' => $values['PG'],
+                    'reference_prefix' => 'reference_brihc_hc_',
+                    'source_jobdesc' => $this->normalizeRole($values['JOBDESC']),
+                ];
+                $key = $this->referenceRecordKey($pn, $role);
+                if (isset($pnLocations[$pn])) {
+                    if (! isset($records[$key]) || $records[$key] !== $record) {
+                        throw new RuntimeException("PN {$pn} memiliki penugasan yang bertentangan pada {$pnLocations[$pn]} dan {$location}.");
+                    }
+                    $duplicates++;
+
+                    continue;
+                }
+
+                $records[$key] = $record;
+                $pnLocations[$pn] = $location;
+                $branchLabels[$branch['label']] = $branch['label'];
+            }
+        }
+
+        $roles = array_values(self::UPDATE_HC_MANTRI_SHEETS);
+
+        return [
+            'source_rows' => $sourceRows,
+            'rows' => $records,
+            'duplicate_pn_skipped' => $duplicates,
+            'role_tokens' => array_combine($roles, $roles),
+            'format' => 'update_hc',
+            'layout' => 'update_hc_mantri_roles',
+            'sync_brihc_pemasar' => true,
+            'branch_labels' => array_values($branchLabels),
+        ];
+    }
+
+    /** @param array<string, mixed> $source @return array<string, mixed> */
+    private function preserveMantriReferenceFields(array $source): array
+    {
+        if (($source['layout'] ?? null) !== 'update_hc_mantri_roles') {
+            return $source;
+        }
+
+        $availableColumns = Schema::getColumnListing('brihc_pemasar');
+        $preservedColumns = array_values(array_diff($availableColumns, [
+            'id', 'uniqueid_namareport', 'completename', 'nip', 'pernr', 'esgdesc', 'psadesc',
+            'orgdesc', 'positiondesc', 'jobgrade', 'pg', 'bc', 'pn_mantri', 'jg', 'created_at', 'updated_at',
+        ]));
+        $existing = DB::table('brihc_pemasar')
+            ->select(array_merge(['pernr', 'positiondesc', 'psadesc'], $preservedColumns))
+            ->whereIn(DB::raw("UPPER(TRIM(COALESCE(positiondesc, '')))"), array_values($source['role_tokens']))
+            ->get()
+            ->groupBy(fn ($row): string => $this->referenceRecordKey(
+                $this->normalizePn((string) ($row->pernr ?? '')),
+                $this->normalizeRole((string) ($row->positiondesc ?? ''))
+            ));
+
+        foreach ($source['rows'] as $key => &$record) {
+            $matches = $existing->get($key, collect());
+            $sameBranch = $matches->filter(fn ($row): bool => $this->normalizeHeader($row->psadesc ?? '') === $this->normalizeHeader($record['psadesc']));
+            if ($sameBranch->isNotEmpty()) {
+                $matches = $sameBranch;
+            }
+            $record['preserved_pemasar_fields'] = array_fill_keys($preservedColumns, null);
+            if ($matches->isEmpty() && in_array('padesc', $preservedColumns, true)) {
+                $record['preserved_pemasar_fields']['padesc'] = $record['padesc'];
+            }
+            foreach ($preservedColumns as $column) {
+                $values = $matches->map(fn ($row): mixed => $row->{$column})
+                    ->filter(static fn (mixed $value): bool => $value !== null && trim((string) $value) !== '')
+                    ->unique()
+                    ->values();
+                if ($values->count() > 1) {
+                    throw new RuntimeException("Nilai referensi lama {$column} bertentangan untuk PN {$record['pn']} {$record['jabatan']}.");
+                }
+                if ($values->isNotEmpty()) {
+                    $record['preserved_pemasar_fields'][$column] = $values->first();
+                } elseif ($matches->isNotEmpty()) {
+                    $record['preserved_pemasar_fields'][$column] = $matches->first()->{$column};
+                }
+            }
+        }
+        unset($record);
+
+        return $source;
     }
 
     /**
@@ -908,6 +1102,13 @@ class SyncBrihcReferenceCommand extends Command
                 'created_at' => $timestamp,
                 'updated_at' => $timestamp,
             ];
+
+            foreach (['nip', 'pg'] as $column) {
+                if (array_key_exists($column, $record)) {
+                    $row[$column] = $record[$column];
+                }
+            }
+            $row = array_replace($row, $record['preserved_pemasar_fields'] ?? []);
 
             return array_filter(
                 $row,

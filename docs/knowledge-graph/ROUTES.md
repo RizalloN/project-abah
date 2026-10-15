@@ -2,8 +2,8 @@
 
 | Methods | URI | Name | Domain | Handler |
 | --- | --- | --- | --- | --- |
-| POST | `confirm-password` | `generated::GpEivTApv58QNiap` | access-control | `App\Http\Controllers\Auth\ConfirmablePasswordController::store` |
-| POST | `login` | `generated::rGCbTSYpYYfWcigW` | access-control | `App\Http\Controllers\Auth\AuthenticatedSessionController::store` |
+| POST | `login` | `generated::ExqIPAhwDvzTzTur` | access-control | `App\Http\Controllers\Auth\AuthenticatedSessionController::store` |
+| POST | `confirm-password` | `generated::uH9UL7XKsBg7PlyS` | access-control | `App\Http\Controllers\Auth\ConfirmablePasswordController::store` |
 | GET | `login` | `login` | access-control | `App\Http\Controllers\Auth\AuthenticatedSessionController::create` |
 | POST | `logout` | `logout` | access-control | `App\Http\Controllers\Auth\AuthenticatedSessionController::destroy` |
 | GET | `confirm-password` | `password.confirm` | access-control | `App\Http\Controllers\Auth\ConfirmablePasswordController::show` |
@@ -52,7 +52,7 @@
 | POST | `file-management/delete` | `file-management.destroy` | core | `App\Http\Controllers\Admin\FileManagementController::destroy` |
 | GET | `file-management/download` | `file-management.download` | core | `App\Http\Controllers\Admin\FileManagementDownloadController::__invoke` |
 | GET | `file-management` | `file-management.index` | core | `App\Http\Controllers\Admin\FileManagementController::index` |
-| GET | `up` | `generated::SdvcnUDqWZA1cuy6` | core | Closure |
+| GET | `up` | `generated::bSLEt1OjTLM2Hotr` | core | Closure |
 | GET | `/` | `home` | core | Closure |
 | GET | `link-management` | `link-management.index` | core | `App\Http\Controllers\Admin\LinkManagementController::index` |
 | POST | `link-management` | `link-management.update` | core | `App\Http\Controllers\Admin\LinkManagementController::update` |
@@ -107,6 +107,8 @@
 | GET | `report/dashboard-pinjaman/tunggakan-kecil/filters` | `report.dashboard-pinjaman.tunggakan-kecil.filters` | dashboard-pinjaman | `App\Http\Controllers\DashboardPinjamanReportController::smallArrearsFilters` |
 | POST | `report/data/newpayroll` | `report.data.newpayroll` | dashboard-pinjaman | `App\Http\Controllers\Report\NewPayrollReportController::fetchData` |
 | GET | `report/peningkatan-payroll-berkualitas/kinerja-new-payroll` | `report.kinerja.newpayroll` | dashboard-pinjaman | `App\Http\Controllers\Report\NewPayrollReportController::index` |
+| GET | `report/kpi/insentif-mantri` | `report.kpi.insentif-mantri` | dashboard-pinjaman | `App\Http\Controllers\Report\InsentifMantriReportController::index` |
+| GET | `report/kpi/insentif-mantri/nominatif` | `report.kpi.insentif-mantri.export` | dashboard-pinjaman | `App\Http\Controllers\Report\InsentifMantriReportController::export` |
 | GET | `dashboard` | `dashboard` | dashboard-simpanan | `App\Http\Controllers\DashboardSimpananController::index` |
 | GET | `dashboard/area6-data` | `dashboard.area6-data` | dashboard-simpanan | `App\Http\Controllers\DashboardSimpananController::area6Data` |
 | GET | `dashboard/consumer-operations` | `dashboard.consumer-operations` | dashboard-simpanan | `App\Http\Controllers\DashboardSimpananController::consumerOperations` |

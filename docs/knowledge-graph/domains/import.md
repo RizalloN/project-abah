@@ -7,14 +7,14 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Kind | Count |
 | --- | ---: |
 | command | 8 |
-| file | 105 |
-| method | 1886 |
+| file | 106 |
+| method | 1887 |
 | route | 158 |
 | class | 86 |
 | trait | 7 |
 | interface | 1 |
 | table | 22 |
-| view | 11 |
+| view | 12 |
 
 ## Main Hubs
 
@@ -41,8 +41,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `ImportJobManagementController` | class | 40 | `app/Http/Controllers/Import/ImportJobManagementController.php:19` |
 | `processFastPathBulkCsvStream` | method | 40 | `app/Http/Controllers/Import/ImportExcelController.php:9139` |
 | `Gi405RecDhImportExcelController` | class | 39 | `app/Http/Controllers/Import/Gi405RecDhImportExcelController.php:20` |
+| `import.index` | route | 39 | - |
 | `initializeQueuedImportJobForExecution` | method | 39 | `app/Http/Controllers/Import/ImportExcelController.php:13435` |
-| `import.index` | route | 38 | - |
 | `ExcelStagingService` | class | 37 | `app/Services/Import/ExcelStagingService.php:7` |
 | `buildImportContext` | method | 36 | `app/Http/Controllers/Import/ImportExcelController.php:3717` |
 | `initExcelImport` | method | 36 | `app/Http/Controllers/Import/ImportExcelController.php:13889` |
@@ -247,6 +247,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `import.index` - `resources/views/import/index.blade.php`
 - `import.job-management` - `resources/views/import/job-management.blade.php`
 - `import.partials.report-management-scripts` - `resources/views/import/partials/report-management-scripts.blade.php`
+- `import.partials.swal-modern` - `resources/views/import/partials/swal-modern.blade.php`
 - `import.preview` - `resources/views/import/preview.blade.php`
 - `import.preview_excel` - `resources/views/import/preview_excel.blade.php`
 - `import.report-management` - `resources/views/import/report-management.blade.php`
@@ -285,7 +286,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Direction | Count |
 | --- | ---: |
-| import -> access-control (protected_by) | 815 |
+| import -> access-control (protected_by) | 973 |
 | import -> core (calls) | 562 |
 | import -> core (instantiates) | 271 |
 | import -> core (accepts) | 189 |

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Models\User;
+use App\Support\AuthenticatedSessionContext;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -53,6 +54,7 @@ class AuthenticatedSessionController extends Controller
         Auth::guard('web')->login($user, $request->boolean('remember'));
 
         $request->session()->regenerate();
+        AuthenticatedSessionContext::store($request->session(), $user);
     }
 
     private function ensureDatabaseIsReachable(): void

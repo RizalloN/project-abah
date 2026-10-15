@@ -20,7 +20,7 @@ class SecurityHeadersMiddleware
         return $this->withSecurityHeaders($response, $request);
     }
 
-    private function withSecurityHeaders(Response $response, Request $request): Response
+    public function withSecurityHeaders(Response $response, Request $request): Response
     {
         $response->headers->remove('X-Powered-By');
         if (function_exists('header_remove') && ! headers_sent()) {
@@ -51,7 +51,12 @@ class SecurityHeadersMiddleware
             $response->headers->set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
         }
 
-        if (auth()->check() || $this->isAuthenticationRequest($request)) {
+        $guard = auth()->guard();
+        $hasAuthenticatedSession = $request->hasSession()
+            && $request->session()->has($guard->getName());
+
+        if ($guard->hasUser() || $hasAuthenticatedSession
+            || $this->isAuthenticationRequest($request) || $response->getStatusCode() >= 400) {
             $response->headers->set('Cache-Control', 'no-store, private, max-age=0');
             $response->headers->set('Pragma', 'no-cache');
             $response->headers->set('Expires', '0');

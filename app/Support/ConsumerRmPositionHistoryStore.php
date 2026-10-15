@@ -52,6 +52,18 @@ final class ConsumerRmPositionHistoryStore
     ];
 
     /**
+     * Request/job-scoped memo of verified manifests and archived row counts.
+     * Dashboards resolve the same positions many times per request; the
+     * archive only changes through capturePeriod(), which invalidates it.
+     *
+     * @var array<string, object|null>
+     */
+    private array $manifestMemo = [];
+
+    /** @var array<string, int> */
+    private array $storedRowsMemo = [];
+
+    /**
      * Capture one immutable Consumer position before the source can be pruned.
      * A verified capture is never replaced implicitly: a resumed prune can
      * therefore call this method safely after part of its source was removed.
@@ -74,7 +86,7 @@ final class ConsumerRmPositionHistoryStore
             return $this->result($period, 0, 0, false, true, 'archive_tables_unavailable');
         }
 
-        $existing = $this->verifiedManifest($period);
+        $existing = $this->verifiedManifest($period, true);
         if (! $replaceVerified && $existing !== null) {
             return $this->result(
                 $period,
@@ -114,7 +126,7 @@ final class ConsumerRmPositionHistoryStore
             return DB::transaction(function () use ($period, $replaceVerified, $sourceColumns): array {
                 // Recheck while holding the capture lock. This closes the race
                 // between two workers that both observed no manifest initially.
-                $existing = $this->verifiedManifest($period);
+                $existing = $this->verifiedManifest($period, true);
                 if (! $replaceVerified && $existing !== null) {
                     return $this->result(
                         $period,
@@ -171,6 +183,7 @@ final class ConsumerRmPositionHistoryStore
                 return $this->result($period, $sourceRows, $archivedRows, true, false, null);
             }, 3);
         } finally {
+            $this->forgetPeriod($period);
             if ($lockAcquired) {
                 try {
                     DB::selectOne('SELECT RELEASE_LOCK(?) AS released', [$lockName]);
@@ -224,11 +237,7 @@ final class ConsumerRmPositionHistoryStore
             ->pluck('periode')
             ->map(static fn ($value): string => substr((string) $value, 0, 10))
             ->all();
-        $storedCounts = DB::table(self::HISTORY_TABLE)
-            ->whereIn('periode', $periods)
-            ->selectRaw('periode, COUNT(*) AS row_count')
-            ->groupBy('periode')
-            ->pluck('row_count', 'periode');
+        $storedCounts = $this->storedRows($periods);
 
         return $manifests
             ->filter(static function ($manifest) use ($storedCounts): bool {
@@ -428,21 +437,59 @@ final class ConsumerRmPositionHistoryStore
             && Schema::hasColumns(self::CAPTURE_TABLE, self::CAPTURE_COLUMNS);
     }
 
-    private function verifiedManifest(string $period): ?object
+    /** Capture paths pass $fresh so lock-guarded rechecks never trust the memo. */
+    private function verifiedManifest(string $period, bool $fresh = false): ?object
     {
+        if ($fresh) {
+            $this->forgetPeriod($period);
+        } elseif (array_key_exists($period, $this->manifestMemo)) {
+            return $this->manifestMemo[$period];
+        }
+
         $manifest = DB::table(self::CAPTURE_TABLE)
             ->where('periode', $period)
             ->where('verified', true)
             ->first(['source_rows', 'archived_rows', 'content_hash']);
-        if ($manifest === null || trim((string) $manifest->content_hash) === '') {
-            return null;
+        if ($manifest !== null && trim((string) $manifest->content_hash) !== '') {
+            $storedRows = $this->storedRows([$period])[$period] ?? 0;
+            $manifest = $storedRows === (int) $manifest->archived_rows ? $manifest : null;
+        } else {
+            $manifest = null;
         }
 
-        $storedRows = (int) DB::table(self::HISTORY_TABLE)
-            ->where('periode', $period)
-            ->count();
+        return $fresh ? $manifest : ($this->manifestMemo[$period] = $manifest);
+    }
 
-        return $storedRows === (int) $manifest->archived_rows ? $manifest : null;
+    /**
+     * Archived row counts for the given positions, counting only positions
+     * not already counted in this request/job.
+     *
+     * @param  array<int, string>  $periods
+     * @return array<string, int>
+     */
+    private function storedRows(array $periods): array
+    {
+        $missing = array_values(array_diff(array_unique($periods), array_keys($this->storedRowsMemo)));
+        if ($missing !== []) {
+            $counts = DB::table(self::HISTORY_TABLE)
+                ->whereIn('periode', $missing)
+                ->selectRaw('periode, COUNT(*) AS row_count')
+                ->groupBy('periode')
+                ->pluck('row_count', 'periode');
+            foreach ($missing as $period) {
+                $this->storedRowsMemo[$period] = 0;
+            }
+            foreach ($counts as $period => $count) {
+                $this->storedRowsMemo[substr((string) $period, 0, 10)] = (int) $count;
+            }
+        }
+
+        return array_intersect_key($this->storedRowsMemo, array_flip($periods));
+    }
+
+    private function forgetPeriod(string $period): void
+    {
+        unset($this->manifestMemo[$period], $this->storedRowsMemo[$period]);
     }
 
     private function aliasedColumn(?string $column, string $alias, string $fallback = "''"): string|Expression

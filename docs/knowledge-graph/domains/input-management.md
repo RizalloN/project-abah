@@ -21,22 +21,22 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `BusinessClusterReportService` | class | 23 | `app/Services/Reports/BusinessClusterReportService.php:15` |
 | `store` | method | 12 | `app/Http/Controllers/Input/BusinessClusterController.php:25` |
 | `countKategoriFromCsv` | method | 11 | `app/Services/Reports/BusinessClusterReportService.php:287` |
+| `input.store` | route | 10 | - |
+| `report.kolaborasi.bodboc` | route | 10 | - |
+| `report.kolaborasi.business-cluster` | route | 10 | - |
 | `store` | method | 10 | `app/Http/Controllers/Input/BodBocController.php:121` |
 | `store` | method | 10 | `app/Http/Controllers/Input/InputRekananController.php:123` |
-| `input.store` | route | 9 | - |
-| `report.kolaborasi.bodboc` | route | 9 | - |
-| `report.kolaborasi.business-cluster` | route | 9 | - |
-| `bod-boc.store` | route | 8 | - |
+| `bod-boc.store` | route | 9 | - |
+| `business-cluster.store` | route | 9 | - |
+| `report.kolaborasi.sppg` | route | 9 | - |
 | `buildReport` | method | 8 | `app/Services/Reports/BusinessClusterReportService.php:27` |
-| `business-cluster.store` | route | 8 | - |
-| `report.kolaborasi.sppg` | route | 8 | - |
+| `input.index` | route | 8 | - |
 | `BodBoc` | class | 7 | `app/Models/BodBoc.php:10` |
 | `InputRekanan` | class | 7 | `app/Models/InputRekanan.php:10` |
 | `InputRekananController` | class | 7 | `app/Http/Controllers/Input/InputRekananController.php:13` |
 | `bod_boc` | table | 7 | - |
 | `businessCluster` | method | 7 | `app/Http/Controllers/Report/KolaborasiReportController.php:45` |
 | `fetchSpreadsheet` | method | 7 | `app/Services/Reports/BusinessClusterReportService.php:215` |
-| `input.index` | route | 7 | - |
 | `input_rekanan` | table | 7 | - |
 | `BodBocController` | class | 6 | `app/Http/Controllers/Input/BodBocController.php:13` |
 | `aggregateKategoriRows` | method | 6 | `app/Services/Reports/BusinessClusterReportService.php:126` |
@@ -82,7 +82,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Direction | Count |
 | --- | ---: |
-| input-management -> access-control (protected_by) | 35 |
+| input-management -> access-control (protected_by) | 42 |
 | input-management -> core (calls) | 25 |
 | input-management -> core (accepts) | 5 |
 | input-management -> core (extends) | 5 |

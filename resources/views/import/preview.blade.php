@@ -8,8 +8,64 @@
     $lockColumnSelection = !empty($lockColumnSelection);
     $preserveFilterValueWhitespace = !empty($preserveFilterValueWhitespace);
     $hidePreviewRowsUntilJs = !empty($hidePreviewRowsUntilJs);
-    $previewReportTitle = $previewBannerTitle ?? $pageTitle ?? 'Preview Data Import';
-    $previewModeLabel = $filtersDisabled ? 'Import full' : 'Preview dengan filter';
+
+    // 1. Resolve Active Report Model
+    $activeReportModel = null;
+    $activeIdReport = session('active_id_report') ?? session('report_id') ?? null;
+    if ($activeIdReport) {
+        $activeReportModel = \App\Models\NamaReport::find($activeIdReport);
+    }
+
+    // 2. Resolve Report Name
+    $resolvedReportName = null;
+    if (!empty($reportName)) {
+        $resolvedReportName = trim((string) $reportName);
+    } elseif (!empty($namaReport)) {
+        $resolvedReportName = trim((string) $namaReport);
+    } elseif ($activeReportModel && !empty($activeReportModel->nama_report)) {
+        $resolvedReportName = trim((string) $activeReportModel->nama_report);
+    } elseif (session()->has('active_nama_report')) {
+        $resolvedReportName = trim((string) session('active_nama_report'));
+    } elseif (session()->has('excel_report_name')) {
+        $resolvedReportName = trim((string) session('excel_report_name'));
+    }
+
+    // Fallback: extract from previewBannerTitle or pageTitle
+    if (empty($resolvedReportName)) {
+        $candidateTitle = (string) ($previewBannerTitle ?? $pageTitle ?? '');
+        if (preg_match('/\(([^)]+)\)/', $candidateTitle, $m)) {
+            $resolvedReportName = trim($m[1]);
+        } elseif (preg_match('/-\s*([^-]+)$/', $candidateTitle, $m)) {
+            $candidate = trim($m[1]);
+            if (!in_array(strtolower($candidate), ['preview data import', 'filter data excel', 'preview'])) {
+                $resolvedReportName = $candidate;
+            }
+        }
+    }
+
+    if (empty($resolvedReportName)) {
+        $resolvedReportName = $previewBannerTitle ?? $pageTitle ?? 'Laporan Data';
+    }
+
+    // 3. Resolve Table & File Name
+    $resolvedTableName = $tableName ?? $activeReportModel?->table_name ?? session('active_table_name') ?? null;
+    $resolvedFilePath = $filePath ?? '';
+    $resolvedFileName = !empty($resolvedFilePath) ? basename($resolvedFilePath) : 'File Sumber';
+
+    // 4. Mode & Delimiter
+    $previewReportTitle = $previewBannerTitle ?? $pageTitle ?? ('Preview Data Import (' . $resolvedReportName . ')');
+    $previewModeLabel = $filtersDisabled ? 'Import Full' : 'Preview dengan filter';
+
+    $delim = $currentDelimiter ?? 'auto';
+    $delimLabels = [
+        ',' => 'Koma ( , )',
+        ';' => 'Titik Koma ( ; )',
+        '|' => 'Pipe ( | )',
+        '.' => 'Titik ( . )',
+        "\t" => 'Tab',
+        'auto' => 'Otomatis'
+    ];
+    $currentDelimiterLabel = $fixedDelimiterLabel ?? $delimLabels[$delim] ?? $delim;
 @endphp
 <div class="row">
     <div class="col-12">
@@ -17,6 +73,63 @@
         @if(session('error'))
             <div class="alert alert-danger">{{ session('error') }}</div>
         @endif
+
+        <div class="card border-0 shadow-sm mb-3 import-preview-banner">
+            <div class="card-body import-preview-banner__body">
+                <div class="d-flex flex-column flex-lg-row justify-content-between align-items-start align-items-lg-center gap-3 mb-3">
+                    <div class="import-preview-heading">
+                        <div class="d-flex align-items-center flex-wrap gap-2 mb-2">
+                            <span class="import-report-badge">
+                                <i class="fas fa-layer-group text-primary mr-1"></i> Target Laporan
+                            </span>
+                            <span class="import-preview-heading__eyebrow">{{ $previewModeLabel }}</span>
+                        </div>
+                        <h2 class="import-preview-report-title">
+                            <i class="fas fa-file-invoice text-primary mr-2"></i>{{ $resolvedReportName }}
+                        </h2>
+                        <p class="import-preview-report-subtitle mb-0 text-muted">
+                            Pastikan data file yang Anda unggah sudah sesuai dengan target laporan <strong>{{ $resolvedReportName }}</strong> sebelum menjalankan import.
+                        </p>
+                    </div>
+
+                    <div class="import-preview-heading__meta">
+                        <span class="import-meta-chip" title="File yang diunggah">
+                            <i class="fas fa-file-alt text-success mr-1"></i> <strong>{{ $resolvedFileName }}</strong>
+                        </span>
+                        @if(!empty($resolvedTableName))
+                        <span class="import-meta-chip" title="Tabel database tujuan">
+                            <i class="fas fa-database text-info mr-1"></i> <code>{{ $resolvedTableName }}</code>
+                        </span>
+                        @endif
+                        <span class="import-meta-chip" title="Total kolom">
+                            <i class="fas fa-columns text-primary mr-1"></i> {{ count($headers) }} kolom
+                        </span>
+                        <span class="import-meta-chip" title="Pemisah Kolom">
+                            <i class="fas fa-sliders-h text-secondary mr-1"></i> {{ $currentDelimiterLabel }}
+                        </span>
+                        <span class="import-meta-chip" title="Status filter">
+                            <i class="fas fa-filter text-secondary mr-1"></i> {{ $filtersDisabled ? 'Filter nonaktif' : 'Filter tersedia' }}
+                        </span>
+                        @if(!empty($manualPeriodeLabel))
+                        <span class="import-meta-chip" title="Periode data">
+                            <i class="fas fa-calendar-alt text-warning mr-1"></i> {{ $manualPeriodeLabel }}
+                        </span>
+                        @endif
+                    </div>
+                </div>
+
+                <div class="import-preview-notice mt-2 mb-0">
+                    <i class="fas fa-info-circle text-info mt-1"></i>
+                    <div>
+                        @if($filtersDisabled)
+                            <strong>Mode Import Full Aktif:</strong> Filter dinonaktifkan untuk report <strong>{{ $resolvedReportName }}</strong> agar proses import selalu memproses seluruh data tanpa ambiguitas.
+                        @else
+                            <strong>Petunjuk Filter:</strong> Struktur kolom untuk <strong>{{ $resolvedReportName }}</strong> siap dievaluasi. Klik ikon filter pada header kolom untuk menyaring data sebelum import.
+                        @endif
+                    </div>
+                </div>
+            </div>
+        </div>
 
         @if(empty($hideDelimiterCard))
         <div class="card border-0 shadow-sm mb-3 import-preview-settings">
@@ -80,18 +193,28 @@
 
             <div class="card border-0 shadow-sm import-preview-card">
                 <div class="card-header bg-white border-0 import-preview-card__header">
-                    <div class="import-preview-heading">
-                        <span class="import-preview-heading__eyebrow">{{ $previewModeLabel }}</span>
-                        <h3 class="import-preview-heading__title">
-                            <i class="fas fa-table text-success mr-2"></i>{{ $previewReportTitle }}
-                        </h3>
-                        <div class="import-preview-heading__meta">
-                            <span><i class="fas fa-columns mr-1"></i>{{ count($headers) }} kolom</span>
-                            <span><i class="fas fa-eye mr-1"></i>Preview sample</span>
-                            <span><i class="fas fa-filter mr-1"></i>{{ $filtersDisabled ? 'Filter nonaktif' : 'Filter tersedia' }}</span>
+                    <div class="d-flex align-items-center flex-wrap gap-2">
+                        <a href="{{ $backRoute ?? route('import.index') }}" class="btn btn-outline-secondary mr-2 import-preview-back">
+                            <i class="fas fa-arrow-left mr-1"></i> Kembali
+                        </a>
+                        <div class="import-preview-heading">
+                            <span class="import-preview-heading__eyebrow">{{ $previewModeLabel }}</span>
+                            <h3 class="import-preview-heading__title">
+                                <i class="fas fa-table text-success mr-2"></i>{{ $previewReportTitle }}
+                            </h3>
+                            <div class="import-preview-heading__meta">
+                                <span><i class="fas fa-columns mr-1"></i>{{ count($headers) }} kolom</span>
+                                <span><i class="fas fa-eye mr-1"></i>Preview sample</span>
+                                <span><i class="fas fa-filter mr-1"></i>{{ $filtersDisabled ? 'Filter nonaktif' : 'Filter tersedia' }}</span>
+                            </div>
                         </div>
                     </div>
                     <div class="import-preview-actions">
+                        <div class="import-ready-chip d-none d-md-flex align-items-center mr-2">
+                            <span class="badge-dot-live mr-2"></span>
+                            <span class="text-muted mr-1">Target:</span>
+                            <strong class="text-dark">{{ $resolvedReportName }}</strong>
+                        </div>
                         <button type="submit" id="btnSubmitImport" class="btn btn-success font-weight-bold import-preview-submit">
                             <i class="fas fa-database mr-1"></i> Jalankan Import ke MySQL
                         </button>
@@ -310,7 +433,44 @@
         };
 
         function themedSwal(options) {
+            if (window.ImportSwal && typeof window.ImportSwal.fire === 'function') {
+                return window.ImportSwal.fire(options);
+            }
             return Swal.fire(Object.assign({}, swalTheme, options));
+        }
+
+        let importPopupReadyPromise = null;
+
+        function ensureImportPopupReady() {
+            if (typeof window.Swal?.fire === 'function') return Promise.resolve();
+            if (importPopupReadyPromise) return importPopupReadyPromise;
+
+            importPopupReadyPromise = new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                const assetUrl = new URL(@json(asset('adminlte/plugins/sweetalert2/sweetalert2.all.min.js')), window.location.href);
+                // Keep the retry on this origin so it respects the security policy.
+                script.src = assetUrl.pathname + assetUrl.search;
+                script.async = true;
+                const timeout = setTimeout(() => finish(new Error('Popup import tidak dapat dimuat.')), 8000);
+                const finish = (error) => {
+                    clearTimeout(timeout);
+                    script.onload = script.onerror = null;
+                    if (error) {
+                        script.remove();
+                        reject(error);
+                    } else {
+                        resolve();
+                    }
+                };
+                script.onload = () => finish(typeof window.Swal?.fire === 'function'
+                    ? null : new Error('Library popup import tidak tersedia.'));
+                script.onerror = () => finish(new Error('Popup import tidak dapat dimuat.'));
+                document.head.appendChild(script);
+            }).finally(() => {
+                importPopupReadyPromise = null;
+            });
+
+            return importPopupReadyPromise;
         }
 
         function redirectToImportIndex() {
@@ -1834,6 +1994,14 @@
 
             importSubmitInProgress = true;
 
+            try {
+                await ensureImportPopupReady();
+            } catch (error) {
+                resetImportButton();
+                window.alert('Popup import gagal dimuat. Muat ulang halaman lalu coba lagi. Import belum dikirim.');
+                return;
+            }
+
             const form = this;
             const submitBtn = document.getElementById('btnSubmitImport');
             const csrfToken = document.querySelector('input[name="_token"]').value;
@@ -2153,7 +2321,41 @@
                     return forceStartUrlTemplate.replace('__JOB_ID__', encodeURIComponent(jobId));
                 };
 
+                const handleImportAccessFailure = function (response) {
+                    if (![401, 403, 419].includes(response.status)) return false;
+                    if (streamDone) return true;
+
+                    streamDone = true;
+                    if (evtSource) evtSource.close();
+                    if (independentPollingTimer) {
+                        clearInterval(independentPollingTimer);
+                        independentPollingTimer = null;
+                    }
+                    stopImportProgressTicker();
+                    resetImportButton();
+
+                    const forbidden = response.status === 403;
+                    const expiredToken = response.status === 419;
+                    themedSwal({
+                        icon: 'warning',
+                        title: forbidden ? 'Akses Import Dibatasi' : (expiredToken ? 'Halaman Perlu Dimuat Ulang' : 'Sesi Login Berakhir'),
+                        text: (forbidden ? 'Akun ini tidak memiliki akses untuk memantau import.' :
+                            (expiredToken ? 'Muat ulang halaman untuk memperbarui sesi sebelum melanjutkan.' :
+                                'Silakan login kembali, lalu buka Manajemen Job untuk memeriksa status import.')) +
+                            ' Pesan ini tidak membatalkan proses yang sudah masuk antrean.',
+                        confirmButtonText: forbidden ? 'Kembali ke Dashboard' : (expiredToken ? 'Muat Ulang' : 'Login Kembali'),
+                        allowOutsideClick: false,
+                        allowEscapeKey: false
+                    }).then(function (result) {
+                        if (!result.isConfirmed) return;
+                        if (expiredToken) window.location.reload();
+                        else window.location.href = forbidden ? '{{ route("dashboard") }}' : '{{ route("login") }}';
+                    });
+                    return true;
+                };
+
                 const inspectJobStatus = async function (jobId) {
+                    if (streamDone) return null;
                     const response = await fetch(statusUrlForJob(jobId), {
                         headers: {
                             'Accept': 'application/json',
@@ -2161,6 +2363,7 @@
                         }
                     });
 
+                    if (streamDone || handleImportAccessFailure(response)) return null;
                     if (!response.ok) {
                         return null;
                     }
@@ -2169,6 +2372,7 @@
                 };
 
                 const triggerForceStart = async function (jobId) {
+                    if (streamDone) return false;
                     if (forceStartTriggered) {
                         return false;
                     }
@@ -2186,6 +2390,7 @@
                         body: JSON.stringify({})
                     });
 
+                    if (streamDone || handleImportAccessFailure(response)) return false;
                     let payload = {};
                     try { payload = await response.json(); } catch (_) {}
 
@@ -2210,7 +2415,7 @@
                 };
 
                 const pollImportStatus = async function (jobId) {
-                    for (;;) {
+                    while (!streamDone) {
                         let payload = null;
 
                         try {
@@ -2218,6 +2423,8 @@
                         } catch (_) {
                             payload = null;
                         }
+
+                        if (streamDone) return;
 
                         if (payload) {
                             setImportProgress(
@@ -2297,6 +2504,7 @@
                     evtSource = new EventSource(streamUrl);
 
                     evtSource.addEventListener('progress', function (event) {
+                        if (streamDone) return;
                         reconnectAttempts = 0;
                         let data = {};
                         try { data = JSON.parse(event.data); } catch (_) {}
@@ -2304,6 +2512,7 @@
                     });
 
                     evtSource.addEventListener('complete', function (event) {
+                        if (streamDone) return;
                         let data = {};
                         try { data = JSON.parse(event.data); } catch (_) {}
                         showImportComplete(data);
@@ -2339,6 +2548,7 @@
                         try {
                             statusPayload = await inspectJobStatus(initResult.job_id);
                         } catch (_) {}
+                        if (streamDone) return;
 
                         const status = String(statusPayload && statusPayload.status ? statusPayload.status : '');
                         if (status === 'completed') {
@@ -2368,9 +2578,11 @@
                                     await pollImportStatus(initResult.job_id);
                                     return;
                                 } catch (forceStartError) {
+                                    if (streamDone) return;
                                     const refreshedStatus = await inspectJobStatus(initResult.job_id).catch(function () {
                                         return null;
                                     });
+                                    if (streamDone) return;
                                     const refreshedState = String(refreshedStatus && refreshedStatus.status ? refreshedStatus.status : '');
 
                                     if (refreshedState === 'completed') {
@@ -2503,13 +2715,105 @@
 
 @section('styles')
 <style>
+    /* Compact progress modal: keep live import details readable at desktop widths. */
+    .import-preview-banner,
     .import-preview-settings,
     .import-preview-card {
         border: 1px solid rgba(226, 232, 240, 0.95) !important;
-        border-radius: 8px;
+        border-radius: 10px;
         overflow: hidden;
         background: #ffffff;
-        box-shadow: 0 18px 36px -30px rgba(15, 23, 42, 0.28) !important;
+        box-shadow: 0 10px 25px -15px rgba(15, 23, 42, 0.12) !important;
+    }
+
+    .import-preview-banner__body {
+        padding: 1.25rem 1.45rem;
+        background: linear-gradient(135deg, #ffffff 0%, #f8fafc 60%, #f0f7ff 100%);
+    }
+
+    .import-report-badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 26px;
+        padding: 0.25rem 0.65rem;
+        border-radius: 999px;
+        background: #eef2ff;
+        border: 1px solid #c7d2fe;
+        color: #4338ca;
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+    }
+
+    .import-preview-report-title {
+        margin: 0.35rem 0 0.3rem;
+        color: #0f2942;
+        font-size: 1.45rem;
+        font-weight: 800;
+        line-height: 1.28;
+        word-break: break-word;
+    }
+
+    .import-preview-report-subtitle {
+        font-size: 0.85rem;
+        color: #64748b;
+        line-height: 1.45;
+    }
+
+    .import-preview-heading__meta span,
+    .import-meta-chip {
+        display: inline-flex;
+        align-items: center;
+        min-height: 30px;
+        padding: 0.3rem 0.65rem;
+        border-radius: 999px;
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        color: #334155;
+        font-size: 0.78rem;
+        font-weight: 600;
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+        transition: all 120ms ease;
+    }
+
+    .import-meta-chip:hover {
+        border-color: #cbd5e1;
+        background: #f8fafc;
+    }
+
+    .import-ready-chip {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 999px;
+        padding: 0.35rem 0.75rem;
+        font-size: 0.82rem;
+    }
+
+    .badge-dot-live {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #10b981;
+        display: inline-block;
+        box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.25);
+    }
+
+    .import-preview-back {
+        min-height: 38px;
+        border-radius: 6px;
+        padding: 0.48rem 0.85rem;
+        font-size: 0.82rem;
+        font-weight: 600;
+        border-color: #cbd5e1;
+        color: #475569;
+        transition: all 150ms ease;
+    }
+
+    .import-preview-back:hover {
+        background: #f8fafc;
+        border-color: #94a3b8;
+        color: #1e293b;
     }
 
     .import-preview-settings .card-body {
@@ -2529,10 +2833,10 @@
 
     .import-preview-card__header {
         display: flex;
-        align-items: flex-start;
+        align-items: center;
         justify-content: space-between;
         gap: 1rem;
-        padding: 1.2rem 1.35rem;
+        padding: 1.1rem 1.35rem;
         border-bottom: 1px solid #e2e8f0 !important;
         background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%) !important;
     }
@@ -3261,99 +3565,6 @@
         border-radius: 6px;
         font-size: 0.8rem;
         font-weight: 600;
-    }
-
-    .swal-modern-popup {
-        border-color: #dbe3ec;
-        border-radius: 8px;
-        box-shadow: 0 24px 56px -30px rgba(15, 23, 42, 0.44);
-    }
-
-    .swal-modern-title,
-    .swal-import-title,
-    .swal-import-stat__value {
-        letter-spacing: 0;
-    }
-
-    .swal-import-badge,
-    .swal-import-card,
-    .swal-import-stat,
-    .swal-modern-confirm {
-        border-radius: 6px;
-    }
-
-    .swal-import-card,
-    .swal-import-stat {
-        background: #f8fafc;
-        box-shadow: none;
-    }
-
-    .swal-import-progress__bar,
-    .swal-modern-confirm {
-        background: #0b5cab;
-        animation: none;
-    }
-
-    /* Compact progress modal: keep live import details readable at desktop widths. */
-    .swal-modern-popup {
-        width: min(520px, calc(100vw - 24px)) !important;
-        padding: 0.95rem !important;
-    }
-
-    .swal-modern-title {
-        margin: 0.15rem 0 0.3rem;
-        font-size: 1.35rem;
-        line-height: 1.25;
-    }
-
-    .swal-import-shell {
-        gap: 0.7rem;
-    }
-
-    .swal-import-head {
-        gap: 0.3rem;
-    }
-
-    .swal-import-desc {
-        font-size: 0.84rem;
-        line-height: 1.4;
-    }
-
-    .swal-import-phase {
-        font-size: 0.68rem;
-    }
-
-    .swal-import-card {
-        padding: 0.8rem;
-        border-radius: 6px;
-    }
-
-    .swal-import-stats--compact {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 0.5rem;
-    }
-
-    .swal-import-stats--compact .swal-import-stat {
-        min-height: 76px;
-        gap: 0.3rem;
-        justify-content: center;
-        padding: 0.65rem 0.7rem;
-        border-radius: 6px;
-    }
-
-    .swal-import-stats--compact .swal-import-stat__label {
-        margin-bottom: 0;
-        font-size: 0.64rem;
-    }
-
-    .swal-import-stats--compact .swal-import-stat__value {
-        font-size: 0.86rem;
-        line-height: 1.3;
-        overflow-wrap: anywhere;
-    }
-
-    .swal-import-stats--compact .swal-import-stat__detail {
-        display: none;
     }
 
     @media (max-width: 767.98px) {

@@ -7,7 +7,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Kind | Count |
 | --- | ---: |
 | file | 16 |
-| method | 283 |
+| method | 284 |
 | unresolved_symbol | 21 |
 | route | 24 |
 | class | 16 |
@@ -23,30 +23,30 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `OnlyOfficeEditorService` | class | 49 | `app/Services/DriveAsix/OnlyOfficeEditorService.php:15` |
 | `DriveAsixController` | class | 48 | `app/Http/Controllers/DriveAsixController.php:26` |
 | `DriveAsixWorkbookException` | class | 40 | `app/Exceptions/DriveAsixWorkbookException.php:7` |
-| `PipelineWorkbookSummaryService` | class | 32 | `app/Services/DriveAsix/PipelineWorkbookSummaryService.php:15` |
+| `PipelineWorkbookSummaryService` | class | 33 | `app/Services/DriveAsix/PipelineWorkbookSummaryService.php:15` |
 | `OnlyOfficeDocumentStorageService` | class | 31 | `app/Services/DriveAsix/OnlyOfficeDocumentStorageService.php:19` |
 | `OfficeDocumentPreviewService` | class | 28 | `app/Services/DriveAsix/OfficeDocumentPreviewService.php:13` |
 | `callback` | method | 28 | `app/Http/Controllers/DriveAsixOfficeController.php:181` |
 | `OnlyOfficeJwtService` | class | 24 | `app/Services/DriveAsix/OnlyOfficeJwtService.php:7` |
 | `editor` | method | 24 | `app/Http/Controllers/DriveAsixOfficeController.php:39` |
-| `save` | method | 23 | `app/Services/DriveAsix/SpreadsheetWorkbookService.php:434` |
+| `save` | method | 23 | `app/Services/DriveAsix/SpreadsheetWorkbookService.php:448` |
 | `DriveAsixFolder` | class | 22 | `app/Models/DriveAsixFolder.php:9` |
-| `applyOperation` | method | 21 | `app/Services/DriveAsix/SpreadsheetWorkbookService.php:1212` |
+| `applyOperation` | method | 21 | `app/Services/DriveAsix/SpreadsheetWorkbookService.php:1226` |
 | `source` | method | 21 | `app/Http/Controllers/DriveAsixOfficeController.php:123` |
 | `buildEditorConfig` | method | 19 | `app/Services/DriveAsix/OnlyOfficeEditorService.php:379` |
+| `drive.index` | route | 18 | - |
 | `previewPresentation` | method | 18 | `app/Services/DriveAsix/OfficeDocumentPreviewService.php:272` |
 | `previewWordDocument` | method | 18 | `app/Services/DriveAsix/OfficeDocumentPreviewService.php:158` |
-| `serializeSheet` | method | 18 | `app/Services/DriveAsix/SpreadsheetWorkbookService.php:887` |
-| `upload` | method | 18 | `app/Http/Controllers/DriveAsixController.php:212` |
+| `serializeSheet` | method | 18 | `app/Services/DriveAsix/SpreadsheetWorkbookService.php:901` |
+| `upload` | method | 18 | `app/Http/Controllers/DriveAsixController.php:219` |
 | `DriveAsixOfficeController` | class | 17 | `app/Http/Controllers/DriveAsixOfficeController.php:18` |
-| `drive.index` | route | 17 | - |
 | `openOrReuseSession` | method | 17 | `app/Services/DriveAsix/OnlyOfficeEditorService.php:209` |
 | `replaceUnderLock` | method | 17 | `app/Services/DriveAsix/OnlyOfficeDocumentStorageService.php:671` |
 | `PublicWorkbookController` | class | 16 | `app/Http/Controllers/PublicWorkbookController.php:14` |
 | `extension` | method | 16 | `app/Models/DriveAsixFile.php:70` |
-| `deleteStoredArtifacts` | method | 15 | `app/Http/Controllers/DriveAsixController.php:1059` |
-| `requireAdmin` | method | 15 | `app/Http/Controllers/DriveAsixController.php:620` |
-| `serializeWorkbook` | method | 15 | `app/Services/DriveAsix/SpreadsheetWorkbookService.php:805` |
+| `deleteStoredArtifacts` | method | 15 | `app/Http/Controllers/DriveAsixController.php:1066` |
+| `requireAdmin` | method | 15 | `app/Http/Controllers/DriveAsixController.php:627` |
+| `serializeWorkbook` | method | 15 | `app/Services/DriveAsix/SpreadsheetWorkbookService.php:819` |
 
 ## Route Nodes
 
@@ -103,10 +103,10 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Direction | Count |
 | --- | ---: |
-| bank-pipeline -> core (calls) | 169 |
-| bank-pipeline -> access-control (protected_by) | 114 |
-| bank-pipeline -> core (accepts) | 64 |
-| bank-pipeline -> core (instantiates) | 39 |
+| bank-pipeline -> core (calls) | 167 |
+| bank-pipeline -> access-control (protected_by) | 136 |
+| bank-pipeline -> core (accepts) | 63 |
+| bank-pipeline -> core (instantiates) | 37 |
 | core -> bank-pipeline (references_route) | 28 |
 | bank-pipeline -> access-control (calls) | 8 |
 | bank-pipeline -> core (extends) | 8 |

@@ -26,8 +26,18 @@ final class MantriPerformanceBasis
     ];
 
     /** @return array{available:bool, keys:array<int,string>, people:array<string,array<string,string>>} */
-    public function rosterState(): array
+    public function rosterState(?string $period = null): array
     {
+        $reference = $period === null ? null : app(MantriProductivityReference::class)->dataForPeriod($period);
+        if ($reference !== null) {
+            $people = [];
+            foreach ($reference['people'] as $person) {
+                $person['roster_source'] = 'workbook_reference';
+                $people[$person['pn']] = $person;
+            }
+
+            return ['available' => true, 'keys' => array_map('strval', array_keys($people)), 'people' => $people];
+        }
         $empty = ['available' => false, 'keys' => [], 'people' => []];
         if (! Schema::hasTable('brihc_pemasar')) {
             return $empty;
@@ -46,7 +56,7 @@ final class MantriPerformanceBasis
         foreach ($rows as $row) {
             $position = $this->normalize($row->positiondesc ?? '');
             $branch = $this->normalize($row->psadesc ?? '');
-            if (! in_array($position, ['MANTRI', 'MANTRI BRIGUNA'], true) || ! in_array($branch, self::BRANCHES, true)) {
+            if ($position !== 'MANTRI' || ! in_array($branch, self::BRANCHES, true)) {
                 continue;
             }
             $pn = '';

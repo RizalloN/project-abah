@@ -18,6 +18,7 @@ if (is_file($templateDatabase)) {
 $forcedTestEnvironment = [
     'APP_ENV' => 'testing',
     'APP_CONFIG_CACHE' => $testingPath . DIRECTORY_SEPARATOR . 'config-' . getmypid() . '.php',
+    'APP_ROUTES_CACHE' => $testingPath . DIRECTORY_SEPARATOR . 'routes-' . getmypid() . '.php',
     'DB_CONNECTION' => 'sqlite',
     'DB_DATABASE' => $testingDatabase,
     'DB_URL' => '',

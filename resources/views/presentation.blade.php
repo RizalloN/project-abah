@@ -20,6 +20,12 @@
   @vite('resources/css/presentation/presentation.css')
 </head>
 <body>
+  @php
+    $presentationBranchScope = \App\Support\UserBranchScope::current();
+    $presentationExportScopes = $presentationBranchScope !== null
+      ? [$presentationBranchScope['label'] => $presentationBranchScope['label']]
+      : ['area6' => 'Area 6 Konsolidasi', 'KC Madiun' => 'KC Madiun', 'KC Magetan' => 'KC Magetan', 'KC Ngawi' => 'KC Ngawi', 'KC Ponorogo' => 'KC Ponorogo'];
+  @endphp
 
   <!-- Apple Presentation Mode Container -->
   <div class="apple-presentation-mode active" id="apple-presentation-mode">
@@ -123,7 +129,7 @@
           <label class="pres-export-field pres-export-scope-field">
             <span>Cakupan seluruh presentasi</span>
             <select name="global_scope" id="pres-export-global-scope">
-              @foreach(['area6' => 'Area 6 Konsolidasi', 'KC Madiun' => 'KC Madiun', 'KC Magetan' => 'KC Magetan', 'KC Ngawi' => 'KC Ngawi', 'KC Ponorogo' => 'KC Ponorogo'] as $value => $label)
+              @foreach($presentationExportScopes as $value => $label)
                 <option value="{{ $value }}">{{ $label }}</option>
               @endforeach
             </select>
@@ -139,17 +145,17 @@
           <div class="pres-export-grid">
             <section class="pres-export-group">
               <h3>Funding / Dana</h3>
-              <label class="pres-export-field"><span>Cabang timeseries</span><select name="funding_scope">@foreach(['area6' => 'Area 6 Konsolidasi', 'KC Madiun' => 'KC Madiun', 'KC Magetan' => 'KC Magetan', 'KC Ngawi' => 'KC Ngawi', 'KC Ponorogo' => 'KC Ponorogo'] as $value => $label)<option value="{{ $value }}">{{ $label }}</option>@endforeach</select></label>
+              <label class="pres-export-field"><span>Cabang timeseries</span><select name="funding_scope">@foreach($presentationExportScopes as $value => $label)<option value="{{ $value }}">{{ $label }}</option>@endforeach</select></label>
               <label class="pres-export-field"><span>Produk timeseries</span><select name="funding_product"><option value="total">Total Simpanan</option><option value="giro">Giro</option><option value="tabungan">Tabungan</option><option value="deposito">Deposito</option><option value="casa">CASA</option></select></label>
             </section>
             <section class="pres-export-group">
               <h3>SME</h3>
-              <label class="pres-export-field"><span>Cabang timeseries</span><select name="sme_scope">@foreach(['area6' => 'Area 6 Konsolidasi', 'KC Madiun' => 'KC Madiun', 'KC Magetan' => 'KC Magetan', 'KC Ngawi' => 'KC Ngawi', 'KC Ponorogo' => 'KC Ponorogo'] as $value => $label)<option value="{{ $value }}">{{ $label }}</option>@endforeach</select></label>
+              <label class="pres-export-field"><span>Cabang timeseries</span><select name="sme_scope">@foreach($presentationExportScopes as $value => $label)<option value="{{ $value }}">{{ $label }}</option>@endforeach</select></label>
               <label class="pres-export-field"><span>Produk timeseries</span><select name="sme_product"><option value="total">Total SME</option><option value="non_cashcoll">Kredit Non Cashcoll</option><option value="cashcoll">Kredit Cashcoll</option></select></label>
             </section>
             <section class="pres-export-group">
               <h3>Konsumer</h3>
-              <label class="pres-export-field"><span>Cabang timeseries</span><select name="consumer_scope">@foreach(['area6' => 'Area 6 Konsolidasi', 'KC Madiun' => 'KC Madiun', 'KC Magetan' => 'KC Magetan', 'KC Ngawi' => 'KC Ngawi', 'KC Ponorogo' => 'KC Ponorogo'] as $value => $label)<option value="{{ $value }}">{{ $label }}</option>@endforeach</select></label>
+              <label class="pres-export-field"><span>Cabang timeseries</span><select name="consumer_scope">@foreach($presentationExportScopes as $value => $label)<option value="{{ $value }}">{{ $label }}</option>@endforeach</select></label>
               <label class="pres-export-field"><span>Produk timeseries</span><select name="consumer_product"><option value="total">Total Konsumer</option><option value="briguna">Briguna</option><option value="kpr">KPR</option><option value="kkb">KKB</option></select></label>
             </section>
           </div>
@@ -870,6 +876,7 @@
   @php
     $presentationConfig = [
       'selectedPeriod' => $selectedPeriod,
+      'branchScope' => $presentationBranchScope['label'] ?? null,
       'periods' => collect($periods ?? [])->values()->all(),
       'dataUrl' => route('dashboard.presentation-data'),
       'summaryDataUrl' => route('dashboard.presentation-data.summary'),

@@ -347,7 +347,6 @@
 @endsection
 
 @section('scripts')
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function () {
         const swalTheme = {
@@ -362,6 +361,9 @@
         };
 
         function themedSwal(options) {
+            if (window.ImportSwal && typeof window.ImportSwal.fire === 'function') {
+                return window.ImportSwal.fire(options);
+            }
             return Swal.fire(Object.assign({}, swalTheme, options));
         }
 
@@ -439,6 +441,8 @@
             redirectToImportIndex();
         }
 
+        const downloadToastClosers = new Map();
+
         function showDownloadToast(icon, title, text) {
             const stack = document.getElementById('download-toast-stack');
             if (!stack) {
@@ -452,7 +456,8 @@
             const iconWrap = document.createElement('div');
             iconWrap.className = 'download-toast__icon';
             const iconNode = document.createElement('i');
-            iconNode.className = `fas ${variant === 'success' ? 'fa-circle-check' : 'fa-triangle-exclamation'}`;
+            iconNode.className = `fas ${variant === 'success' ? 'fa-check-circle' : 'fa-exclamation-triangle'}`;
+            iconNode.setAttribute('aria-hidden', 'true');
             iconWrap.appendChild(iconNode);
 
             const body = document.createElement('div');
@@ -472,22 +477,82 @@
             const closeButton = document.createElement('button');
             closeButton.type = 'button';
             closeButton.className = 'download-toast__close';
-            closeButton.setAttribute('aria-label', 'Tutup');
+            closeButton.setAttribute('aria-label', 'Tutup notifikasi');
             closeButton.textContent = '×';
 
             toast.appendChild(iconWrap);
             toast.appendChild(body);
             toast.appendChild(closeButton);
 
-            const closeToast = () => {
-                toast.classList.add('is-hiding');
-                window.setTimeout(() => toast.remove(), 220);
+            let dismissTimer = null;
+            let removalTimer = null;
+            let remainingMs = 3200;
+            let startedAt = 0;
+            let closing = false;
+            let removed = false;
+            let returnFocusTo = document.activeElement;
+
+            const restoreFocus = () => {
+                if (toast.contains(document.activeElement) && returnFocusTo?.isConnected && typeof returnFocusTo.focus === 'function') {
+                    returnFocusTo.focus({ preventScroll: true });
+                }
+            };
+            const removeToast = () => {
+                if (removed) return;
+                removed = true;
+                window.clearTimeout(dismissTimer);
+                window.clearTimeout(removalTimer);
+                restoreFocus();
+                downloadToastClosers.delete(toast);
+                toast.remove();
             };
 
-            closeButton.addEventListener('click', closeToast);
+            const closeToast = (immediate = false) => {
+                if (removed || (closing && !immediate)) return;
+                closing = true;
+                window.clearTimeout(dismissTimer);
+                dismissTimer = null;
+                restoreFocus();
+                if (immediate || window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) {
+                    removeToast();
+                    return;
+                }
+                toast.classList.add('is-hiding');
+                removalTimer = window.setTimeout(removeToast, 220);
+            };
+
+            const pauseTimer = () => {
+                if (dismissTimer === null || closing) return;
+                window.clearTimeout(dismissTimer);
+                remainingMs = Math.max(0, remainingMs - (performance.now() - startedAt));
+                dismissTimer = null;
+            };
+            const resumeTimer = () => {
+                if (closing || dismissTimer !== null || toast.matches(':hover') || toast.contains(document.activeElement)) return;
+                startedAt = performance.now();
+                dismissTimer = window.setTimeout(() => closeToast(), remainingMs);
+            };
+
+            closeButton.addEventListener('click', () => closeToast());
+            toast.addEventListener('mouseenter', pauseTimer);
+            toast.addEventListener('mouseleave', resumeTimer);
+            toast.addEventListener('focusin', (event) => {
+                if (event.relatedTarget?.isConnected && !toast.contains(event.relatedTarget)) {
+                    returnFocusTo = event.relatedTarget;
+                }
+                pauseTimer();
+            });
+            toast.addEventListener('focusout', () => queueMicrotask(resumeTimer));
+            while (stack.children.length >= 4) {
+                const oldestToast = stack.firstElementChild;
+                const dismissOldest = downloadToastClosers.get(oldestToast);
+                if (dismissOldest) dismissOldest(true);
+                else oldestToast.remove();
+            }
+            downloadToastClosers.set(toast, closeToast);
             stack.appendChild(toast);
 
-            window.setTimeout(closeToast, 3200);
+            resumeTimer();
         }
 
         function normalizeProgressStatus(message) {
@@ -2999,10 +3064,15 @@
         flex-direction: column;
         gap: .75rem;
         width: min(360px, calc(100vw - 2rem));
+        max-height: calc(100vh - 2rem);
+        max-height: calc(100dvh - 2rem);
+        overflow-y: auto;
+        overscroll-behavior: contain;
         pointer-events: none;
     }
 
     .download-toast {
+        flex-shrink: 0;
         pointer-events: auto;
         display: flex;
         align-items: flex-start;
@@ -3060,6 +3130,7 @@
         color: #0f172a;
         line-height: 1.25;
         margin-bottom: .2rem;
+        overflow-wrap: anywhere;
     }
 
     .download-toast__text {
@@ -3071,9 +3142,11 @@
 
     .download-toast__close {
         flex: 0 0 auto;
+        min-width: 44px;
+        min-height: 44px;
         border: 0;
         background: transparent;
-        color: #94a3b8;
+        color: #64748b;
         font-size: 1.4rem;
         line-height: 1;
         padding: 0 .1rem;
@@ -3083,6 +3156,22 @@
 
     .download-toast__close:hover {
         color: #0f172a;
+    }
+
+    .download-toast__close:focus-visible {
+        outline: 2px solid #0857c3;
+        outline-offset: 2px;
+        border-radius: 8px;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .download-toast {
+            transition: none;
+        }
+
+        .download-toast.is-hiding {
+            transform: none;
+        }
     }
 
     .import-template-card,
@@ -4237,57 +4326,11 @@
         box-shadow: 0 6px 16px rgba(8, 87, 195, 0.35);
     }
 
-    .swal-modern-popup {
-        width: min(520px, calc(100vw - 24px)) !important;
-        padding: 0.95rem !important;
-        border-color: #dbe3ec;
-        border-radius: 8px;
-        box-shadow: 0 24px 56px -30px rgba(15, 23, 42, 0.44);
-    }
-
-    .swal-modern-title {
-        margin: 0.15rem 0 0.3rem;
-        color: #172033;
-        font-size: 1.35rem;
-        letter-spacing: 0;
-    }
-
-    .swal-import-shell,
-    .swal-import-head {
-        gap: 0.55rem;
-    }
-
-    .swal-import-desc {
-        font-size: 0.84rem;
-        line-height: 1.4;
-    }
-
-    .swal-import-card,
-    .swal-import-metrics,
-    .swal-import-stat {
-        padding: 0.75rem;
-        border: 1px solid #e2e8f0;
-        border-radius: 6px;
-        background: #f8fafc;
-        box-shadow: none;
-    }
-
-    .swal-import-progress__bar,
-    .swal-modern-confirm {
-        background: #0b5cab;
-        animation: none;
-    }
-
-    .swal-import-stats--compact {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 0.5rem;
-    }
-
-    .swal-import-stats--compact .swal-import-stat {
-        min-height: 68px;
-    }
-
     /* Quiet upload workspace: compact, neutral, and centered on the next action. */
+    .swal-modern-popup,
+    .swal2-popup.swal-import-popup {
+        width: min(520px, calc(100vw - 24px)) !important;
+    }
     /* Workflow layout: one clear path from report selection to file preview. */
     .import-page {
         display: grid;

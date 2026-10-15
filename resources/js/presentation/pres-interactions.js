@@ -109,6 +109,7 @@ export const setupPresentationInteractions = ({
     const noteButton = document.getElementById('pres-note-btn');
     const themeButton = document.getElementById('pres-theme-btn');
     const toast = document.getElementById('pres-toast');
+    const toastHome = toast?.parentNode;
     const exportForm = document.getElementById('pres-export-form');
     const exportProgress = document.getElementById('pres-export-progress');
     const exportProgressTitle = document.getElementById('pres-export-progress-title');
@@ -121,16 +122,121 @@ export const setupPresentationInteractions = ({
     let comparePayload = null;
     let compareValue = '';
     let toastTimer = null;
+    let toastExitTimer = null;
+    let toastRemaining = 2200;
+    let toastStartedAt = 0;
+    let toastHovered = false;
+    let toastFocused = false;
+    let toastReturnFocus = document.activeElement;
+    let toastDialog = null;
     let pointerStart = null;
     let exportPollTimer = null;
     let exportInProgress = false;
 
+    const toastCopy = toast ? document.createElement('span') : null;
+    const toastCloseButton = toast ? document.createElement('button') : null;
+    const hideToast = () => {
+        window.clearTimeout(toastExitTimer);
+        toastExitTimer = null;
+        if (toast && !toast.classList.contains('visible')) toast.hidden = true;
+    };
+    const dismissToast = () => {
+        window.clearTimeout(toastTimer);
+        toastTimer = null;
+        if (!toast || !toast.classList.contains('visible')) return;
+        const hadFocus = toast.contains(document.activeElement);
+        toast.classList.remove('visible');
+        toastCloseButton.disabled = true;
+        if (hadFocus && toastReturnFocus?.isConnected
+            && typeof toastReturnFocus.focus === 'function') {
+            toastReturnFocus.focus({ preventScroll: true });
+        }
+        toastHovered = false;
+        toastFocused = false;
+        const reducedMotion = typeof window.matchMedia === 'function'
+            && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        if (reducedMotion) hideToast();
+        else toastExitTimer = window.setTimeout(hideToast, 180);
+    };
+    const pauseToast = () => {
+        if (toastTimer === null) return;
+        window.clearTimeout(toastTimer);
+        toastTimer = null;
+        toastRemaining = Math.max(0, toastRemaining - (Date.now() - toastStartedAt));
+    };
+    const resumeToast = () => {
+        if (!toast?.classList.contains('visible') || toastHovered || toastFocused || toastTimer !== null) return;
+        toastStartedAt = Date.now();
+        toastTimer = window.setTimeout(dismissToast, toastRemaining);
+    };
+    const restoreToastHome = () => {
+        toastDialog?.removeEventListener('close', restoreToastHome);
+        toastDialog = null;
+        if (toast && toastHome && toast.parentNode !== toastHome) toastHome.appendChild(toast);
+        toastHovered = false;
+        toastFocused = false;
+        resumeToast();
+    };
+    const mountToast = () => {
+        let activeDialog;
+        try {
+            activeDialog = [...document.querySelectorAll('dialog:modal')].at(-1);
+        } catch {
+            activeDialog = [...document.querySelectorAll('dialog[open]')].at(-1);
+        }
+        const nextDialog = activeDialog || null;
+        if (nextDialog === toastDialog) return;
+        toastDialog?.removeEventListener('close', restoreToastHome);
+        toastDialog = nextDialog;
+        const parent = toastDialog || toastHome;
+        if (parent && toast.parentNode !== parent) parent.appendChild(toast);
+        toastDialog?.addEventListener('close', restoreToastHome);
+        toastHovered = false;
+        toastFocused = toast.contains(document.activeElement);
+    };
+
+    if (toast) {
+        toastCopy.className = 'pres-toast__text';
+        toastCloseButton.className = 'pres-toast__close';
+        toastCloseButton.type = 'button';
+        toastCloseButton.textContent = '\u00d7';
+        toastCloseButton.setAttribute('aria-label', 'Tutup notifikasi');
+        toastCloseButton.disabled = true;
+        toast.replaceChildren(toastCopy, toastCloseButton);
+        toast.setAttribute('aria-atomic', 'true');
+        toast.hidden = true;
+        toast.addEventListener('mouseenter', () => { toastHovered = true; pauseToast(); });
+        toast.addEventListener('mouseleave', () => { toastHovered = false; resumeToast(); });
+        toast.addEventListener('focusin', (event) => {
+            if (event.relatedTarget && !toast.contains(event.relatedTarget)) toastReturnFocus = event.relatedTarget;
+            toastFocused = true;
+            pauseToast();
+        });
+        toast.addEventListener('focusout', (event) => {
+            toastFocused = toast.contains(event.relatedTarget);
+            resumeToast();
+        });
+        toast.addEventListener('transitionend', (event) => {
+            if (event.target === toast && event.propertyName === 'opacity') hideToast();
+        });
+        toastCloseButton.addEventListener('click', dismissToast);
+        toastCloseButton.addEventListener('keydown', (event) => event.stopPropagation());
+    }
+
     const notify = (message) => {
         if (!toast) return;
-        toast.textContent = message;
-        toast.classList.add('visible');
         window.clearTimeout(toastTimer);
-        toastTimer = window.setTimeout(() => toast.classList.remove('visible'), 2200);
+        window.clearTimeout(toastExitTimer);
+        toastTimer = null;
+        toastExitTimer = null;
+        mountToast();
+        if (!toast.contains(document.activeElement)) toastReturnFocus = document.activeElement;
+        toastCopy.textContent = String(message ?? '');
+        toastRemaining = 2200;
+        toastCloseButton.disabled = false;
+        toast.hidden = false;
+        toast.classList.add('visible');
+        resumeToast();
     };
 
     const hashState = () => new URLSearchParams(window.location.hash.replace(/^#/, ''));

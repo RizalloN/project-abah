@@ -121,8 +121,21 @@ final class MantriIncentiveService
      */
     public function build(string $position): array
     {
-        $positions = $this->availablePeriods();
         $position = Carbon::parse($position)->toDateString();
+        $rosterFingerprint = app(\App\Support\MantriProductivityReference::class)->fingerprint($position);
+
+        return $this->rememberResult(
+            $this->cacheKey('payload', $position, UserBranchScope::cacheKey(), $rosterFingerprint),
+            function () use ($position): array {
+                return $this->buildUncached($position);
+            },
+            $this->cacheKey('build', $position, $rosterFingerprint)
+        );
+    }
+
+    private function buildUncached(string $position): array
+    {
+        $positions = $this->availablePeriods();
         $window = $this->window($position, $positions);
 
         $monthly = [];
@@ -132,12 +145,7 @@ final class MantriIncentiveService
                 : [];
         }
 
-        $mob = [];
-        foreach ($window['mob_months'] as $mobMonth) {
-            $mob[$mobMonth['key']] = ($mobMonth['booking_position'] !== null || $mobMonth['measure_position'] !== null)
-                ? $this->mobBookings($mobMonth)
-                : [];
-        }
+        $mob = $this->mobBookingsForMonths($window['mob_months']);
 
         return $this->assemble($position, $window, $monthly, $mob);
     }
@@ -154,11 +162,12 @@ final class MantriIncentiveService
         $rows = [];
 
         if ($type === 'mob6') {
+            $bookingsByMonth = $this->mobBookingsForMonths($window['mob_months']);
             foreach ($window['mob_months'] as $mobMonth) {
                 if ($mobMonth['booking_position'] === null && $mobMonth['measure_position'] === null) {
                     continue;
                 }
-                foreach ($this->mobBookings($mobMonth) as $account) {
+                foreach ($bookingsByMonth[$mobMonth['key']] as $account) {
                     $rows[] = $account + [
                         'bulan_booking' => $mobMonth['key'],
                         'posisi_mob' => $mobMonth['measure_position'],
@@ -282,7 +291,7 @@ final class MantriIncentiveService
      */
     public function monthNetDisbursement(string $monthStart, string $monthEnd, string $position, array $positions): array
     {
-        return Cache::remember($this->cacheKey('nd', $monthStart, $position), self::CACHE_SECONDS, function () use ($monthStart, $monthEnd, $position, $positions): array {
+        return $this->rememberResult($this->cacheKey('nd', $monthStart, $position), function () use ($monthStart, $monthEnd, $position, $positions): array {
             $bookings = $this->monthBookings($monthStart, $monthEnd, $position);
             if ($bookings === []) {
                 return [];
@@ -525,66 +534,136 @@ final class MantriIncentiveService
      */
     public function mobBookings(array $mobMonth): array
     {
-        $positionsToRead = array_values(array_unique(array_filter([$mobMonth['booking_position'], $mobMonth['measure_position']])));
+        $mobMonth['key'] ??= substr($mobMonth['start'], 0, 7);
 
-        return Cache::remember($this->cacheKey('mob', $mobMonth['start'], implode(',', $positionsToRead)), self::CACHE_SECONDS, function () use ($mobMonth, $positionsToRead): array {
-            $rows = DB::table(self::SOURCE_TABLE)
-                ->whereIn('periode', $positionsToRead)
-                ->where('segmen_kinerja', 'MICRO')
-                ->whereIn('produk_kinerja', self::PRODUCTS)
-                ->whereBetween('tgl_realisasi', [$mobMonth['start'], $mobMonth['end']])
-                ->get([
-                    'periode', 'nomor_rekening1', 'cifno', 'plafon', 'tgl_realisasi', 'produk_kinerja', 'description',
-                    'pn_pemrakarsa1', 'pn_pengelola1', 'kolek', 'baki_debet1', 'nama_debitur1',
-                ])
-                ->sortBy(fn (object $row): string => (string) $row->periode);
+        return $this->mobBookingsForMonths([$mobMonth])[$mobMonth['key']];
+    }
 
-            $accounts = [];
-            foreach ($rows as $row) {
-                if ($this->isKurRitel($row)) {
+    /**
+     * Read each source position once, including cohorts that share a running MOB position.
+     * Both booking-only (closed) and measure-only (late imported) accounts must be retained.
+     *
+     * @param  array<int, array<string, mixed>>  $months
+     * @return array<string, array<int, array<string, mixed>>>
+     */
+    private function mobBookingsForMonths(array $months): array
+    {
+        $results = [];
+        $missing = [];
+        $keys = [];
+        foreach ($months as $month) {
+            $key = $keys[$month['key']] = $this->mobCacheKey($month);
+            $cached = Cache::get($key);
+            if (is_array($cached)) {
+                $results[$month['key']] = $cached;
+            } elseif ($month['booking_position'] === null && $month['measure_position'] === null) {
+                $results[$month['key']] = [];
+            } else {
+                $missing[$month['key']] = $month;
+            }
+        }
+        if ($missing === []) {
+            return $results;
+        }
+
+        $lockKey = 'insentif_mantri:mob-build:'.sha1(json_encode($keys));
+
+        return Cache::lock($lockKey, 300)->block(120, function () use ($results, $missing, $keys): array {
+            $positions = [];
+            $accountsByMonth = [];
+            foreach ($missing as $monthKey => $month) {
+                $cached = Cache::get($keys[$monthKey]);
+                if (is_array($cached)) {
+                    $results[$monthKey] = $cached;
                     continue;
                 }
-                $account = $this->canonicalAccount($row->nomor_rekening1 ?? null);
-                if ($account === '') {
-                    continue;
+                $accountsByMonth[$monthKey] = [];
+                foreach (array_unique(array_filter([$month['booking_position'], $month['measure_position']])) as $position) {
+                    $positions[$position][$monthKey] = $month;
                 }
-                $periode = substr((string) $row->periode, 0, 10);
-                $entry = $accounts[$account] ?? [
-                    'account' => $account,
-                    'cif' => $this->canonicalCif($row->cifno ?? null),
-                    'nama_debitur' => trim((string) ($row->nama_debitur1 ?? '')),
-                    'produk' => (string) ($row->produk_kinerja ?? ''),
-                    'tgl_realisasi' => substr((string) $row->tgl_realisasi, 0, 10),
-                    'plafon' => 0.0,
-                    'pn' => '',
-                    'pn_label' => '',
-                    'kolek_mob' => null,
-                    'os_mob' => null,
-                ];
-                $entry['plafon'] = max($entry['plafon'], (float) ($row->plafon ?? 0));
-                $prakarsa = $this->basis->pnKey($row->pn_pemrakarsa1 ?? '');
-                if ($prakarsa !== '') {
-                    $entry['pn'] = $prakarsa;
-                    $entry['pn_label'] = trim((string) $row->pn_pemrakarsa1);
-                } elseif ($entry['pn'] === '') {
-                    $entry['pn'] = $this->basis->pnKey($row->pn_pengelola1 ?? '');
-                    $entry['pn_label'] = trim((string) ($row->pn_pengelola1 ?? ''));
+            }
+            // Visit booking before measurement, as in the original date-sorted reducer.
+            ksort($positions);
+            foreach ($positions as $position => $cohorts) {
+                $rows = DB::table(self::SOURCE_TABLE)
+                    ->where('periode', $position)
+                    ->where('segmen_kinerja', 'MICRO')
+                    ->whereIn('produk_kinerja', self::PRODUCTS)
+                    ->where(function ($query) use ($cohorts): void {
+                        foreach ($cohorts as $cohort) {
+                            $query->orWhereBetween('tgl_realisasi', [$cohort['start'], $cohort['end']]);
+                        }
+                    })
+                    ->get([
+                        'periode', 'nomor_rekening1', 'cifno', 'plafon', 'tgl_realisasi', 'produk_kinerja', 'description',
+                        'pn_pemrakarsa1', 'pn_pengelola1', 'kolek', 'baki_debet1', 'nama_debitur1',
+                    ]);
+
+                foreach ($rows as $row) {
+                    $monthKey = substr((string) $row->tgl_realisasi, 0, 7);
+                    if (isset($cohorts[$monthKey])) {
+                        $this->addMobAccount($accountsByMonth[$monthKey], $row, $cohorts[$monthKey]);
+                    }
                 }
-                if ($periode === $mobMonth['measure_position']) {
-                    $entry['kolek_mob'] = (int) ($row->kolek ?? 1);
-                    $entry['os_mob'] = (float) ($row->baki_debet1 ?? 0);
-                }
-                $accounts[$account] = $entry;
+                unset($rows);
             }
 
-            foreach ($accounts as &$entry) {
-                $entry['pemburukan'] = $entry['kolek_mob'] !== null && $entry['kolek_mob'] >= self::PEMBURUKAN_MIN_KOLEK
-                    ? $entry['plafon'] : 0.0;
+            foreach ($accountsByMonth as $monthKey => $accounts) {
+                foreach ($accounts as &$entry) {
+                    $entry['pemburukan'] = $entry['kolek_mob'] !== null && $entry['kolek_mob'] >= self::PEMBURUKAN_MIN_KOLEK
+                        ? $entry['plafon'] : 0.0;
+                }
+                unset($entry);
+                $results[$monthKey] = array_values($accounts);
+                Cache::put($keys[$monthKey], $results[$monthKey], self::CACHE_SECONDS);
             }
-            unset($entry);
 
-            return array_values($accounts);
+            return $results;
         });
+    }
+
+    /** @param array<string, array<string, mixed>> $accounts */
+    private function addMobAccount(array &$accounts, object $row, array $mobMonth): void
+    {
+        if ($this->isKurRitel($row)) {
+            return;
+        }
+        $account = $this->canonicalAccount($row->nomor_rekening1 ?? null);
+        if ($account === '') {
+            return;
+        }
+        $periode = substr((string) $row->periode, 0, 10);
+        $entry = $accounts[$account] ?? [
+            'account' => $account,
+            'cif' => $this->canonicalCif($row->cifno ?? null),
+            'nama_debitur' => trim((string) ($row->nama_debitur1 ?? '')),
+            'produk' => (string) ($row->produk_kinerja ?? ''),
+            'tgl_realisasi' => substr((string) $row->tgl_realisasi, 0, 10),
+            'plafon' => 0.0,
+            'pn' => '',
+            'pn_label' => '',
+            'kolek_mob' => null,
+            'os_mob' => null,
+        ];
+        $entry['plafon'] = max($entry['plafon'], (float) ($row->plafon ?? 0));
+        $prakarsa = $this->basis->pnKey($row->pn_pemrakarsa1 ?? '');
+        if ($prakarsa !== '') {
+            $entry['pn'] = $prakarsa;
+            $entry['pn_label'] = trim((string) $row->pn_pemrakarsa1);
+        } elseif ($entry['pn'] === '') {
+            $entry['pn'] = $this->basis->pnKey($row->pn_pengelola1 ?? '');
+            $entry['pn_label'] = trim((string) ($row->pn_pengelola1 ?? ''));
+        }
+        if ($periode === $mobMonth['measure_position']) {
+            $entry['kolek_mob'] = (int) ($row->kolek ?? 1);
+            $entry['os_mob'] = (float) ($row->baki_debet1 ?? 0);
+        }
+        $accounts[$account] = $entry;
+    }
+
+    private function mobCacheKey(array $month): string
+    {
+        return $this->cacheKey('mob', $month['start'], $month['booking_position'] ?? '-', $month['measure_position'] ?? '-');
     }
 
     /**
@@ -595,7 +674,8 @@ final class MantriIncentiveService
      */
     private function assemble(string $position, array $window, array $monthly, array $mob): array
     {
-        $roster = $this->roster();
+        $roster = $this->roster($position);
+        $branches = $this->scopedBranches();
         $monthKeys = array_column($window['months'], 'key');
         $mobKeys = array_column($window['mob_months'], 'key');
 
@@ -612,7 +692,7 @@ final class MantriIncentiveService
             foreach ($bookings as $booking) {
                 $pn = (string) $booking['pn'];
                 if ($pn === '' || ! isset($roster[$pn])) {
-                    if (in_array($booking['cabang'], $this->scopedBranches(), true)) {
+                    if (in_array($booking['cabang'], $branches, true)) {
                         if ($pn === '') {
                             $outside['no_pn_nd'] += (float) $booking['net'];
                             $outside['no_pn_deb']++;
@@ -735,8 +815,19 @@ final class MantriIncentiveService
      *
      * @return array<string, array<string, string>>
      */
-    public function roster(): array
+    public function roster(?string $period = null): array
     {
+        if ($period !== null && app(\App\Support\MantriProductivityReference::class)->dataForPeriod($period) !== null) {
+            $branches = $this->scopedBranches();
+
+            return collect($this->basis->rosterState($period)['people'])
+                ->filter(fn (array $person): bool => in_array($person['branch'], $branches, true))
+                ->map(fn (array $person): array => array_merge($person, [
+                    'status_key' => $person['category'] === 'contract' ? 'kontrak' : 'tetap',
+                    'unit' => $this->normalize($person['unit']),
+                    'tmt_jabatan' => $this->parseDate($person['history_start']),
+                ]))->all();
+        }
         if (! Schema::hasTable('brihc_pemasar')) {
             return [];
         }
@@ -750,12 +841,13 @@ final class MantriIncentiveService
         }
 
         $people = [];
+        $branches = $this->scopedBranches();
         foreach (DB::table('brihc_pemasar')->select($columns)->get() as $row) {
             if ($this->normalize($row->positiondesc ?? '') !== 'MANTRI') {
                 continue;
             }
             $branch = $this->normalize($row->psadesc ?? '');
-            if (! in_array($branch, $this->scopedBranches(), true)) {
+            if (! in_array($branch, $branches, true)) {
                 continue;
             }
             $pn = '';
@@ -876,8 +968,28 @@ final class MantriIncentiveService
     private function cacheKey(string ...$parts): string
     {
         return implode(':', array_merge(
-            ['insentif_mantri', 'v1', (string) ReportCacheVersion::get('pinjaman')],
+            ['insentif_mantri', 'v2-batched-mob', (string) ReportCacheVersion::get('pinjaman')],
             $parts
         ));
+    }
+
+    /** @param callable(): array $compute */
+    private function rememberResult(string $key, callable $compute, ?string $lockKey = null): array
+    {
+        $cached = Cache::get($key);
+        if (is_array($cached)) {
+            return $cached;
+        }
+
+        return Cache::lock(($lockKey ?? $key).':lock', 300)->block(120, function () use ($key, $compute): array {
+            $cached = Cache::get($key);
+            if (is_array($cached)) {
+                return $cached;
+            }
+            $result = $compute();
+            Cache::put($key, $result, self::CACHE_SECONDS);
+
+            return $result;
+        });
     }
 }

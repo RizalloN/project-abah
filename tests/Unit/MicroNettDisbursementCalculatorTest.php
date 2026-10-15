@@ -109,7 +109,7 @@ class MicroNettDisbursementCalculatorTest extends TestCase
         }
     }
 
-    public function test_existing_signed_kur_clamped_mantri_and_250_million_tier_rules_are_preserved(): void
+    public function test_signed_mantri_and_kur_values_keep_negative_nett_and_existing_kur_250_million_tier_rules(): void
     {
         DB::table('daily_loan_dinamis')->insert([
             $this->row('OLD', 300_000_000, ['periode' => '2026-08-31']),
@@ -123,14 +123,14 @@ class MicroNettDisbursementCalculatorTest extends TestCase
         $this->assertSame('RM LAIN', $kur['rm']);
         $this->assertSame('RM LAIN', $mantri['owner']);
         $this->assertSame(-50_000_000.0, $kur['realisasi_os']);
-        $this->assertSame(0.0, $mantri['realisasi_os']);
+        $this->assertSame(-50_000_000.0, $mantri['realisasi_os']);
         $this->assertSame(1, $kur['realisasi_deb']);
         $this->assertSame(1, $mantri['realisasi_deb']);
         $this->assertSame(0, $kur['lt_250_realisasi_deb']);
         $this->assertSame(0, $kur['gt_250_realisasi_deb']);
     }
 
-    public function test_previous_cif_exposure_is_applied_once_per_distinct_event(): void
+    public function test_each_mantri_booking_subtracts_complete_closed_cif_exposure_while_kur_keeps_its_segment_basis(): void
     {
         DB::table('daily_loan_dinamis')->insert([
             $this->row('OLD-KUR', 100_000_000, ['periode' => '2026-08-31']),
@@ -147,7 +147,12 @@ class MicroNettDisbursementCalculatorTest extends TestCase
         $this->assertSame(2, $kur['realisasi_deb']);
         $this->assertSame(300_000_000.0, $kur['realisasi_os']);
         $this->assertSame(2, $mantri['realisasi_deb']);
-        $this->assertSame(350_000_000.0, $mantri['realisasi_os']);
+        $this->assertSame(200_000_000.0, $mantri['realisasi_os']);
+        $accounts = collect($calculator->mantriAccounts('2026-09-19'))->keyBy('account_key');
+        $this->assertSame(150_000_000.0, $accounts['NEW-A']['previous_os']);
+        $this->assertSame(150_000_000.0, $accounts['NEW-A']['net_amount']);
+        $this->assertSame(150_000_000.0, $accounts['NEW-B']['previous_os']);
+        $this->assertSame(50_000_000.0, $accounts['NEW-B']['net_amount']);
     }
 
     public function test_mtd_keeps_disappeared_booking_and_deduplicates_daily_positions(): void
@@ -206,7 +211,7 @@ class MicroNettDisbursementCalculatorTest extends TestCase
         }
     }
 
-    public function test_mantri_consumes_complete_micro_cif_baseline_once_per_event(): void
+    public function test_mantri_subtracts_full_closed_cif_baseline_from_each_account_without_capping_negative_results(): void
     {
         DB::table('daily_loan_dinamis')->insert([
             $this->row('OLD', 300_000_000, ['periode' => '2026-08-31']),
@@ -216,7 +221,12 @@ class MicroNettDisbursementCalculatorTest extends TestCase
 
         $calculator = app(MicroNettDisbursementCalculator::class);
         $this->assertSame(-250_000_000.0, $calculator->kurRm('2026-09-19')[0]['realisasi_os']);
-        $this->assertSame(50_000_000.0, $calculator->mantri('2026-09-19')[0]['realisasi_os']);
+        $this->assertSame(-250_000_000.0, $calculator->mantri('2026-09-19')[0]['realisasi_os']);
+        $accounts = collect($calculator->mantriAccounts('2026-09-19'))->keyBy('account_key');
+        $this->assertSame(300_000_000.0, $accounts['NEW-A']['previous_os']);
+        $this->assertSame(-50_000_000.0, $accounts['NEW-A']['net_amount']);
+        $this->assertSame(300_000_000.0, $accounts['NEW-B']['previous_os']);
+        $this->assertSame(-200_000_000.0, $accounts['NEW-B']['net_amount']);
     }
 
     public function test_kur_uses_only_official_kur_ritel_description(): void

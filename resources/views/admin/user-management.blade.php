@@ -21,6 +21,10 @@
         <div class="alert alert-success border-0 shadow-sm mb-4" style="border-radius: 10px;"><i class="fas fa-check-circle mr-2"></i>{{ session('success') }}</div>
     @endif
 
+    @if (session('error'))
+        <div class="alert alert-danger border-0 shadow-sm mb-4" style="border-radius: 10px;"><i class="fas fa-exclamation-triangle mr-2"></i>{{ session('error') }}</div>
+    @endif
+
     @if ($errors->has('user_management'))
         <div class="alert alert-danger border-0 shadow-sm mb-4" style="border-radius: 10px;"><i class="fas fa-exclamation-triangle mr-2"></i>{{ $errors->first('user_management') }}</div>
     @endif
@@ -66,8 +70,16 @@
                         </div>
                         <div class="form-group mb-4">
                             <label class="user-form-label" for="password">Password Awal</label>
-                            <input type="password" id="password" name="password" class="form-control user-form-control @error('password', 'createUser') is-invalid @enderror" placeholder="Min. 8 karakter" required>
-                            @error('password', 'createUser')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                            <div class="input-group">
+                                <input type="password" id="password" name="password" class="form-control user-form-control @error('password', 'createUser') is-invalid @enderror" placeholder="Minimal 8 karakter" required>
+                                <div class="input-group-append">
+                                    <button class="btn btn-outline-secondary toggle-password-visibility" type="button" data-target="#password" title="Lihat/Sembunyikan password" tabindex="-1">
+                                        <i class="fas fa-eye"></i>
+                                    </button>
+                                </div>
+                                @error('password', 'createUser')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror
+                            </div>
+                            <small class="text-muted d-block mt-1" style="font-size: 0.78rem;">Minimal 8 karakter kombinasi huruf besar, huruf kecil, dan angka.</small>
                         </div>
                         <button type="submit" class="btn user-btn-primary btn-block font-weight-bold">
                             <i class="fas fa-save mr-2"></i>Simpan Pengguna
@@ -156,7 +168,7 @@
                                         <button type="button" class="btn btn-sm btn-outline-primary user-action-btn" data-toggle="modal" data-target="#editUserModal-{{ $userItem->id }}" title="Edit User">
                                             <i class="fas fa-pen"></i>
                                         </button>
-                                        <form method="POST" action="{{ route('user-management.destroy', $userItem) }}" class="d-inline" onsubmit="return confirm('Hapus user {{ addslashes($userItem->name) }}?');">
+                                        <form method="POST" action="{{ route('user-management.destroy', $userItem) }}" class="d-inline form-delete-user" data-user-name="{{ $userItem->name }}">
                                             @csrf
                                             @method('DELETE')
                                             <button type="submit" class="btn btn-sm btn-outline-danger user-action-btn ml-1" {{ auth()->id() === $userItem->id ? 'disabled' : '' }} title="Hapus User">
@@ -252,10 +264,17 @@
                             </div>
                             <div class="col-md-6">
                                 <div class="form-group mb-0">
-                                    <label class="user-form-label">Password Baru</label>
-                                    <input type="password" name="password" class="form-control user-form-control @if (session('open_edit_user') == $userItem->id && $errors->updateUser->has('password')) is-invalid @endif" placeholder="Kosongkan jika tidak diubah">
-                                    @if (session('open_edit_user') == $userItem->id) @error('password', 'updateUser')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror @endif
-                                    <small class="text-muted d-block mt-1" style="font-size: 0.78rem;">Isi hanya jika ingin mereset password pengguna.</small>
+                                    <label class="user-form-label" for="edit-password-{{ $userItem->id }}">Password Baru</label>
+                                    <div class="input-group">
+                                        <input type="password" id="edit-password-{{ $userItem->id }}" name="password" class="form-control user-form-control @if (session('open_edit_user') == $userItem->id && $errors->updateUser->has('password')) is-invalid @endif" placeholder="Minimal 8 karakter (opsional)" autocomplete="new-password">
+                                        <div class="input-group-append">
+                                            <button class="btn btn-outline-secondary toggle-password-visibility" type="button" data-target="#edit-password-{{ $userItem->id }}" title="Lihat/Sembunyikan password" tabindex="-1">
+                                                <i class="fas fa-eye"></i>
+                                            </button>
+                                        </div>
+                                        @if (session('open_edit_user') == $userItem->id) @error('password', 'updateUser')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror @endif
+                                    </div>
+                                    <small class="text-muted d-block mt-1" style="font-size: 0.78rem;">Kosongkan jika tidak diubah. Minimal 8 karakter jika ingin mereset password.</small>
                                 </div>
                             </div>
                         </div>
@@ -318,6 +337,9 @@
         </div>
     </div>
 </div>
+
+<!-- Custom Toast Stack Container -->
+<div id="userToastStack" class="user-toast-stack" aria-live="polite" aria-atomic="false"></div>
 @endsection
 
 @section('styles')
@@ -587,19 +609,462 @@
         color: #334155;
     }
 
-    /* Modals */
+    /* Modals Stacking */
     .modal.user-management-edit-modal { z-index: 2055; }
     .modal-backdrop.user-management-edit-backdrop { z-index: 2050; }
     #loginHistoryModal { z-index: 2065; }
     .modal-backdrop.login-history-backdrop { z-index: 2060; }
+
+    /* Password Visibility Toggle */
+    .toggle-password-visibility {
+        border-color: #cbd5e1;
+        background-color: #f8fafc;
+        color: #64748b;
+        transition: all 0.15s ease;
+    }
+    .toggle-password-visibility:hover {
+        background-color: #e2e8f0;
+        color: #0f172a;
+    }
+
+    /* ==========================================================================
+       Custom Modern Toast Notification System (CSS & JS)
+       ========================================================================== */
+    .user-toast-stack {
+        position: fixed;
+        top: max(1.25rem, env(safe-area-inset-top));
+        right: max(1.25rem, env(safe-area-inset-right));
+        z-index: 999999;
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+        width: min(420px, calc(100vw - 2.5rem));
+        max-height: calc(100vh - 2.5rem);
+        max-height: calc(100dvh - 2.5rem);
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        pointer-events: none;
+    }
+
+    .user-toast {
+        position: relative;
+        flex: 0 0 auto;
+        overflow: hidden;
+        pointer-events: auto;
+        display: flex;
+        align-items: flex-start;
+        gap: 0.85rem;
+        padding: 1rem 1.15rem;
+        border-radius: 14px;
+        background: #ffffff;
+        box-shadow: 0 16px 36px -10px rgba(15, 23, 42, 0.22), 0 4px 14px rgba(0, 0, 0, 0.08);
+        border: 1px solid rgba(226, 232, 240, 0.95);
+        border-left: 5px solid #0857c3;
+        transform: translateX(120%);
+        opacity: 0;
+        transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease;
+    }
+
+    .user-toast.is-visible {
+        transform: translateX(0);
+        opacity: 1;
+    }
+
+    .user-toast.is-hiding {
+        transform: translateX(120%);
+        opacity: 0;
+    }
+
+    .user-toast--success {
+        border-left-color: #10b981;
+    }
+
+    .user-toast--error {
+        border-left-color: #ef4444;
+    }
+
+    .user-toast--warning {
+        border-left-color: #f59e0b;
+    }
+
+    .user-toast__icon {
+        flex: 0 0 auto;
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        font-size: 1rem;
+        color: #ffffff;
+        margin-top: 2px;
+    }
+
+    .user-toast--success .user-toast__icon {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        box-shadow: 0 4px 10px rgba(16, 185, 129, 0.3);
+    }
+
+    .user-toast--error .user-toast__icon {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        box-shadow: 0 4px 10px rgba(239, 68, 68, 0.3);
+    }
+
+    .user-toast--warning .user-toast__icon {
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        box-shadow: 0 4px 10px rgba(245, 158, 11, 0.3);
+    }
+
+    .user-toast__body {
+        min-width: 0;
+        flex: 1 1 auto;
+    }
+
+    .user-toast__title {
+        font-weight: 700;
+        font-size: 0.95rem;
+        color: #0f172a;
+        line-height: 1.3;
+        margin-bottom: 0.25rem;
+        overflow-wrap: anywhere;
+    }
+
+    .user-toast__text {
+        color: #475569;
+        font-size: 0.86rem;
+        line-height: 1.45;
+        word-break: break-word;
+        white-space: pre-line;
+    }
+
+    .user-toast__close {
+        flex: 0 0 auto;
+        border: 0;
+        background: transparent;
+        color: #64748b;
+        font-size: 1.35rem;
+        line-height: 1;
+        display: grid;
+        place-items: center;
+        width: 44px;
+        height: 44px;
+        padding: 0;
+        border-radius: 8px;
+        margin-top: -4px;
+        margin-right: -8px;
+        cursor: pointer;
+        transition: color 0.15s ease;
+    }
+
+    .user-toast__close:hover {
+        color: #0f172a;
+        background: #f1f5f9;
+    }
+
+    .user-toast__close:focus-visible {
+        outline: 2px solid #0857c3;
+        outline-offset: 2px;
+    }
+
+    .user-toast__progress {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        height: 3px;
+        width: 100%;
+        background: rgba(0, 0, 0, 0.08);
+    }
+
+    .user-toast__progress-bar {
+        height: 100%;
+        width: 100%;
+        transform-origin: left;
+    }
+
+    .user-toast--success .user-toast__progress-bar {
+        background: #10b981;
+    }
+
+    .user-toast--error .user-toast__progress-bar {
+        background: #ef4444;
+    }
+
+    .user-toast--warning .user-toast__progress-bar {
+        background: #f59e0b;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .user-toast,
+        .user-toast__close,
+        .user-toast__progress-bar {
+            transition: none !important;
+        }
+
+        .user-toast,
+        .user-toast.is-hiding {
+            transform: none !important;
+        }
+    }
 </style>
 @endsection
 
 @section('scripts')
+@php
+    $toastSuccess = session('success');
+    $toastErrors = [];
+    if (session('error')) {
+        $toastErrors[] = session('error');
+    }
+    if ($errors->has('user_management')) {
+        $toastErrors[] = $errors->first('user_management');
+    }
+    if (isset($errors) && $errors->updateUser->any()) {
+        foreach ($errors->updateUser->all() as $err) {
+            $toastErrors[] = $err;
+        }
+    }
+    if (isset($errors) && $errors->createUser->any()) {
+        foreach ($errors->createUser->all() as $err) {
+            $toastErrors[] = $err;
+        }
+    }
+    $toastErrors = array_values(array_unique(array_filter($toastErrors)));
+@endphp
 <script>
+// ── Global Custom Toast Notification Engine ──
+window.showUserToast = function (type, title, message, duration) {
+    let stack = document.getElementById('userToastStack');
+    if (!stack) {
+        stack = document.createElement('div');
+        stack.id = 'userToastStack';
+        stack.className = 'user-toast-stack';
+        stack.setAttribute('aria-live', 'polite');
+        stack.setAttribute('aria-atomic', 'false');
+        document.body.appendChild(stack);
+    }
+
+    const variant = ['success', 'error', 'warning'].includes(type) ? type : 'success';
+    const toast = document.createElement('div');
+    toast.className = 'user-toast user-toast--' + variant;
+    toast.setAttribute('role', 'status');
+    toast.setAttribute('aria-atomic', 'true');
+
+    // Icon
+    const iconWrap = document.createElement('div');
+    iconWrap.className = 'user-toast__icon';
+    iconWrap.setAttribute('aria-hidden', 'true');
+    const icon = document.createElement('i');
+    if (variant === 'success') {
+        icon.className = 'fas fa-check';
+    } else if (variant === 'error') {
+        icon.className = 'fas fa-times';
+    } else {
+        icon.className = 'fas fa-exclamation';
+    }
+    iconWrap.appendChild(icon);
+
+    // Body
+    const body = document.createElement('div');
+    body.className = 'user-toast__body';
+
+    const titleEl = document.createElement('div');
+    titleEl.className = 'user-toast__title';
+    titleEl.textContent = String(title ?? '');
+
+    const textEl = document.createElement('div');
+    textEl.className = 'user-toast__text';
+    textEl.textContent = String(message ?? '');
+
+    body.appendChild(titleEl);
+    body.appendChild(textEl);
+
+    // Close button
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'user-toast__close';
+    closeBtn.textContent = '\u00d7';
+    closeBtn.setAttribute('aria-label', 'Tutup notifikasi');
+
+    // Progress bar
+    const progressEl = document.createElement('div');
+    progressEl.className = 'user-toast__progress';
+    progressEl.setAttribute('aria-hidden', 'true');
+    const progressBar = document.createElement('div');
+    progressBar.className = 'user-toast__progress-bar';
+    progressEl.appendChild(progressBar);
+
+    toast.appendChild(iconWrap);
+    toast.appendChild(body);
+    toast.appendChild(closeBtn);
+    toast.appendChild(progressEl);
+
+    const requestedDuration = Number(duration);
+    const displayDuration = Number.isFinite(requestedDuration) && requestedDuration > 0
+        ? Math.max(1000, Math.min(30000, requestedDuration))
+        : (variant === 'error' ? 6500 : 4500);
+    const reducedMotion = typeof window.matchMedia === 'function'
+        && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    let remaining = displayDuration;
+    let timerStartedAt = 0;
+    let dismissTimer = null;
+    let removalTimer = null;
+    let hovered = false;
+    let focused = false;
+    let removed = false;
+    let returnFocus = document.activeElement;
+
+    const finishRemoval = function () {
+        if (removalTimer !== null) window.clearTimeout(removalTimer);
+        if (toast.contains(document.activeElement) && returnFocus?.isConnected
+            && typeof returnFocus.focus === 'function') {
+            returnFocus.focus({ preventScroll: true });
+        }
+        toast.remove();
+    };
+
+    const removeToast = function (immediate = false) {
+        if (dismissTimer !== null) window.clearTimeout(dismissTimer);
+        dismissTimer = null;
+        if (removed) {
+            if (immediate) finishRemoval();
+            return;
+        }
+        removed = true;
+        if (immediate || reducedMotion) {
+            finishRemoval();
+            return;
+        }
+        toast.classList.remove('is-visible');
+        toast.classList.add('is-hiding');
+        removalTimer = window.setTimeout(finishRemoval, 360);
+    };
+
+    const pauseTimer = function () {
+        if (removed || dismissTimer === null) return;
+        window.clearTimeout(dismissTimer);
+        dismissTimer = null;
+        remaining = Math.max(0, remaining - (Date.now() - timerStartedAt));
+        progressBar.style.transition = 'none';
+        if (!reducedMotion) progressBar.style.transform = 'scaleX(' + (remaining / displayDuration) + ')';
+    };
+
+    const resumeTimer = function () {
+        if (removed || hovered || focused || dismissTimer !== null) return;
+        timerStartedAt = Date.now();
+        const startedAt = timerStartedAt;
+        dismissTimer = window.setTimeout(() => removeToast(), remaining);
+        if (!reducedMotion) {
+            window.requestAnimationFrame(function () {
+                if (removed || hovered || focused || timerStartedAt !== startedAt) return;
+                progressBar.style.transition = 'transform ' + remaining + 'ms linear';
+                progressBar.style.transform = 'scaleX(0)';
+            });
+        }
+    };
+
+    toast.addEventListener('mouseenter', function () { hovered = true; pauseTimer(); });
+    toast.addEventListener('mouseleave', function () { hovered = false; resumeTimer(); });
+    toast.addEventListener('focusin', function (event) {
+        if (event.relatedTarget && !toast.contains(event.relatedTarget)) returnFocus = event.relatedTarget;
+        focused = true;
+        pauseTimer();
+    });
+    toast.addEventListener('focusout', function (event) {
+        focused = toast.contains(event.relatedTarget);
+        resumeTimer();
+    });
+    toast.addEventListener('transitionend', function (event) {
+        if (removed && event.target === toast && event.propertyName === 'transform') finishRemoval();
+    });
+    toast.addEventListener('user-toast-dismiss', () => removeToast(true));
+    closeBtn.addEventListener('click', () => removeToast());
+
+    while (stack.children.length >= 4) {
+        const oldest = stack.firstElementChild;
+        oldest.dispatchEvent(new Event('user-toast-dismiss'));
+        if (oldest.parentNode === stack) oldest.remove();
+    }
+    stack.appendChild(toast);
+    window.requestAnimationFrame(function () {
+        if (!removed) toast.classList.add('is-visible');
+    });
+    resumeTimer();
+};
+
 document.addEventListener('DOMContentLoaded', function () {
+    const toastSuccess = @json($toastSuccess);
+    const toastErrors = @json($toastErrors);
+    const openEditUserId = @json(session('open_edit_user'));
+
+    // Trigger toast on page load
+    if (toastSuccess) {
+        window.showUserToast('success', 'Berhasil', toastSuccess, 4500);
+    } else if (toastErrors && toastErrors.length > 0) {
+        const errorText = toastErrors.map(String).join('\n');
+        window.showUserToast('error', 'Gagal Memproses', errorText, 6500);
+
+        if (openEditUserId && typeof window.jQuery !== 'undefined') {
+            const modalEl = document.getElementById('editUserModal-' + openEditUserId);
+            if (modalEl) {
+                window.jQuery(modalEl).modal('show');
+            }
+        }
+    }
+
+    document.querySelectorAll('.form-delete-user').forEach(function (form) {
+        form.addEventListener('submit', async function (event) {
+            event.preventDefault();
+            if (form.dataset.confirmPending === '1') return;
+            const submitButton = event.submitter || form.querySelector('button[type="submit"]');
+            if (submitButton?.disabled) return;
+            const userName = form.dataset.userName || 'ini';
+            form.dataset.confirmPending = '1';
+            if (submitButton) submitButton.disabled = true;
+            try {
+                const confirmed = window.Swal
+                    ? (await window.Swal.fire({
+                        icon: 'warning',
+                        title: 'Hapus user?',
+                        text: 'Hapus user "' + userName + '"?',
+                        showCancelButton: true,
+                        confirmButtonText: 'Hapus user',
+                        cancelButtonText: 'Batal',
+                        focusCancel: true,
+                        reverseButtons: true,
+                        customClass: {
+                            confirmButton: 'swal-modern-confirm swal-btn-danger',
+                            cancelButton: 'swal-modern-cancel',
+                        },
+                    })).isConfirmed
+                    : window.confirm('Hapus user "' + userName + '"?');
+                if (confirmed) HTMLFormElement.prototype.submit.call(form);
+            } catch (error) {
+                window.showUserToast('error', 'Konfirmasi gagal', 'Muat ulang halaman lalu coba kembali.');
+            } finally {
+                delete form.dataset.confirmPending;
+                if (submitButton) submitButton.disabled = false;
+            }
+        });
+    });
+
     if (typeof window.jQuery !== 'undefined') {
         const $ = window.jQuery;
+
+        // Toggle password visibility
+        $(document).on('click', '.toggle-password-visibility', function (e) {
+            e.preventDefault();
+            const targetSelector = $(this).data('target');
+            const $target = $(targetSelector);
+            const $icon = $(this).find('i');
+            if ($target.length) {
+                if ($target.attr('type') === 'password') {
+                    $target.attr('type', 'text');
+                    $icon.removeClass('fa-eye').addClass('fa-eye-slash');
+                } else {
+                    $target.attr('type', 'password');
+                    $icon.removeClass('fa-eye-slash').addClass('fa-eye');
+                }
+            }
+        });
 
         $('.user-management-edit-modal').each(function () {
             const $modal = $(this);
@@ -703,17 +1168,14 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    const modalId = @json(session('open_edit_user'));
-    if (!modalId || typeof window.jQuery === 'undefined') {
-        return;
+    if (!toastErrors || toastErrors.length === 0) {
+        if (openEditUserId && typeof window.jQuery !== 'undefined') {
+            const modalEl = document.getElementById('editUserModal-' + openEditUserId);
+            if (modalEl) {
+                window.jQuery(modalEl).modal('show');
+            }
+        }
     }
-
-    const modalEl = document.getElementById('editUserModal-' + modalId);
-    if (!modalEl) {
-        return;
-    }
-
-    window.jQuery(modalEl).modal('show');
 });
 </script>
 @endsection

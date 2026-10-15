@@ -921,7 +921,10 @@ document.addEventListener('DOMContentLoaded', async function() {
 
       const deckScopeOptions = (data = presentationData) => {
         const options = data?.scope?.options || data?.performance_overview?.matrix?.scope_options || [];
-        return Array.isArray(options) ? options : [];
+        if (!Array.isArray(options)) return [];
+        return presentationConfig.branchScope
+          ? options.filter(option => option.label === presentationConfig.branchScope)
+          : options;
       };
 
       const activeScopeOption = (data = presentationData) => {

@@ -112,11 +112,12 @@ class UserManagementController extends Controller
         if ($recentCount >= self::MAX_CREATES_PER_HOUR) {
             return back()
                 ->withErrors(['user_management' => 'Batas pembuatan akun tercapai. Maksimum ' . self::MAX_CREATES_PER_HOUR . ' akun baru per jam.'])
+                ->with('error', 'Batas pembuatan akun tercapai. Maksimum ' . self::MAX_CREATES_PER_HOUR . ' akun baru per jam.')
                 ->withInput();
         }
 
         // ── Validasi input ──
-        $data = Validator::make($request->all(), [
+        $validator = Validator::make($request->all(), [
             'name'     => ['required', 'string', 'min:3', 'max:60', 'regex:' . self::NAME_REGEX],
             'pn'       => ['required', 'string', 'regex:' . self::PN_REGEX, 'unique:users,pn'],
             'role'     => ['required', Rule::in(['admin', 'user'])],
@@ -127,14 +128,27 @@ class UserManagementController extends Controller
             'pn.regex'       => 'PN harus berupa 4–10 digit angka (contoh: 90179583).',
             'branch_scope.required' => 'Wilayah binaan wajib dipilih.',
             'branch_scope.in' => 'Wilayah binaan yang dipilih tidak valid.',
-            'password.min'   => 'Password minimal 12 karakter.',
-        ])->validateWithBag('createUser');
+            'password.min'   => 'Password minimal 8 karakter.',
+            'password.letters' => 'Password harus mengandung huruf.',
+            'password.mixed' => 'Password harus mengandung kombinasi huruf besar dan huruf kecil.',
+            'password.numbers' => 'Password harus mengandung angka.',
+        ]);
+
+        if ($validator->fails()) {
+            return back()
+                ->withErrors($validator, 'createUser')
+                ->withInput()
+                ->with('error', 'Gagal menambahkan user baru: ' . $validator->errors()->first());
+        }
+
+        $data = $validator->validated();
 
         // ── Cek pola nama Faker/gelar asing ──
         foreach (self::BLOCKED_NAME_PATTERNS as $pattern) {
             if (preg_match($pattern, $data['name'])) {
                 return back()
                     ->withErrors(['name' => 'Format nama tidak valid. Nama tidak boleh mengandung gelar/suffix asing (Miss, PhD, Jr., dll).'], 'createUser')
+                    ->with('error', 'Format nama tidak valid. Nama tidak boleh mengandung gelar/suffix asing.')
                     ->withInput();
             }
         }
@@ -144,7 +158,7 @@ class UserManagementController extends Controller
             'pn'       => trim($data['pn']),
             'role'     => $data['role'],
             'branch_scope' => $data['branch_scope'],
-            'password' => Hash::make($data['password']),
+            'password' => Hash::make(trim($data['password'])),
         ]);
 
         // ── Audit log ──
@@ -163,20 +177,22 @@ class UserManagementController extends Controller
             'pn'       => ['required', 'string', 'regex:' . self::PN_REGEX, Rule::unique('users', 'pn')->ignore($user->getKey())],
             'role'     => ['required', Rule::in(['admin', 'user'])],
             'branch_scope' => ['required', Rule::in(array_keys(UserBranchScope::options()))],
-            'password' => ['nullable', 'string', $this->securePasswordRule()],
+            'password' => ['nullable', 'string', 'min:8'],
         ], [
             'name.regex'   => 'Nama hanya boleh mengandung huruf dan spasi (tanpa gelar asing atau karakter khusus).',
             'pn.regex'     => 'PN harus berupa 4–10 digit angka (contoh: 90179583).',
             'branch_scope.required' => 'Wilayah binaan wajib dipilih.',
             'branch_scope.in' => 'Wilayah binaan yang dipilih tidak valid.',
-            'password.min' => 'Password minimal 12 karakter.',
+            'password.min' => 'Password minimal 8 karakter.',
+            'password.string' => 'Password harus berupa teks yang valid.',
         ]);
 
         if ($validator->fails()) {
             return back()
                 ->withErrors($validator, 'updateUser')
                 ->withInput()
-                ->with('open_edit_user', $user->getKey());
+                ->with('open_edit_user', $user->getKey())
+                ->with('error', 'Gagal memperbarui data user: ' . $validator->errors()->first());
         }
 
         $data = $validator->validated();
@@ -187,7 +203,8 @@ class UserManagementController extends Controller
                 return back()
                     ->withErrors(['name' => 'Format nama tidak valid. Nama tidak boleh mengandung gelar/suffix asing.'], 'updateUser')
                     ->withInput()
-                    ->with('open_edit_user', $user->getKey());
+                    ->with('open_edit_user', $user->getKey())
+                    ->with('error', 'Format nama tidak valid. Nama tidak boleh mengandung gelar/suffix asing.');
             }
         }
 
@@ -198,7 +215,8 @@ class UserManagementController extends Controller
             return back()
                 ->withErrors(['user_management' => 'Akun admin yang sedang aktif tidak boleh diturunkan menjadi user biasa.'], 'updateUser')
                 ->withInput()
-                ->with('open_edit_user', $user->getKey());
+                ->with('open_edit_user', $user->getKey())
+                ->with('error', 'Akun admin yang sedang aktif tidak boleh diturunkan menjadi user biasa.');
         }
 
         $oldRole = $user->role;
@@ -216,7 +234,7 @@ class UserManagementController extends Controller
             || $oldPn !== trim($data['pn']);
 
         if ($passwordChanged) {
-            $user->password = Hash::make($data['password']);
+            $user->password = Hash::make(trim($data['password']));
         }
 
         if ($securityContextChanged) {
@@ -247,7 +265,11 @@ class UserManagementController extends Controller
             return redirect()->route('login')->with('status', 'Perubahan keamanan tersimpan. Silakan login kembali.');
         }
 
-        return back()->with('success', 'Data user berhasil diperbarui.');
+        $successMessage = $passwordChanged
+            ? 'Password dan profil user ' . $user->name . ' berhasil diperbarui.'
+            : 'Data user ' . $user->name . ' berhasil diperbarui.';
+
+        return back()->with('success', $successMessage);
     }
 
     public function destroy(User $user): RedirectResponse
@@ -256,7 +278,8 @@ class UserManagementController extends Controller
 
         if ($currentUser && (int) $currentUser->getKey() === (int) $user->getKey()) {
             return back()
-                ->withErrors(['user_management' => 'Akun yang sedang digunakan tidak dapat dihapus.']);
+                ->withErrors(['user_management' => 'Akun yang sedang digunakan tidak dapat dihapus.'])
+                ->with('error', 'Akun yang sedang digunakan tidak dapat dihapus.');
         }
 
         // Simpan info untuk log sebelum delete
@@ -308,7 +331,7 @@ class UserManagementController extends Controller
 
     private function securePasswordRule(): Password
     {
-        return Password::min(12)
+        return Password::min(8)
             ->letters()
             ->mixedCase()
             ->numbers();
