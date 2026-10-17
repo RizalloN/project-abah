@@ -3662,9 +3662,13 @@
                 .filter(function (value) { return value && value !== 'all'; });
             const requestedValues = normalizeArraySelection(selectedValues)
                 .filter(function (value) { return availableValues.includes(value); });
-            const normalized = isArea6KancaSelection(options, requestedValues)
+            // Branch-scoped users receive a single branch and no "all" option: never fall back to Area 6.
+            const lockedValues = availableValues.length === 1 && !(options || []).some(function (option) {
+                return String(option.value || 'all') === 'all';
+            }) ? availableValues : null;
+            const normalized = lockedValues || (isArea6KancaSelection(options, requestedValues)
                 ? []
-                : requestedValues.slice(0, 1);
+                : requestedValues.slice(0, 1));
             const selectedValue = normalized[0] || 'all';
             setNativeSelectOptions(selects.kanca, options, selectedValue, false);
             const area6Active = normalized.length === 0;

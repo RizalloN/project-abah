@@ -28,12 +28,13 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `dashboardBranchNames` | method | 32 | `app/Http/Controllers/DashboardSimpananController.php:14808` |
 | `reportCacheVersion` | method | 32 | `app/Http/Controllers/DashboardSimpananController.php:14967` |
 | `effectiveDashboardBranchScope` | method | 27 | `app/Http/Controllers/DashboardSimpananController.php:14787` |
-| `buildArea6PortfolioLandingFresh` | method | 25 | `app/Http/Controllers/DashboardSimpananController.php:10371` |
+| `buildArea6PortfolioLandingFresh` | method | 26 | `app/Http/Controllers/DashboardSimpananController.php:10371` |
 | `buildLandingSimpananPayloadFresh` | method | 24 | `app/Http/Controllers/DashboardSimpananController.php:217` |
 | `dashboard` | route | 22 | - |
 | `fetchData` | method | 22 | `app/Http/Controllers/RasioCasaDebiturController.php:63` |
 | `area6HarianSnapshotSummaryQuery` | method | 20 | `app/Http/Controllers/DashboardSimpananController.php:12470` |
 | `dashboardBranchDisplayNames` | method | 20 | `app/Http/Controllers/DashboardSimpananController.php:14830` |
+| `dashboardScopeLabel` | method | 19 | `app/Http/Controllers/DashboardSimpananController.php:14837` |
 | `readMarketShareMappingWorkbookPreview` | method | 19 | `app/Http/Controllers/DashboardSimpananController.php:3768` |
 | `buildDigitalCard` | method | 18 | `app/Http/Controllers/DashboardSimpananController.php:14591` |
 | `formatInteger` | method | 18 | `app/Http/Controllers/DashboardSimpananController.php:14882` |
@@ -47,7 +48,6 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `formatPeriodLabel` | method | 17 | `app/Http/Controllers/DashboardSimpananController.php:14937` |
 | `reportCacheVersion` | method | 17 | `app/Http/Controllers/RasioCasaDebiturController.php:2322` |
 | `RebuildSnapshotDormantBatch` | class | 16 | `app/Jobs/RebuildSnapshotDormantBatch.php:19` |
-| `WarmDashboardSimpananCacheJob` | class | 16 | `app/Jobs/WarmDashboardSimpananCacheJob.php:14` |
 
 ## Route Nodes
 

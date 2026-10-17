@@ -446,6 +446,7 @@ class DashboardHarianController extends Controller
         if (UserBranchScope::current() === null) {
             array_unshift($filters['kanca'], ['value' => 'area6', 'label' => 'Area 6 Madiun']);
         }
+        $filters['kanca'] = UserBranchScope::restrictOptions($filters['kanca']);
         $unitOptions = collect($filters['unit_kerja'] ?? [])
             ->reject(fn (array $option): bool => (string) ($option['value'] ?? '') === DashboardHarianSnapshotService::ALL_UNIT_KONSOL_VALUE)
             ->values();
@@ -470,6 +471,7 @@ class DashboardHarianController extends Controller
     {
         $filterUnit = $this->isAllUnitKonsolFilter($selectedUnit) ? 'all' : $selectedUnit;
         $filters = $this->dashboardHarianSnapshotService->fetchFilterOptions($selectedPeriod, $selectedKanca, $filterUnit);
+        $filters['kanca'] = UserBranchScope::restrictOptions($filters['kanca'] ?? []);
 
         if ($this->isArea6KancaScope($selectedKanca)) {
             return $filters;

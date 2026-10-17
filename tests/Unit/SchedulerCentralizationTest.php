@@ -67,6 +67,16 @@ class SchedulerCentralizationTest extends TestCase
         $this->assertStringNotContainsString("'--fix' => true", $consoleRoutes);
     }
 
+    public function test_backup_has_an_hourly_catch_up_that_only_runs_when_today_is_missing(): void
+    {
+        $consoleRoutes = file_get_contents(base_path('routes/console.php'));
+
+        $this->assertMatchesRegularExpression(
+            "/Schedule::command\\('database:backup-daily --if-missing'\\)\\s*->hourlyAt\\(30\\)\\s*->timezone\\('Asia\\/Jakarta'\\)\\s*->withoutOverlapping\\(1440\\)\\s*->runInBackground\\(\\);/s",
+            $consoleRoutes
+        );
+    }
+
     public function test_daily_database_backup_runs_at_midnight_with_a_full_day_mutex(): void
     {
         $consoleRoutes = file_get_contents(base_path('routes/console.php'));

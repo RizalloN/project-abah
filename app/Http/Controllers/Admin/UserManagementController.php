@@ -55,7 +55,13 @@ class UserManagementController extends Controller
 
     public function index(): View
     {
-        $users = User::query()
+        $isSuperAdmin = Auth::user()?->isSuperAdmin() ?? false;
+        $visibleUsers = User::query()
+            ->when(!$isSuperAdmin, fn ($query) => $query
+                ->where('role', '!=', 'superadmin')
+                ->where('pn', '!=', User::SUPERADMIN_PN));
+
+        $users = (clone $visibleUsers)
             ->select('users.*')
             ->selectSub(
                 \Illuminate\Support\Facades\DB::table('login_histories')
@@ -65,15 +71,18 @@ class UserManagementController extends Controller
                     ->limit(1),
                 'last_login_at'
             )
-            ->orderByRaw("CASE WHEN role = 'admin' THEN 0 ELSE 1 END")
+            ->orderByRaw("CASE WHEN role = 'superadmin' THEN 0 WHEN role = 'admin' THEN 1 ELSE 2 END")
             ->orderBy('name')
             ->paginate(15);
 
         $stats = [
-            'total'  => User::count(),
-            'admins' => User::where('role', 'admin')->count(),
-            'users'  => User::where('role', 'user')->count(),
+            'total'  => (clone $visibleUsers)->count(),
+            'admins' => (clone $visibleUsers)->where('role', 'admin')->count(),
+            'users'  => (clone $visibleUsers)->where('role', 'user')->count(),
         ];
+        if ($isSuperAdmin) {
+            $stats['superadmins'] = (clone $visibleUsers)->where('role', 'superadmin')->where('pn', User::SUPERADMIN_PN)->count();
+        }
         $branchScopeOptions = UserBranchScope::options();
 
         return view('admin.user-management', compact('users', 'stats', 'branchScopeOptions'));
@@ -81,6 +90,9 @@ class UserManagementController extends Controller
 
     public function loginHistory(User $user): \Illuminate\Http\JsonResponse
     {
+        abort_if(!Auth::user()?->isSuperAdmin()
+            && ($user->role === 'superadmin' || $user->pn === User::SUPERADMIN_PN), 404);
+
         $history = \Illuminate\Support\Facades\DB::table('login_histories')
             ->where('user_id', $user->getKey())
             ->selectRaw('DATE(login_at) as date, COUNT(*) as count')
@@ -102,6 +114,7 @@ class UserManagementController extends Controller
     {
         // ── Rate-limit: max MAX_CREATES_PER_HOUR pembuatan user baru per admin per jam ──
         $currentAdmin = Auth::user();
+        abort_unless($currentAdmin?->isAdmin(), 403);
         $hourAgo = now()->subHour();
         $recentCount = DB::table('user_audit_log')
             ->where('actor_id', $currentAdmin->getKey())
@@ -119,13 +132,15 @@ class UserManagementController extends Controller
         // ── Validasi input ──
         $validator = Validator::make($request->all(), [
             'name'     => ['required', 'string', 'min:3', 'max:60', 'regex:' . self::NAME_REGEX],
-            'pn'       => ['required', 'string', 'regex:' . self::PN_REGEX, 'unique:users,pn'],
-            'role'     => ['required', Rule::in(['admin', 'user'])],
+            'pn'       => ['required', 'string', 'regex:' . self::PN_REGEX, 'unique:users,pn', Rule::notIn([User::SUPERADMIN_PN])],
+            'role'     => ['required', Rule::in($currentAdmin->isSuperAdmin() ? ['admin', 'user'] : ['user'])],
             'branch_scope' => ['required', Rule::in(array_keys(UserBranchScope::options()))],
             'password' => ['required', 'string', $this->securePasswordRule()],
         ], [
             'name.regex'     => 'Nama hanya boleh mengandung huruf dan spasi (tanpa gelar asing atau karakter khusus).',
             'pn.regex'       => 'PN harus berupa 4–10 digit angka (contoh: 90179583).',
+            'pn.not_in' => 'PN ini dikhususkan untuk akun superadmin.',
+            'role.in' => 'Role yang dipilih tidak dapat dikelola oleh akun Anda.',
             'branch_scope.required' => 'Wilayah binaan wajib dipilih.',
             'branch_scope.in' => 'Wilayah binaan yang dipilih tidak valid.',
             'password.min'   => 'Password minimal 8 karakter.',
@@ -172,15 +187,22 @@ class UserManagementController extends Controller
 
     public function update(Request $request, User $user): RedirectResponse
     {
+        $currentUser = Auth::user();
+        abort_unless($currentUser?->canManageUser($user), 403);
+
+        $isProtectedAccount = $user->isSuperAdmin();
         $validator = Validator::make($request->all(), [
             'name'     => ['required', 'string', 'min:3', 'max:60', 'regex:' . self::NAME_REGEX],
-            'pn'       => ['required', 'string', 'regex:' . self::PN_REGEX, Rule::unique('users', 'pn')->ignore($user->getKey())],
-            'role'     => ['required', Rule::in(['admin', 'user'])],
+            'pn'       => ['required', 'string', 'regex:' . self::PN_REGEX, Rule::unique('users', 'pn')->ignore($user->getKey()), $isProtectedAccount ? Rule::in([User::SUPERADMIN_PN]) : Rule::notIn([User::SUPERADMIN_PN])],
+            'role'     => ['required', Rule::in($isProtectedAccount ? ['superadmin'] : ($currentUser->isSuperAdmin() ? ['admin', 'user'] : ['user']))],
             'branch_scope' => ['required', Rule::in(array_keys(UserBranchScope::options()))],
             'password' => ['nullable', 'string', 'min:8'],
         ], [
             'name.regex'   => 'Nama hanya boleh mengandung huruf dan spasi (tanpa gelar asing atau karakter khusus).',
             'pn.regex'     => 'PN harus berupa 4–10 digit angka (contoh: 90179583).',
+            'pn.in' => 'PN superadmin tidak dapat diubah.',
+            'pn.not_in' => 'PN ini dikhususkan untuk akun superadmin.',
+            'role.in' => 'Role yang dipilih tidak dapat dikelola oleh akun Anda.',
             'branch_scope.required' => 'Wilayah binaan wajib dipilih.',
             'branch_scope.in' => 'Wilayah binaan yang dipilih tidak valid.',
             'password.min' => 'Password minimal 8 karakter.',
@@ -208,10 +230,8 @@ class UserManagementController extends Controller
             }
         }
 
-        $currentUser = Auth::user();
-
         // ── Cegah admin aktif menurunkan role dirinya sendiri ──
-        if ($currentUser && (int) $currentUser->getKey() === (int) $user->getKey() && $data['role'] !== 'admin') {
+        if ($currentUser && (int) $currentUser->getKey() === (int) $user->getKey() && $data['role'] !== $user->role) {
             return back()
                 ->withErrors(['user_management' => 'Akun admin yang sedang aktif tidak boleh diturunkan menjadi user biasa.'], 'updateUser')
                 ->withInput()
@@ -275,6 +295,8 @@ class UserManagementController extends Controller
     public function destroy(User $user): RedirectResponse
     {
         $currentUser = Auth::user();
+        abort_unless($currentUser?->canManageUser($user), 403);
+        abort_if($user->role === 'superadmin' || (string) $user->pn === User::SUPERADMIN_PN, 403);
 
         if ($currentUser && (int) $currentUser->getKey() === (int) $user->getKey()) {
             return back()

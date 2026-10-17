@@ -7,18 +7,18 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Kind | Count |
 | --- | ---: |
 | command | 3 |
-| file | 27 |
+| file | 28 |
 | method | 51 |
 | unresolved_symbol | 5 |
 | class | 11 |
 | table | 2 |
-| view | 4 |
+| view | 5 |
 
 ## Main Hubs
 
 | Node | Kind | Degree | Source |
 | --- | --- | ---: | --- |
-| `layouts.admin` | view | 68 | `resources/views/layouts/admin.blade.php:1` |
+| `layouts.admin` | view | 69 | `resources/views/layouts/admin.blade.php:1` |
 | `layouts.sidebar` | view | 55 | `resources/views/layouts/sidebar.blade.php:1` |
 | `composite` | method | 28 | `app/Support/ReportCacheVersion.php:17` |
 | `get` | method | 25 | `app/Support/ReportCacheVersion.php:9` |
@@ -26,28 +26,28 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `bump` | method | 15 | `app/Support/ReportCacheVersion.php:31` |
 | `boot` | method | 11 | `app/Providers/AppServiceProvider.php:70` |
 | `shouldFinishEarly` | method | 11 | `app/Http/Middleware/FinishResponseBeforeDeferredCallbacks.php:55` |
+| `handle` | method | 10 | `app/Console/Commands/WarmDashboardCache.php:34` |
 | `sendWithExplicitLength` | method | 10 | `app/Http/Middleware/FinishResponseBeforeDeferredCallbacks.php:73` |
 | `FinishResponseBeforeDeferredCallbacks` | class | 9 | `app/Http/Middleware/FinishResponseBeforeDeferredCallbacks.php:21` |
 | `handle` | method | 9 | `app/Http/Middleware/MonitorRequestPerformance.php:15` |
 | `CacheMaintenanceService` | class | 8 | `app/Services/CacheMaintenanceService.php:9` |
 | `PartitionMaintenanceService` | class | 8 | `app/Support/PartitionMaintenanceService.php:8` |
-| `WarmDashboardCache` | class | 8 | `app/Console/Commands/WarmDashboardCache.php:14` |
+| `WarmDashboardCache` | class | 8 | `app/Console/Commands/WarmDashboardCache.php:15` |
 | `securityRateLimitKey` | method | 8 | `app/Providers/AppServiceProvider.php:145` |
 | `ReportCacheVersion` | class | 7 | `app/Support/ReportCacheVersion.php:7` |
-| `handle` | method | 7 | `app/Console/Commands/WarmDashboardCache.php:33` |
 | `maintain` | method | 7 | `app/Services/CacheMaintenanceService.php:16` |
 | `resolveSinglePartitionForValue` | method | 7 | `app/Support/PartitionMaintenanceService.php:15` |
 | `truncatePartition` | method | 7 | `app/Support/PartitionMaintenanceService.php:52` |
 | `LogMaintenanceService` | class | 6 | `app/Services/LogMaintenanceService.php:9` |
 | `cache` | table | 6 | - |
 | `handle` | method | 6 | `app/Http/Middleware/FinishResponseBeforeDeferredCallbacks.php:27` |
+| `layouts.partials.theme` | view | 6 | `resources/views/layouts/partials/theme.blade.php:1` |
 | `pruneOrphanedDbSessions` | method | 6 | `app/Services/CacheMaintenanceService.php:135` |
 | `refreshSourceCache` | method | 6 | `app/Services/Reports/SppgReportService.php:103` |
 | `registerCustomQueueExtensions` | method | 6 | `app/Providers/AppServiceProvider.php:341` |
 | `registerSecurityRateLimiters` | method | 6 | `app/Providers/AppServiceProvider.php:132` |
 | `supportsPartitionDdl` | method | 6 | `app/Support/PartitionMaintenanceService.php:10` |
 | `components.guest.layout` | view | 5 | - |
-| `handle` | method | 5 | `app/Console/Commands/MaintainApplicationCacheCommand.php:14` |
 
 ## Class Nodes
 
@@ -74,6 +74,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `components.guest.layout`
 - `layouts.admin` - `resources/views/layouts/admin.blade.php`
 - `layouts.guest` - `resources/views/layouts/guest.blade.php`
+- `layouts.partials.theme` - `resources/views/layouts/partials/theme.blade.php`
 - `layouts.sidebar` - `resources/views/layouts/sidebar.blade.php`
 
 ## Table Nodes
@@ -109,9 +110,9 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | platform -> almafacts (references_route) | 4 |
 | dashboard-harian -> platform (extends_view) | 4 |
 | platform -> access-control (references_route) | 3 |
+| platform -> access-control (calls) | 3 |
 | platform -> jobs-snapshots (instantiates) | 3 |
 | platform -> core (extends) | 3 |
 | platform -> input-management (references_route) | 3 |
 | database -> platform (uses_table) | 2 |
 | database -> platform (checks_table) | 2 |
-| database -> platform (defines_table) | 2 |

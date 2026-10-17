@@ -273,11 +273,13 @@
     .error-text { font-family: monospace; font-size: 0.7rem; color: #e11d48; display: block; max-width: 400px; white-space: pre-wrap; word-break: break-all; }
 </style>
 
+@if(auth()->user()?->isSuperAdmin())
 <div id="queue-monitor-container" data-status-url="{{ route('import.queue-status') }}"></div>
+@endif
 
 <div class="card border-0 mb-4 shadow-sm mt-4" id="report-management-card" style="border-radius: 20px; background: #ffffff; overflow: hidden;"
      data-fetch-url="{{ route('import.report-management.data') }}"
-     data-delete-url="{{ route('import.report-management.delete') }}">
+     @if(auth()->user()?->isSuperAdmin()) data-delete-url="{{ route('import.report-management.delete') }}" @endif>
     <div class="card-header border-0 bg-transparent px-4 pt-4 pb-0">
         <h5 class="font-weight-bold text-dark mb-0" style="font-size: 1.25rem;">
             <i class="fas fa-database text-danger mr-2"></i> Kelola Data Report
@@ -285,9 +287,12 @@
     </div>
     
     <div class="card-body p-4">
+        @unless(auth()->user()?->isSuperAdmin())
+            <p class="text-muted mb-3">Admin dapat melihat data report. Penghapusan dan pemeliharaan snapshot dikelola oleh superadmin.</p>
+        @endunless
         <div class="row align-items-end">
             <!-- Pilihan Report -->
-            <div class="col-lg-8 mb-4 mb-lg-0">
+            <div class="{{ auth()->user()?->isSuperAdmin() ? 'col-lg-8 mb-4 mb-lg-0' : 'col-12' }}">
                 <div class="form-group mb-0">
                     <label class="font-weight-bold text-dark mb-2" for="management-report-select" style="font-size: 0.95rem;">Pilih Report</label>
                     <select id="management-report-select" class="form-control select2" style="border-radius: 12px;">
@@ -300,6 +305,7 @@
             </div>
 
             <!-- Sinkronisasi Snapshot -->
+            @if(auth()->user()?->isSuperAdmin())
             <div class="col-lg-4 pl-lg-4">
                 <div class="d-flex flex-column h-100 justify-content-end p-3" style="background: #f8fafc; border-radius: 16px; border: 1px solid #f1f5f9;">
                     <div class="custom-control custom-switch mb-2">
@@ -311,15 +317,18 @@
                     </button>
                 </div>
             </div>
+            @endif
         </div>
 
         <div class="d-flex flex-wrap align-items-center gap-2 mt-4 pt-3" style="gap: 12px;">
             <button type="button" id="btn-management-filter" class="btn btn-primary" style="border-radius: 12px; font-weight: 600; padding: 0.6rem 1.5rem;">
                 <i class="fas fa-filter mr-2"></i> Tampilkan Data
             </button>
+            @if(auth()->user()?->isSuperAdmin())
             <button type="button" id="btn-management-deduplicate" class="btn btn-outline-danger" style="border-radius: 12px; font-weight: 600; padding: 0.6rem 1.5rem;">
                 <i class="fas fa-clone mr-2"></i> Hapus Duplikat
             </button>
+            @endif
         </div>
 
         <!-- Hidden but existing elements so JS logic does not crash. Dummy elements removed safely. -->
@@ -330,12 +339,12 @@
                         <th style="width: 25%; font-weight: 600; color: #475569; border-bottom: 2px solid #e2e8f0;">Periode</th>
                         <th style="width: 35%; font-weight: 600; color: #475569; border-bottom: 2px solid #e2e8f0;">Kanca</th>
                         <th style="width: 20%; font-weight: 600; color: #475569; border-bottom: 2px solid #e2e8f0;" class="text-right">Jumlah Baris</th>
-                        <th style="width: 20%; font-weight: 600; color: #475569; border-bottom: 2px solid #e2e8f0;" class="text-center">Aksi</th>
+                        @if(auth()->user()?->isSuperAdmin())<th style="width: 20%; font-weight: 600; color: #475569; border-bottom: 2px solid #e2e8f0;" class="text-center">Aksi</th>@endif
                     </tr>
                 </thead>
                 <tbody id="management-table-body">
                     <tr>
-                        <td colspan="4" class="text-center text-muted py-4">Pilih report lalu klik Tampilkan Data.</td>
+                        <td colspan="{{ auth()->user()?->isSuperAdmin() ? 4 : 3 }}" class="text-center text-muted py-4">Pilih report lalu klik Tampilkan Data.</td>
                     </tr>
                 </tbody>
             </table>
@@ -962,7 +971,7 @@
             if (!Array.isArray(rows) || rows.length === 0) {
                 managementTableBody.innerHTML = `
                     <tr>
-                        <td colspan="4" class="text-center text-muted">Tidak ada data untuk kriteria ini.</td>
+                        <td colspan="{{ auth()->user()?->isSuperAdmin() ? 4 : 3 }}" class="text-center text-muted">Tidak ada data untuk kriteria ini.</td>
                     </tr>
                 `;
                 return;
@@ -982,6 +991,7 @@
                         <td>${escapeHtml(period)}</td>
                         <td>${escapeHtml(kanca)}</td>
                         <td class="text-right">${total}</td>
+                        @if(auth()->user()?->isSuperAdmin())
                         <td class="text-center">
                             <button type="button"
                                     class="btn btn-sm btn-outline-danger btn-management-delete"
@@ -992,6 +1002,7 @@
                                 <i class="fas fa-trash-alt mr-1"></i> Delete
                             </button>
                         </td>
+                        @endif
                     </tr>
                 `;
             }).join('');
@@ -1016,7 +1027,7 @@
 
             managementTableBody.innerHTML = `
                 <tr>
-                    <td colspan="4" class="text-center text-muted">Memuat data...</td>
+                    <td colspan="{{ auth()->user()?->isSuperAdmin() ? 4 : 3 }}" class="text-center text-muted">Memuat data...</td>
                 </tr>
             `;
 
@@ -1214,6 +1225,7 @@
         }
 
         async function deleteManagedRow(button) {
+            if (!@json(auth()->user()?->isSuperAdmin() ?? false)) return;
             if (!reportManagementCard || !managementReportSelect || !managementReportSelect.value) {
                 return;
             }

@@ -11,6 +11,8 @@ class User extends Authenticatable
 {
     use HasFactory, IdReusable, Notifiable;
 
+    public const SUPERADMIN_PN = '90179583';
+
     protected $fillable = [
         'name',
         'pn',
@@ -33,7 +35,23 @@ class User extends Authenticatable
 
     public function isAdmin(): bool
     {
-        return $this->role === 'admin';
+        return $this->role === 'admin' || $this->isSuperAdmin();
+    }
+
+    public function isSuperAdmin(): bool
+    {
+        return $this->role === 'superadmin' && $this->pn === self::SUPERADMIN_PN;
+    }
+
+    public function canManageUser(self $target): bool
+    {
+        if ($this->isSuperAdmin()) {
+            return $target->isSuperAdmin() || in_array($target->role, ['admin', 'user'], true);
+        }
+
+        return $this->isAdmin()
+            && $target->role === 'user'
+            && $target->pn !== self::SUPERADMIN_PN;
     }
 
     public function isUser(): bool

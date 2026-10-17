@@ -2630,8 +2630,9 @@ class AlmafactsDashboardController extends Controller
             return [];
         }
 
+        $scope = UserBranchScope::current();
         $rows = DB::table('ssa_almafacts')
-            ->whereIn('kanca_konsolidasi', self::AREA_BRANCHES)
+            ->whereIn('kanca_konsolidasi', $scope !== null ? [$scope['label']] : self::AREA_BRANCHES)
             ->whereNotNull('kode_unit_kerja')
             ->where('kode_unit_kerja', '<>', '')
             ->select('kanca_konsolidasi', 'kode_unit_kerja', 'unit_kerja')

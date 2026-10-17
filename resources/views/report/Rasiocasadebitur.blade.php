@@ -592,14 +592,14 @@
                             <label class="casa-filter-label">Branch Office (Kanca)</label>
                             <div class="branch-filter-dropdown">
                                 <button type="button" class="form-control casa-filter-control casa-dropdown-toggle" id="filterBranchDropdown" aria-haspopup="true" aria-expanded="false">
-                                    <span id="filter_branch_office_label" class="casa-dropdown-label">Area 6 - All</span>
+                                    <span id="filter_branch_office_label" class="casa-dropdown-label">{{ !empty($userBranchScope) ? $userBranchScope['upper_label'] : 'Area 6 - All' }}</span>
                                     <i class="fas fa-chevron-down text-muted"></i>
                                 </button>
                                 <div class="casa-dropdown-menu" id="filterBranchMenu" aria-labelledby="filterBranchDropdown">
                                     @forelse(($branchOptions ?? collect()) as $branchOption)
                                         <label class="dropdown-item" for="branch_{{ \Illuminate\Support\Str::slug($branchOption, '_') }}">
                                             <div class="form-check">
-                                                <input class="form-check-input filter-branch-checkbox" type="checkbox" value="{{ $branchOption }}" id="branch_{{ \Illuminate\Support\Str::slug($branchOption, '_') }}">
+                                                <input class="form-check-input filter-branch-checkbox" type="checkbox" value="{{ $branchOption }}" id="branch_{{ \Illuminate\Support\Str::slug($branchOption, '_') }}" @checked(!empty($userBranchScope)) @disabled(!empty($userBranchScope))>
                                                 <span class="form-check-label">{{ $branchOption }}</span>
                                             </div>
                                         </label>
@@ -632,7 +632,7 @@
 
             <div class="casa-filter-meta">
                 <span><i class="fas fa-info-circle text-primary mr-1"></i> <strong>Mode:</strong> Manual Query</span>
-                <span><i class="fas fa-map-marker-alt text-primary mr-1"></i> <strong>Area:</strong> KC Madiun, Magetan, Ngawi, Ponorogo</span>
+                <span><i class="fas fa-map-marker-alt text-primary mr-1"></i> <strong>Area:</strong> {{ !empty($userBranchScope) ? $userBranchScope['label'] : 'KC Madiun, Magetan, Ngawi, Ponorogo' }}</span>
                 <span id="filterMetaPeriod"><i class="fas fa-clock text-primary mr-1"></i> <strong>Periode aktif:</strong> Belum dijalankan</span>
             </div>
         </div>

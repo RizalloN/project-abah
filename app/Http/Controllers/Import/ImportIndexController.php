@@ -221,7 +221,9 @@ class ImportIndexController extends Controller
         $reports = NamaReport::where('active', 1)
             ->orderBy('id_report')
             ->get();
-        $backupFiles = $this->managedDatabaseBackupOptions();
+        $backupFiles = auth()->user()?->isSuperAdmin()
+            ? $this->managedDatabaseBackupOptions()
+            : [];
 
         return view('import.report-management', compact('reports', 'backupFiles'));
     }

@@ -217,7 +217,7 @@ class DashboardPinjamanChartPeriodikService
         );
 
         return [
-            'branch_options' => $branchOptions,
+            'branch_options' => UserBranchScope::restrictOptions($branchOptions),
             'selected_branch' => $selectedBranch,
             'selected_branch_label' => $this->branchLabel($selectedBranch),
         ];

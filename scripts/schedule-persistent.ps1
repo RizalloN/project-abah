@@ -17,16 +17,17 @@ while ($true) {
     $startedAt = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
     Write-Host "[$startedAt] Starting scheduler..."
 
-    & php artisan schedule:work --quiet --no-interaction
+    & php artisan system:scheduler-run --quiet --no-interaction
 
     $exitCode = if ($null -eq $LASTEXITCODE) { 0 } else { [int] $LASTEXITCODE }
     $endedAt = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
 
+    $nextMinuteDelay = [Math]::Max(1, 60 - ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds() % 60))
     if ($exitCode -eq 0) {
-        Write-Host "[$endedAt] Scheduler exited normally. Restarting in ${RestartDelaySeconds}s..."
+        Write-Host "[$endedAt] Scheduler tick selesai. Tick berikutnya dalam ${nextMinuteDelay}s..."
     } else {
-        Write-Warning "[$endedAt] Scheduler exited with code $exitCode. Restarting in ${RestartDelaySeconds}s..."
+        Write-Warning "[$endedAt] Scheduler tick keluar dengan kode $exitCode. Percobaan berikutnya dalam ${nextMinuteDelay}s..."
     }
 
-    Start-Sleep -Seconds ([Math]::Max(1, $RestartDelaySeconds))
+    Start-Sleep -Seconds $nextMinuteDelay
 }

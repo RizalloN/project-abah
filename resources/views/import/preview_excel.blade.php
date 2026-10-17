@@ -1439,7 +1439,8 @@ document.addEventListener('DOMContentLoaded', function () {
         // ── STEP 2 & 3: SSE Stream dengan auto-reconnect ───────────────────
         var streamUrl  = '{{ $streamRoute ?? route("import.excel.stream") }}?job_id=' + encodeURIComponent(jobId);
         var statusUrlTemplate = @json(route('import.jobs.status', ['jobId' => '__JOB_ID__']));
-        var forceStartUrlTemplate = @json(route('job-management.force-start', ['jobId' => '__JOB_ID__']));
+        var allowForceStart = @json(auth()->user()?->isSuperAdmin() ?? false);
+        var forceStartUrlTemplate = @json(auth()->user()?->isSuperAdmin() ? route('job-management.force-start', ['jobId' => '__JOB_ID__']) : '');
         var evtSource  = null;
         var streamDone = false;
         var reconnectAttempts = 0;
@@ -1651,6 +1652,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         async function triggerForceStart(jobId) {
+            if (!allowForceStart) return false;
             if (streamDone) return false;
             if (forceStartTriggered) return false;
             forceStartTriggered = true;
@@ -1679,6 +1681,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         function shouldForceStartQueuedJob(statusPayload) {
+            if (!allowForceStart) return false;
             if (!statusPayload || String(statusPayload.status || '') !== 'queued') {
                 return false;
             }

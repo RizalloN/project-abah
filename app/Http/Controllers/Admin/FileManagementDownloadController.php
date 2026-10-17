@@ -14,8 +14,10 @@ class FileManagementDownloadController extends Controller
             'path' => ['required', 'string', 'max:2048'],
         ]);
 
-        $resolvedPath = $controller->resolveDownloadablePath($data['path']);
-        abort_unless($resolvedPath !== null, 404);
+        $managedFile = $controller->resolveManagedFile($data['path']);
+        abort_if(($managedFile['group'] ?? null) === 'database_backups' && !($request->user()?->isSuperAdmin() ?? false), 403, 'Akses backup database hanya untuk superadmin.');
+        $resolvedPath = $managedFile['path'] ?? null;
+        abort_unless($resolvedPath !== null && is_file($resolvedPath), 404);
 
         return response()->download($resolvedPath, basename($resolvedPath), [
             'Content-Type' => 'application/sql; charset=UTF-8',

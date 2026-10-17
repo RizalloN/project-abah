@@ -11,6 +11,7 @@ use App\Support\ReportCacheVersion;
 use App\Support\RkaLookupService;
 use App\Support\SmallRmRealizationCalculator;
 use App\Support\StrictDateParser;
+use App\Support\UserBranchScope;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -871,6 +872,11 @@ class KinerjaRmReportController extends Controller
         $this->queueDailyLoanSnapshotSyncIfNeeded($selectedPeriod, static::class.'::index');
 
         $availableCabangs = $this->fetchAvailableCabangsBySegmen($selectedSegmen);
+        $branchScope = UserBranchScope::current();
+        if ($branchScope !== null) {
+            // Fail closed: a branch missing from the cached list (e.g. mid snapshot rebuild) must not widen to all branches.
+            $availableCabangs = collect([$branchScope['upper_label']]);
+        }
         $selectedCabang = $this->resolveSelectedCabang($availableCabangs, $request->input('cabang1'));
 
         $selectedProduct = $this->resolveSelectedProduct($request->input('produk'), $selectedSegmen);
@@ -972,6 +978,7 @@ class KinerjaRmReportController extends Controller
         $rm = $request->input('rm');
         $segmen = $request->input('segmen');
         $selectedPeriod = $request->input('periode');
+        abort_unless($this->rmVisibleToUserBranch((string) $rm, (string) $selectedPeriod), 404);
         $selectedConsumerProduct = $this->resolveSelectedProduct(
             $request->input('produk'),
             'CONSUMER'
@@ -1628,8 +1635,33 @@ class KinerjaRmReportController extends Controller
         return self::DEFAULT_SEGMENT;
     }
 
+    /** Branch users may only open history for RMs booked under their own branch. */
+    private function rmVisibleToUserBranch(string $rm, string $selectedPeriod): bool
+    {
+        $scope = UserBranchScope::current();
+        if ($scope === null) {
+            return true;
+        }
+
+        [$historyStart, $historyEnd] = $this->resolveHistoryDateRange($selectedPeriod);
+        // Match on the "PN - NAME" PN prefix: the table may display an adjusted name.
+        $pn = trim(explode(' - ', $rm, 2)[0]);
+
+        return DB::table(self::SNAPSHOT_TABLE)
+            ->where(fn ($query) => $query->where('rm', $rm)
+                ->when($pn !== '' && ctype_digit($pn), fn ($query) => $query->orWhere('rm', 'like', $pn.' -%')))
+            ->where('cabang', $scope['upper_label'])
+            ->whereBetween('periode', [$historyStart, $historyEnd])
+            ->exists();
+    }
+
     private function resolveSelectedCabang(Collection $cabangs, ?string $requestedCabang): ?string
     {
+        $scope = UserBranchScope::current();
+        if ($scope !== null) {
+            return $scope['upper_label'];
+        }
+
         $value = $this->normalizeCabangKey($requestedCabang);
 
         if ($value === '' || in_array($value, ['SEMUA CABANG', 'ALL', 'ALL CABANG'], true)) {

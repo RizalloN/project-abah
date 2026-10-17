@@ -242,7 +242,7 @@ class DashboardSimpananController extends Controller
 
         $scopeKeyMap = [
             'area6' => [
-                'label' => 'Area 6',
+                'label' => $scopeLabel,
                 'caption' => 'Konsolidasi',
                 'description' => 'Seluruh cabang dan seluruh segmen simpanan.',
                 'tabungan' => ['tabungan_ritel', 'tabungan_mikro', 'tabungan_wholesale'],
@@ -511,7 +511,7 @@ class DashboardSimpananController extends Controller
             'ecosystem_value_chain_strategy' => $ecosystemValueChainStrategy,
             'ranking_modes' => [
                 'area6' => [
-                    'label' => 'Area 6',
+                    'label' => $scopeLabel,
                     'caption' => 'Konsolidasi',
                     'description' => 'Seluruh cabang dan seluruh segmen simpanan.',
                     'branches' => $branchesData,
@@ -636,7 +636,7 @@ class DashboardSimpananController extends Controller
             ],
             'tone' => $tone,
             'icon' => $icon,
-            'detail_payload' => $this->buildLandingSourceDetail($productLabel . ' Area 6', $periodFormat, self::HARIAN_SNAPSHOT_TABLE, [
+            'detail_payload' => $this->buildLandingSourceDetail($productLabel . ' ' . $this->dashboardScopeLabel(), $periodFormat, self::HARIAN_SNAPSHOT_TABLE, [
                 ['label' => 'Total ' . $productLabel, 'value' => $this->formatCurrencyFull($current), 'source' => self::HARIAN_SNAPSHOT_TABLE],
                 ['label' => 'Target RKA', 'value' => $this->formatCurrencyFull($rka), 'source' => 'rka'],
             ], 'Sumber mengikuti snapshot Dashboard Harian terbaru.'),
@@ -10721,7 +10721,7 @@ class DashboardSimpananController extends Controller
             'segment_performance' => $scopePayloads['area6']['segment_performance'],
             'ranking_modes' => [
                 'area6' => [
-                    'label' => 'Area 6',
+                    'label' => $this->dashboardScopeLabel(),
                     'description' => 'Seluruh cabang dan seluruh segmen.',
                     'branches' => array_values($branchesData),
                 ],
@@ -10949,7 +10949,7 @@ class DashboardSimpananController extends Controller
                 ],
                 'tone' => 'blue',
                 'icon' => 'fas fa-chart-line',
-                'detail_payload' => $this->buildLandingSourceDetail('Pinjaman Outstanding Area 6 - ' . $scopeLabel, $period, self::HARIAN_SNAPSHOT_TABLE, [
+                'detail_payload' => $this->buildLandingSourceDetail('Pinjaman Outstanding ' . $this->dashboardScopeLabel() . ' - ' . $scopeLabel, $period, self::HARIAN_SNAPSHOT_TABLE, [
                     ['label' => 'Total OS', 'value' => $this->formatCurrencyFull($osRealization), 'source' => 'SUM total_os_non_commercial scope ' . $scopeLabel],
                     ['label' => 'Unit scope', 'value' => $scopeLabel, 'source' => self::HARIAN_SNAPSHOT_TABLE],
                 ], 'Sumber mengikuti snapshot Dashboard Harian terbaru sesuai toggle ' . $scopeLabel . '.'),
@@ -10976,7 +10976,7 @@ class DashboardSimpananController extends Controller
                 ],
                 'tone' => 'blue',
                 'icon' => 'fas fa-search',
-                'detail_payload' => $this->buildLandingSourceDetail('SML Area 6 - ' . $scopeLabel, $period, self::HARIAN_SNAPSHOT_TABLE, [
+                'detail_payload' => $this->buildLandingSourceDetail('SML ' . $this->dashboardScopeLabel() . ' - ' . $scopeLabel, $period, self::HARIAN_SNAPSHOT_TABLE, [
                     ['label' => 'SML (ABS)', 'value' => $this->formatCurrencyFull($smlRealization), 'source' => 'SUM total_sml_abs_non_commercial scope ' . $scopeLabel],
                     ['label' => 'Unit scope', 'value' => $scopeLabel, 'source' => self::HARIAN_SNAPSHOT_TABLE],
                 ], 'Sumber mengikuti snapshot Dashboard Harian terbaru sesuai toggle ' . $scopeLabel . '.'),
@@ -11003,7 +11003,7 @@ class DashboardSimpananController extends Controller
                 ],
                 'tone' => 'blue',
                 'icon' => 'fas fa-shield-alt',
-                'detail_payload' => $this->buildLandingSourceDetail('NPL Area 6 - ' . $scopeLabel, $period, self::HARIAN_SNAPSHOT_TABLE, [
+                'detail_payload' => $this->buildLandingSourceDetail('NPL ' . $this->dashboardScopeLabel() . ' - ' . $scopeLabel, $period, self::HARIAN_SNAPSHOT_TABLE, [
                     ['label' => 'NPL (ABS)', 'value' => $this->formatCurrencyFull($nplRealization), 'source' => 'SUM total_npl_abs_non_commercial scope ' . $scopeLabel],
                     ['label' => 'Unit scope', 'value' => $scopeLabel, 'source' => self::HARIAN_SNAPSHOT_TABLE],
                 ], 'Sumber mengikuti snapshot Dashboard Harian terbaru sesuai toggle ' . $scopeLabel . '.'),
@@ -11033,10 +11033,10 @@ class DashboardSimpananController extends Controller
                 ],
                 'tone' => 'green',
                 'icon' => 'fas fa-hand-holding-heart',
-                'detail_payload' => $this->buildLandingSourceDetail('Recovery DH Area 6', $period, self::HARIAN_SNAPSHOT_TABLE, [
+                'detail_payload' => $this->buildLandingSourceDetail('Recovery DH ' . $this->dashboardScopeLabel(), $period, self::HARIAN_SNAPSHOT_TABLE, [
                     ['label' => 'Total Recovery DH', 'value' => $this->formatCurrencyFull($recoveryRealization), 'source' => 'SUM rec_dh_total'],
                     ['label' => 'RKA Recovery', 'value' => $this->formatCurrencyFull($recoveryTarget), 'source' => 'RKA Recovery Ekstrakomtabel'],
-                ], 'Recovery ditampilkan pada scope Area 6 dari snapshot Dashboard Harian terbaru.'),
+                ], 'Recovery ditampilkan pada scope ' . $this->dashboardScopeLabel() . ' dari snapshot Dashboard Harian terbaru.'),
             ];
         }
 
@@ -12053,7 +12053,7 @@ class DashboardSimpananController extends Controller
     private function area6ScopeLabel(string $scopeKey): string
     {
         return match ($scopeKey) {
-            'area6' => 'Area 6',
+            'area6' => $this->dashboardScopeLabel(),
             'sme' => 'SME',
             'consumer' => 'Konsumer',
             'ritel' => 'Ritel',
@@ -14633,7 +14633,7 @@ class DashboardSimpananController extends Controller
             (string) ($card['source_updated_at'] ?? ''),
             $sourceTable,
             $rows,
-            (string) ($card['source_note'] ?? 'Angka diambil dari agregasi tabel sumber dengan filter cabang Area 6 bila tersedia.')
+            (string) ($card['source_note'] ?? 'Angka diambil dari agregasi tabel sumber dengan filter cabang ' . $this->dashboardScopeLabel() . ' bila tersedia.')
         );
     }
 

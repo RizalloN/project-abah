@@ -109,6 +109,20 @@ JS);
     }
 
     #[DataProvider('views')]
+    public function test_admin_preview_cannot_force_start_a_job(string $view): void
+    {
+        $result = $this->runScript($view, [], <<<'JS'
+await triggerForceStart(41);
+await triggerForceStart(41);
+JS, allowForceStart: false);
+
+        $this->assertSame([], $result['requests']);
+        $this->assertFalse($result['done']);
+        $this->assertSame([], $result['successes']);
+        $this->assertSame([], $result['notices']);
+    }
+
+    #[DataProvider('views')]
     public function test_a_pending_force_start_response_cannot_restart_monitoring_after_session_expiry(string $view): void
     {
         $result = $this->runScript($view, [], <<<'JS'
@@ -173,7 +187,7 @@ JS);
         }
     }
 
-    private function runScript(string $view, array $responses, string $action): array
+    private function runScript(string $view, array $responses, string $action, bool $allowForceStart = true): array
     {
         $node = (new ExecutableFinder)->find('node');
         if ($node === null) {
@@ -194,7 +208,7 @@ let streamDone = false, terminalVerificationStarted = false, forceStartTriggered
 let reconnectAttempts = 0, evtSource = null, pollStarted = false, pollMode = false;
 let lastProg = {percent: 12, message: '', rows_done: 0, total: 2, speed: 0};
 let importProgressSnapshot = {percent: 12, message: '', rowsDone: 0, totalRows: 2, speed: 0, speedLabel: ''};
-const initResult = {job_id: 41}, jobId = 41, streamUrl = '/stream?job_id=41', allowForceStart = false;
+const initResult = {job_id: 41}, jobId = 41, streamUrl = '/stream?job_id=41';
 const requests = [], notices = [], successes = [], clearedIntervals = [], intervalCallbacks = [], timeoutCallbacks = [];
 let resetCount = 0, closed = 0, tickerStops = 0, streams = 0, timeouts = 0, reloads = 0, confirmed = false;
 global.window = {location: {href: '/preview', reload() {reloads++;}}};
@@ -234,7 +248,7 @@ function normalizeProgressStatus() {return {};}
 function statusUrlForJob(id) {return '/status/' + id;}
 function forceStartUrlForJob(id) {return '/force-start/' + id;}
 JS;
-        $script = '(async () => { const responses = '.json_encode($responses, JSON_THROW_ON_ERROR).';'."\n"
+        $script = '(async () => { const responses = '.json_encode($responses, JSON_THROW_ON_ERROR).'; const allowForceStart = '.json_encode($allowForceStart, JSON_THROW_ON_ERROR).';'."\n"
             .$setup."\n".$logic."\n".'const inspectForTest = '.($view === 'excel' ? 'inspectImportJob' : 'inspectJobStatus').';'."\n".$action."\n"
             .'console.log(JSON.stringify({done: streamDone, requests, notices, successes, resetCount, closed, tickerStops, streams, timeouts, clearedIntervals, reloads, location: window.location.href}));'
             .'})().catch(error => {console.error(error); process.exitCode = 1;});';

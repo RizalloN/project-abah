@@ -77,6 +77,7 @@ class FileManagementController extends Controller
 
     public function index(): View
     {
+        $canManageBackups = auth()->user()?->isSuperAdmin() ?? false;
         $activeFiles = $this->collectActiveImportFiles();
         $directories = [];
         $files = collect();
@@ -90,6 +91,10 @@ class FileManagementController extends Controller
         ];
 
         foreach (self::MANAGED_DIRECTORIES as $directoryConfig) {
+            if (!$canManageBackups && ($directoryConfig['group'] ?? 'import_artifacts') === 'database_backups') {
+                continue;
+            }
+
             $directory = $this->resolveDirectoryPath($directoryConfig['path']);
             $entries = $this->scanDirectoryFiles($directoryConfig, $directory);
 
@@ -122,11 +127,11 @@ class FileManagementController extends Controller
         $totals['files'] = $files->count();
         $totals['size'] = $files->sum('size');
         $totals['size_human'] = $this->formatBytes((int) $totals['size']);
-        $totals['directories'] = count(self::MANAGED_DIRECTORIES);
+        $totals['directories'] = count($directories);
         $totals['latest_modified_at'] = $files->first()['modified_at'] ?? null;
         $totals['active_files'] = $files->where('is_active', true)->count();
 
-        return view('admin.file-management', compact('directories', 'files', 'totals'));
+        return view('admin.file-management', compact('directories', 'files', 'totals', 'canManageBackups'));
     }
 
     public function backupDatabase(DatabaseBackupService $backupService): JsonResponse
@@ -417,6 +422,16 @@ class FileManagementController extends Controller
             'scope' => ['nullable', 'string', 'in:import_artifacts,database_backups'],
         ]);
         $scope = (string) ($data['scope'] ?? 'import_artifacts');
+        $canManageBackups = $request->user()?->isSuperAdmin() ?? false;
+
+        if (!$canManageBackups) {
+            abort_if($scope === 'database_backups', 403, 'Akses backup database hanya untuk superadmin.');
+
+            foreach ($data['paths'] as $path) {
+                $managedFile = $this->resolveManagedFile($path);
+                abort_if(($managedFile['group'] ?? null) === 'database_backups', 403, 'Akses backup database hanya untuk superadmin.');
+            }
+        }
 
         $deleted = [];
         $failed = [];
@@ -424,7 +439,7 @@ class FileManagementController extends Controller
         $blocked = [];
         $deletedImportJobs = [];
         $activeFiles = $this->collectActiveImportFiles();
-        $activeBackupFiles = $this->collectActiveBackupFiles();
+        $activeBackupFiles = $canManageBackups ? $this->collectActiveBackupFiles() : [];
         $importProgressService = app(ImportProgressService::class);
 
         foreach ($data['paths'] as $path) {
@@ -581,6 +596,10 @@ class FileManagementController extends Controller
                 return null;
             }
 
+            if (!(auth()->user()?->isSuperAdmin() ?? false) && $this->isDatabaseBackupPath($resolvedPath)) {
+                return null;
+            }
+
             if (!file_exists($absolutePath)) {
                 return null;
             }
@@ -642,6 +661,19 @@ class FileManagementController extends Controller
         }
 
         return $resolvedPath;
+    }
+
+    public function resolveManagedFile(string $requestedPath): ?array
+    {
+        $resolvedPath = $this->resolveRequestedPath($requestedPath);
+        if ($resolvedPath === null) {
+            return null;
+        }
+
+        return [
+            'path' => $resolvedPath,
+            'group' => $this->isDatabaseBackupPath($resolvedPath) ? 'database_backups' : 'import_artifacts',
+        ];
     }
 
     private function isWithinManagedRoots(string $path): bool

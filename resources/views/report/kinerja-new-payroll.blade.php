@@ -335,14 +335,14 @@
                         <label class="report-filter-label">Branch Office (Kanca)</label>
                         <div class="branch-filter-dropdown">
                             <button type="button" class="form-control branch-dropdown-toggle" id="filterBranchDropdown" aria-haspopup="true" aria-expanded="false">
-                                <span id="filter_branch_office_label" class="branch-dropdown-label">Area 6 - All</span>
+                                <span id="filter_branch_office_label" class="branch-dropdown-label">{{ !empty($userBranchScope) ? $userBranchScope['upper_label'] : 'Area 6 - All' }}</span>
                                 <i class="fas fa-chevron-down text-muted"></i>
                             </button>
                             <div class="branch-dropdown-menu" id="filterBranchMenu" aria-labelledby="filterBranchDropdown">
                                 @foreach(($branchOptions ?? collect()) as $branchOption)
                                     <label class="dropdown-item" for="branch_{{ \Illuminate\Support\Str::slug($branchOption, '_') }}">
                                         <div class="form-check">
-                                            <input class="form-check-input filter-branch-checkbox" type="checkbox" value="{{ strtoupper($branchOption) }}" id="branch_{{ \Illuminate\Support\Str::slug($branchOption, '_') }}">
+                                            <input class="form-check-input filter-branch-checkbox" type="checkbox" value="{{ strtoupper($branchOption) }}" id="branch_{{ \Illuminate\Support\Str::slug($branchOption, '_') }}" @checked(!empty($userBranchScope)) @disabled(!empty($userBranchScope))>
                                             <span class="form-check-label">{{ strtoupper($branchOption) }}</span>
                                         </div>
                                     </label>
@@ -513,7 +513,9 @@ document.addEventListener('DOMContentLoaded', function () {
                 ->all()
         ];
     }));
-    let selectedBranches = [];
+    let selectedBranches = Array.from(document.querySelectorAll('.filter-branch-checkbox:checked'))
+        .map((checkbox) => String(checkbox.value || '').trim().toUpperCase())
+        .filter(Boolean);
     let selectedUkers = [];
 
     function normalizeUpper(value) {

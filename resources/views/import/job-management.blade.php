@@ -105,6 +105,98 @@
             <div id="job-management-notice" class="alert alert-info d-none mb-4 shadow-sm border-0" style="border-radius: 10px;"></div>
             <div id="job-management-queue-health" class="alert alert-warning d-none mb-4 shadow-sm border-0" style="border-radius: 10px;"></div>
 
+            <section class="server-runtime mb-4" id="server-runtime-card" aria-labelledby="server-runtime-title"
+                data-status-url="{{ route('job-management.runtime.status') }}"
+                data-control-url="{{ route('job-management.runtime.control') }}">
+                <div class="server-runtime__header">
+                    <div>
+                        <h3 class="server-runtime__title" id="server-runtime-title"><i class="fas fa-server mr-2" aria-hidden="true"></i>Layanan Server</h3>
+                        <p class="server-runtime__intro">Aktifkan layanan pendukung dan pantau scheduler otomatis dari satu tempat.</p>
+                    </div>
+                    <div class="server-runtime__header-actions">
+                        <span class="server-runtime__state server-runtime__state--secondary" id="runtime-health-badge" role="status">Memeriksa layanan</span>
+                        <button type="button" class="btn btn-sm btn-outline-primary" id="btn-runtime-refresh" aria-label="Perbarui status layanan server"><i class="fas fa-sync-alt" aria-hidden="true"></i></button>
+                        <button type="button" class="btn btn-sm job-btn-primary" data-runtime-service="all" data-runtime-action="start" disabled><i class="fas fa-play mr-1" aria-hidden="true"></i>Aktifkan Semua Pendukung</button>
+                    </div>
+                </div>
+                <p class="server-runtime__access-note"><i class="fas fa-info-circle mr-1" aria-hidden="true"></i>Apache, MySQL, dan Cloudflare membuat situs ini dapat diakses. Status startup otomatis Windows ditampilkan pada tiap layanan. Setelah halaman terbuka, scheduler dan worker dapat dikelola dari sini.</p>
+                <div class="server-runtime__notice d-none" id="runtime-notice" role="status" aria-live="polite" aria-atomic="true"></div>
+
+                <div class="server-runtime__grid">
+                    <div class="server-runtime__scheduler">
+                        <div class="server-runtime__section-head">
+                            <h4 class="server-runtime__section-title">Scheduler Laravel</h4>
+                            <span class="server-runtime__state server-runtime__state--secondary" id="runtime-scheduler-state" role="status">Memeriksa</span>
+                        </div>
+                        <p class="server-runtime__message" id="runtime-scheduler-message">Menunggu status scheduler dari server.</p>
+                        <dl class="server-runtime__metrics">
+                            <div><dt>Heartbeat terakhir</dt><dd id="runtime-scheduler-heartbeat">—</dd></div>
+                            <div><dt>Eksekusi terakhir</dt><dd id="runtime-scheduler-last-run">—</dd></div>
+                            <div><dt>Jadwal berikutnya</dt><dd id="runtime-scheduler-next-run">—</dd></div>
+                            <div><dt>Startup scheduler</dt><dd id="runtime-scheduler-startup">Memeriksa</dd></div>
+                        </dl>
+                        <div class="server-runtime__scheduler-actions">
+                            <button type="button" class="btn btn-sm btn-success" data-runtime-service="scheduler" data-runtime-action="start" disabled><i class="fas fa-play mr-1" aria-hidden="true"></i>Aktifkan Scheduler</button>
+                            <button type="button" class="btn btn-sm btn-outline-primary" data-runtime-service="scheduler" data-runtime-action="run" disabled><i class="fas fa-calendar-check mr-1" aria-hidden="true"></i>Jalankan Jadwal Jatuh Tempo</button>
+                            <button type="button" class="btn btn-sm btn-outline-warning" data-runtime-service="scheduler" data-runtime-action="restart" disabled><i class="fas fa-redo-alt mr-1" aria-hidden="true"></i>Restart Scheduler</button>
+                            <button type="button" class="btn btn-sm btn-outline-danger" data-runtime-service="scheduler" data-runtime-action="stop" disabled><i class="fas fa-stop mr-1" aria-hidden="true"></i>Matikan Scheduler</button>
+                        </div>
+                        <p class="server-runtime__hint mt-2 mb-0">Scheduler menjalankan jadwal yang jatuh tempo secara otomatis. Kontrol worker dan antreannya tetap tersedia di bawah.</p>
+                    </div>
+
+                    <div class="server-runtime__infrastructure" aria-label="Layanan infrastruktur Windows">
+                        @foreach(['apache' => ['Apache', 'fa-globe'], 'mysql' => ['MySQL', 'fa-database'], 'tunnel' => ['Cloudflare Tunnel', 'fa-cloud']] as $serviceKey => [$serviceLabel, $serviceIcon])
+                            <div class="server-runtime__service" data-runtime-infrastructure="{{ $serviceKey }}">
+                                <i class="fas {{ $serviceIcon }} server-runtime__service-icon" aria-hidden="true"></i>
+                                <div class="server-runtime__service-copy">
+                                    <div class="server-runtime__section-head"><strong data-runtime-service-label>{{ $serviceLabel }}</strong><span class="server-runtime__state server-runtime__state--secondary" data-runtime-service-state>Memeriksa</span></div>
+                                    <div class="server-runtime__hint" data-runtime-service-startup>Memeriksa startup Windows</div>
+                                    <div class="server-runtime__hint mt-1" data-runtime-service-message>Menunggu informasi layanan.</div>
+                                </div>
+                                <button type="button" class="btn btn-sm btn-outline-primary" data-runtime-service="{{ $serviceKey }}" data-runtime-action="start" aria-label="Aktifkan {{ $serviceLabel }}" disabled>Aktifkan</button>
+                            </div>
+                        @endforeach
+                        <div class="server-runtime__service" id="runtime-backup-row">
+                            <i class="fas fa-archive server-runtime__service-icon" aria-hidden="true"></i>
+                            <div class="server-runtime__service-copy">
+                                <div class="server-runtime__section-head"><strong>Backup database harian</strong><span class="server-runtime__state server-runtime__state--secondary" id="runtime-backup-state">Memeriksa</span></div>
+                                <div class="server-runtime__hint" id="runtime-backup-schedule">Memeriksa task backup Windows</div>
+                                <div class="server-runtime__hint mt-1" id="runtime-backup-message">Menunggu informasi backup.</div>
+                            </div>
+                            <button type="button" class="btn btn-sm btn-outline-primary" data-runtime-service="backup" data-runtime-action="run" aria-label="Jalankan backup database sekarang" disabled>Jalankan</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="server-runtime__readiness" aria-labelledby="runtime-readiness-title">
+                    <div class="server-runtime__section-head">
+                        <h4 class="server-runtime__section-title" id="runtime-readiness-title">Kesiapan setelah server restart</h4>
+                        <span class="server-runtime__state server-runtime__state--secondary" id="runtime-readiness-badge" role="status">Memeriksa</span>
+                    </div>
+                    <p class="server-runtime__hint mb-2">Semua butir berikut harus terpenuhi agar aplikasi menyala sendiri setelah PC server dinyalakan ulang. Bila ada yang belum, klik <strong>Aktifkan Semua Pendukung</strong>.</p>
+                    <ul class="server-runtime__checklist" id="runtime-readiness-list"><li class="server-runtime__check">Memeriksa kesiapan…</li></ul>
+                </div>
+
+                <div class="server-runtime__details-grid">
+                    <details class="server-runtime__details" id="runtime-schedules-details">
+                        <summary>Jadwal otomatis <span id="runtime-schedule-count"></span></summary>
+                        <p class="server-runtime__hint">Daftar ini untuk pemantauan. Setiap jadwal berjalan melalui scheduler sesuai waktu yang ditetapkan.</p>
+                        <div class="server-runtime__schedule-wrap" data-abah-no-table-guard tabindex="0" role="region" aria-label="Daftar jadwal otomatis">
+                            <table class="table table-sm server-runtime__schedule-table" data-abah-no-table-guard>
+                                <thead><tr><th scope="col">Jadwal</th><th scope="col">Frekuensi</th><th scope="col">Eksekusi berikutnya</th></tr></thead>
+                                <tbody id="runtime-schedule-body"><tr><td colspan="3">Memuat jadwal otomatis…</td></tr></tbody>
+                            </table>
+                        </div>
+                    </details>
+                    <details class="server-runtime__details">
+                        <summary>Log scheduler terbaru</summary>
+                        <p class="server-runtime__hint" id="runtime-scheduler-task-detail">Memeriksa tugas Windows scheduler.</p>
+                        <pre class="server-runtime__log" id="runtime-scheduler-log" tabindex="0" aria-label="Log scheduler terbaru">Menunggu log scheduler.</pre>
+                    </details>
+                </div>
+                <div class="server-runtime__footer"><span id="runtime-updated">Status layanan belum dimuat.</span><span id="runtime-refresh-mode">Pembaruan mengikuti sakelar Auto.</span></div>
+            </section>
+
             <div class="card border-0 shadow-sm mb-4" id="worker-control-card" style="border-radius: 14px;">
                 <div class="card-body d-flex flex-column flex-lg-row align-items-lg-center justify-content-between">
                     <div class="pr-lg-4 mb-3 mb-lg-0">
@@ -206,7 +298,15 @@
                         <span class="job-section-icon mr-2 text-secondary"><i class="fas fa-history"></i></span>
                         Riwayat Eksekusi Job
                     </h6>
-                    <div class="d-flex align-items-center">
+                    <div class="job-history-tabs" role="tablist" aria-label="Jenis riwayat job">
+                        <button type="button" class="job-history-tab is-active" role="tab" aria-selected="true" data-history-view="import">
+                            <i class="fas fa-file-import" aria-hidden="true"></i> Import <span class="job-history-tab__count" id="history-import-count">0</span>
+                        </button>
+                        <button type="button" class="job-history-tab" role="tab" aria-selected="false" data-history-view="delete">
+                            <i class="fas fa-trash-alt" aria-hidden="true"></i> Delete Report <span class="job-history-tab__count" id="history-delete-count">0</span>
+                        </button>
+                    </div>
+                    <div class="d-flex align-items-center" id="job-history-import-tools">
                         <span class="text-muted small mr-3 font-weight-bold" id="job-pagination-meta">0 job</span>
                         <div class="custom-control custom-checkbox d-inline-block">
                             <input type="checkbox" class="custom-control-input" id="job-select-all">
@@ -291,6 +391,13 @@ document.addEventListener('DOMContentLoaded', function () {
     let refreshRequestedWhileLoading = false;
     let currentJobs = [];
     const selectedJobIds = new Set();
+    const historyTabs = Array.from(document.querySelectorAll('[data-history-view]'));
+    const historyImportTools = document.getElementById('job-history-import-tools');
+    const historyImportCount = document.getElementById('history-import-count');
+    const historyDeleteCount = document.getElementById('history-delete-count');
+    let historyView = 'import';
+    let deleteHistory = [];
+    let lastPaginationMeta = {};
 
     function templateUrl(template, value) { return String(template || '').replace('__JOB_ID__', encodeURIComponent(value || '')); }
     function escapeHtml(value) { return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;'); }
@@ -503,10 +610,43 @@ document.addEventListener('DOMContentLoaded', function () {
     function renderSummary(summary) { document.getElementById('summary-active').textContent = Number(summary.active_jobs || 0).toLocaleString('id-ID'); document.getElementById('summary-queued').textContent = Number(summary.queued_jobs || 0).toLocaleString('id-ID'); document.getElementById('summary-processing').textContent = Number(summary.processing_jobs || 0).toLocaleString('id-ID'); document.getElementById('summary-today').textContent = Number(summary.today_jobs || 0).toLocaleString('id-ID'); }
     function renderSnapshotJobs(items, summary = {}) { const activeCount = Number(summary.active_jobs || 0); snapshotJobCountLabel.textContent = `${activeCount.toLocaleString('id-ID')} job snapshot aktif`; if (!Array.isArray(items) || items.length === 0) { snapshotGrid.innerHTML = `<div class="col-12"><div class="job-management-empty"><i class="fas fa-clone fa-2x mb-2 d-block text-muted opacity-50"></i>Belum ada rebuild snapshot yang sedang antre atau berjalan.</div></div>`; return; } snapshotGrid.innerHTML = items.map((job) => `<div class="col-xl-6 mb-3"><div class="job-active-card job-active-card--snapshot"><div class="job-active-card__header"><div><div class="job-active-card__title">${escapeHtml(job.report_name)}</div><div class="job-active-card__sub">${escapeHtml(job.file_name)} • ${escapeHtml(job.id)}</div></div>${statusBadge(job)}</div><div class="job-active-card__body">${progressMarkup(job)}<div class="job-active-card__message">${escapeHtml(job.message || '-')}</div><div class="job-active-card__meta">${snapshotDetailMarkup(job)}<span><i class="fas fa-history mr-1"></i>${escapeHtml(job.updated_at_label || '-')}</span><span><i class="far fa-clock mr-1"></i>${escapeHtml(job.duration_label || '-')}</span>${job.queue_name ? `<span><i class="fas fa-server mr-1"></i>${escapeHtml(job.queue_name)}</span>` : ''}</div></div><div class="job-active-card__footer"><span class="job-active-card__hint">${job.status === 'failed' ? 'Snapshot stale ditandai gagal otomatis.' : 'Rebuild dipantau dari cache report management.'}</span><div class="job-active-card__actions">${forceStartButton(job, false, true)}</div></div></div></div>`).join(''); }
     function renderActiveJobs(items) { activeJobCountLabel.textContent = `${Number(items.length || 0).toLocaleString('id-ID')} job aktif`; if (!Array.isArray(items) || items.length === 0) { activeGrid.innerHTML = `<div class="col-12"><div class="job-management-empty"><i class="fas fa-hourglass-half fa-2x mb-2 d-block text-muted opacity-50"></i>Belum ada job dengan status queued atau processing.</div></div>`; return; } activeGrid.innerHTML = items.map((job) => `<div class="col-xl-6 mb-3"><div class="job-active-card"><div class="job-active-card__header"><div><div class="job-active-card__title">#${job.id} • ${escapeHtml(job.report_name)}</div><div class="job-active-card__sub">${escapeHtml(job.file_name)}${job.table_name ? ' • ' + escapeHtml(job.table_name) : ''}</div></div>${statusBadge(job)}</div><div class="job-active-card__body">${progressMarkup(job)}<div class="job-active-card__message">${escapeHtml(job.message || '-')}</div><div class="job-active-card__meta"><span><i class="far fa-user mr-1"></i>${escapeHtml(job.created_by_name || 'System')}</span><span><i class="far fa-clock mr-1"></i>${escapeHtml(job.duration_label || '-')}</span><span><i class="fas fa-history mr-1"></i>${escapeHtml(job.updated_at_label || '-')}</span></div></div><div class="job-active-card__footer">${job.termination_requested ? '<span class="job-active-card__hint">Permintaan terminate dikirim.</span>' : '<span class="job-active-card__hint">Job aktif dapat dihentikan kapan saja.</span>'}<div class="job-active-card__actions">${forceStartButton(job)}${terminateButton(job)}</div></div></div></div>`).join(''); }
-    function renderManagedDeleteJobs(items, summary = {}) { const activeCount = Number(summary.active_jobs || 0); managedDeleteJobCountLabel.textContent = `${activeCount.toLocaleString('id-ID')} job delete aktif`; if (!Array.isArray(items) || items.length === 0) { managedDeleteGrid.innerHTML = `<div class="col-12"><div class="job-management-empty"><i class="fas fa-trash-alt fa-2x mb-2 d-block text-muted opacity-50"></i>Belum ada progress delete yang sedang antre atau berjalan.</div></div>`; return; } managedDeleteGrid.innerHTML = items.map((job) => `<div class="col-xl-6 mb-3"><div class="job-active-card job-active-card--delete"><div class="job-active-card__header"><div><div class="job-active-card__title">#${escapeHtml(job.id)} • ${escapeHtml(job.report_name || 'Managed Delete')}</div><div class="job-active-card__sub">${escapeHtml(job.table_name || '-')} • ${escapeHtml(job.file_name || '-')}</div></div>${statusBadge(job)}</div><div class="job-active-card__body">${progressMarkup(job)}<div class="job-active-card__message">${escapeHtml(job.message || '-')}</div><div class="job-active-card__meta"><span><i class="fas fa-layer-group mr-1"></i>${escapeHtml(job.stage_label || job.phase || '-')}</span><span><i class="fas fa-stream mr-1"></i>${Number(job.scope_count || 0).toLocaleString('id-ID')} scope</span><span><i class="fas fa-history mr-1"></i>${escapeHtml(job.updated_at_label || '-')}</span><span><i class="far fa-clock mr-1"></i>${escapeHtml(job.duration_label || '-')}</span>${job.queue_name ? `<span><i class="fas fa-server mr-1"></i>${escapeHtml(job.queue_name)}${job.queue_job_id ? ' #' + escapeHtml(job.queue_job_id) : ''}</span>` : ''}</div></div><div class="job-active-card__footer">${job.can_cancel ? (job.termination_requested ? '<span class="job-active-card__hint">Force stop sudah dikirim.</span>' : '<span class="job-active-card__hint">Delete aktif dapat dibatalkan dengan aman.</span>') : '<span class="job-active-card__hint">Delete ini sudah selesai atau tidak aktif.</span>'}<div class="job-active-card__actions">${forceStopDeleteButton(job)}${cancelDeleteButton(job)}</div></div></div></div>`).join(''); }
+    function renderManagedDeleteJobs(items, summary = {}) { const activeCount = Number(summary.active_jobs || 0); managedDeleteJobCountLabel.textContent = `${activeCount.toLocaleString('id-ID')} job delete aktif`; if (!Array.isArray(items) || items.length === 0) { managedDeleteGrid.innerHTML = `<div class="col-12"><div class="job-management-empty"><i class="fas fa-trash-alt fa-2x mb-2 d-block text-muted opacity-50"></i>Belum ada progress delete yang sedang antre atau berjalan.</div></div>`; return; } managedDeleteGrid.innerHTML = items.map((job) => `<div class="col-xl-6 mb-3"><div class="job-active-card job-active-card--delete"><div class="job-active-card__header"><div><div class="job-active-card__title"><span title="${escapeHtml(job.id)}">#${escapeHtml(shortId(job.id))}</span> • ${escapeHtml(job.report_name || 'Managed Delete')}</div><div class="job-active-card__sub">${escapeHtml(job.table_name || '-')} • ${escapeHtml(job.file_name || '-')}</div></div>${statusBadge(job)}</div><div class="job-active-card__body">${progressMarkup(job)}<div class="job-active-card__message">${escapeHtml(job.message || '-')}</div><div class="job-active-card__meta"><span><i class="fas fa-layer-group mr-1"></i>${escapeHtml(job.stage_label || job.phase || '-')}</span><span><i class="fas fa-stream mr-1"></i>${Number(job.scope_count || 0).toLocaleString('id-ID')} scope</span><span><i class="fas fa-history mr-1"></i>${escapeHtml(job.updated_at_label || '-')}</span><span><i class="far fa-clock mr-1"></i>${escapeHtml(job.duration_label || '-')}</span>${job.queue_name ? `<span><i class="fas fa-server mr-1"></i>${escapeHtml(job.queue_name)}${job.queue_job_id ? ' #' + escapeHtml(job.queue_job_id) : ''}</span>` : ''}</div></div><div class="job-active-card__footer">${job.can_cancel ? (job.termination_requested ? '<span class="job-active-card__hint">Force stop sudah dikirim.</span>' : '<span class="job-active-card__hint">Delete aktif dapat dibatalkan dengan aman.</span>') : '<span class="job-active-card__hint">Delete ini sudah selesai atau tidak aktif.</span>'}<div class="job-active-card__actions">${forceStopDeleteButton(job)}${cancelDeleteButton(job)}</div></div></div></div>`).join(''); }
     function renderTable(items) { currentJobs = Array.isArray(items) ? items : []; if (currentJobs.length === 0) { tableBody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-5"><i class="fas fa-inbox fa-2x mb-2 d-block text-muted opacity-50"></i>Tidak ada data job untuk filter ini.</td></tr>'; syncSelectionState(); return; } tableBody.innerHTML = currentJobs.map((job) => `<tr><td class="text-center job-col-check">${rowCheckbox(job)}</td><td class="font-weight-bold" style="color: #0857c3;">#${job.id}</td><td><div class="job-table-primary">${escapeHtml(job.report_name)}</div><div class="job-table-secondary">${escapeHtml(job.table_name || '-')}</div></td><td><div class="job-table-primary">${escapeHtml(job.file_name)}</div><div class="job-table-secondary">By ${escapeHtml(job.created_by_name || 'System')}</div></td><td>${statusBadge(job)}</td><td>${progressMarkup(job)}<div class="job-table-secondary mt-1">${escapeHtml(job.message || '-')}</div></td><td><div class="job-table-primary">${escapeHtml(job.updated_at_label || '-')}</div><div class="job-table-secondary">Durasi ${escapeHtml(job.duration_label || '-')}</div></td><td class="text-center"><div class="job-table-actions">${forceStartButton(job, true)}${terminateButton(job, true)}${deleteButton(job, true)}</div></td></tr>`).join(''); syncSelectionState(); }
+    function shortId(value) { const id = String(value ?? ''); return id.length > 12 ? `${id.slice(0, 8)}…` : id; }
+    function renderDeleteHistoryTable() {
+        if (deleteHistory.length === 0) {
+            tableBody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-5"><i class="fas fa-trash-alt fa-2x mb-2 d-block text-muted opacity-50"></i>Belum ada riwayat delete report dalam 14 hari terakhir.</td></tr>';
+            return;
+        }
+        tableBody.innerHTML = deleteHistory.map((job) => `<tr><td class="text-center job-col-check"><span class="text-muted small">-</span></td><td class="font-weight-bold" style="color: #0857c3;" title="${escapeHtml(job.id)}">#${escapeHtml(shortId(job.id))}</td><td><div class="job-table-primary">Delete Report Rows</div><div class="job-table-secondary">${escapeHtml(job.table_name || '-')}</div></td><td><div class="job-table-primary">${Number(job.scope_count || 0).toLocaleString('id-ID')} scope</div><div class="job-table-secondary">By ${escapeHtml(job.created_by_name || 'System')}</div></td><td>${statusBadge(job)}</td><td>${progressMarkup(job)}<div class="job-table-secondary mt-1">${escapeHtml(job.message || '-')}</div></td><td><div class="job-table-primary">${escapeHtml(job.updated_at_label || '-')}</div><div class="job-table-secondary">Durasi ${escapeHtml(job.duration_label || '-')}</div></td><td class="text-center"><span class="text-muted small">-</span></td></tr>`).join('');
+    }
+    function renderDeleteHistory(items) {
+        deleteHistory = Array.isArray(items) ? items : [];
+        historyDeleteCount.textContent = deleteHistory.length.toLocaleString('id-ID');
+    }
+    function applyHistoryView() {
+        historyTabs.forEach((tab) => {
+            const active = tab.dataset.historyView === historyView;
+            tab.classList.toggle('is-active', active);
+            tab.setAttribute('aria-selected', active ? 'true' : 'false');
+        });
+        historyImportTools.classList.toggle('d-none', historyView !== 'import');
+        if (historyView === 'delete') {
+            pagination.classList.add('d-none');
+            paginationMeta.textContent = `${deleteHistory.length.toLocaleString('id-ID')} delete`;
+            renderDeleteHistoryTable();
+            return;
+        }
+        renderTable(currentJobs);
+        renderPagination(lastPaginationMeta);
+    }
+    historyTabs.forEach((tab) => tab.addEventListener('click', () => {
+        if (historyView === tab.dataset.historyView) return;
+        historyView = tab.dataset.historyView;
+        applyHistoryView();
+    }));
     function renderPagination(meta) { const total = Number(meta.total || 0); paginationMeta.textContent = `${total.toLocaleString('id-ID')} job`; if (!meta.last_page || meta.last_page <= 1) { pagination.classList.add('d-none'); pagination.innerHTML = ''; return; } const buttons = []; for (let page = 1; page <= meta.last_page; page++) { buttons.push(`<button type="button" class="job-page-btn ${page === meta.current_page ? 'is-active' : ''}" data-page="${page}">${page}</button>`); } pagination.innerHTML = `<div class="job-management-pagination__meta">Menampilkan ${meta.from || 0}-${meta.to || 0} dari ${total.toLocaleString('id-ID')} job</div><div class="job-management-pagination__actions">${buttons.join('')}</div>`; pagination.classList.remove('d-none'); }
-    async function fetchData(page = 1) { if (loading) { refreshRequestedWhileLoading = true; return; } loading = true; currentPage = page; try { const params = new URLSearchParams({ page: String(page), status: filterStatus.value || 'all', search: filterSearch.value || '', active_only: activeOnly.checked ? '1' : '0' }); const response = await fetch(`${card.dataset.fetchUrl}?${params.toString()}`, { headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' } }); const payload = await response.json().catch(() => ({})); if (!response.ok || payload.status === 'error') throw new Error(payload.message || 'Gagal memuat data job.'); hideNotice(); renderWorkerStatus(payload.worker_status || null); renderWorkerMonitor(payload.worker_monitor || null); renderSafeRestart(payload.safe_restart || null); renderQueueHealth(payload.queue_health || null); renderSummary(payload.summary || {}); renderSnapshotJobs(payload.snapshot_jobs || [], payload.snapshot_summary || {}); renderRawQueueJobs(payload.raw_queue_jobs || [], payload.raw_queue_summary || {}); renderManagedDeleteJobs(payload.managed_delete_jobs || [], payload.managed_delete_summary || {}); renderActiveJobs(payload.active_jobs || []); renderTable(payload.jobs || []); renderPagination(payload.pagination || {}); } catch (error) { showNotice(error.message || 'Gagal memuat data job.', 'warning'); } finally { loading = false; if (refreshRequestedWhileLoading && !document.hidden) { refreshRequestedWhileLoading = false; fetchData(currentPage); } } }
+    async function fetchData(page = 1) { if (loading) { refreshRequestedWhileLoading = true; return; } loading = true; currentPage = page; try { const params = new URLSearchParams({ page: String(page), status: filterStatus.value || 'all', search: filterSearch.value || '', active_only: activeOnly.checked ? '1' : '0' }); const response = await fetch(`${card.dataset.fetchUrl}?${params.toString()}`, { headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' } }); const payload = await response.json().catch(() => ({})); if (!response.ok || payload.status === 'error') throw new Error(payload.message || 'Gagal memuat data job.'); hideNotice(); renderWorkerStatus(payload.worker_status || null); renderWorkerMonitor(payload.worker_monitor || null); renderSafeRestart(payload.safe_restart || null); renderQueueHealth(payload.queue_health || null); renderSummary(payload.summary || {}); renderSnapshotJobs(payload.snapshot_jobs || [], payload.snapshot_summary || {}); renderRawQueueJobs(payload.raw_queue_jobs || [], payload.raw_queue_summary || {}); renderManagedDeleteJobs(payload.managed_delete_jobs || [], payload.managed_delete_summary || {}); renderActiveJobs(payload.active_jobs || []); renderTable(payload.jobs || []); renderPagination(payload.pagination || {}); lastPaginationMeta = payload.pagination || {}; historyImportCount.textContent = Number(lastPaginationMeta.total || 0).toLocaleString('id-ID'); renderDeleteHistory(payload.managed_delete_history || []); if (historyView !== 'import') applyHistoryView(); } catch (error) { showNotice(error.message || 'Gagal memuat data job.', 'warning'); } finally { loading = false; if (refreshRequestedWhileLoading && !document.hidden) { refreshRequestedWhileLoading = false; fetchData(currentPage); } } }
     async function setWorkerState(action) {
         const isStart = action === 'start';
         const confirmation = await Swal.fire({
@@ -568,10 +708,419 @@ document.addEventListener('DOMContentLoaded', function () {
     startAutoRefresh();
 });
 </script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const runtimeCard = document.getElementById('server-runtime-card');
+    if (!runtimeCard) return;
+
+    const autoRefresh = document.getElementById('job-auto-refresh');
+    const refreshButton = document.getElementById('btn-runtime-refresh');
+    const runtimeNotice = document.getElementById('runtime-notice');
+    const actionButtons = Array.from(runtimeCard.querySelectorAll('[data-runtime-service][data-runtime-action]'));
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || @json(csrf_token());
+    const runtimeState = { lastValid: null, readId: 0, readController: null, timer: null, actionPending: false, confirmPending: false, refreshAfterAction: false, refreshWorkerAfterAction: false, noticeKind: null, closed: false, schedulesSignature: null };
+
+    function setRuntimeText(id, value) {
+        const element = document.getElementById(id);
+        if (element) element.textContent = String(value ?? '—');
+    }
+
+    function runtimeTime(value, timezone = 'Asia/Jakarta') {
+        if (!value) return '—';
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return String(value);
+        try {
+            return new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium', timeStyle: 'medium', timeZone: timezone }).format(date);
+        } catch (_) {
+            return new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium', timeStyle: 'medium', timeZone: 'Asia/Jakarta' }).format(date);
+        }
+    }
+
+    function setRuntimeBadge(element, label, tone) {
+        if (!element) return;
+        const safeTone = ['success', 'warning', 'danger', 'info', 'secondary'].includes(tone) ? tone : 'secondary';
+        element.className = 'server-runtime__state server-runtime__state--' + safeTone;
+        element.textContent = String(label || 'Tidak diketahui');
+    }
+
+    function showRuntimeNotice(message, tone = 'info', kind = 'action') {
+        const safeTone = ['success', 'warning', 'danger', 'info'].includes(tone) ? tone : 'info';
+        runtimeNotice.className = 'server-runtime__notice server-runtime__notice--' + safeTone;
+        runtimeNotice.textContent = String(message || 'Status layanan diperbarui.');
+        runtimeState.noticeKind = kind;
+    }
+
+    function syncRuntimeButtons() {
+        const busy = runtimeState.actionPending || runtimeState.confirmPending;
+        const scheduler = runtimeState.lastValid?.scheduler;
+        refreshButton.disabled = busy || runtimeState.readController !== null;
+        refreshButton.setAttribute('aria-busy', runtimeState.readController !== null ? 'true' : 'false');
+        refreshButton.querySelector('i')?.classList.toggle('fa-spin', runtimeState.readController !== null);
+        runtimeCard.setAttribute('aria-busy', runtimeState.actionPending ? 'true' : 'false');
+        actionButtons.forEach(function (button) {
+            const service = button.dataset.runtimeService;
+            const action = button.dataset.runtimeAction;
+            let disabled = busy || !runtimeState.lastValid;
+            if (service === 'scheduler') {
+                disabled = disabled || scheduler?.available === false;
+                if (action === 'start') disabled = disabled || ['active', 'starting', 'external'].includes(scheduler?.state);
+                if (action === 'stop') disabled = disabled || (scheduler?.enabled === false && ['stopped', 'inactive'].includes(scheduler?.state));
+                if (action === 'run') disabled = disabled || scheduler?.enabled !== true || scheduler?.task_registered !== true;
+                if (action === 'restart') disabled = disabled || scheduler?.state === 'starting';
+            } else if (service === 'backup') {
+                disabled = disabled || runtimeState.lastValid?.backup?.runnable !== true;
+            } else if (service !== 'all') {
+                const entry = runtimeState.lastValid?.infrastructure?.find(item => item.key === service);
+                // Running but manual startup still needs one click to survive a reboot.
+                disabled = disabled || !((entry?.startable && entry?.state !== 'running') || (entry?.state === 'running' && entry?.automatic === false));
+            }
+            button.disabled = disabled;
+        });
+        setRuntimeText('runtime-refresh-mode', autoRefresh?.checked ? 'Pembaruan otomatis aktif saat halaman terlihat.' : 'Pembaruan otomatis dijeda.');
+    }
+
+    function renderRuntimeSchedules(schedules) {
+        const entries = Array.isArray(schedules) ? schedules : [];
+        const signature = JSON.stringify(entries);
+        if (signature === runtimeState.schedulesSignature) return;
+        runtimeState.schedulesSignature = signature;
+        const body = document.getElementById('runtime-schedule-body');
+        body.replaceChildren();
+        setRuntimeText('runtime-schedule-count', '(' + entries.length.toLocaleString('id-ID') + ')');
+        if (entries.length === 0) {
+            const row = body.insertRow();
+            const cell = row.insertCell();
+            cell.colSpan = 3;
+            cell.textContent = 'Tidak ada informasi jadwal yang tersedia.';
+            return;
+        }
+        entries.forEach(function (entry) {
+            const row = body.insertRow();
+            const titleCell = row.insertCell();
+            const title = document.createElement('strong');
+            title.textContent = String(entry.label || 'Jadwal otomatis');
+            titleCell.appendChild(title);
+            if (entry.command) {
+                const command = document.createElement('code');
+                command.className = 'server-runtime__schedule-command';
+                command.textContent = String(entry.command);
+                titleCell.appendChild(command);
+            }
+            row.insertCell().textContent = String(entry.expression || '—');
+            const nextCell = row.insertCell();
+            nextCell.textContent = runtimeTime(entry.next_run_at, entry.timezone || 'Asia/Jakarta');
+            const timezone = document.createElement('small');
+            timezone.className = 'server-runtime__schedule-zone';
+            timezone.textContent = String(entry.timezone || 'Asia/Jakarta');
+            nextCell.appendChild(timezone);
+        });
+    }
+
+    function renderRuntimeBackup(backup) {
+        const state = backup?.state || 'unknown';
+        const label = backup?.available === false ? 'Belum dapat diverifikasi'
+            : (state === 'running' ? 'Sedang berjalan' : (backup?.failed ? 'Terakhir gagal' : (state === 'unregistered' ? 'Lewat scheduler Laravel' : (backup?.enabled ? 'Terjadwal' : 'Nonaktif'))));
+        const tone = backup?.available === false ? 'secondary' : (state === 'running' ? 'info' : (backup?.failed || (backup?.registered && !backup?.enabled) ? 'warning' : 'success'));
+        setRuntimeBadge(document.getElementById('runtime-backup-state'), label, tone);
+        setRuntimeText('runtime-backup-schedule', backup?.registered
+            ? 'Terakhir: ' + runtimeTime(backup.last_run_at) + '; berikutnya: ' + runtimeTime(backup.next_run_at)
+            : 'Setiap hari pukul 00:00 WIB, dengan catch-up tiap jam bila server mati tengah malam.');
+        setRuntimeText('runtime-backup-message', backup?.message || 'Backup hari ini yang sudah terverifikasi tidak dibuat ulang.');
+    }
+
+    function renderRuntimeReadiness(items, ready) {
+        const entries = Array.isArray(items) ? items : [];
+        const list = document.getElementById('runtime-readiness-list');
+        const failing = entries.filter(item => item.ok === false).length;
+        const unknown = entries.filter(item => item.ok !== true && item.ok !== false).length;
+        setRuntimeBadge(document.getElementById('runtime-readiness-badge'),
+            failing > 0 ? failing.toLocaleString('id-ID') + ' butir belum siap' : (unknown > 0 ? 'Siap, ' + unknown.toLocaleString('id-ID') + ' butir belum terverifikasi' : 'Siap untuk restart'),
+            failing > 0 ? 'warning' : (unknown > 0 ? 'info' : 'success'));
+        list.replaceChildren();
+        entries.forEach(function (item) {
+            const kind = item.ok === true ? 'ok' : (item.ok === false ? 'fail' : 'unknown');
+            const li = document.createElement('li');
+            li.className = 'server-runtime__check server-runtime__check--' + kind;
+            const icon = document.createElement('i');
+            icon.className = 'fas ' + (kind === 'ok' ? 'fa-check-circle' : (kind === 'fail' ? 'fa-times-circle' : 'fa-question-circle'));
+            icon.setAttribute('aria-hidden', 'true');
+            const copy = document.createElement('span');
+            copy.textContent = String(item.label || 'Pemeriksaan');
+            const status = document.createElement('span');
+            status.className = 'sr-only';
+            status.textContent = kind === 'ok' ? ' (terpenuhi)' : (kind === 'fail' ? ' (belum terpenuhi)' : ' (belum terverifikasi)');
+            copy.appendChild(status);
+            if (item.hint && kind !== 'ok') {
+                const hint = document.createElement('small');
+                hint.textContent = String(item.hint);
+                copy.appendChild(hint);
+            }
+            li.append(icon, copy);
+            list.appendChild(li);
+        });
+        if (entries.length === 0) {
+            const li = document.createElement('li');
+            li.className = 'server-runtime__check';
+            li.textContent = 'Informasi kesiapan belum tersedia.';
+            list.appendChild(li);
+        }
+    }
+
+    function renderRuntime(runtime) {
+        if (!runtime || typeof runtime !== 'object' || !runtime.scheduler || typeof runtime.scheduler !== 'object') return false;
+        runtimeState.lastValid = runtime;
+        const scheduler = runtime.scheduler;
+        setRuntimeBadge(document.getElementById('runtime-health-badge'), runtime.healthy ? 'Layanan pendukung siap' : 'Perlu perhatian', runtime.healthy ? 'success' : 'warning');
+        setRuntimeBadge(document.getElementById('runtime-scheduler-state'), scheduler.state_label, scheduler.tone);
+        setRuntimeText('runtime-scheduler-message', scheduler.message || 'Status scheduler tersedia.');
+        setRuntimeText('runtime-scheduler-heartbeat', runtimeTime(scheduler.heartbeat_at));
+        setRuntimeText('runtime-scheduler-last-run', runtimeTime(scheduler.last_run_at));
+        setRuntimeText('runtime-scheduler-next-run', runtimeTime(scheduler.next_run_at));
+        const startupLabel = scheduler.available === false ? 'Belum dapat diverifikasi' : (scheduler.startup_mode === 'system' ? 'Saat Windows menyala' : (scheduler.startup_mode === 'login' ? 'Saat akun Windows login' : 'Belum terpasang'));
+        setRuntimeText('runtime-scheduler-startup', scheduler.task_registered && scheduler.task_enabled === false ? startupLabel + ' (tugas nonaktif)' : startupLabel);
+        const lastResult = scheduler.last_result === null || scheduler.last_result === undefined ? 'Belum tersedia' : String(scheduler.last_result);
+        const legacyCount = Number(scheduler.legacy_count || 0);
+        setRuntimeText('runtime-scheduler-task-detail', 'Tugas Windows: ' + (scheduler.available === false || scheduler.task_registered == null ? 'belum dapat diverifikasi' : (scheduler.task_registered ? (scheduler.task_enabled ? 'aktif' : 'nonaktif') : 'belum terdaftar')) + '. Hasil eksekusi terakhir: ' + lastResult + (legacyCount > 0 ? '. Scheduler lama terdeteksi: ' + legacyCount.toLocaleString('id-ID') : '') + '.');
+        const logValue = Array.isArray(scheduler.log_tail) ? scheduler.log_tail.join('\n') : String(scheduler.log_tail || 'Belum ada log scheduler.');
+        const boundedLog = logValue.split(/\r?\n/).slice(-120).join('\n').slice(-20000);
+        const log = document.getElementById('runtime-scheduler-log');
+        if (log.textContent !== boundedLog) log.textContent = boundedLog;
+
+        const infrastructure = Array.isArray(runtime.infrastructure) ? runtime.infrastructure : [];
+        runtimeCard.querySelectorAll('[data-runtime-infrastructure]').forEach(function (row) {
+            const entry = infrastructure.find(item => item.key === row.dataset.runtimeInfrastructure);
+            const state = entry?.state || 'unknown';
+            if (entry?.label) row.querySelector('[data-runtime-service-label]').textContent = String(entry.label);
+            setRuntimeBadge(row.querySelector('[data-runtime-service-state]'), state === 'running' ? 'Berjalan' : (state === 'stopped' ? 'Berhenti' : 'Tidak diketahui'), state === 'running' ? 'success' : (state === 'stopped' ? 'warning' : 'secondary'));
+            row.querySelector('[data-runtime-service-startup]').textContent = entry?.automatic === true ? 'Startup Windows otomatis' : (entry?.automatic === false ? 'Startup Windows manual' : 'Startup Windows belum diketahui');
+            row.querySelector('[data-runtime-service-message]').textContent = String(entry?.message || 'Informasi layanan belum tersedia.');
+        });
+        renderRuntimeBackup(runtime.backup);
+        renderRuntimeReadiness(runtime.readiness, runtime.restart_ready);
+        renderRuntimeSchedules(runtime.schedules);
+        setRuntimeText('runtime-updated', 'Status terakhir: ' + runtimeTime(runtime.generated_at) + ' WIB');
+        syncRuntimeButtons();
+        return true;
+    }
+
+    function stopRuntimePolling() {
+        if (runtimeState.timer !== null) window.clearTimeout(runtimeState.timer);
+        runtimeState.timer = null;
+    }
+
+    function cancelRuntimeRead() {
+        runtimeState.readId += 1;
+        if (runtimeState.readController) runtimeState.readController.abort();
+        runtimeState.readController = null;
+    }
+
+    function scheduleRuntimePolling() {
+        stopRuntimePolling();
+        if (runtimeState.closed || !autoRefresh?.checked || document.hidden || runtimeState.actionPending || runtimeState.confirmPending) return;
+        runtimeState.timer = window.setTimeout(refreshRuntime, runtimeState.lastValid?.healthy ? 15000 : 10000);
+    }
+
+    async function refreshRuntime() {
+        if (runtimeState.closed || document.hidden || runtimeState.actionPending || runtimeState.confirmPending) return;
+        stopRuntimePolling();
+        cancelRuntimeRead();
+        const readId = runtimeState.readId;
+        const controller = new AbortController();
+        runtimeState.readController = controller;
+        const timeout = window.setTimeout(() => controller.abort(), 20000);
+        syncRuntimeButtons();
+        try {
+            const response = await fetch(runtimeCard.dataset.statusUrl, { headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }, signal: controller.signal, cache: 'no-store' });
+            const payload = await response.json().catch(() => ({}));
+            if (readId !== runtimeState.readId || runtimeState.actionPending) return;
+            if (!response.ok || payload.status === 'error' || !renderRuntime(payload.runtime)) throw new Error(payload.message || 'Status layanan tidak dapat dimuat.');
+            if (runtimeState.noticeKind === 'stale') {
+                runtimeNotice.classList.add('d-none');
+                runtimeState.noticeKind = null;
+            }
+        } catch (error) {
+            if (readId !== runtimeState.readId) return;
+            const message = error.name === 'AbortError' ? 'Pembaruan status melewati batas waktu.' : (error.message || 'Status layanan gagal diperbarui.');
+            const retained = runtimeState.lastValid ? ' Status terakhir tetap ditampilkan; data belum terbarui.' : ' Status layanan belum dapat dipastikan. Gunakan tombol perbarui untuk mencoba kembali.';
+            showRuntimeNotice(message + retained, 'warning', 'stale');
+            setRuntimeBadge(document.getElementById('runtime-health-badge'), runtimeState.lastValid ? 'Status terakhir · belum terbarui' : 'Status belum tersedia', 'warning');
+        } finally {
+            window.clearTimeout(timeout);
+            if (readId === runtimeState.readId) {
+                runtimeState.readController = null;
+                syncRuntimeButtons();
+                scheduleRuntimePolling();
+            }
+        }
+    }
+
+    async function controlRuntime(button) {
+        if (button.disabled || runtimeState.actionPending || runtimeState.confirmPending) return;
+        const service = button.dataset.runtimeService;
+        const action = button.dataset.runtimeAction;
+        if (!['all', 'scheduler', 'apache', 'mysql', 'tunnel', 'backup'].includes(service) || !['start', 'stop', 'restart', 'run'].includes(action)) return;
+        if (service === 'backup' ? action !== 'run' : (service !== 'scheduler' && action !== 'start')) return;
+        stopRuntimePolling();
+        cancelRuntimeRead();
+        let spinner = null;
+        runtimeState.confirmPending = true;
+        syncRuntimeButtons();
+        try {
+            if (service === 'backup') {
+                const title = 'Jalankan backup database sekarang?';
+                const message = 'Backup berjalan di latar belakang dan dapat memakan waktu lama. Bila backup hari ini sudah ada dan lolos verifikasi, dump ulang dilewati.';
+                const confirmed = window.Swal ? (await window.Swal.fire({ icon: 'question', title, text: message, showCancelButton: true, confirmButtonText: 'Jalankan Backup', cancelButtonText: 'Batal', focusCancel: true, reverseButtons: true })).isConfirmed : window.confirm(title + '\n' + message);
+                if (!confirmed) return;
+            }
+            if (service === 'scheduler' && ['stop', 'restart'].includes(action)) {
+                const title = action === 'stop' ? 'Matikan scheduler?' : 'Restart scheduler?';
+                const message = action === 'stop' ? 'Penjadwalan otomatis akan dihentikan sampai scheduler diaktifkan kembali.' : 'Scheduler akan dihentikan lalu diaktifkan kembali. Penjadwalan otomatis dapat terjeda sementara.';
+                const confirmed = window.Swal ? (await window.Swal.fire({ icon: 'warning', title, text: message, showCancelButton: true, confirmButtonText: action === 'stop' ? 'Matikan Scheduler' : 'Restart Scheduler', cancelButtonText: 'Batal', focusCancel: true, reverseButtons: true })).isConfirmed : window.confirm(title + '\n' + message);
+                if (!confirmed) return;
+            }
+            runtimeState.confirmPending = false;
+            runtimeState.actionPending = true;
+            spinner = document.createElement('i');
+            spinner.className = 'fas fa-spinner fa-spin mr-1';
+            spinner.setAttribute('aria-hidden', 'true');
+            button.prepend(spinner);
+            syncRuntimeButtons();
+            showRuntimeNotice('Permintaan layanan sedang diproses…', 'info');
+            const response = await fetch(runtimeCard.dataset.controlUrl, { method: 'POST', headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-TOKEN': csrfToken }, body: JSON.stringify({ service, action }) });
+            const payload = await response.json().catch(() => ({}));
+            if (payload.runtime) renderRuntime(payload.runtime);
+            const failed = !response.ok || payload.status === 'error';
+            runtimeState.refreshWorkerAfterAction = service === 'all' && !failed;
+            showRuntimeNotice(payload.message || (failed ? 'Permintaan layanan gagal diproses. Status layanan akan diperiksa kembali.' : 'Permintaan layanan selesai diproses.'), failed ? 'danger' : (payload.status === 'warning' ? 'warning' : 'success'));
+        } catch (error) {
+            showRuntimeNotice((error.message || 'Permintaan layanan gagal dikirim.') + ' Hasil tindakan belum dapat dipastikan; status akan diperiksa kembali.', 'warning');
+        } finally {
+            spinner?.remove();
+            const acted = runtimeState.actionPending;
+            runtimeState.actionPending = false;
+            runtimeState.confirmPending = false;
+            syncRuntimeButtons();
+            if (acted && document.hidden) runtimeState.refreshAfterAction = true;
+            else if (acted && runtimeState.refreshWorkerAfterAction && document.getElementById('btn-job-refresh')) {
+                runtimeState.refreshWorkerAfterAction = false;
+                document.getElementById('btn-job-refresh').click();
+            } else if (acted) await refreshRuntime();
+            else scheduleRuntimePolling();
+        }
+    }
+
+    runtimeCard.addEventListener('click', function (event) {
+        const button = event.target.closest('[data-runtime-service][data-runtime-action]');
+        if (button && runtimeCard.contains(button)) controlRuntime(button);
+    });
+    refreshButton.addEventListener('click', refreshRuntime);
+    document.getElementById('btn-job-refresh')?.addEventListener('click', refreshRuntime);
+    autoRefresh?.addEventListener('change', function () {
+        syncRuntimeButtons();
+        if (autoRefresh.checked) refreshRuntime();
+        else stopRuntimePolling();
+    });
+    document.addEventListener('visibilitychange', function () {
+        if (document.hidden) {
+            stopRuntimePolling();
+            cancelRuntimeRead();
+            syncRuntimeButtons();
+        } else if (runtimeState.refreshAfterAction || autoRefresh?.checked) {
+            runtimeState.refreshAfterAction = false;
+            if (runtimeState.refreshWorkerAfterAction && document.getElementById('btn-job-refresh')) {
+                runtimeState.refreshWorkerAfterAction = false;
+                document.getElementById('btn-job-refresh').click();
+            } else refreshRuntime();
+        }
+    });
+    window.addEventListener('pagehide', function () { runtimeState.closed = true; stopRuntimePolling(); cancelRuntimeRead(); });
+    window.addEventListener('pageshow', function (event) { if (event.persisted) { runtimeState.closed = false; syncRuntimeButtons(); if (autoRefresh?.checked) refreshRuntime(); } });
+    refreshRuntime();
+});
+</script>
 @endsection
 
 @section('styles')
 <style>
+.server-runtime { border: 1px solid var(--app-line, #d8e5f7); border-radius: 14px; background: var(--app-surface, #fff); color: var(--app-ink, #0b1f3a); padding: 1.25rem; min-width: 0; }
+.server-runtime__header, .server-runtime__header-actions, .server-runtime__section-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.65rem; }
+.server-runtime__header > div, .server-runtime__service-copy { min-width: 0; }
+.server-runtime__header-actions { justify-content: flex-start; }
+.server-runtime__title { font-size: 1.1rem; font-weight: 800; margin: 0; color: inherit; }
+.server-runtime__intro { color: var(--app-muted, #526987); font-size: 0.84rem; margin: 0.35rem 0 0; }
+.server-runtime__access-note { margin: 1rem 0; padding: 0.7rem 0.85rem; border-radius: 8px; background: var(--app-surface-soft, #f7faff); color: var(--app-muted, #526987); font-size: 0.79rem; line-height: 1.6; }
+.server-runtime__grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 1.25rem; }
+.server-runtime__scheduler { min-width: 0; }
+.server-runtime__section-title { margin: 0; font-size: 0.95rem; font-weight: 800; color: inherit; }
+.server-runtime__message { font-size: 0.84rem; margin: 0.65rem 0 0.9rem; color: var(--app-muted, #526987); overflow-wrap: anywhere; }
+.server-runtime__metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.8rem 1rem; margin: 0 0 1rem; }
+.server-runtime__metrics > div { min-width: 0; }
+.server-runtime__metrics dt { color: var(--app-muted, #526987); font-size: 0.73rem; font-weight: 600; margin-bottom: 0.2rem; }
+.server-runtime__metrics dd { color: inherit; font-size: 0.8rem; font-weight: 700; margin: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.server-runtime__scheduler-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.server-runtime .btn { min-height: 38px; max-width: 100%; white-space: normal; font-size: 0.78rem; font-weight: 700; touch-action: manipulation; }
+.server-runtime :where(button, summary, [tabindex]):focus-visible { outline: 2px solid #3b82f6; outline-offset: 3px; }
+.server-runtime__state { display: inline-flex; align-items: center; width: fit-content; max-width: 100%; border: 1px solid currentColor; border-radius: 999px; padding: 0.22rem 0.6rem; font-size: 0.7rem; font-weight: 700; line-height: 1.3; overflow-wrap: anywhere; }
+.server-runtime__state--secondary { color: var(--app-muted, #526987); }
+.server-runtime__state--success { color: #166534; background: #f0fdf4; }
+.server-runtime__state--warning { color: #92400e; background: #fffbeb; }
+.server-runtime__state--danger { color: #991b1b; background: #fef2f2; }
+.server-runtime__state--info { color: #1e40af; background: #eff6ff; }
+.server-runtime__infrastructure { display: grid; align-content: start; gap: 0.65rem; min-width: 0; }
+.server-runtime__readiness { margin-top: 1.15rem; border-top: 1px solid var(--app-line, #d8e5f7); padding-top: 0.9rem; }
+.server-runtime__checklist { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: 0.5rem 1rem; }
+.server-runtime__check { display: grid; grid-template-columns: 1.1rem minmax(0, 1fr); gap: 0.5rem; align-items: start; font-size: 0.8rem; line-height: 1.5; min-width: 0; }
+.server-runtime__check > i { margin-top: 0.2rem; }
+.server-runtime__check--ok > i { color: #16a34a; }
+.server-runtime__check--fail > i { color: #dc2626; }
+.server-runtime__check--unknown > i { color: #d97706; }
+.server-runtime__check small { display: block; color: var(--app-muted, #526987); font-size: 0.73rem; overflow-wrap: anywhere; }
+:root[data-theme="dark"] .server-runtime__check--ok > i { color: #86efac; }
+:root[data-theme="dark"] .server-runtime__check--fail > i { color: #fca5a5; }
+:root[data-theme="dark"] .server-runtime__check--unknown > i { color: #fcd34d; }
+.server-runtime__service { display: grid; grid-template-columns: 1.25rem minmax(0, 1fr) auto; gap: 0.65rem; align-items: center; border: 1px solid var(--app-line, #d8e5f7); border-radius: 10px; padding: 0.85rem; min-width: 0; }
+.server-runtime__service-icon { color: var(--app-muted, #526987); font-size: 1rem; }
+.server-runtime__service .server-runtime__section-head { gap: 0.4rem; align-items: flex-start; }
+.server-runtime__service strong { font-size: 0.82rem; overflow-wrap: anywhere; }
+.server-runtime__hint { color: var(--app-muted, #526987); font-size: 0.74rem; line-height: 1.6; overflow-wrap: anywhere; }
+.server-runtime__details-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 0.75rem; margin-top: 1.15rem; align-items: start; }
+.server-runtime__details { min-width: 0; border-top: 1px solid var(--app-line, #d8e5f7); padding-top: 0.8rem; }
+.server-runtime__details summary { width: fit-content; max-width: 100%; cursor: pointer; font-size: 0.82rem; font-weight: 700; min-height: 28px; color: inherit; }
+.server-runtime__details > p { margin: 0.6rem 0; }
+.server-runtime__schedule-wrap { overflow: auto; max-width: 100%; max-height: 330px; overscroll-behavior: contain; }
+.server-runtime__schedule-table { min-width: 480px; margin: 0; color: inherit; font-size: 0.75rem; }
+.server-runtime__schedule-table th { background: var(--app-surface-soft, #f7faff); color: var(--app-muted, #526987); border-top: 0; position: sticky; top: 0; z-index: 1; }
+.server-runtime__schedule-table td { border-color: var(--app-line, #d8e5f7); vertical-align: top; font-variant-numeric: tabular-nums; }
+.server-runtime__schedule-command, .server-runtime__schedule-zone { display: block; margin-top: 0.2rem; color: var(--app-muted, #526987); font-size: 0.7rem; overflow-wrap: anywhere; white-space: normal; }
+.server-runtime__log { margin: 0; padding: 0.8rem; background: var(--app-surface-soft, #f7faff); color: var(--app-ink, #0b1f3a); border: 1px solid var(--app-line, #d8e5f7); border-radius: 8px; max-height: 260px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.72rem; line-height: 1.6; overscroll-behavior: contain; }
+.server-runtime__footer { display: flex; flex-wrap: wrap; gap: 0.45rem 1rem; justify-content: space-between; margin-top: 1rem; color: var(--app-muted, #526987); font-size: 0.72rem; font-variant-numeric: tabular-nums; }
+.server-runtime__notice { margin: 0 0 1rem; padding: 0.75rem 0.9rem; border: 1px solid var(--app-line, #d8e5f7); border-left-width: 3px; border-radius: 8px; font-size: 0.82rem; background: var(--app-surface-soft, #f7faff); color: inherit; overflow-wrap: anywhere; }
+.server-runtime__notice--info { border-left-color: #3b82f6; }
+.server-runtime__notice--success { border-left-color: #16a34a; }
+.server-runtime__notice--warning { border-left-color: #d97706; }
+.server-runtime__notice--danger { border-left-color: #dc2626; }
+:root[data-theme="dark"] .server-runtime__state--success { color: #86efac; background: #12352a; }
+:root[data-theme="dark"] .server-runtime__state--warning { color: #fcd34d; background: #3b2c18; }
+:root[data-theme="dark"] .server-runtime__state--danger { color: #fca5a5; background: #3b222b; }
+:root[data-theme="dark"] .server-runtime__state--info { color: #93c5fd; background: #18345a; }
+@media (max-width: 1199.98px) { .server-runtime__grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 767.98px) {
+    .server-runtime { padding: 1rem; }
+    .server-runtime__details-grid { grid-template-columns: minmax(0, 1fr); }
+    .server-runtime .btn, .server-runtime__details summary { min-height: 44px; }
+    .server-runtime__details summary { display: list-item; padding-block: 0.6rem; }
+    .server-runtime__header-actions { width: 100%; }
+    .server-runtime__header-actions [data-runtime-service="all"] { flex: 1 1 100%; }
+    .server-runtime__scheduler-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .server-runtime__service { padding: 0.7rem; gap: 0.5rem; }
+}
+@media (max-width: 399.98px) {
+    .server-runtime__metrics { grid-template-columns: minmax(0, 1fr); }
+    .server-runtime__scheduler-actions { grid-template-columns: minmax(0, 1fr); }
+    .server-runtime__service { grid-template-columns: 1rem minmax(0, 1fr); }
+    .server-runtime__service > button { grid-column: 2; justify-self: start; }
+}
+@media (prefers-reduced-motion: reduce) { .server-runtime .fa-spin { animation: none; } }
 /* ==========================================================================
    BRI Nusantara - Modern Luxury Theme for Job Management
    ========================================================================== */
@@ -1143,6 +1692,17 @@ document.addEventListener('DOMContentLoaded', function () {
     background: #ffffff;
     box-shadow: 0 4px 12px rgba(15, 23, 42, 0.02);
 }
+.job-history-tabs { display: inline-flex; gap: 0.25rem; padding: 0.25rem; border-radius: 10px; background: var(--app-surface-soft, #f1f5f9); border: 1px solid var(--app-line, #e2e8f0); margin: 0.35rem 0; }
+.job-history-tab { display: inline-flex; align-items: center; gap: 0.4rem; border: 0; background: transparent; color: var(--app-muted, #526987); font-size: 0.8rem; font-weight: 700; padding: 0.4rem 0.8rem; border-radius: 8px; cursor: pointer; transition: background-color .15s ease, color .15s ease; }
+.job-history-tab:hover { color: var(--app-ink, #0b1f3a); }
+.job-history-tab:focus-visible { outline: 2px solid #0857c3; outline-offset: 2px; }
+.job-history-tab.is-active { background: var(--app-surface, #fff); color: #0857c3; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12); }
+.job-history-tab__count { min-width: 1.6rem; padding: 0.05rem 0.45rem; border-radius: 999px; background: var(--app-line, #e2e8f0); color: inherit; font-size: 0.72rem; font-variant-numeric: tabular-nums; text-align: center; }
+.job-history-tab.is-active .job-history-tab__count { background: rgba(8, 87, 195, 0.12); }
+:root[data-theme="dark"] .job-history-tab.is-active { color: #93c5fd; }
+:root[data-theme="dark"] .job-history-tab.is-active .job-history-tab__count { background: rgba(147, 197, 253, 0.16); }
+.job-active-card__title { overflow-wrap: anywhere; }
+@media (prefers-reduced-motion: reduce) { .job-history-tab { transition: none; } }
 .job-management-table thead th {
     background: #f8fafc;
     border-bottom: 2px solid #e2e8f0;

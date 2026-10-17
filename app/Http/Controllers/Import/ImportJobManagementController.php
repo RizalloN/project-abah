@@ -148,13 +148,21 @@ class ImportJobManagementController extends Controller
         })->values();
 
         $snapshotJobs = $this->resolveSnapshotJobs();
-        $managedDeleteJobs = $this->importIndexController->resolveManagedReportDeleteJobs();
-        $managedDeleteJobs = array_merge(
-            $managedDeleteJobs,
-            $this->resolveManagedDeleteHistory(collect($managedDeleteJobs)->pluck('id')->map(fn ($id): string => (string) $id)->all())
-        );
+        $liveDeleteJobs = $this->importIndexController->resolveManagedReportDeleteJobs();
+        $liveDeleteIds = collect($liveDeleteJobs)->pluck('id')->filter()->map(fn ($id): string => (string) $id)->all();
+        // Active cards only hold deletes still queued/processing; finished ones belong to the history table.
+        [$managedDeleteJobs, $finishedLiveDeleteJobs] = collect($liveDeleteJobs)
+            ->partition(fn (array $job): bool => in_array($job['status'] ?? '', ['queued', 'processing'], true))
+            ->map(fn ($jobs) => $jobs->values()->all())
+            ->all();
+        $managedDeleteHistory = collect($finishedLiveDeleteJobs)
+            ->map(fn (array $job): array => $job + ['stage_label' => 'Selesai'])
+            ->concat($this->resolveManagedDeleteHistory($liveDeleteIds))
+            ->sortByDesc(fn (array $job): string => (string) ($job['updated_at'] ?? ''))
+            ->values()
+            ->all();
         $rawQueueJobs = $this->resolveRawQueueJobs(
-            collect($managedDeleteJobs)->pluck('id')->filter()->map(fn ($id): string => (string) $id)->all(),
+            $liveDeleteIds,
             collect($snapshotJobs)->pluck('id')->filter()->map(fn ($id): string => (string) $id)->all()
         );
         $summarySource = DB::table('import_jobs');
@@ -183,6 +191,7 @@ class ImportJobManagementController extends Controller
             'safe_restart' => $this->resolveSafeRestart(),
             'snapshot_jobs' => $snapshotJobs,
             'managed_delete_jobs' => $managedDeleteJobs,
+            'managed_delete_history' => $managedDeleteHistory,
             'managed_delete_summary' => [
                 'active_jobs' => collect($managedDeleteJobs)->whereIn('status', ['queued', 'processing'])->count(),
                 'queued_jobs' => collect($managedDeleteJobs)->where('status', 'queued')->count(),

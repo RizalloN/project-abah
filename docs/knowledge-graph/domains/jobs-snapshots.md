@@ -11,7 +11,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | method | 520 |
 | unresolved_symbol | 18 |
 | queue | 6 |
-| route | 1 |
+| route | 3 |
 | class | 60 |
 | trait | 1 |
 | table | 11 |
@@ -54,6 +54,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 ## Route Nodes
 
 - `file-management.snapshots.latest-check` - `file-management/snapshots/latest-check`
+- `job-management.runtime.control` - `job-management/runtime/control`
+- `job-management.runtime.status` - `job-management/runtime`
 
 ## Class Nodes
 
@@ -173,6 +175,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | jobs-snapshots -> core (uses_trait) | 33 |
 | dashboard-simpanan -> jobs-snapshots (uses_trait) | 24 |
 | jobs-snapshots -> core (accepts) | 22 |
+| jobs-snapshots -> access-control (protected_by) | 20 |
 | import -> jobs-snapshots (reads_table) | 19 |
 | jobs-snapshots -> dashboard-pinjaman (reads_table) | 18 |
 | dashboard-pinjaman -> jobs-snapshots (uses_trait) | 17 |
@@ -195,6 +198,5 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | dashboard-pinjaman -> jobs-snapshots (uses_queue) | 8 |
 | dashboard-pinjaman -> jobs-snapshots (implements) | 8 |
 | dashboard-simpanan -> jobs-snapshots (calls) | 7 |
-| jobs-snapshots -> access-control (protected_by) | 7 |
 | import -> jobs-snapshots (implements) | 7 |
 | database -> jobs-snapshots (alters_table) | 6 |

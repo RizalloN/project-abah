@@ -4,6 +4,7 @@
 
 @section('content')
 @php
+    $canManageBackups = $canManageBackups ?? (auth()->user()?->isSuperAdmin() ?? false);
     $importFiles = $files->where('storage_group', 'import_artifacts');
     $databaseFiles = $files->where('storage_group', 'database_backups');
     $importSize = (int) $importFiles->sum('size');
@@ -25,9 +26,9 @@
         <div class="fm-hero__glow"></div>
         <div class="fm-page-head d-flex align-items-center justify-content-between flex-wrap position-relative">
             <div class="pr-3">
-                <span class="fm-hero__eyebrow"><i class="fas fa-database mr-1"></i> Storage &amp; Backup Repository</span>
-                <h2 class="fm-hero__title h4 font-weight-bold text-white mb-0"><i class="fas fa-folder-open mr-2"></i> Manajemen File &amp; Backup</h2>
-                <p class="fm-hero__text mb-0">Pengelolaan artefak data import, pembersihan berkala, dan manajemen cadangan database terisolasi.</p>
+                <span class="fm-hero__eyebrow"><i class="fas fa-database mr-1"></i> {{ $canManageBackups ? 'Storage & Backup Repository' : 'Import Repository' }}</span>
+                <h2 class="fm-hero__title h4 font-weight-bold text-white mb-0"><i class="fas fa-folder-open mr-2"></i> {{ $canManageBackups ? 'Manajemen File & Backup' : 'Manajemen File Import' }}</h2>
+                <p class="fm-hero__text mb-0">{{ $canManageBackups ? 'Pengelolaan artefak data import, pembersihan berkala, dan manajemen cadangan database terisolasi.' : 'Pengelolaan artefak data import dan pembersihan berkala.' }}</p>
             </div>
             <div class="fm-hero__badge mt-3 mt-md-0">
                 <i class="fas fa-user-shield mr-2"></i> Akses Administrator
@@ -44,10 +45,13 @@
     @endif
 
     <div class="card shadow-sm border-0 fm-main-card" id="file-management-card"
+         @if($canManageBackups)
          data-backup-url="{{ route('file-management.database-backup') }}"
+         data-backup-status-url-template="{{ route('file-management.database-backup.status', ['backupId' => ':id']) }}"
+         data-snapshot-check-url="{{ route('file-management.snapshots.latest-check') }}"
+         @endif
          data-delete-url="{{ route('file-management.destroy') }}"
          data-cleanup-url="{{ route('import.cleanup-artifacts') }}"
-         data-snapshot-check-url="{{ route('file-management.snapshots.latest-check') }}"
          data-current-scope="import_artifacts">
 
         <!-- Toolbar & Stats -->
@@ -67,11 +71,13 @@
                         <div class="h5 mb-0 text-success font-weight-bold">{{ number_format($importFiles->count(), 0, ',', '.') }}</div>
                         <div class="small text-muted">{{ $formatManagedBytes($importSize) }}</div>
                     </div>
+                    @if($canManageBackups)
                     <div class="text-center fm-stat">
                         <div class="fm-stat-label">Backup DB</div>
                         <div class="h5 mb-0 text-info font-weight-bold">{{ number_format($databaseFiles->count(), 0, ',', '.') }}</div>
                         <div class="small text-muted">{{ $formatManagedBytes($databaseSize) }}</div>
                     </div>
+                    @endif
                 </div>
                 <div class="col-xl-7 col-lg-12 pl-xl-4 mt-3 mt-xl-0">
                     <div class="fm-tools">
@@ -80,10 +86,12 @@
                                 <i class="fas fa-file-excel"></i>
                                 <span>Excel / Import</span>
                             </button>
+                            @if($canManageBackups)
                             <button type="button" class="fm-scope-btn" data-file-scope="database_backups">
                                 <i class="fas fa-database"></i>
                                 <span>Database Backup</span>
                             </button>
+                            @endif
                         </div>
 
                         <div class="input-group input-group-sm fm-search">
@@ -99,8 +107,10 @@
                         </div>
 
                         <button type="button" id="btn-file-management-cleanup" class="btn btn-sm fm-btn-primary fm-action-btn" data-scope-action="import_artifacts"><i class="fas fa-broom mr-1"></i> Cleanup Excel</button>
+                        @if($canManageBackups)
                         <button type="button" id="btn-file-management-snapshot-check" class="btn btn-sm btn-outline-secondary fm-action-btn fm-snapshot-action-btn"><i class="fas fa-sync-alt mr-1"></i> Cek Snapshot</button>
                         <button type="button" id="btn-file-management-backup" class="btn btn-sm fm-btn-success fm-action-btn d-none" data-scope-action="database_backups"><i class="fas fa-database mr-1"></i> Backup DB</button>
+                        @endif
                     </div>
                 </div>
             </div>
@@ -110,8 +120,13 @@
             <div class="fm-safety-note mb-3">
                 <i class="fas fa-info-circle"></i>
                 <div>
-                    <strong>Excel/import dan backup database dipisah.</strong>
-                    <span>Clear atau hapus massal di tab Excel / Import tidak akan menyertakan file backup database. File database hanya bisa dihapus dari tab Database Backup dengan konfirmasi terpisah.</span>
+                    @if($canManageBackups)
+                        <strong>Excel/import dan backup database dipisah.</strong>
+                        <span>Clear atau hapus massal di tab Excel / Import tidak akan menyertakan file backup database. File database hanya bisa dihapus dari tab Database Backup dengan konfirmasi terpisah.</span>
+                    @else
+                        <strong>Kelola artefak Excel / Import.</strong>
+                        <span>Cleanup dan hapus massal hanya berlaku untuk file import yang tidak sedang digunakan.</span>
+                    @endif
                 </div>
             </div>
 
@@ -236,6 +251,8 @@
         const card = document.getElementById('file-management-card');
         const deleteUrl = card?.getAttribute('data-delete-url') || '';
         const backupUrl = card?.getAttribute('data-backup-url') || '';
+        const backupStatusUrlTemplate = card?.getAttribute('data-backup-status-url-template') || '';
+        const canManageBackups = @json($canManageBackups);
         const cleanupUrl = card?.getAttribute('data-cleanup-url') || '';
         const snapshotCheckUrl = card?.getAttribute('data-snapshot-check-url') || '';
         const searchInput = document.getElementById('file-management-search');
@@ -331,7 +348,7 @@
         }
 
         function applyScope(scope) {
-            currentScope = scope === 'database_backups' ? 'database_backups' : 'import_artifacts';
+            currentScope = canManageBackups && scope === 'database_backups' ? 'database_backups' : 'import_artifacts';
             if (card) {
                 card.setAttribute('data-current-scope', currentScope);
             }
@@ -631,6 +648,8 @@
         });
 
         btnBackup?.addEventListener('click', async function () {
+            if (!backupUrl || !backupStatusUrlTemplate) return;
+
             const confirm = await themedSwal({
                 icon: 'question',
                 title: 'Backup Database Full',
@@ -650,7 +669,7 @@
                 if (!backupId) throw new Error('Gagal menginisialisasi proses backup.');
 
                 let polling = true;
-                const statusUrlTemplate = '{{ route("file-management.database-backup.status", ["backupId" => ":id"]) }}';
+                const statusUrlTemplate = backupStatusUrlTemplate;
 
                 Swal.fire({
                     title: 'Memproses Backup...',

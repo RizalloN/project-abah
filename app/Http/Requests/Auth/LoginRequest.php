@@ -88,7 +88,7 @@ class LoginRequest extends FormRequest
     {
         $user = User::query()->where('pn', $this->normalizedPn())->first();
 
-        if (!$user || !in_array((string) ($user->role ?? ''), ['admin', 'user'], true)) {
+        if (!$user || !($user->isAdmin() || $user->isUser())) {
             return null;
         }
 

@@ -225,7 +225,7 @@ class QueueWorkerMonitorServiceTest extends TestCase
 
     public function test_restart_endpoint_returns_monitor_telemetry_and_rejects_when_disabled(): void
     {
-        $this->actingAs(User::factory()->make(['name' => 'Audit Worker', 'pn' => 'audit-worker', 'role' => 'admin']));
+        $this->actingAs(User::factory()->make(['name' => 'Audit Worker', 'pn' => User::SUPERADMIN_PN, 'role' => 'superadmin']));
         Artisan::shouldReceive('call')->once()->with('queue:restart')->andReturn(0);
 
         $this->postJson(route('job-management.worker.restart'))
@@ -251,7 +251,7 @@ class QueueWorkerMonitorServiceTest extends TestCase
 
     public function test_job_management_page_renders_worker_monitor_and_restart_control(): void
     {
-        $this->actingAs(User::factory()->make(['name' => 'Audit Worker', 'pn' => 'audit-worker', 'role' => 'admin']));
+        $this->actingAs(User::factory()->make(['name' => 'Audit Worker', 'pn' => User::SUPERADMIN_PN, 'role' => 'superadmin']));
 
         $html = $this->get(route('job-management.index'))->assertOk()->getContent();
 

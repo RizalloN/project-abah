@@ -290,6 +290,14 @@ Schedule::command('database:backup-daily')
     ->withoutOverlapping(1440)
     ->runInBackground();
 
+// Catch-up after the server was off at midnight: only runs when today's
+// backup folder is still missing, so a normal day costs one directory check.
+Schedule::command('database:backup-daily --if-missing')
+    ->hourlyAt(30)
+    ->timezone('Asia/Jakarta')
+    ->withoutOverlapping(1440)
+    ->runInBackground();
+
 Schedule::command('database:performance-tune')
     ->hourly()
     ->withoutOverlapping(5)

@@ -2997,6 +2997,11 @@ class ImportExcelController extends Controller
         }
 
         $relativePath = $this->normalizeStoredSpreadsheetExtension($relativePath);
+        try {
+            $relativePath = $this->normalizeSsaSpreadsheetUpload($tableName, $relativePath);
+        } catch (\Throwable $e) {
+            return $this->invalidSpreadsheetUploadResponse($request, 'Normalisasi SSA gagal: '.$e->getMessage());
+        }
         $this->normalizeSsaAlmafactsCsvEncoding($tableName, $relativePath);
 
         $cacheKey = 'excel_preview_' . md5($relativePath . '|' . (auth()->id() ?? 'guest') . '|' . microtime(true));
@@ -12191,6 +12196,11 @@ class ImportExcelController extends Controller
         }
 
         $path = $this->normalizeStoredSpreadsheetExtension($file->store('excel_imports'));
+        try {
+            $path = $this->normalizeSsaSpreadsheetUpload($tableName, $path);
+        } catch (\Throwable $e) {
+            return $this->invalidSpreadsheetUploadResponse($request, 'Normalisasi SSA gagal: '.$e->getMessage());
+        }
         $this->normalizeSsaAlmafactsCsvEncoding($tableName, $path);
         $cacheKey = 'excel_preview_' . md5($path . '|' . (auth()->id() ?? 'guest') . '|' . microtime(true));
 
@@ -12228,6 +12238,26 @@ class ImportExcelController extends Controller
         }
 
         return redirect($previewRedirect);
+    }
+
+    private function normalizeSsaSpreadsheetUpload(string $tableName, string $path): string
+    {
+        if (!in_array($tableName, ['ssa_simpanan', 'ssa_pinjaman'], true)
+            || !in_array(strtolower(pathinfo($path, PATHINFO_EXTENSION)), ['xlsx', 'xls'], true)) {
+            return $path;
+        }
+
+        $normalizedPath = 'excel_imports/'.Str::uuid()->toString().'.csv';
+        $stage = app(\App\Services\Import\SsaSpreadsheetStagingService::class)->stage(
+            Storage::path($path), $tableName, Storage::path($normalizedPath)
+        );
+        if ($stage === null) {
+            return $path;
+        }
+
+        Storage::delete($path);
+
+        return $normalizedPath;
     }
 
     private function normalizeStoredSpreadsheetExtension(string $path): string

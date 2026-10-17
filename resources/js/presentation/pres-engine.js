@@ -2,6 +2,8 @@ import { installPresentationChartManager } from './pres-charts';
 import { PresentationDataLoader } from './pres-data-loader';
 import { setupPresentationInteractions } from './pres-interactions';
 import { StructuredDeckRenderer } from './pres-structured-deck';
+import { PresentationScrollDeck } from './pres-scroll';
+import { ScrollReportRenderer } from './pres-scroll-report';
 
 const presentationConfig = window.__PRESENTATION_CONFIG__ || {};
 
@@ -34,7 +36,8 @@ document.addEventListener('DOMContentLoaded', async function() {
       const structuredDeckEnabled = true;
 
       let currentSlideIndex = 0;
-      const totalSlides = document.querySelectorAll('.apple-slide').length;
+      // The scroll report renders sections instead of slides; the classic deck count stays as it was.
+      const totalSlides = document.querySelectorAll('.apple-slide').length || document.querySelectorAll('.pres-report-section').length;
       const autoplayDelay = 9000;
       let autoplayTimer = null;
       let autoplayEnabled = false;
@@ -63,13 +66,20 @@ document.addEventListener('DOMContentLoaded', async function() {
       const prognosaQueryValue = presentationHash.get('prognosa') ?? presentationQuery.get('prognosa');
       const deckState = { scope: presentationHash.get('scope') || presentationQuery.get('scope') || 'area6',
         usePrognosa: ['1', 'true', 'yes', 'on'].includes(String(prognosaQueryValue || '').toLowerCase()) };
-      const structuredDeck = new StructuredDeckRenderer({
+      // Default layout is the vertical scroll report; ?layout=slides keeps the 16:9 deck.
+      const scrollLayout = presMode?.dataset.layout === 'scroll';
+      const DeckRenderer = scrollLayout ? ScrollReportRenderer : StructuredDeckRenderer;
+      const structuredDeck = new DeckRenderer({
         root: presMode || document,
         getScope: () => deckState.scope,
         getUsePrognosa: () => deckState.usePrognosa,
         chartManager,
         requestKts: () => loadPresentationKts(),
+        onSectionRendered: (section) => scrollDeck?.sectionRendered(section),
       });
+      const scrollDeck = scrollLayout
+        ? new PresentationScrollDeck({ root: presMode, onActivate: (index) => activateSlide(index), worldSource: () => structuredDeck.worldData?.() })
+        : null;
       const requestedSlideIndex = Math.min(
         Math.max(Number.parseInt(presentationHash.get('slide') || presentationQuery.get('slide') || '0', 10) || 0, 0),
         Math.max(totalSlides - 1, 0)
@@ -188,6 +198,13 @@ document.addEventListener('DOMContentLoaded', async function() {
 
       const fitPresentationStage = () => {
         if (!presMode || !presSlidesContainer) return;
+
+        if (scrollDeck) {
+          // Scroll report sections flow at their natural size; only re-measure.
+          scrollDeck.refresh();
+          window.requestAnimationFrame(() => presentationCharts().forEach(resizePresentationChart));
+          return;
+        }
 
         const viewportWidth = Math.max(window.innerWidth, 1);
         const viewportHeight = Math.max(window.innerHeight, 1);
@@ -541,12 +558,20 @@ document.addEventListener('DOMContentLoaded', async function() {
       };
 
       const startAutoplay = () => {
+        if (scrollDeck) {
+          scrollDeck.startAutoplay();
+          return;
+        }
         autoplayEnabled = true;
         updateAutoplayUi();
         scheduleAutoplay();
       };
 
       const stopAutoplay = () => {
+        if (scrollDeck) {
+          scrollDeck.stopAutoplay();
+          return;
+        }
         autoplayEnabled = false;
         if (autoplayTimer !== null) {
           window.clearTimeout(autoplayTimer);
@@ -555,7 +580,26 @@ document.addEventListener('DOMContentLoaded', async function() {
         updateAutoplayUi();
       };
 
+      const isAutoplaying = () => (scrollDeck ? scrollDeck.autoplaying : autoplayEnabled);
+      const toggleAutoplay = () => {
+        if (isAutoplaying()) {
+          stopAutoplay();
+        } else {
+          startAutoplay();
+        }
+      };
+
+      // Navigate: in the scroll report this moves the reading position, and arriving activates the panel.
       const showSlide = (index) => {
+        if (scrollDeck) {
+          scrollDeck.scrollToIndex(index);
+          return;
+        }
+        activateSlide(index);
+      };
+
+      // Activate: charts, map, counters and labels for the slide being read.
+      const activateSlide = (index) => {
         currentSlideIndex = index;
         const slides = document.querySelectorAll('.apple-slide');
         slides.forEach((slide, idx) => {
@@ -570,7 +614,8 @@ document.addEventListener('DOMContentLoaded', async function() {
         // Toggle dark theme for cover and closing slides.
         if (presMode) {
           const manualDark = presMode.classList.contains('manual-dark');
-          presMode.classList.toggle('theme-dark', manualDark || index === 0 || index === 14);
+          // The scroll report sits on a dark ground throughout, so its chrome stays dark.
+          presMode.classList.toggle('theme-dark', Boolean(scrollDeck) || manualDark || index === 0 || index === 14);
         }
 
         // Run count-up animations on active slide elements
@@ -3519,6 +3564,7 @@ document.addEventListener('DOMContentLoaded', async function() {
           } else {
             structuredDeck.render(data);
           }
+          scrollDeck?.update(data, deckState.scope);
           return;
         }
         populateCover(data);
@@ -3767,7 +3813,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
         populatePresentationData(presentationData);
         syncExportScopeControls();
-        showSlide(currentSlideIndex);
+        activateSlide(currentSlideIndex);
       };
 
       const applyPrognosaMode = (enabled) => {
@@ -3784,7 +3830,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (structuredDeckEnabled) {
           structuredDeck.render(presentationData);
         }
-        showSlide(currentSlideIndex);
+        activateSlide(currentSlideIndex);
       };
 
       // Load Presentation Data
@@ -3920,11 +3966,11 @@ document.addEventListener('DOMContentLoaded', async function() {
             firstPayloadRendered = true;
             requestAnimationFrame(finishInitialRender);
           } else {
-            showSlide(currentSlideIndex);
+            activateSlide(currentSlideIndex);
           }
         };
 
-        showSlide(0);
+        activateSlide(0);
         setProgress(8, 'Cover siap. Menyiapkan ringkasan data...');
         requestAnimationFrame(() => {
           document.getElementById('dashboard-global-loader')?.classList.remove('active');
@@ -3987,6 +4033,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       };
 
       // Initialize
+      scrollDeck?.init();
       void loadPresentation();
       presentationInteractions = setupPresentationInteractions({
         root: presMode,
@@ -3996,14 +4043,9 @@ document.addEventListener('DOMContentLoaded', async function() {
         getSlideIndex: () => currentSlideIndex,
         getTotalSlides: () => totalSlides,
         getScope: () => deckState.scope,
-        showSlide,
-        toggleAutoplay: () => {
-          if (autoplayEnabled) {
-            stopAutoplay();
-          } else {
-            startAutoplay();
-          }
-        },
+        // Re-showing the panel being read refreshes it in place instead of moving the page.
+        showSlide: (index) => (scrollDeck && index === currentSlideIndex ? activateSlide(index) : showSlide(index)),
+        toggleAutoplay,
       });
 
       const branchAnalysisSelector = document.getElementById('pres-branch-analysis-selector');
@@ -4189,13 +4231,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
 
       if (presAutoplayBtn) {
-        presAutoplayBtn.addEventListener('click', () => {
-          if (autoplayEnabled) {
-            stopAutoplay();
-          } else {
-            startAutoplay();
-          }
-        });
+        presAutoplayBtn.addEventListener('click', toggleAutoplay);
       }
 
       // Navigations
@@ -4247,6 +4283,12 @@ document.addEventListener('DOMContentLoaded', async function() {
 
         if (isInteractiveTarget && e.key !== 'Escape') return;
 
+        if (scrollDeck && ['ArrowRight', 'ArrowLeft', ' '].includes(e.key)) {
+          e.preventDefault();
+          scrollDeck.step(e.key === 'ArrowLeft' ? -1 : 1);
+          return;
+        }
+
         if (e.key === 'ArrowRight' || e.key === ' ') {
           e.preventDefault();
           if (currentSlideIndex < totalSlides - 1) {
@@ -4269,11 +4311,7 @@ document.addEventListener('DOMContentLoaded', async function() {
           scheduleAutoplay();
         } else if (e.key.toLowerCase() === 'a') {
           e.preventDefault();
-          if (autoplayEnabled) {
-            stopAutoplay();
-          } else {
-            startAutoplay();
-          }
+          toggleAutoplay();
         } else if (e.key.toLowerCase() === 'f') {
           e.preventDefault();
           if (document.fullscreenElement) {

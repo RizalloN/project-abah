@@ -3,6 +3,7 @@
 @section('title', 'Kelola Report')
 
 @section('content')
+@php($canManageReportOperations = auth()->user()?->isSuperAdmin() ?? false)
 <div class="report-management-hero mb-4">
     <div class="report-management-hero__glow"></div>
     <div class="d-flex align-items-center justify-content-between flex-wrap position-relative">
@@ -21,6 +22,7 @@
      data-fetch-url="{{ route('import.report-management.data') }}"
      data-load-start-url="{{ route('import.report-management.load') }}"
      data-load-status-url-template="{{ route('import.report-management.load.status', ['loadId' => '__LOAD_ID__']) }}"
+     @if($canManageReportOperations)
      data-rebuild-url="{{ route('import.report-management.rebuild') }}"
      data-rebuild-status-url-template="{{ route('import.report-management.rebuild.status', ['rebuildId' => '__REBUILD_ID__']) }}"
      data-recover-url="{{ route('import.report-management.recover') }}"
@@ -31,7 +33,8 @@
      data-delete-status-url-template="{{ route('import.report-management.delete.status', ['deleteId' => '__DELETE_ID__']) }}"
      data-delete-cancel-url-template="{{ route('import.report-management.delete.cancel', ['deleteId' => '__DELETE_ID__']) }}"
      data-force-sync-url="{{ route('import.report-management.force-sync') }}"
-     data-force-sync-status-url-template="{{ route('import.report-management.force-sync.status', ['syncId' => '__SYNC_ID__']) }}">
+     data-force-sync-status-url-template="{{ route('import.report-management.force-sync.status', ['syncId' => '__SYNC_ID__']) }}"
+     @endif>
     
     <div class="card-header bg-transparent border-0 px-4 pt-4 pb-0 d-flex align-items-center justify-content-between">
         <h5 class="font-weight-bold text-dark mb-0 d-flex align-items-center" style="font-size: 1.15rem; letter-spacing: -0.01em;">
@@ -41,10 +44,13 @@
     </div>
     
     <div class="card-body p-4">
+        @unless($canManageReportOperations)
+            <p class="text-muted mb-3">Admin dapat melihat data report. Penghapusan, pemulihan backup, dan pemeliharaan snapshot dikelola oleh superadmin.</p>
+        @endunless
         <!-- Control Panel (4 Columns) -->
         <div class="row mb-4 align-items-stretch report-management-control-grid">
             <!-- 1. Pilihan Report -->
-            <div class="col-xl-3 col-md-6 mb-3 mb-xl-0">
+            <div class="{{ $canManageReportOperations ? 'col-xl-3 col-md-6 mb-3 mb-xl-0' : 'col-12' }}">
                 <div class="report-management-control-card h-100">
                     <label class="report-management-control-label" for="management-report-select">
                         <span>Report Utama</span>
@@ -62,6 +68,7 @@
             </div>
 
             <!-- 2. Data Recovery -->
+            @if($canManageReportOperations)
             <div class="col-xl-3 col-md-6 mb-3 mb-xl-0">
                 <div class="report-management-control-card h-100">
                     <label class="report-management-control-label" for="management-backup-select">
@@ -121,6 +128,7 @@
                     </div>
                 </div>
             </div>
+            @endif
         </div>
 
         <!-- Summary Telemetry & Actions Bar -->
@@ -148,9 +156,11 @@
                 <button type="button" id="btn-management-filter" class="btn report-management-primary-btn">
                     <i class="fas fa-filter mr-2"></i> Tampilkan Data
                 </button>
+                @if($canManageReportOperations)
                 <button type="button" id="btn-management-deduplicate" class="btn report-management-outline-btn" disabled>
                     <i class="fas fa-clone mr-2"></i> Deduplikasi
                 </button>
+                @endif
             </div>
         </div>
 
@@ -175,6 +185,7 @@
             <div id="management-load-meta" class="report-management-progress__meta mt-1"></div>
         </div>
 
+        @if($canManageReportOperations)
         <div id="management-recovery-progress" class="report-management-load-card d-none mb-4" aria-live="polite">
             <div class="report-management-load-card__header">
                 <div>
@@ -203,25 +214,27 @@
                 Pilih baris atau seluruh grup periode untuk tindakan massal.
             </div>
         </div>
+        @endif
 
         <div class="table-responsive report-management-table-wrap mt-3">
             <table class="table table-hover mb-0 report-management-table">
                 <thead>
                     <tr>
-                        <th class="text-center report-management-col-check"><i class="far fa-check-square"></i></th>
+                        @if($canManageReportOperations)<th class="text-center report-management-col-check"><i class="far fa-check-square"></i></th>@endif
                         <th style="width: 45%;">Kanca / Unit</th>
                         <th class="text-right" style="width: 25%;">Jumlah Baris</th>
-                        <th class="text-center" style="width: 25%;">Aksi</th>
+                        @if($canManageReportOperations)<th class="text-center" style="width: 25%;">Aksi</th>@endif
                     </tr>
                 </thead>
                 <tbody id="management-table-body">
-                    <tr><td colspan="4" class="text-center text-muted py-4"><i class="fas fa-inbox fa-2x mb-2 d-block text-muted opacity-50"></i>Pilih report untuk menampilkan data.</td></tr>
+                    <tr><td colspan="{{ $canManageReportOperations ? 4 : 2 }}" class="text-center text-muted py-4"><i class="fas fa-inbox fa-2x mb-2 d-block text-muted opacity-50"></i>Pilih report untuk menampilkan data.</td></tr>
                 </tbody>
             </table>
         </div>
 
         <div id="management-pagination" class="report-management-pagination d-none"></div>
 
+        @if($canManageReportOperations)
         <div class="report-management-selection-toast-shell">
             <div id="management-selection-toast" class="report-management-selection-toast d-none animate-reveal" aria-live="polite">
                 <div class="report-management-selection-toast__body">
@@ -239,6 +252,7 @@
                 </div>
             </div>
         </div>
+        @endif
     </div>
 </div>
 @endsection
@@ -247,6 +261,7 @@
 <script src="{{ asset('adminlte/plugins/moment/moment.min.js') }}"></script>
 <script src="{{ asset('adminlte/plugins/daterangepicker/daterangepicker.js') }}"></script>
 @include('import.partials.report-management-scripts')
+@if(auth()->user()?->isSuperAdmin())
 <script>
     document.addEventListener('DOMContentLoaded', function () {
         const reportManagementCard = document.getElementById('report-management-card');
@@ -1163,6 +1178,7 @@
         }
     });
 </script>
+@endif
 @endsection
 
 @section('styles')

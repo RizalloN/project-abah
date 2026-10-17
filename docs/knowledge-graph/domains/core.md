@@ -6,14 +6,14 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Kind | Count |
 | --- | ---: |
-| command | 15 |
-| file | 111 |
-| method | 727 |
-| unresolved_symbol | 353 |
+| command | 16 |
+| file | 116 |
+| method | 753 |
+| unresolved_symbol | 355 |
 | route | 16 |
-| class | 70 |
+| class | 74 |
 | table | 15 |
-| view | 45 |
+| view | 46 |
 
 ## Main Hubs
 
@@ -24,17 +24,17 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `ReportDataSyncService` | class | 71 | `app/Support/ReportDataSyncService.php:19` |
 | `normalize` | method | 71 | `app/Support/StrictDateParser.php:29` |
 | `LandingSmeOperationalService` | class | 64 | `app/Support/LandingSmeOperationalService.php:16` |
-| `Controller` | class | 55 | `app/Http/Controllers/Controller.php:7` |
+| `Controller` | class | 56 | `app/Http/Controllers/Controller.php:7` |
 | `ManagedReportManagementService` | class | 52 | `app/Support/ManagedReportManagementService.php:11` |
+| `DataPhReportController` | class | 41 | `app/Http/Controllers/Report/DataPhReportController.php:16` |
 | `apply` | method | 41 | `app/Support/SargableDateFilter.php:9` |
 | `LandingConsumerOperationalService` | class | 39 | `app/Support/LandingConsumerOperationalService.php:15` |
-| `DataPhReportController` | class | 37 | `app/Http/Controllers/Report/DataPhReportController.php:15` |
 | `KinerjaNonPtpReportController` | class | 36 | `app/Http/Controllers/Report/KinerjaNonPtpReportController.php:17` |
 | `RkaLookupService` | class | 36 | `app/Support/RkaLookupService.php:11` |
 | `rka` | table | 32 | - |
 | `syncImportedTable` | method | 31 | `app/Support/ReportDataSyncService.php:135` |
-| `FileManagementController` | class | 29 | `app/Http/Controllers/Admin/FileManagementController.php:24` |
-| `index` | method | 26 | `app/Http/Controllers/Report/DataPhReportController.php:23` |
+| `FileManagementController` | class | 30 | `app/Http/Controllers/Admin/FileManagementController.php:24` |
+| `index` | method | 30 | `app/Http/Controllers/Report/DataPhReportController.php:31` |
 | `analyzeTable` | method | 24 | `app/Support/ReportDataSyncService.php:21` |
 | `MicroNettDisbursementCalculator` | class | 23 | `app/Support/MicroNettDisbursementCalculator.php:13` |
 | `buildPayload` | method | 23 | `app/Support/LandingMicroPerformanceService.php:530` |
@@ -56,7 +56,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `file-management.destroy` - `file-management/delete`
 - `file-management.download` - `file-management/download`
 - `file-management.index` - `file-management`
-- `generated::7Agywk49gaUdpXlx` - `up`
+- `generated::OD5k27LTOXjyd4cq` - `up`
 - `home` - `/`
 - `link-management.index` - `link-management`
 - `link-management.update` - `link-management`
@@ -125,10 +125,14 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `ReportIndexHintResolver` - `app/Support/ReportIndexHintResolver.php`
 - `RestoreDatabasePartCommand` - `app/Console/Commands/RestoreDatabasePartCommand.php`
 - `RkaLookupService` - `app/Support/RkaLookupService.php`
+- `RunProjectScheduler` - `app/Console/Commands/RunProjectScheduler.php`
 - `SafeSqlDumpRecoveryService` - `app/Services/SafeSqlDumpRecoveryService.php`
 - `SargableDateFilter` - `app/Support/SargableDateFilter.php`
 - `ScheduledRebuildPerformanceRmCommand` - `app/Console/Commands/ScheduledRebuildPerformanceRmCommand.php`
+- `SchedulerControlService` - `app/Services/SchedulerControlService.php`
 - `SchedulerHeartbeatCommand` - `app/Console/Commands/SchedulerHeartbeatCommand.php`
+- `ServerRuntimeController` - `app/Http/Controllers/Admin/ServerRuntimeController.php`
+- `ServerRuntimeService` - `app/Services/ServerRuntimeService.php`
 - `ShadowColumnRuleEngine` - `app/Services/Shadow/ShadowColumnRuleEngine.php`
 - `ShadowStatusCommand` - `app/Console/Commands/ShadowStatusCommand.php`
 - `ShadowValidateConsistencyCommand` - `app/Console/Commands/ShadowValidateConsistencyCommand.php`
@@ -158,6 +162,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `shadow:status` - `app/Console/Commands/ShadowStatusCommand.php`
 - `shadow:validate` - `app/Console/Commands/ValidateShadowColumnsCommand.php`
 - `shadow:validate-consistency` - `app/Console/Commands/ShadowValidateConsistencyCommand.php`
+- `system:scheduler-run` - `app/Console/Commands/RunProjectScheduler.php`
 - `tinker`
 
 ## View Nodes
@@ -178,6 +183,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `components.text.input`
 - `dashboard` - `resources/views/dashboard.blade.php`
 - `dashboard.partials.consumer-operations` - `resources/views/dashboard/partials/consumer-operations.blade.php`
+- `dashboard.partials.landing-motion` - `resources/views/dashboard/partials/landing-motion.blade.php`
 - `dashboard.partials.landing-page-recovery` - `resources/views/dashboard/partials/landing-page-recovery.blade.php`
 - `dashboard.partials.micro-performance` - `resources/views/dashboard/partials/micro-performance.blade.php`
 - `dashboard.partials.pn-mismatch` - `resources/views/dashboard/partials/pn-mismatch.blade.php`
@@ -238,12 +244,12 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | bank-pipeline -> core (calls) | 167 |
 | jobs-snapshots -> core (calls) | 108 |
 | dashboard-pinjaman -> core (accepts) | 102 |
+| database -> core (instantiates) | 79 |
 | dashboard-harian -> core (calls) | 79 |
-| database -> core (instantiates) | 78 |
 | core -> access-control (protected_by) | 75 |
+| access-control -> core (calls) | 63 |
 | bank-pipeline -> core (accepts) | 63 |
 | database -> core (checks_table) | 62 |
-| access-control -> core (calls) | 61 |
 | prognosa -> core (calls) | 61 |
 | database -> core (writes_table) | 60 |
 | presentation -> core (calls) | 60 |
@@ -251,12 +257,12 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | dashboard-pinjaman -> core (instantiates) | 47 |
 | bank-pipeline -> core (instantiates) | 37 |
 | platform -> core (calls) | 35 |
+| database -> core (calls) | 34 |
 | jobs-snapshots -> core (uses_trait) | 33 |
-| database -> core (calls) | 31 |
 | almafacts -> core (calls) | 31 |
 | access-control -> core (accepts) | 28 |
 | prognosa -> core (accepts) | 28 |
 | core -> bank-pipeline (references_route) | 28 |
+| import -> core (reads_table) | 25 |
 | input-management -> core (calls) | 25 |
 | prognosa -> core (instantiates) | 25 |
-| import -> core (reads_table) | 24 |

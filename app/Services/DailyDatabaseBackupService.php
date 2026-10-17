@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Exceptions\DatabaseBackupAlreadyRunningException;
 use App\Services\DatabaseBackup\ChunkedDatabaseBackupWriter;
 use App\Services\DatabaseBackup\CompressedDatabaseDumpRunner;
 use App\Services\Import\ImportProgressService;
@@ -41,6 +42,15 @@ class DailyDatabaseBackupService
      *     warnings: array<int, string>
      * }
      */
+    /** Cheap check used by the hourly catch-up; the full run still verifies. */
+    public function hasBackupForToday(?DateTimeImmutable $now = null): bool
+    {
+        $timezone = $this->resolveTimezone();
+        $now = $now?->setTimezone($timezone) ?? new DateTimeImmutable('now', $timezone);
+
+        return is_dir($this->resolveBaseDirectory().DIRECTORY_SEPARATOR.$this->folderPrefix().' '.$now->format('dmY'));
+    }
+
     public function backup(?DateTimeImmutable $now = null, bool $dryRun = false): array
     {
         if (! (bool) config('database_backup.enabled', true)) {
@@ -582,7 +592,7 @@ class DailyDatabaseBackupService
 
         if (! @flock($handle, LOCK_EX | LOCK_NB)) {
             fclose($handle);
-            throw new RuntimeException('Backup database harian lain masih berjalan.');
+            throw new DatabaseBackupAlreadyRunningException;
         }
 
         ftruncate($handle, 0);

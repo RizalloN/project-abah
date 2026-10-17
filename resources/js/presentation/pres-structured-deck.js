@@ -4873,3 +4873,24 @@ export class StructuredDeckRenderer {
         `;
     }
 }
+
+// Shared with the scroll report renderer so both read and format figures identically.
+export {
+    escapeHtml,
+    asNumber,
+    formatCurrency,
+    formatPercent,
+    formatInteger,
+    valueOrDash,
+    findByKey,
+    findScope,
+    deltaClass,
+    percentOf,
+    maxBy,
+    iconFor,
+    sameOriginAsset,
+    marketShareNumber,
+    marketShareValueTone,
+    normaliseMarketShareToken,
+    comparisonPresentationState,
+};

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Report;
 
 use App\Http\Controllers\Controller;
+use App\Services\Reports\DataPhGi405RecoveryService;
 use App\Support\UserBranchScope;
 use App\Support\RkaLookupService;
 use Carbon\Carbon;
@@ -19,6 +20,13 @@ class DataPhReportController extends Controller
 
     /** @var array<string, string|null> */
     private array $previousPhPeriodByPeriod = [];
+
+    private ?DataPhGi405RecoveryService $gi405RecoveryService = null;
+
+    private function gi405Recovery(): DataPhGi405RecoveryService
+    {
+        return $this->gi405RecoveryService ??= app(DataPhGi405RecoveryService::class);
+    }
 
     public function index(Request $request): View
     {
@@ -37,7 +45,9 @@ class DataPhReportController extends Controller
             ->distinct()
             ->pluck('periode');
 
+        $gi405Periods = $this->gi405Recovery()->availablePeriods();
         $availablePeriods = ($phPeriods->isNotEmpty() ? $phPeriods : $cognosPeriods)
+            ->merge($gi405Periods)
             ->unique()
             ->map(fn($p) => Carbon::parse($p)->toDateString())
             ->sortDesc()
@@ -45,6 +55,7 @@ class DataPhReportController extends Controller
 
         $comparisonPeriods = $phPeriods
             ->merge($cognosPeriods)
+            ->merge($gi405Periods)
             ->unique()
             ->map(fn($p) => Carbon::parse($p)->toDateString())
             ->sortDesc()
@@ -164,6 +175,9 @@ class DataPhReportController extends Controller
                     $yoy = $branchYoyMetrics[$branchOffice] ?? $this->emptyDataPhMetrics();
                     $ytd = $branchYtdMetrics[$branchOffice] ?? $this->emptyDataPhMetrics();
                     $sisaPh = $branchSisaPhMetrics[$branchOffice] ?? $this->emptyDataPhMetrics();
+                    $prev = $this->alignedIncomeComparison($curr, $prev);
+                    $yoy = $this->alignedIncomeComparison($curr, $yoy);
+                    $ytd = $this->alignedIncomeComparison($curr, $ytd);
 
                     $rows[] = [
                         'no' => $index + 1,
@@ -179,9 +193,11 @@ class DataPhReportController extends Controller
                         'non_klaim' => $curr['non_klaim'] ?? $this->emptyDataPhMetrics(),
                         'klaim' => $curr['klaim'] ?? $this->emptyDataPhMetrics(),
                         'sisa_ph' => $sisaPh,
-                        'delta_yoy' => $this->diffDataPhMetrics($curr, $yoy),
-                        'delta_ytd' => $this->diffDataPhMetrics($curr, $ytd),
-                        'delta_m1' => $this->diffDataPhMetrics($curr, $prev),
+                        'unclassified_recovery' => $curr['unclassified_recovery'] ?? $this->emptyDataPhMetrics(),
+                        'recovery_source' => $curr['source'] ?? 'lw325_ph/cognos',
+                        'delta_yoy' => ($yoy['available'] ?? true) ? $this->diffDataPhMetrics($curr, $yoy) : $this->emptyDataPhMetrics(),
+                        'delta_ytd' => ($curr['source'] ?? null) === 'GI405' ? $this->diffDataPhMetrics($curr, []) : $this->diffDataPhMetrics($curr, $ytd),
+                        'delta_m1' => $this->incomePeriodDelta($curr, $prev, $selectedPeriod, $m1EffectivePeriod),
                     ];
                 }
             } else {
@@ -202,6 +218,9 @@ class DataPhReportController extends Controller
                     $yoy = $yoyMetrics[$lookupKey] ?? $this->emptyDataPhMetrics();
                     $ytd = $ytdMetrics[$lookupKey] ?? $this->emptyDataPhMetrics();
                     $sisaPh = $sisaPhMetrics[$lookupKey] ?? $this->emptyDataPhMetrics();
+                    $prev = $this->alignedIncomeComparison($curr, $prev);
+                    $yoy = $this->alignedIncomeComparison($curr, $yoy);
+                    $ytd = $this->alignedIncomeComparison($curr, $ytd);
 
                     $rows[] = [
                         'no' => $index + 1,
@@ -217,9 +236,11 @@ class DataPhReportController extends Controller
                         'non_klaim' => $curr['non_klaim'] ?? $this->emptyDataPhMetrics(),
                         'klaim' => $curr['klaim'] ?? $this->emptyDataPhMetrics(),
                         'sisa_ph' => $sisaPh,
-                        'delta_yoy' => $this->diffDataPhMetrics($curr, $yoy),
-                        'delta_ytd' => $this->diffDataPhMetrics($curr, $ytd),
-                        'delta_m1' => $this->diffDataPhMetrics($curr, $prev),
+                        'unclassified_recovery' => $curr['unclassified_recovery'] ?? $this->emptyDataPhMetrics(),
+                        'recovery_source' => $curr['source'] ?? 'lw325_ph/cognos',
+                        'delta_yoy' => ($yoy['available'] ?? true) ? $this->diffDataPhMetrics($curr, $yoy) : $this->emptyDataPhMetrics(),
+                        'delta_ytd' => ($curr['source'] ?? null) === 'GI405' ? $this->diffDataPhMetrics($curr, []) : $this->diffDataPhMetrics($curr, $ytd),
+                        'delta_m1' => $this->incomePeriodDelta($curr, $prev, $selectedPeriod, $m1EffectivePeriod),
                     ];
                 }
             }
@@ -231,6 +252,9 @@ class DataPhReportController extends Controller
             'total_sisa_ph' => collect($rows)->sum(fn($r) => $r['sisa_ph']['total'] ?? 0),
         ];
         $grandTotals = $this->buildGrandTotalMetrics($rows);
+        $usesGi405 = collect($rows)->contains(fn (array $row): bool => $row['recovery_source'] === 'GI405');
+        $showUnallocated = $usesGi405 || collect(['recovery_curr', 'recovery_m1', 'recovery_ytd', 'recovery_yoy'])
+            ->contains(fn (string $group): bool => abs((float) data_get($grandTotals, $group.'.unallocated', 0)) > 0.001);
 
         return view('report.data-ph', [
             'availablePeriods' => $availablePeriods,
@@ -244,6 +268,10 @@ class DataPhReportController extends Controller
             'grandTotals' => $grandTotals,
             'area6Branches' => $area6Branches,
             'isArea6All' => $isArea6All,
+            'usesGi405' => $usesGi405,
+            'gi405SplitAvailable' => collect($rows)->where('recovery_source', 'GI405')->every(fn (array $row): bool => (bool) data_get($row, 'recovery_curr.split_available', false)),
+            'showUnallocated' => $showUnallocated,
+            'hasCurrentPh' => $selectedPeriod ? $this->hasLw325PhRowsForPeriod($selectedPeriod, $selectedKanca, $selectedUnit) : false,
             'filters' => [
                 'kanca' => array_values(array_merge([['value' => 'all', 'label' => 'Semua Kanca']], $availableKanca)),
                 'unit_kerja' => array_values(array_merge([['value' => 'all', 'label' => 'Semua Unit Kerja']], $availableUnits)),
@@ -471,6 +499,8 @@ class DataPhReportController extends Controller
 
     private function fetchPhKancaOptions(array $area6Branches, ?string $period): array
     {
+        $gi405Options = $period ? collect($this->gi405Recovery()->unitRows($period, $area6Branches))
+            ->pluck('branch')->unique()->map(fn (string $branch): array => ['value' => $branch, 'label' => $branch])->all() : [];
         if (Schema::hasTable('lw325_ph')) {
             $query = DB::table('lw325_ph')
                 ->select('kanca as value', 'kanca as label')
@@ -488,8 +518,12 @@ class DataPhReportController extends Controller
                 ->toArray();
 
             if (!empty($options)) {
-                return $options;
+                return collect($options)->merge($gi405Options)->unique('value')->values()->all();
             }
+        }
+
+        if ($gi405Options !== []) {
+            return $gi405Options;
         }
 
         return DB::table('cognos_recovery')
@@ -504,6 +538,8 @@ class DataPhReportController extends Controller
 
     private function fetchPhUnitOptions(array $area6Branches, ?string $period): array
     {
+        $gi405Options = $period ? collect($this->gi405Recovery()->unitRows($period, $area6Branches))
+            ->map(fn (array $row): array => ['value' => $row['unit'], 'label' => $row['unit'], 'kanca_value' => $row['branch']])->all() : [];
         if (Schema::hasTable('lw325_ph')) {
             $query = DB::table('lw325_ph')
                 ->select('unit as value', 'unit as label', 'kanca as kanca_value')
@@ -523,8 +559,14 @@ class DataPhReportController extends Controller
                 ->toArray();
 
             if (!empty($options)) {
-                return $options;
+                return collect($options)->merge($gi405Options)
+                    ->unique(fn (array $row): string => strtoupper($row['kanca_value']).'|'.$this->normalizeUnitName($row['value']))
+                    ->values()->all();
             }
+        }
+
+        if ($gi405Options !== []) {
+            return $gi405Options;
         }
 
         return DB::table('cognos_recovery')
@@ -539,6 +581,8 @@ class DataPhReportController extends Controller
 
     private function fetchPhUnitRows(array $area6Branches, ?string $period, array $selectedKanca, string $selectedUnit)
     {
+        $gi405Rows = $period ? collect($this->gi405Recovery()->unitRows($period, $selectedKanca ?: $area6Branches, $selectedUnit))
+            ->map(fn (array $row): object => (object) ['cabang' => $row['branch'], 'unit' => $row['unit']]) : collect();
         if (Schema::hasTable('lw325_ph')) {
             $query = DB::table('lw325_ph')
                 ->select('kanca as cabang', 'unit')
@@ -559,8 +603,13 @@ class DataPhReportController extends Controller
 
             $rows = $query->get();
             if ($rows->isNotEmpty()) {
-                return $rows;
+                return $rows->merge($gi405Rows)
+                    ->unique(fn ($row): string => strtoupper($row->cabang).'|'.$this->normalizeUnitName($row->unit))->values();
             }
+        }
+
+        if ($gi405Rows->isNotEmpty()) {
+            return $gi405Rows;
         }
 
         $query = DB::table('cognos_recovery')
@@ -585,6 +634,7 @@ class DataPhReportController extends Controller
             'small' => 0.0,
             'consumer_briguna' => 0.0,
             'consumer_kpr' => 0.0,
+            'unallocated' => 0.0,
             'total' => 0.0,
         ];
     }
@@ -596,11 +646,13 @@ class DataPhReportController extends Controller
             'small' => 0.0,
             'consumer_briguna' => 0.0,
             'consumer_kpr' => 0.0,
+            'unallocated' => 0.0,
             'total' => 0.0,
             'tupok' => $this->emptyDataPhMetrics(),
             'lunas' => $this->emptyDataPhMetrics(),
             'non_klaim' => $this->emptyDataPhMetrics(),
             'klaim' => $this->emptyDataPhMetrics(),
+            'unclassified_recovery' => $this->emptyDataPhMetrics(),
         ];
     }
 
@@ -612,6 +664,29 @@ class DataPhReportController extends Controller
         }
 
         return $diff;
+    }
+
+    private function incomePeriodDelta(array $current, array $comparison, string $period, ?string $comparisonPeriod): array
+    {
+        // Income GLs restart in January; last December is not an opening balance.
+        if (($current['source'] ?? null) === 'GI405' && $comparisonPeriod !== null
+            && substr($period, 0, 4) !== substr($comparisonPeriod, 0, 4)) {
+            return $this->diffDataPhMetrics($current, []);
+        }
+        if (($current['source'] ?? null) === 'GI405' && ($comparison['source'] ?? null) !== 'GI405') {
+            return $this->emptyDataPhMetrics();
+        }
+
+        return $this->diffDataPhMetrics($current, $comparison);
+    }
+
+    private function alignedIncomeComparison(array $current, array $comparison): array
+    {
+        if (($current['source'] ?? null) === 'GI405' && ($comparison['source'] ?? null) !== 'GI405') {
+            return [...$this->emptyDataPhMetrics(), 'available' => false];
+        }
+
+        return $comparison;
     }
 
     private function buildGrandTotalMetrics(array $rows): array
@@ -626,6 +701,7 @@ class DataPhReportController extends Controller
             'lunas',
             'non_klaim',
             'klaim',
+            'unclassified_recovery',
             'recovery_yoy',
             'recovery_ytd',
             'recovery_m1',
@@ -666,6 +742,10 @@ class DataPhReportController extends Controller
 
     private function getDataPhRecoveryMetrics(string $period, array $kancas = [], string $unit = 'all'): array
     {
+        $gi405 = $this->gi405Recovery()->unitRows($period, $kancas, $unit);
+        if ($gi405 !== []) {
+            return $this->gi405RecoveryMetrics($gi405, false);
+        }
         $metrics = $this->getRecoveryMetricsFromPh($period, $kancas, $unit);
 
         if ($this->hasAnyDataPhMetric($metrics)) {
@@ -677,6 +757,10 @@ class DataPhReportController extends Controller
 
     private function getBranchOfficeDataPhRecoveryMetrics(string $period, array $branchOffices = []): array
     {
+        $gi405 = $this->gi405Recovery()->unitRows($period, $branchOffices);
+        if ($gi405 !== []) {
+            return $this->gi405RecoveryMetrics($gi405, true);
+        }
         $metrics = $this->getBranchOfficeRecoveryMetricsFromPh($period, $branchOffices);
 
         if ($this->hasAnyDataPhMetric($metrics)) {
@@ -684,6 +768,33 @@ class DataPhReportController extends Controller
         }
 
         return $this->getBranchOfficeRecoveryMetricsFromCognos($period, $branchOffices);
+    }
+
+    /** GL income proves the total; neither product segment nor TUPOK/LUNAS is encoded. */
+    private function gi405RecoveryMetrics(array $rows, bool $byBranch): array
+    {
+        $metrics = [];
+        foreach ($rows as $row) {
+            $key = $byBranch ? $row['branch'] : strtoupper($row['branch']).'|'.$this->normalizeUnitName($row['unit']);
+            $this->addDataPhRecoveryMetric(
+                $metrics,
+                $key,
+                'unallocated',
+                0.0,
+                0.0,
+                $row['non_klaim'] ?? 0.0,
+                $row['klaim'] ?? 0.0,
+                $row['total']
+            );
+            if (!$row['split_available']) {
+                $metrics[$key]['unclassified_recovery']['unallocated'] += $row['total'];
+                $metrics[$key]['unclassified_recovery']['total'] += $row['total'];
+            }
+            $metrics[$key]['source'] = 'GI405';
+            $metrics[$key]['split_available'] = ($metrics[$key]['split_available'] ?? true) && $row['split_available'];
+        }
+
+        return $metrics;
     }
 
     private function hasAnyDataPhMetric(array $metrics): bool

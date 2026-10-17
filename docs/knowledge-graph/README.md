@@ -25,9 +25,9 @@ If stale, rebuild with `php artisan knowledge:graph --build`.
 
 | Metric | Count |
 | --- | ---: |
-| Source files | 677 |
-| Graph nodes | 8,579 |
-| Graph edges | 34,381 |
+| Source files | 686 |
+| Graph nodes | 8,646 |
+| Graph edges | 34,663 |
 | Domains | 18 |
 
 ## Read The Right Artifact
@@ -54,7 +54,7 @@ If stale, rebuild with `php artisan knowledge:graph --build`.
 | `ReportSnapshotBuilder` | class | jobs-snapshots | 129 |
 | `ImportFileController` | class | import | 125 |
 | `import_jobs` | table | import | 113 |
-| `KinerjaRmReportController` | class | dashboard-pinjaman | 104 |
+| `KinerjaRmReportController` | class | dashboard-pinjaman | 105 |
 | `ImportProgressService` | class | import | 102 |
 | `daily_loan_dinamis` | table | dashboard-pinjaman | 99 |
 | `ImportReportPhController` | class | import | 95 |

@@ -3,6 +3,7 @@
 use App\Http\Controllers\DashboardPinjamanReportController;
 use App\Http\Controllers\Report\AlmafactsDashboardController;
 use App\Http\Controllers\Report\KinerjaNonPtpReportController;
+use App\Http\Controllers\Report\KinerjaRmReportController;
 use App\Http\Middleware\EnforceUserBranchScope;
 use App\Models\User;
 use App\Support\UserBranchScope;
@@ -155,3 +156,88 @@ it('prevents locked branch selectors from auto submitting their forms', function
         ->and($profitAndLoss)
         ->toContain("select.disabled || select.dataset.userBranchLocked === '1'");
 });
+
+it('matches every stored branch format of the scope and nothing else', function (mixed $value, bool $expected): void {
+    $scope = UserBranchScope::forKey('madiun');
+
+    expect(UserBranchScope::matches($value, $scope))->toBe($expected);
+})->with([
+    ['KC Madiun', true],
+    ['KC MADIUN', true],
+    ['00045 -- KC Madiun (Konsolidasi-MB)', true],
+    ['45 - KC Madiun', true],
+    ['kc-madiun', true],
+    ['madiun', true],
+    ['0045', true],
+    ['45', true],
+    ['KC Madiun                               ', true],
+    ['KCP SUDIRMAN MADIUN', false],
+    ['KC Magetan', false],
+    ['49', false],
+    ['Area 6', false],
+    ['all', false],
+    ['', false],
+    [null, false],
+]);
+
+it('restricts branch options to the scoped branch and keeps them for Area 6 users', function (): void {
+    $options = [
+        ['value' => 'all', 'label' => 'Area 6'],
+        ['value' => 'KC Madiun', 'label' => 'KC Madiun'],
+        ['value' => 'KC Magetan', 'label' => 'KC Magetan'],
+    ];
+
+    $this->actingAs(new User(['pn' => '0045']));
+    expect(UserBranchScope::restrictOptions($options))->toBe([['value' => 'KC Madiun', 'label' => 'KC Madiun']])
+        ->and(UserBranchScope::restrictOptions(['KC MADIUN', 'KC NGAWI']))->toBe(['KC MADIUN'])
+        ->and(UserBranchScope::restrictOptions(['KC Madiun' => 'KC Madiun', 'KC Ngawi' => 'KC Ngawi']))->toBe(['KC Madiun' => 'KC Madiun']);
+
+    $this->actingAs(new User(['pn' => '9999']));
+    expect(UserBranchScope::restrictOptions($options))->toBe($options);
+});
+
+it('pins the current scope while running as a branch and restores it afterwards', function (): void {
+    $ngawi = UserBranchScope::forKey('ngawi');
+
+    expect(UserBranchScope::current())->toBeNull()
+        ->and(UserBranchScope::runAs($ngawi, fn () => UserBranchScope::current()['key']))->toBe('ngawi')
+        ->and(UserBranchScope::runAs($ngawi, fn () => UserBranchScope::cacheKey()))->toBe('ngawi')
+        ->and(UserBranchScope::current())->toBeNull();
+
+    try {
+        UserBranchScope::runAs($ngawi, fn () => throw new RuntimeException('boom'));
+    } catch (RuntimeException) {
+    }
+
+    expect(UserBranchScope::current())->toBeNull()
+        ->and(array_column(UserBranchScope::branchScopes(), 'key'))->toBe(['madiun', 'magetan', 'ngawi', 'ponorogo']);
+});
+
+it('never widens Kinerja RM to all branches for a branch user', function (): void {
+    $this->actingAs(new User(['pn' => '0057']));
+    $controller = app(KinerjaRmReportController::class);
+    $resolve = new ReflectionMethod($controller, 'resolveSelectedCabang');
+
+    expect($resolve->invoke($controller, collect(['KC MADIUN']), ''))->toBe('KC NGAWI')
+        ->and($resolve->invoke($controller, collect(), 'KC MADIUN'))->toBe('KC NGAWI');
+
+    $this->actingAs(new User(['pn' => '9999']));
+    expect($resolve->invoke($controller, collect(['KC MADIUN', 'KC NGAWI']), 'KC Madiun'))->toBe('KC MADIUN')
+        ->and($resolve->invoke($controller, collect(['KC MADIUN']), ''))->toBeNull();
+});
+
+it('renders branch checkboxes pre-selected for branch users so no script timing shows Area 6', function (string $view): void {
+    $source = file_get_contents(resource_path("views/report/{$view}.blade.php"));
+
+    expect($source)
+        ->toContain('@checked(!empty($userBranchScope)) @disabled(!empty($userBranchScope))')
+        ->toContain("{{ !empty(\$userBranchScope) ? \$userBranchScope['upper_label'] : 'Area 6 - All' }}");
+})->with([
+    'performance-brilink',
+    'performance-brimo',
+    'performance-edc',
+    'performance-qlola',
+    'performance-qris',
+    'Rasiocasadebitur',
+    'kinerja-new-payroll',
+]);

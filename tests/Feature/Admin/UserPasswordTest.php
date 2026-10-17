@@ -102,7 +102,7 @@ it('verifies password update behavior via controller update and login check', fu
     expect(Hash::check('OldTargetPass1234', $targetUser->password))->toBeFalse();
 });
 
-it('allows an admin to update password of another admin user', function (): void {
+it('prevents an admin from updating another admin password', function (): void {
     $admin1 = User::create([
         'name' => 'Super Admin',
         'pn' => '10001001',
@@ -127,25 +127,53 @@ it('allows an admin to update password of another admin user', function (): void
         'password' => 'bri12345',
     ]);
 
-    $response->assertRedirect()->assertSessionHas('success');
+    $response->assertForbidden();
 
     $admin2->refresh();
-    expect(Hash::check('bri12345', $admin2->password))->toBeTrue();
+    expect(Hash::check('AdminOldPass123', $admin2->password))->toBeTrue();
+    expect(Hash::check('bri12345', $admin2->password))->toBeFalse();
 });
 
-it('logs out and redirects to login when admin updates their own password', function (): void {
+it('allows the reserved superadmin to update an admin password', function (): void {
+    $superadmin = User::create([
+        'name' => 'Super Admin',
+        'pn' => User::SUPERADMIN_PN,
+        'password' => Hash::make('SuperAdminPass123'),
+        'role' => 'superadmin',
+        'branch_scope' => UserBranchScope::AREA_SCOPE,
+    ]);
     $admin = User::create([
-        'name' => 'Self Admin',
-        'pn' => '10001003',
+        'name' => 'Second Admin',
+        'pn' => '10001002',
         'password' => Hash::make('AdminOldPass123'),
         'role' => 'admin',
+        'branch_scope' => UserBranchScope::AREA_SCOPE,
+    ]);
+
+    $this->actingAs($superadmin)->put(route('user-management.update', $admin), [
+        'name' => $admin->name,
+        'pn' => $admin->pn,
+        'role' => 'admin',
+        'branch_scope' => UserBranchScope::AREA_SCOPE,
+        'password' => 'bri12345',
+    ])->assertRedirect()->assertSessionHas('success');
+
+    expect(Hash::check('bri12345', $admin->fresh()->password))->toBeTrue();
+});
+
+it('logs out and redirects to login when superadmin updates their own password', function (): void {
+    $admin = User::create([
+        'name' => 'Self Admin',
+        'pn' => User::SUPERADMIN_PN,
+        'password' => Hash::make('AdminOldPass123'),
+        'role' => 'superadmin',
         'branch_scope' => UserBranchScope::AREA_SCOPE,
     ]);
 
     $response = $this->actingAs($admin)->put(route('user-management.update', $admin), [
         'name' => $admin->name,
         'pn' => $admin->pn,
-        'role' => 'admin',
+        'role' => 'superadmin',
         'branch_scope' => UserBranchScope::AREA_SCOPE,
         'password' => 'MyNewPassword123',
     ]);

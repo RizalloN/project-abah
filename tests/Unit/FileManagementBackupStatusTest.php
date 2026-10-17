@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Http\Controllers\Admin\FileManagementController;
+use App\Models\User;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
@@ -19,6 +20,7 @@ class FileManagementBackupStatusTest extends TestCase
         Config::set('cache.default', 'array');
         Cache::flush();
         Carbon::setTestNow(Carbon::parse('2026-04-26 15:00:00', 'Asia/Jakarta'));
+        $this->actingAs(new User(['pn' => User::SUPERADMIN_PN, 'role' => 'superadmin']));
     }
 
     protected function tearDown(): void
@@ -42,6 +44,7 @@ class FileManagementBackupStatusTest extends TestCase
             'HTTP_ACCEPT' => 'application/json',
             'HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest',
         ]);
+        $request->setUserResolver(fn () => auth()->user());
 
         try {
             $response = (new FileManagementController())->destroy($request);
@@ -72,6 +75,7 @@ class FileManagementBackupStatusTest extends TestCase
             'HTTP_ACCEPT' => 'application/json',
             'HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest',
         ]);
+        $request->setUserResolver(fn () => auth()->user());
 
         try {
             $response = (new FileManagementController())->destroy($request);

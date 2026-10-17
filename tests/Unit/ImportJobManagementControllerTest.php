@@ -552,4 +552,40 @@ SQL");
         $this->assertFalse($jobs['done-1']['can_cancel']);
         $this->assertSame('managed_delete_history', $jobs['done-1']['kind']);
     }
+
+    public function test_finished_deletes_move_from_active_cards_to_execution_history(): void
+    {
+        Schema::create('report_sync_audits', function (Blueprint $table) {
+            $table->increments('id');
+            $table->string('table_name')->nullable();
+            $table->string('period_hint')->nullable();
+            $table->string('action');
+            $table->string('status');
+            $table->bigInteger('affected_rows')->nullable();
+            $table->text('message')->nullable();
+            $table->text('context')->nullable();
+            $table->timestamp('created_at')->nullable();
+        });
+        DB::table('report_sync_audits')->insert([
+            'table_name' => 'gi405_recovery', 'period_hint' => '2026-10-04', 'action' => 'managed_delete_chunk',
+            'status' => 'success', 'affected_rows' => 222, 'created_at' => now()->subHour()->toDateTimeString(),
+            'context' => json_encode(['delete_id' => 'audit-done', 'scope_count' => 1, 'remaining_rows' => 0]),
+        ]);
+
+        $liveJob = fn (string $id, string $status, string $updatedAt): array => [
+            'id' => $id, 'status' => $status, 'table_name' => 'ssa_pinjaman', 'updated_at' => $updatedAt, 'kind' => 'managed_delete',
+        ];
+        $importIndex = Mockery::mock(ImportIndexController::class);
+        $importIndex->shouldReceive('resolveManagedReportDeleteJobs')->once()->andReturn([
+            $liveJob('live-active', 'processing', now()->toIso8601String()),
+            $liveJob('live-done', 'completed', now()->subMinute()->toIso8601String()),
+        ]);
+
+        $controller = new ImportJobManagementController(app(ManagedReportSnapshotRebuildCoordinator::class), $importIndex);
+        $payload = $controller->data(request(), Mockery::mock(ImportProgressService::class))->getData(true);
+
+        $this->assertSame(['live-active'], array_column($payload['managed_delete_jobs'], 'id'));
+        $this->assertSame(1, $payload['managed_delete_summary']['active_jobs']);
+        $this->assertSame(['live-done', 'audit-done'], array_column($payload['managed_delete_history'], 'id'));
+    }
 }

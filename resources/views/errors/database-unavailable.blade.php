@@ -1,9 +1,10 @@
 <!DOCTYPE html>
-<html lang="id">
+<html lang="id" data-theme-follow-system="1">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
     <title>Database Tidak Tersedia</title>
+    @include('layouts.partials.theme')
     <style>
         :root {
             color-scheme: light;

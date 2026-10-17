@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Exceptions\DatabaseBackupAlreadyRunningException;
 use App\Services\DailyDatabaseBackupService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
@@ -10,7 +11,8 @@ use Throwable;
 class BackupDatabaseDailyCommand extends Command
 {
     protected $signature = 'database:backup-daily
-        {--dry-run : Validasi konfigurasi dan ruang disk tanpa membuat backup}';
+        {--dry-run : Validasi konfigurasi dan ruang disk tanpa membuat backup}
+        {--if-missing : Lewati bila folder backup hari ini sudah ada (catch-up setelah server mati)}';
 
     protected $description = 'Create one verified compressed database backup per day and retain only the latest day';
 
@@ -18,8 +20,27 @@ class BackupDatabaseDailyCommand extends Command
     {
         set_time_limit(0);
 
+        if ($this->option('if-missing') && ! $this->option('dry-run')) {
+            try {
+                if ($backupService->hasBackupForToday()) {
+                    $this->info('Backup database hari ini sudah ada; catch-up dilewati.');
+
+                    return self::SUCCESS;
+                }
+            } catch (Throwable) {
+                // Configuration problems are reported by the full run below.
+            }
+        }
+
         try {
             $result = $backupService->backup(null, (bool) $this->option('dry-run'));
+        } catch (DatabaseBackupAlreadyRunningException $exception) {
+            // The Windows task and the Laravel schedule can both start at 00:00;
+            // the run that finds the lock taken is a duplicate, not a failure.
+            Log::info('Backup database harian dilewati karena proses lain sedang berjalan.');
+            $this->warn($exception->getMessage().' Proses ini dilewati.');
+
+            return self::SUCCESS;
         } catch (Throwable $exception) {
             Log::error('Backup database harian gagal.', [
                 'exception' => $exception,

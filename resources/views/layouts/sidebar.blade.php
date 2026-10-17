@@ -1038,6 +1038,7 @@
                         </p>
                     </a>
                     <ul class="nav nav-treeview">
+                        @if(Auth::user()?->isSuperAdmin())
                         <li class="nav-item">
                             <a href="{{ route('job-management.index') }}" class="nav-link {{ request()->routeIs('job-management.*') ? 'active' : '' }}">
                                 <i class="nav-icon fas fa-tasks"></i>
@@ -1051,6 +1052,7 @@
                                 </p>
                             </a>
                         </li>
+                        @endif
                         <li class="nav-item">
                             <a href="{{ route('file-management.index') }}" class="nav-link {{ request()->routeIs('file-management.*') ? 'active' : '' }}">
                                 <i class="nav-icon fas fa-folder-open"></i>
@@ -1063,12 +1065,14 @@
                                 <p>User Management</p>
                             </a>
                         </li>
+                        @if(Auth::user()?->isSuperAdmin())
                         <li class="nav-item">
                             <a href="{{ route('link-management.index') }}" class="nav-link {{ request()->routeIs('link-management.*') ? 'active' : '' }}">
                                 <i class="nav-icon fas fa-link"></i>
                                 <p>Link Management</p>
                             </a>
                         </li>
+                        @endif
                     </ul>
                 </li>
 

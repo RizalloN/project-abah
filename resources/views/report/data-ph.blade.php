@@ -837,7 +837,7 @@
                     <i class="fas fa-calendar-check mr-1"></i> Data per: {{ $selectedPeriodLabel }}
                 </span>
                 <span class="badge px-3 py-2 kejar-laba-recovery-badge">
-                    <i class="fas fa-layer-group mr-1"></i> Akumulasi Recovery: 1 s.d. {{ $selectedPeriodLabel }}
+                    <i class="fas fa-layer-group mr-1"></i> {{ ($usesGi405 ?? false) ? 'Akumulasi Recovery DH tahun berjalan' : 'Estimasi pergerakan PH bulan berjalan' }}: {{ $selectedPeriodLabel }}
                 </span>
             </div>
         </div>
@@ -845,6 +845,26 @@
         @php
             $isArea6AllSelected = (bool) ($isArea6All ?? false);
         @endphp
+
+        <div class="px-4 py-3 small" role="note">
+            @if($usesGi405 ?? false)
+                <strong>Sumber recovery: GI405.</strong> Posisi pendapatan kumulatif tahun berjalan; rincian produk tidak dialokasikan dari saldo PH.
+                @if(!($gi405SplitAvailable ?? false))
+                    @if(($selectedPeriod ?? '') >= '2026-01-01')
+                        Mulai Januari 2026, acuan Recovery DH adalah Pendapatan Koreksi PPAP-dr Angsuran PH.
+                    @endif
+                    Pemisahan klaim/nonklaim tidak tersedia pada sumber periode ini; <abbr title="Tidak tersedia pada sumber">n/d</abbr> bukan nilai nol.
+                @endif
+                TUPOK/LUNAS tidak dirinci dalam GI405. Delta YTD dan M-1 Januari memperhitungkan reset pendapatan awal tahun.
+                Angka pembanding dan selisih tidak ditampilkan bila sumber GI405 pembanding belum tersedia.
+            @else
+                <strong>Sumber GI405 belum tersedia pada periode/filter ini.</strong> Angka recovery memakai estimasi pergerakan LW325 atau sumber Cognos yang tersedia.
+            @endif
+            Sisa PH dan nominatif berasal dari LW325.
+            @if(!($hasCurrentPh ?? true))
+                <strong>Sisa PH periode terpilih belum tersedia.</strong>
+            @endif
+        </div>
 
         <div class="filter-section p-4">
             <form action="{{ route('report.dashboard-pinjaman.data-ph') }}" method="GET" id="filterForm">
@@ -1135,6 +1155,9 @@
                 ['key' => 'consumer_kpr', 'label' => 'KONSUMER - KPR'],
                 ['key' => 'total', 'label' => 'TOTAL'],
             ];
+            if ($showUnallocated ?? false) {
+                array_splice($phSegmentRows, 4, 0, [['key' => 'unallocated', 'label' => 'GI405 — BELUM DIRINCI PER SEGMEN']]);
+            }
         @endphp
 
         <div class="kejar-laba-table-shell" data-abah-no-table-guard="1">
@@ -1172,13 +1195,15 @@
                             $blockBg = $branchIndex % 2 === 0 ? '#ffffff' : '#f8fafc';
                             $phScopeLabel = $isArea6AllSelected ? ($row['kanca'] ?? '') : ($row['unit'] ?? '');
                             $phUnitFilter = $isArea6AllSelected ? 'all' : ($row['unit'] ?? 'all');
+                            $rowHasGi405 = ($row['recovery_source'] ?? '') === 'GI405';
+                            $rowSplitAvailable = (bool) data_get($row, 'recovery_curr.split_available', false);
                         @endphp
                         {{-- MICRO --}}
                         <tr class="ph-nominatif-trigger" data-ph-nominatif-row data-period="{{ $selectedPeriod }}" data-segment="micro" data-segment-label="MICRO" data-kanca="{{ $row['kanca'] ?? '' }}" data-unit="{{ $phUnitFilter }}" data-scope-label="{{ $phScopeLabel }}" style="background-color: {{ $blockBg }};">
-                            <td rowspan="5" class="text-center sticky-col ph-sticky-index font-weight-bold" style="background-color: {{ $blockBg }} !important; z-index: 20;">
+                            <td rowspan="{{ count($phSegmentRows) }}" class="text-center sticky-col ph-sticky-index font-weight-bold" style="background-color: {{ $blockBg }} !important; z-index: 20;">
                                 {{ $row['no'] }}
                             </td>
-                            <td rowspan="5" class="sticky-col ph-sticky-scope font-weight-bold" style="background-color: {{ $blockBg }} !important; color: var(--primary-blue-dark); z-index: 20;">
+                            <td rowspan="{{ count($phSegmentRows) }}" class="sticky-col ph-sticky-scope font-weight-bold" style="background-color: {{ $blockBg }} !important; color: var(--primary-blue-dark); z-index: 20;">
                                 {{ $isArea6AllSelected ? $row['kanca'] : $row['unit'] }}
                             </td>
                             <td class="font-weight-bold text-uppercase" style="background-color: {{ $blockBg }}; color: #475569;">
@@ -1488,6 +1513,30 @@
                             </td>
                         </tr>
 
+                        @if($showUnallocated ?? false)
+                            <tr style="background-color: {{ $blockBg }};">
+                                <td class="font-weight-bold">GI405 — BELUM DIRINCI PER SEGMEN</td>
+                                @foreach(['sisa_ph', 'tupok', 'lunas', 'non_klaim', 'klaim', 'recovery_curr', 'recovery_yoy', 'recovery_ytd', 'recovery_m1', 'delta_yoy', 'delta_ytd', 'delta_m1'] as $metric)
+                                    @php
+                                        $amount = (float) data_get($row, $metric.'.unallocated', 0);
+                                        $notAvailable = in_array($metric, ['sisa_ph', 'tupok', 'lunas'], true)
+                                            || ($rowHasGi405 && !$rowSplitAvailable && in_array($metric, ['non_klaim', 'klaim'], true));
+                                        $comparisonGroup = match ($metric) {
+                                            'recovery_yoy', 'delta_yoy' => 'recovery_yoy',
+                                            'recovery_ytd' => 'recovery_ytd',
+                                            'recovery_m1' => 'recovery_m1',
+                                            'delta_m1' => substr($selectedPeriod, 5, 2) !== '01' ? 'recovery_m1' : null,
+                                            default => null,
+                                        };
+                                        $notAvailable = $notAvailable || ($comparisonGroup && data_get($row, $comparisonGroup.'.available') === false);
+                                    @endphp
+                                    <td class="text-right {{ $metric === 'recovery_curr' ? 'font-weight-bold' : '' }}">
+                                        {{ $notAvailable ? 'n/d' : number_format($amount, 0, ',', '.') }}
+                                    </td>
+                                @endforeach
+                            </tr>
+                        @endif
+
                         {{-- TOTAL --}}
                         <tr class="total-row ph-nominatif-trigger" data-ph-nominatif-row data-period="{{ $selectedPeriod }}" data-segment="total" data-segment-label="TOTAL" data-kanca="{{ $row['kanca'] ?? '' }}" data-unit="{{ $phUnitFilter }}" data-scope-label="{{ $phScopeLabel }}" style="background-color: #eff6ff; font-weight: bold;">
                             <td class="font-weight-bold text-uppercase" style="background-color: #eff6ff; color: #1e3a8a;">
@@ -1511,12 +1560,12 @@
 
                             {{-- RINCIAN RECOVERY: JML NON KLAIM --}}
                             <td class="text-right font-weight-bold" style="background-color: #eff6ff; color: #1e3a8a;">
-                                {{ ($row['non_klaim']['total'] ?? 0) != 0 ? number_format($row['non_klaim']['total'], 0, ',', '.') : '-' }}
+                                {{ $rowHasGi405 && !$rowSplitAvailable ? 'n/d' : (($row['non_klaim']['total'] ?? 0) != 0 ? number_format($row['non_klaim']['total'], 0, ',', '.') : '-') }}
                             </td>
 
                             {{-- RINCIAN RECOVERY: KLAIM --}}
                             <td class="text-right" style="background-color: #eff6ff; color: #1e3a8a;">
-                                {{ ($row['klaim']['total'] ?? 0) != 0 ? number_format($row['klaim']['total'], 0, ',', '.') : '-' }}
+                                {{ $rowHasGi405 && !$rowSplitAvailable ? 'n/d' : (($row['klaim']['total'] ?? 0) != 0 ? number_format($row['klaim']['total'], 0, ',', '.') : '-') }}
                             </td>
 
                             {{-- RINCIAN RECOVERY: TOTAL RECOVERY --}}
@@ -1619,10 +1668,10 @@
                                     {{ $lunasValue != 0 ? number_format($lunasValue, 0, ',', '.') : '-' }}
                                 </td>
                                 <td class="text-right font-weight-bold" style="background-color: {{ $grandBg }}; color: {{ $grandTextColor }};">
-                                    {{ $nonKlaimValue != 0 ? number_format($nonKlaimValue, 0, ',', '.') : '-' }}
+                                    {{ ($usesGi405 ?? false) && !($gi405SplitAvailable ?? false) ? 'n/d' : ($nonKlaimValue != 0 ? number_format($nonKlaimValue, 0, ',', '.') : '-') }}
                                 </td>
                                 <td class="text-right" style="background-color: {{ $grandBg }}; color: {{ $grandTextColor }};">
-                                    {{ $klaimValue != 0 ? number_format($klaimValue, 0, ',', '.') : '-' }}
+                                    {{ ($usesGi405 ?? false) && !($gi405SplitAvailable ?? false) ? 'n/d' : ($klaimValue != 0 ? number_format($klaimValue, 0, ',', '.') : '-') }}
                                 </td>
                                 <td class="text-right font-weight-bold" style="background-color: {{ $isGrandTotalRow ? '#bfdbfe' : $grandBg }}; color: {{ $grandTextColor }};">
                                     {{ $recoveryCurr != 0 ? number_format($recoveryCurr, 0, ',', '.') : '-' }}
@@ -1672,7 +1721,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <div>
-                    <h5 class="modal-title mb-1" id="phNominatifTitle">Nominatif PH</h5>
+                    <h5 class="modal-title mb-1" id="phNominatifTitle">Nominatif Sisa PH</h5>
                     <div class="text-muted small" id="phNominatifMeta">-</div>
                 </div>
                 <button type="button" class="close" data-dismiss="modal" aria-label="Tutup">
@@ -1735,7 +1784,7 @@
         };
 
         const renderLoading = function (trigger) {
-            title.textContent = 'Nominatif PH - ' + (trigger.dataset.segmentLabel || '-');
+            title.textContent = 'Nominatif Sisa PH - ' + (trigger.dataset.segmentLabel || '-');
             meta.textContent = [trigger.dataset.scopeLabel || '-', trigger.dataset.period || '-'].filter(Boolean).join(' | ');
             summary.innerHTML = '<span>Memuat data LW325 PH...</span>';
             head.innerHTML = '<tr><th>Memuat</th></tr>';

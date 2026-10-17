@@ -1,5 +1,5 @@
 @extends('layouts.admin')
-@section('title', 'A-SIX | Dashboard Area 6')
+@section('title', 'A-SIX | Dashboard ' . ($landingBranchLabel ?? 'Area 6'))
 @section('content')
 @php
 $hero = data_get($dashboard ?? [], 'hero', []);
@@ -11014,7 +11014,7 @@ body.sme-vendor-modal-open { overflow: hidden; }
         @if(empty($area6Cards))
         {{-- AJAX skeleton loader for area6 when cache is cold --}}
         <div id="area6-loading-overlay">
-          <div class="a6-skel-title">⏳ Memuat Ringkasan Area 6...</div>
+          <div class="a6-skel-title">⏳ Memuat Ringkasan {{ $landingBranchLabel ?? 'Area 6' }}...</div>
           <div style="display:flex; align-items:center; gap:0.6rem; width:min(380px,90%)">
             <div id="area6-progress-track" style="flex:1">
               <div id="area6-progress-fill"></div>
@@ -11029,7 +11029,7 @@ body.sme-vendor-modal-open { overflow: hidden; }
           </div>
         </div>
         @else
-        <div class="rank-empty">Ringkasan Area 6 belum tersedia.</div>
+        <div class="rank-empty">Ringkasan {{ $landingBranchLabel ?? 'Area 6' }} belum tersedia.</div>
         @endif
       @endforelse
     </div>
@@ -11779,7 +11779,7 @@ body.sme-vendor-modal-open { overflow: hidden; }
                   <span>Performa Simpanan</span>
                   <i class="perf-panel-badge bg-simp"></i>
                 </div>
-                <div class="perf-panel-subtitle">Total dana simpanan per cabang Area 6</div>
+                <div class="perf-panel-subtitle">Total dana simpanan per cabang {{ $landingBranchLabel ?? 'Area 6' }}</div>
               </div>
               <div class="perf-panel-body">
                 @forelse($branches as $b)
@@ -11950,7 +11950,7 @@ body.sme-vendor-modal-open { overflow: hidden; }
         </div>
       </div>
       @empty
-      <div class="rank-empty">Ranking Area 6 belum tersedia.</div>
+      <div class="rank-empty">Ranking {{ $landingBranchLabel ?? 'Area 6' }} belum tersedia.</div>
       @endforelse
       </div>
     @endif
@@ -12120,7 +12120,7 @@ body.sme-vendor-modal-open { overflow: hidden; }
     {{-- 8 DIGITAL CARDS --}}
     <div class="digital-panel">
       <div class="dp-header">
-        <div class="dp-title"><i class="fas fa-bolt mr-1" style="color:#f59e0b;"></i>8 Fokus Kinerja Digital Area 6</div>
+        <div class="dp-title"><i class="fas fa-bolt mr-1" style="color:#f59e0b;"></i>8 Fokus Kinerja Digital {{ $landingBranchLabel ?? 'Area 6' }}</div>
         @if($digitalUpdatedAt)
         <div class="dp-updated"><i class="fas fa-sync-alt mr-1"></i>{{ $digitalUpdatedAt }} WIB</div>
         @endif
@@ -12214,14 +12214,14 @@ body.sme-vendor-modal-open { overflow: hidden; }
   </div>
   <!-- Global Dashboard Loading Overlay -->
   <div class="dashboard-loading-overlay" id="dashboard-global-loader">
-    <div class="dashboard-loading-card" role="status" aria-live="polite" aria-label="Memuat data Dashboard Area 6">
+    <div class="dashboard-loading-card" role="status" aria-live="polite" aria-label="Memuat data Dashboard {{ $landingBranchLabel ?? 'Area 6' }}">
       <div class="dashboard-loading-top">
         <div class="loading-spinner-container" aria-hidden="true">
           <div class="loading-ring"></div>
           <div class="loading-ring-inner"></div>
         </div>
         <div>
-          <div class="dashboard-loading-text" id="dashboard-loading-title">Memuat data Dashboard Area 6</div>
+          <div class="dashboard-loading-text" id="dashboard-loading-title">Memuat data Dashboard {{ $landingBranchLabel ?? 'Area 6' }}</div>
           <div class="dashboard-loading-sub" id="dashboard-loading-sub">Mengambil snapshot simpanan, pinjaman, harian, dan 8 strategi digital.</div>
         </div>
       </div>
@@ -12229,6 +12229,7 @@ body.sme-vendor-modal-open { overflow: hidden; }
   </div>
 </div>
 @include('dashboard.partials.landing-page-recovery')
+@include('dashboard.partials.landing-motion')
 @endsection
 
 @section('scripts')
@@ -12398,7 +12399,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (canHideDashboardLoader()) {
           setDashboardLoaderCopy(
             'Dashboard siap ditampilkan',
-            'Kartu, grafik, dan ringkasan Area 6 sudah selesai dirender.'
+            'Kartu, grafik, dan ringkasan {{ $landingBranchLabel ?? 'Area 6' }} sudah selesai dirender.'
           );
           hideDashboardLoader();
           return;
@@ -12411,7 +12412,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
   if (globalLoader && globalLoader.classList.contains('active')) {
     setDashboardLoaderCopy(
-      'Memuat data Dashboard Area 6',
+      'Memuat data Dashboard {{ $landingBranchLabel ?? 'Area 6' }}',
       'Mengambil snapshot simpanan, pinjaman, harian, dan 8 strategi digital.'
     );
 
@@ -13179,7 +13180,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const colspan = Math.max(activeSmeVendorColumns.length, 1);
     body.innerHTML = rows.length
       ? rows.map(row => `<tr>${activeSmeVendorColumns.map((column, index) => `<td>${escapeHtml(row.values?.[index] || '-')}</td>`).join('')}</tr>`).join('')
-      : `<tr><td colspan="${colspan}" class="sme-vendor-modal__empty">${keyword ? 'Nominatif tidak ditemukan.' : 'Nominatif Area 6 belum tersedia.'}</td></tr>`;
+      : `<tr><td colspan="${colspan}" class="sme-vendor-modal__empty">${keyword ? 'Nominatif tidak ditemukan.' : 'Nominatif {{ $landingBranchLabel ?? 'Area 6' }} belum tersedia.'}</td></tr>`;
     if (count) count.textContent = `${rows.length.toLocaleString('id-ID')} baris`;
   };
 
@@ -16279,7 +16280,7 @@ document.addEventListener('DOMContentLoaded', function() {
       { ms:  800, text: 'Mengambil data portofolio kredit...' },
       { ms: 2000, text: 'Menghitung rasio SML & NPL...' },
       { ms: 3800, text: 'Menyusun ranking cabang & segmen...' },
-      { ms: 5500, text: 'Menyelesaikan paket data Area 6...' },
+      { ms: 5500, text: 'Menyelesaikan paket data {{ $landingBranchLabel ?? 'Area 6' }}...' },
     ];
     const timers = phases.map(p =>
       setTimeout(() => {

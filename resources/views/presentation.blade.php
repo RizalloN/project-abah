@@ -1,14 +1,18 @@
 <!DOCTYPE html>
-<html lang="id">
+<html lang="id" class="{{ request()->query('layout') === 'slides' ? 'pres-slides-layout' : 'pres-scroll-layout' }}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
-  <title>Kinerja Area 6 - Madiun, Magetan, Ngawi, Ponorogo</title>
+  <title>Kinerja {{ !empty($userBranchScope) ? $userBranchScope['label'] : 'Area 6 - Madiun, Magetan, Ngawi, Ponorogo' }}</title>
 
   <!-- FontAwesome -->
   <link rel="stylesheet" href="{{ asset('adminlte/plugins/fontawesome-free/css/all.min.css') }}">
   <!-- Google Font: Inter -->
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  @if(request()->query('layout') !== 'slides')
+    <!-- Archivo (semi-expanded) sets chapter titles and ledger figures in the scroll report. -->
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@112,500;112,700;112,800&display=swap" rel="stylesheet">
+  @endif
   <!-- Chart.js local asset for reliable offline/local loading -->
   <script src="{{ asset('vendor/chartjs/chart.min.js') }}"></script>
   <!-- Leaflet local assets keep the market-share map available without a CDN. -->
@@ -25,10 +29,60 @@
     $presentationExportScopes = $presentationBranchScope !== null
       ? [$presentationBranchScope['label'] => $presentationBranchScope['label']]
       : ['area6' => 'Area 6 Konsolidasi', 'KC Madiun' => 'KC Madiun', 'KC Magetan' => 'KC Magetan', 'KC Ngawi' => 'KC Ngawi', 'KC Ponorogo' => 'KC Ponorogo'];
+    // Vertical scroll report is the default; ?layout=slides keeps the classic 16:9 deck.
+    $presentationLayout = request()->query('layout') === 'slides' ? 'slides' : 'scroll';
+    $presentationScopeLabel = $presentationBranchScope['label'] ?? 'Area 6 Konsol';
+    $presentationPeriodLabel = $selectedPeriod ? \Carbon\Carbon::parse($selectedPeriod)->translatedFormat('d M Y') : '-';
+    $presentationLedgerLabels = ['simpanan' => 'Simpanan', 'os' => 'Outstanding', 'ldr' => 'LDR', 'sml' => 'SML', 'npl' => 'NPL'];
+    $presentationChapters = [
+      ['key' => 'pembuka', 'label' => 'Pembuka', 'start' => 0, 'end' => 1, 'ground' => '#071A3D', 'opener' => false],
+      ['key' => 'pasar', 'label' => 'Pasar', 'start' => 2, 'end' => 3, 'ground' => '#0A2550', 'opener' => true, 'span' => 1.7, 'anchor' => 'lead',
+        'title' => 'Posisi kita di pasar', 'lede' => 'Pangsa Area 6 dibanding pesaing, lalu sebarannya per wilayah dan sektor.', 'figures' => []],
+      ['key' => 'dana', 'label' => 'Dana', 'start' => 4, 'end' => 6, 'ground' => '#062F63', 'opener' => true, 'span' => 1.7, 'anchor' => 'trail',
+        'title' => 'Dana yang kita himpun', 'lede' => 'Total simpanan, rinciannya per produk, lalu delapan strategi dana dan digital.', 'figures' => ['simpanan']],
+      ['key' => 'pinjaman', 'label' => 'Pinjaman', 'start' => 7, 'end' => 10, 'ground' => '#082C3C', 'opener' => true, 'span' => 1.8, 'anchor' => 'lead',
+        'title' => 'Kredit yang kita salurkan', 'lede' => 'Outstanding per cabang dan segmen: SME, Konsumer, dan Mikro.', 'figures' => ['os', 'ldr']],
+      ['key' => 'kualitas', 'label' => 'Kualitas', 'start' => 11, 'end' => 12, 'ground' => '#2A0C14', 'opener' => true, 'span' => 2.2, 'anchor' => 'split',
+        'title' => 'Kualitas kredit', 'lede' => 'Di mana risiko berkumpul: porsi SML dan NPL, per cabang dan segmen.', 'figures' => ['sml', 'npl']],
+      ['key' => 'tren', 'label' => 'Tren', 'start' => 13, 'end' => 13, 'ground' => '#0E1828', 'opener' => true, 'span' => 1.8, 'anchor' => 'trail',
+        'title' => 'Arah pergerakan', 'lede' => 'Seluruh indikator dalam satu garis waktu terintegrasi.', 'figures' => []],
+      ['key' => 'aksi', 'label' => 'Aksi', 'start' => 14, 'end' => 14, 'ground' => '#0A3E8C', 'opener' => true, 'span' => 1.6, 'anchor' => 'lead',
+        'title' => 'Prioritas aksi', 'lede' => 'Apa yang perlu dikerjakan setelah membaca angka di atas.', 'figures' => []],
+    ];
   @endphp
 
   <!-- Apple Presentation Mode Container -->
-  <div class="apple-presentation-mode active" id="apple-presentation-mode">
+  <div class="apple-presentation-mode active {{ $presentationLayout === 'scroll' ? 'theme-dark' : '' }}" id="apple-presentation-mode" data-layout="{{ $presentationLayout }}">
+    @if($presentationLayout === 'scroll')
+      <nav class="pres-spine" aria-label="Navigasi laporan">
+        <p class="pres-spine__scope">
+          <strong data-ledger-scope>{{ $presentationScopeLabel }}</strong>
+          <span>Posisi {{ $presentationPeriodLabel }}</span>
+        </p>
+        <ol class="pres-spine__chapters">
+          @foreach($presentationChapters as $chapter)
+            <li>
+              <a href="#slide={{ $chapter['start'] }}" class="pres-spine__chapter" data-spine-target="{{ $chapter['start'] }}" data-spine-chapter="{{ $chapter['key'] }}">
+                <span class="pres-spine__mark" aria-hidden="true"></span>
+                <span class="pres-spine__name">{{ $chapter['label'] }}</span>
+              </a>
+            </li>
+          @endforeach
+        </ol>
+        <p class="pres-spine__current" id="pres-spine-current" aria-live="polite">Cover</p>
+        <dl class="pres-spine__ledger" aria-label="Angka utama">
+          @foreach($presentationLedgerLabels as $ledgerKey => $ledgerLabel)
+            <div class="pres-ledger-row" data-ledger-row="{{ $ledgerKey }}">
+              <dt>{{ $ledgerLabel }}</dt>
+              <dd data-ledger-value="{{ $ledgerKey }}">Memuat</dd>
+            </div>
+          @endforeach
+        </dl>
+        <button type="button" class="pres-spine__auto" data-spine-autoplay aria-pressed="false">
+          <i class="fas fa-play" aria-hidden="true"></i><span>Putar otomatis</span>
+        </button>
+      </nav>
+    @endif
     <div class="pres-executive-grid" aria-hidden="true"></div>
     <div class="pres-executive-scan" aria-hidden="true"></div>
     <div class="pres-executive-edge left" aria-hidden="true"></div>
@@ -42,7 +96,7 @@
           <i class="fas fa-arrow-left"></i> <span class="pres-back-text">Kembali ke Dashboard</span>
         </a>
         <div class="pres-logo-divider" style="height: 18px; margin: 0 0.5rem 0 0.75rem; align-self: center;"></div>
-        <div class="pres-title-lbl">Kinerja Area 6 <span>- Madiun, Magetan, Ngawi, Ponorogo</span></div>
+        <div class="pres-title-lbl">@if(!empty($userBranchScope))Kinerja {{ $userBranchScope['label'] }}@else Kinerja Area 6 <span>- Madiun, Magetan, Ngawi, Ponorogo</span>@endif</div>
       </div>
       <div class="pres-controls-right">
         <label class="pres-global-scope-control" title="Pilih cakupan angka untuk seluruh deck">

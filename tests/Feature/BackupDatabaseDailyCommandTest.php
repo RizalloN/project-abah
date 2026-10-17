@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Exceptions\DatabaseBackupAlreadyRunningException;
 use App\Services\DailyDatabaseBackupService;
 use Illuminate\Console\Command;
 use Mockery;
@@ -60,6 +61,41 @@ class BackupDatabaseDailyCommandTest extends TestCase
 
         $this->artisan('database:backup-daily', ['--dry-run' => true])
             ->expectsOutputToContain('Dry-run backup database harian berhasil.')
+            ->assertExitCode(Command::SUCCESS);
+    }
+
+    public function test_a_backup_already_running_is_a_skip_not_a_failure(): void
+    {
+        $service = Mockery::mock(DailyDatabaseBackupService::class);
+        $service->shouldReceive('backup')->once()->with(null, false)->andThrow(new DatabaseBackupAlreadyRunningException);
+        $this->app->instance(DailyDatabaseBackupService::class, $service);
+
+        $this->artisan('database:backup-daily')
+            ->expectsOutputToContain('Proses ini dilewati.')
+            ->assertExitCode(Command::SUCCESS);
+    }
+
+    public function test_if_missing_skips_when_todays_backup_folder_exists(): void
+    {
+        $service = Mockery::mock(DailyDatabaseBackupService::class);
+        $service->shouldReceive('hasBackupForToday')->once()->andReturn(true);
+        $service->shouldNotReceive('backup');
+        $this->app->instance(DailyDatabaseBackupService::class, $service);
+
+        $this->artisan('database:backup-daily', ['--if-missing' => true])
+            ->expectsOutputToContain('catch-up dilewati')
+            ->assertExitCode(Command::SUCCESS);
+    }
+
+    public function test_if_missing_runs_the_full_backup_when_todays_folder_is_absent(): void
+    {
+        $service = Mockery::mock(DailyDatabaseBackupService::class);
+        $service->shouldReceive('hasBackupForToday')->once()->andReturn(false);
+        $service->shouldReceive('backup')->once()->with(null, false)->andReturn(['status' => 'completed']);
+        $this->app->instance(DailyDatabaseBackupService::class, $service);
+
+        $this->artisan('database:backup-daily', ['--if-missing' => true])
+            ->expectsOutputToContain('Backup database harian selesai')
             ->assertExitCode(Command::SUCCESS);
     }
 

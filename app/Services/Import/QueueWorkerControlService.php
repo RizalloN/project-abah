@@ -4,8 +4,8 @@ namespace App\Services\Import;
 
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
+use App\Support\PhpCliBinary;
 use Illuminate\Support\Facades\Log;
-use Symfony\Component\Process\PhpExecutableFinder;
 
 class QueueWorkerControlService
 {
@@ -600,48 +600,12 @@ class QueueWorkerControlService
 
     private function resolvePhpCliBinary(): ?string
     {
-        $finderCandidate = (new PhpExecutableFinder())->find(false);
-        $runtimeConfig = trim((string) (getenv('PHPRC') ?: ($_SERVER['PHPRC'] ?? '')));
-        $runtimeDirectory = $runtimeConfig !== ''
-            ? (is_dir($runtimeConfig) ? $runtimeConfig : dirname($runtimeConfig))
-            : '';
-
-        $candidates = [
-            PHP_BINARY,
-            $runtimeDirectory !== '' ? $runtimeDirectory . DIRECTORY_SEPARATOR . 'php.exe' : null,
-            PHP_BINDIR . DIRECTORY_SEPARATOR . 'php.exe',
-            PHP_BINDIR . DIRECTORY_SEPARATOR . 'php',
-            dirname((string) PHP_BINARY, 3) . DIRECTORY_SEPARATOR . 'php' . DIRECTORY_SEPARATOR . 'php.exe',
-            dirname(base_path(), 2) . DIRECTORY_SEPARATOR . 'php' . DIRECTORY_SEPARATOR . 'php.exe',
-            $finderCandidate,
-            'php',
-        ];
-
-        return $this->firstUsablePhpCliBinary($candidates);
+        return $this->firstUsablePhpCliBinary([...PhpCliBinary::candidates(), 'php']);
     }
 
     private function firstUsablePhpCliBinary(array $candidates): ?string
     {
-        foreach (array_unique(array_filter($candidates, static fn ($candidate): bool => is_string($candidate) && trim($candidate) !== '')) as $candidate) {
-            $candidate = trim($candidate);
-            $name = strtolower((string) basename(str_replace('\\', '/', $candidate)));
-            if (!in_array($name, ['php.exe', 'php'], true)) {
-                continue;
-            }
-
-            if ($candidate === 'php') {
-                return $candidate;
-            }
-
-            if (is_file($candidate)) {
-                // Apache on Windows may expose PHP_BINARY as \xampp\php\php.exe.
-                // It resolves on Apache's current drive but is invalid when Task
-                // Scheduler starts in another drive, so always return an absolute path.
-                return realpath($candidate) ?: $candidate;
-            }
-        }
-
-        return null;
+        return PhpCliBinary::firstUsable($candidates);
     }
 
     private function monitorProcessCount(): int

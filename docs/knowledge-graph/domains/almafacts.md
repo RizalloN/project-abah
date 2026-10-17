@@ -27,7 +27,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `fetchKpiSheetPayload` | method | 11 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:599` |
 | `parseKpiSheetCsv` | method | 11 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:781` |
 | `report.dashboard-almafacts.kpi` | route | 11 | - |
-| `getTimeseriesPayload` | method | 10 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:2655` |
+| `getTimeseriesPayload` | method | 10 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:2656` |
 | `report.dashboard-almafacts.financial-highlight` | route | 10 | - |
 | `report.dashboard-almafacts.kinerja-laba-rugi` | route | 10 | - |
 | `financialSnapshots` | method | 9 | `app/Http/Controllers/Report/AlmafactsDashboardController.php:2013` |
@@ -83,11 +83,11 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | almafacts -> platform (extends_view) | 5 |
 | platform -> almafacts (references_route) | 4 |
 | almafacts -> core (includes_view) | 4 |
+| almafacts -> access-control (calls) | 3 |
 | almafacts -> core (checks_table) | 3 |
 | almafacts -> core (reads_table) | 3 |
 | database -> almafacts (checks_table) | 2 |
 | dashboard-simpanan -> almafacts (reads_table) | 2 |
-| almafacts -> access-control (calls) | 2 |
 | core -> almafacts (accepts) | 1 |
 | core -> almafacts (calls) | 1 |
 | almafacts -> jobs-snapshots (dispatches) | 1 |

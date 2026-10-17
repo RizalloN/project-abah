@@ -2007,7 +2007,8 @@
             const csrfToken = document.querySelector('input[name="_token"]').value;
             const initUrl = form.dataset.initUrl;
             const streamUrlBase = form.dataset.streamUrl;
-            const allowForceStart = !String(streamUrlBase || '').includes('/import-csv/simpanan-multipn/stream');
+            const allowForceStart = @json(auth()->user()?->isSuperAdmin() ?? false)
+                && !String(streamUrlBase || '').includes('/import-csv/simpanan-multipn/stream');
 
             if (submitBtn) {
                 submitBtn.disabled = true;
@@ -2206,7 +2207,7 @@
 
                 const streamUrl = streamUrlBase + '?job_id=' + encodeURIComponent(initResult.job_id);
                 const statusUrlTemplate = @json(route('import.jobs.status', ['jobId' => '__JOB_ID__']));
-                const forceStartUrlTemplate = @json(route('job-management.force-start', ['jobId' => '__JOB_ID__']));
+                const forceStartUrlTemplate = @json(auth()->user()?->isSuperAdmin() ? route('job-management.force-start', ['jobId' => '__JOB_ID__']) : '');
                 let streamDone = false;
                 let reconnectAttempts = 0;
                 let evtSource = null;
@@ -2372,6 +2373,7 @@
                 };
 
                 const triggerForceStart = async function (jobId) {
+                    if (!allowForceStart) return false;
                     if (streamDone) return false;
                     if (forceStartTriggered) {
                         return false;

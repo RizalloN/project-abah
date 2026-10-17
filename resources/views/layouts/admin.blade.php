@@ -1,10 +1,11 @@
 <!DOCTYPE html>
-<html lang="id">
+<html lang="id" data-theme-follow-system="1">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
     <title>@hasSection('title')@yield('title') - @endif{{ config('app.name', 'Dashboard A-Six') }}</title>
     <link rel="icon" type="image/svg+xml" href="{{ asset('images/a-six-logo.svg') }}">
+    @include('layouts.partials.theme')
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -2139,6 +2140,12 @@
         </ul>
 
         <ul class="navbar-nav ml-auto">
+            <li class="nav-item d-flex align-items-center mr-2">
+                <button type="button" class="theme-toggle" data-theme-toggle aria-pressed="false" aria-label="Ganti ke mode gelap" title="Ganti ke mode gelap">
+                    <i class="fas fa-moon theme-toggle__icon theme-toggle__icon--moon" aria-hidden="true"></i>
+                    <i class="fas fa-sun theme-toggle__icon theme-toggle__icon--sun" aria-hidden="true"></i>
+                </button>
+            </li>
             <li class="nav-item dropdown">
                 <a class="nav-link modern-user-trigger d-flex align-items-center" data-toggle="dropdown" href="#" role="button" aria-haspopup="true" aria-expanded="false">
                     <span class="modern-user-badge mr-3">{{ strtoupper(substr(Auth::user()->name, 0, 2)) }}</span>

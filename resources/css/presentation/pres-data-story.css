@@ -1,0 +1,254 @@
+/* Data is the illustration. These scenes belong only to the vertical report. */
+html.pres-scroll-layout .rp-head { grid-template-columns: minmax(0, 1fr); gap: 18px; margin-bottom: 32px; }
+html.pres-scroll-layout .rp-head__lead { max-width: 1100px; }
+html.pres-scroll-layout .rp-title { font-size: clamp(2.2rem, 4.1vw, 4.2rem); max-width: 26ch; line-height: 1.06; }
+html.pres-scroll-layout .rp-lede { max-width: 80ch; }
+html.pres-scroll-layout .rp-head__reading { max-width: 94ch; }
+html.pres-scroll-layout .rp-reading { font-size: 15px; color: var(--pr-ink-soft); }
+html.pres-scroll-layout .rp-figures { gap: 24px; }
+html.pres-scroll-layout .rp-fig { padding: 20px 8px 12px 0; border-top: 1px solid #c7ddff38; border-radius: 0; background: transparent; }
+html.pres-scroll-layout .rp-fig::before { display: none; }
+html.pres-scroll-layout .rp-cover {
+    box-sizing: border-box;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas: "copy art" "figures figures" "foot foot";
+    align-items: center;
+    column-gap: clamp(20px, 3vw, 56px);
+}
+html.pres-scroll-layout .rp-cover__content { grid-area: copy; }
+html.pres-scroll-layout .rp-cover__art { grid-area: art; min-width: 0; }
+html.pres-scroll-layout .rp-cover__figures { grid-area: figures; max-width: none; }
+html.pres-scroll-layout .rp-cover__foot { grid-area: foot; }
+html.pres-scroll-layout .rp-cover__title { font-size: clamp(3rem, 5.2vw, 6.5rem); line-height: 1.02; }
+html.pres-scroll-layout .rp-cover__sub { font-size: clamp(1.1rem, 1.5vw, 1.6rem); line-height: 1.4; }
+html.pres-scroll-layout .rp-cover__lede { font-size: 15px; max-width: 43ch; }
+html.pres-scroll-layout .rp-cover__brand { margin-bottom: 24px; }
+html.pres-scroll-layout .rp-cover__agenda { gap: 8px 18px; margin-top: 22px; }
+html.pres-scroll-layout .rp-cover__agenda li { padding: 0; background: none; border-radius: 0; }
+html.pres-scroll-layout .rp-cover__photo { opacity: 0.34; background-position: center; }
+html.pres-scroll-layout .rp-cover__scrim { background: linear-gradient(90deg, #04122cf2, #04122cbd 55%, #04122c88); }
+html.pres-scroll-layout .rp-cover__figures .rp-fig {
+    border-radius: 0;
+    background: transparent;
+    border-top: 1px solid #c7ddff38;
+    padding: 18px 8px 8px;
+}
+html.pres-scroll-layout .rp-cover__figures .rp-fig::before { display: none; }
+
+/* Museum-like stage, physically grounded columns, readable source labels. */
+html.pres-scroll-layout .rp-portfolio,
+html.pres-scroll-layout .rp-lens { margin: 0; color: var(--pr-ink); min-width: 0; }
+html.pres-scroll-layout .rp-art-caption { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 8px 18px; margin-bottom: 12px; }
+html.pres-scroll-layout .rp-art-caption > span { color: #c4d6ee; font-size: 14px; }
+html.pres-scroll-layout .rp-art-caption > strong { font: 650 clamp(1.25rem, 2vw, 2rem) var(--pr-font-display); letter-spacing: -0.03em; }
+html.pres-scroll-layout .rp-art-canvas { display: block; width: 100%; height: auto; overflow: visible; }
+html.pres-scroll-layout .rp-art-grid { stroke: #a7c7ef; stroke-width: 1; fill: none; }
+html.pres-scroll-layout .rp-art-zero { stroke: #c7ddff65; stroke-width: 1; }
+html.pres-scroll-layout .rp-art-column { transform-box: fill-box; transform-origin: center bottom; }
+html.pres-scroll-layout .rp-art-column-label { fill: #dceaff; font: 600 14px var(--pr-font-display); }
+html.pres-scroll-layout .rp-art-column-value { fill: #fff; font: 650 17px var(--pr-font-display); font-variant-numeric: tabular-nums; }
+html.pres-scroll-layout .rp-art-legend { display: flex; flex-wrap: wrap; gap: 16px 24px; padding: 0; margin: 12px 0 0; list-style: none; }
+html.pres-scroll-layout .rp-art-legend-item { display: flex; align-items: start; gap: 9px; min-width: 0; flex: 1 1 90px; }
+html.pres-scroll-layout .rp-art-swatch { flex: 0 0 3px; width: 3px; min-height: 35px; background: var(--art-color, #66b9ff); border-radius: 2px; }
+html.pres-scroll-layout .rp-art-legend-copy { display: grid; gap: 4px; min-width: 0; }
+html.pres-scroll-layout .rp-art-legend-copy > span { font-size: 13px; color: #c4d6ee; }
+html.pres-scroll-layout .rp-art-legend-copy > strong { font: 650 17px var(--pr-font-display); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+html.pres-scroll-layout .rp-art-note,
+html.pres-scroll-layout .rp-art-status { color: #c4d6ee; font-size: 12px; line-height: 1.5; margin: 14px 0 0; }
+html.pres-scroll-layout .rp-art-empty { padding: 38px 20px; color: #c4d6ee; border: 1px solid #c7ddff38; border-radius: 14px; font-size: 15px; }
+
+/* A short assembly on entry; further depth is controlled by the reader's scroll. */
+html.pres-scroll-ready .rp-cover__art:not(.is-in) .rp-art-column { transform: scaleY(0.001); }
+html.pres-scroll-ready .rp-cover__art.is-in .rp-art-column {
+    transform: scaleY(1);
+    transition: transform 1300ms var(--pr-ease) calc(var(--bar-order, 0) * 140ms + 140ms);
+}
+html.pres-scroll-layout .rp-cover__art .rp-portfolio { transform: translate3d(0, calc(var(--d, 0) * -45px), 0); }
+
+/* The chapter holds its title on the left and lets its data take physical form. */
+html.pres-scroll-layout .pres-chapter__art {
+    --art-reveal: clamp(0, calc(var(--sc-p, 0) * 3 + 0.08), 1);
+    position: absolute;
+    width: 46%;
+    right: clamp(20px, 3vw, 56px);
+    top: 50%;
+    transform: translate3d(0, calc(-45% + (1 - var(--art-reveal)) * 48px), 0);
+    opacity: clamp(0, calc(var(--sc-p, 0) * 6 + 0.25), 1);
+    padding: 22px;
+}
+html.pres-scroll-layout .pres-chapter__art .rp-art-column { transform: scaleY(var(--art-reveal)); }
+html.pres-scroll-layout .pres-chapter--pinjaman .pres-chapter__inner,
+html.pres-scroll-layout .pres-chapter--kualitas .pres-chapter__inner {
+    right: 52%;
+    left: clamp(24px, 4vw, 64px);
+    align-content: center;
+    gap: 22px;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "title" "lede" "figures" "contents";
+}
+html.pres-scroll-layout .pres-chapter--pinjaman .pres-chapter__title,
+html.pres-scroll-layout .pres-chapter--kualitas .pres-chapter__title { font-size: clamp(2.7rem, 5vw, 6.7rem); line-height: 1.02; }
+html.pres-scroll-layout .pres-chapter--kualitas .pres-chapter__figures { flex-direction: row; gap: 18px 28px; }
+html.pres-scroll-layout .pres-chapter--kualitas .pres-figure__value { font-size: clamp(2rem, 3vw, 4rem); }
+html.pres-scroll-layout .pres-chapter--pinjaman .pres-figure__value { font-size: clamp(2rem, 3vw, 3.6rem); }
+html.pres-scroll-layout .pres-chapter--pinjaman .pres-chapter__figures { gap: 20px; }
+
+html.pres-scroll-layout .rp-lens-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; }
+html.pres-scroll-layout .rp-lens-orbits { max-width: 380px; margin: 0 auto; width: 100%; }
+html.pres-scroll-layout .rp-art-ring-track { stroke: #c7ddff20; fill: none; }
+html.pres-scroll-layout .rp-art-ring { fill: none; stroke-linecap: butt; stroke-dashoffset: calc(var(--ring-length) - (var(--ring-length) - var(--ring-offset)) * var(--art-reveal, 1)); }
+html.pres-scroll-layout .rp-art-ring-label { fill: #f3f6fb; font: 650 21px var(--pr-font-display); }
+html.pres-scroll-layout .rp-art-ring-scale { fill: #c4d6ee; font: 500 12px var(--pr-font-display); }
+html.pres-scroll-layout .rp-lens .rp-art-legend { margin: 0; }
+html.pres-scroll-layout .rp-lens-metric { font-variant-numeric: tabular-nums; }
+html.pres-scroll-layout .rp-lens .rp-lens-ratio { font-size: clamp(1.5rem, 2.3vw, 2.5rem); }
+html.pres-scroll-layout .rp-lens-amount { font-size: 14px; color: #c4d6ee; }
+
+/* One large plot before the ledger. The supporting visual does not compete. */
+html.pres-scroll-layout .rp-split--visual { grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.85fr); gap: 24px; align-items: stretch; margin-bottom: 24px; }
+html.pres-scroll-layout .rp-split--visual > .rp-paper { margin-bottom: 0; }
+html.pres-scroll-layout .rp-trend--stage {
+    --tone-ink: var(--tone, #5aa2ff);
+    background: #071b37;
+    color: #b8d5ff;
+    border: 1px solid #c7ddff29;
+    padding: clamp(22px, 2.8vw, 40px);
+    border-radius: var(--pr-radius);
+    box-shadow: 0 24px 50px -35px #0008;
+}
+html.pres-scroll-layout .rp-trend--stage .rp-card-head { align-items: start; gap: 12px; }
+html.pres-scroll-layout .rp-trend--stage .rp-card-head h3 { color: #f3f6fb; font-size: 18px; }
+html.pres-scroll-layout .rp-trend--stage .rp-card-head > span { color: #b6c5dc; font-size: 12px; max-width: 18ch; text-align: right; }
+html.pres-scroll-layout .rp-trend__headline { display: flex; align-items: end; justify-content: space-between; gap: 12px; margin: 24px 0 8px; }
+html.pres-scroll-layout .rp-trend__headline > strong { font: 650 clamp(1.8rem, 3.1vw, 3.4rem) var(--pr-font-display); color: #f3f6fb; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; }
+html.pres-scroll-layout .rp-trend__headline > span { display: grid; gap: 3px; text-align: right; color: #d1e1f7; font-size: 13px; }
+html.pres-scroll-layout .rp-trend__headline small { color: #b6c5dc; font-size: 11px; }
+html.pres-scroll-layout .rp-trend__grid { stroke: #c7ddff20; stroke-width: 1; stroke-dasharray: 3 7; }
+html.pres-scroll-layout .rp-trend--stage .rp-trend__base { stroke: #c7ddff40; }
+html.pres-scroll-layout .rp-trend--stage .rp-trend__line { stroke-width: 3; stroke-dashoffset: calc(1 - var(--line-draw, var(--draw))); }
+html.pres-scroll-layout .rp-trend__wash { opacity: var(--draw); clip-path: inset(0 calc((1 - var(--draw)) * 100%) 0 0); }
+html.pres-scroll-layout .rp-trend--stage .rp-trend__value { fill: #e6f0ff; font-size: 13px; }
+html.pres-scroll-layout .rp-trend--stage .rp-trend__label { fill: #b6c5dc; }
+html.pres-scroll-layout .rp-trend--stage .rp-trend__pt circle { fill: #071b37; stroke-width: 2; }
+html.pres-scroll-layout .rp-trend__probe { color: var(--tone, #5aa2ff); }
+html.pres-scroll-layout .rp-trend__probe circle:first-child { fill: currentColor; opacity: 0.17; }
+html.pres-scroll-layout .rp-trend__probe circle:last-child { fill: currentColor; stroke: #f3f6fb; stroke-width: 2; }
+html.pres-scroll-layout .rp-trend__readings { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); padding: 0; margin: 14px 0 0; list-style: none; border-top: 1px solid #c7ddff29; }
+html.pres-scroll-layout .rp-trend__readings li { min-width: 0; display: grid; gap: 6px; padding: 12px 4px; border-top: 2px solid transparent; transition: border-color 220ms, background-color 220ms; }
+html.pres-scroll-layout .rp-trend__readings span { font-size: 10px; color: #b6c5dc; overflow-wrap: anywhere; }
+html.pres-scroll-layout .rp-trend__readings b { font-size: 11px; color: #f3f6fb; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+html.pres-scroll-layout .rp-trend__readings .is-current { border-color: var(--tone, #5aa2ff); background: #c7ddff0d; }
+html.pres-scroll-layout .rp-trend--stage figcaption { color: #b6c5dc; font-size: 12px; line-height: 1.6; margin-top: 12px; }
+html.pres-scroll-layout .rp-trend--stage figcaption > span { white-space: nowrap; }
+html.pres-scroll-layout .rp-trend--stage:focus-visible { outline: 3px solid #85c6ff; outline-offset: 4px; }
+
+@media (min-width: 1101px) and (max-height: 800px) {
+    html.pres-scroll-layout .rp-cover { padding-top: 28px; gap: 20px; }
+    html.pres-scroll-layout .rp-cover__brand img { height: 24px; }
+    html.pres-scroll-layout .rp-cover__title { font-size: clamp(2.8rem, 4.7vw, 4.7rem); }
+    html.pres-scroll-layout .rp-cover__lede { line-height: 1.5; }
+    html.pres-scroll-layout .rp-cover__figures .rp-fig { padding-top: 14px; }
+}
+@media (max-width: 1100px) {
+    html.pres-scroll-layout .rp-split--visual { grid-template-columns: minmax(0, 1fr); }
+    html.pres-scroll-layout .rp-cover { column-gap: 24px; }
+    html.pres-scroll-layout .rp-art-column-value { font-size: 16px; }
+}
+@media (max-width: 760px) {
+    html.pres-scroll-layout .rp-title { font-size: clamp(2rem, 8vw, 3rem); }
+    html.pres-scroll-layout .rp-cover { grid-template-columns: minmax(0, 1fr); grid-template-areas: "copy" "art" "figures" "foot"; gap: 28px; padding: 32px 20px 24px; }
+    html.pres-scroll-layout .rp-cover__title { font-size: clamp(2.7rem, 10vw, 4.4rem); max-width: 14ch; }
+    html.pres-scroll-layout .rp-cover__art { width: 100%; max-width: 520px; justify-self: center; }
+    html.pres-scroll-layout .rp-cover__figures { grid-template-columns: repeat(2, minmax(0, 1fr)); transform: none; gap: 16px; }
+    html.pres-scroll-layout .rp-cover__figures .rp-fig__value { font-size: clamp(1.3rem, 6vw, 2rem); }
+    html.pres-scroll-layout .rp-cover__agenda { gap: 14px 24px; }
+    html.pres-scroll-layout .rp-cover__agenda li { flex: 1 1 40%; }
+    html.pres-scroll-layout .rp-art-legend { gap: 12px; }
+    html.pres-scroll-layout .rp-portfolio .rp-art-legend { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+    html.pres-scroll-layout .rp-art-legend-copy > strong { font-size: 15px; }
+    html.pres-scroll-layout .rp-art-column-value,
+    html.pres-scroll-layout .rp-art-column-label { display: none; }
+    html.pres-scroll-layout .rp-trend--stage { padding: 20px 16px; }
+    html.pres-scroll-layout .rp-trend--stage .rp-card-head { flex-wrap: wrap; }
+    html.pres-scroll-layout .rp-trend--stage .rp-card-head > span { text-align: left; max-width: none; }
+    html.pres-scroll-layout .rp-trend__headline > strong { font-size: clamp(1.7rem, 7vw, 2.4rem); }
+    html.pres-scroll-layout .rp-trend--stage .rp-trend__value { display: none; }
+    html.pres-scroll-layout .rp-trend__readings { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    html.pres-scroll-layout .rp-trend__readings span { font-size: 11px; }
+    html.pres-scroll-layout .rp-trend__readings b { font-size: 12px; }
+    html.pres-scroll-layout .pres-chapter--pinjaman .pres-chapter__inner,
+    html.pres-scroll-layout .pres-chapter--kualitas .pres-chapter__inner { position: static; inset: auto; order: 0; width: 100%; gap: 16px; }
+    html.pres-scroll-layout .pres-chapter--pinjaman .pres-chapter__stage,
+    html.pres-scroll-layout .pres-chapter--kualitas .pres-chapter__stage { display: flex; flex-direction: column; justify-content: center; gap: 32px; padding: calc(var(--pr-top) + 20px) 20px 24px; box-sizing: border-box; }
+    html.pres-scroll-layout .pres-chapter--pinjaman .pres-chapter__title,
+    html.pres-scroll-layout .pres-chapter--kualitas .pres-chapter__title { font-size: clamp(2rem, 8vw, 3.4rem); }
+    html.pres-scroll-layout .pres-chapter--pinjaman .pres-chapter__lede,
+    html.pres-scroll-layout .pres-chapter--kualitas .pres-chapter__lede { font-size: 15px; }
+    html.pres-scroll-layout .pres-chapter--pinjaman .pres-chapter__figures,
+    html.pres-scroll-layout .pres-chapter--kualitas .pres-chapter__figures { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    html.pres-scroll-layout .pres-chapter__figures .pres-figure { min-width: 0; }
+    html.pres-scroll-layout .pres-chapter--pinjaman .pres-figure__value,
+    html.pres-scroll-layout .pres-chapter--kualitas .pres-figure__value { font-size: clamp(1.3rem, 6.5vw, 1.8rem); }
+    html.pres-scroll-layout .pres-chapter__art { position: static; order: 1; inset: auto; width: 100%; padding: 0; transform: none; }
+    html.pres-scroll-layout .pres-chapter__art .rp-art-canvas { max-height: 27svh; }
+    html.pres-scroll-layout .pres-chapter__art .rp-art-caption { display: none; }
+    html.pres-scroll-layout .pres-chapter__art .rp-art-note { display: none; }
+    html.pres-scroll-layout .pres-chapter__art .rp-art-legend { margin-top: 4px; }
+    html.pres-scroll-layout .pres-chapter__art .rp-lens-layout { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; gap: 12px; }
+    html.pres-scroll-layout .pres-chapter__art .rp-lens .rp-art-legend { flex-direction: column; gap: 12px; }
+    html.pres-scroll-layout .pres-chapter__art .rp-lens .rp-art-legend-item { flex: auto; }
+    html.pres-scroll-layout .pres-chapter__art .rp-lens .rp-lens-ratio { font-size: 1.6rem; }
+    html.pres-scroll-layout .rp-lens .rp-art-ring-label,
+    html.pres-scroll-layout .rp-lens .rp-art-ring-subtitle,
+    html.pres-scroll-layout .rp-lens .rp-art-ring-scale { display: none; }
+    html.pres-scroll-layout .rp-pairs__bar { width: calc(100% - 72px); }
+}
+@media (max-height: 650px) {
+    html.pres-scroll-layout .pres-chapter--pinjaman .pres-chapter__inner,
+    html.pres-scroll-layout .pres-chapter--kualitas .pres-chapter__inner { gap: 12px; }
+    html.pres-scroll-layout .pres-chapter--pinjaman .pres-chapter__title,
+    html.pres-scroll-layout .pres-chapter--kualitas .pres-chapter__title { font-size: clamp(1.8rem, 4vw, 3rem); }
+    html.pres-scroll-layout .pres-chapter--pinjaman .pres-chapter__lede,
+    html.pres-scroll-layout .pres-chapter--kualitas .pres-chapter__lede { font-size: 14px; }
+    html.pres-scroll-layout .pres-chapter__art .rp-art-note { display: none; }
+}
+@media (min-width: 761px) and (max-height: 650px) {
+    html.pres-scroll-layout .pres-chapter__art { inset: calc(var(--pr-top) + 12px) 24px 12px auto; width: 46%; padding: 0; transform: none; display: flex; align-items: center; }
+    html.pres-scroll-layout .pres-chapter__art > figure { width: 100%; }
+    html.pres-scroll-layout .pres-chapter__art .rp-art-canvas { max-height: calc(100svh - var(--pr-top) - 110px); }
+    html.pres-scroll-layout .pres-chapter__art .rp-art-caption { margin-bottom: 6px; }
+    html.pres-scroll-layout .pres-chapter__art .rp-art-caption > strong { font-size: 1.2rem; }
+    html.pres-scroll-layout .pres-chapter__art .rp-art-legend { margin-top: 8px; gap: 12px; }
+    html.pres-scroll-layout .pres-chapter__art .rp-art-legend-copy > strong { font-size: 15px; }
+    html.pres-scroll-layout .pres-chapter__art .rp-lens-layout { grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr); gap: 12px; align-items: center; }
+    html.pres-scroll-layout .pres-chapter__art .rp-lens .rp-art-legend { flex-direction: column; }
+    html.pres-scroll-layout .pres-chapter__art .rp-lens .rp-art-legend-item { flex: auto; }
+    html.pres-scroll-layout .pres-chapter__art .rp-lens .rp-lens-ratio { font-size: 1.5rem; }
+    html.pres-scroll-layout .pres-chapter--pinjaman .pres-chapter__inner,
+    html.pres-scroll-layout .pres-chapter--kualitas .pres-chapter__inner { top: calc(var(--pr-top) + 16px); bottom: 16px; }
+    html.pres-scroll-layout .pres-chapter--pinjaman .pres-chapter__title,
+    html.pres-scroll-layout .pres-chapter--kualitas .pres-chapter__title { font-size: 1.9rem; }
+    html.pres-scroll-layout .pres-chapter--pinjaman .pres-figure__value,
+    html.pres-scroll-layout .pres-chapter--kualitas .pres-figure__value { font-size: 1.7rem; }
+    html.pres-scroll-layout .pres-chapter__contents { gap: 8px 18px; }
+    html.pres-scroll-layout .pres-chapter__contents a { font-size: 14px; }
+}
+@media (prefers-reduced-motion: reduce) {
+    html.pres-scroll-layout .rp-trend--stage .rp-trend__line { stroke-dashoffset: 0; }
+    html.pres-scroll-layout .rp-cover__art .rp-portfolio,
+    html.pres-scroll-layout .rp-art-column { transform: none !important; transition: none !important; }
+    html.pres-scroll-layout .pres-chapter__art { --art-reveal: 1; opacity: 1; }
+    html.pres-scroll-layout .rp-trend__readings li { transition: none; }
+}
+@media print {
+    html.pres-scroll-layout .rp-trend--stage .rp-trend__line { stroke-dashoffset: 0; }
+    html.pres-scroll-layout .rp-cover__art { display: none; }
+    html.pres-scroll-layout .rp-cover { display: block; }
+    html.pres-scroll-layout .rp-trend--stage { background: #fff !important; color: #0857c3; border-color: #ccd6e5; box-shadow: none; --tone: #0857c3; --tone-ink: #0857c3; }
+    html.pres-scroll-layout .rp-trend--stage .rp-card-head h3,
+    html.pres-scroll-layout .rp-trend__headline > strong,
+    html.pres-scroll-layout .rp-trend__readings b { color: #0b1f3a; }
+    html.pres-scroll-layout .rp-trend--stage .rp-trend__value { fill: #0b1f3a; }
+    html.pres-scroll-layout .rp-trend--stage .rp-trend__label { fill: #4f627f; }
+    html.pres-scroll-layout .rp-trend__probe { display: none; }
+}

@@ -3,6 +3,10 @@
 @section('title', 'User Management')
 
 @section('content')
+@php
+    $currentManager = auth()->user();
+    $isSuperAdmin = $currentManager->isSuperAdmin();
+@endphp
 <div class="container-fluid pt-2 pb-4">
     <!-- Hero Header -->
     <div class="user-hero mb-4">
@@ -13,7 +17,7 @@
                 <h2 class="user-hero__title h4 font-weight-bold text-white mb-0"><i class="fas fa-users-cog mr-2"></i> User Management</h2>
                 <p class="user-hero__text mb-0">Kelola akun internal portal, role hak akses, pemetaan wilayah binaan, dan kredensial pengguna.</p>
             </div>
-            <span class="user-management-admin-badge user-hero__badge mt-3 mt-md-0"><i class="fas fa-user-shield mr-1"></i> Admin Only</span>
+            <span class="user-management-admin-badge user-hero__badge mt-3 mt-md-0"><i class="fas fa-user-shield mr-1"></i> {{ $isSuperAdmin ? 'Superadmin' : 'Admin' }}</span>
         </div>
     </div>
 
@@ -54,8 +58,13 @@
                             <label class="user-form-label" for="role">Role Akses</label>
                             <select id="role" name="role" class="form-control user-form-control custom-select" required>
                                 <option value="user" {{ old('role') === 'user' ? 'selected' : '' }}>User (Standard)</option>
-                                <option value="admin" {{ old('role') === 'admin' ? 'selected' : '' }}>Admin (Full Control)</option>
+                                @if($isSuperAdmin)
+                                    <option value="admin" {{ old('role') === 'admin' ? 'selected' : '' }}>Admin</option>
+                                @endif
                             </select>
+                            @unless($isSuperAdmin)
+                                <small class="text-muted d-block mt-1">Admin dapat mengelola akun dengan role User.</small>
+                            @endunless
                             @error('role', 'createUser')<div class="invalid-feedback">{{ $message }}</div>@enderror
                         </div>
                         <div class="form-group mb-3">
@@ -104,6 +113,12 @@
                             <div class="user-stat-pill__label">Total</div>
                             <div class="user-stat-pill__val text-dark">{{ number_format($stats['total'], 0, ',', '.') }}</div>
                         </div>
+                        @if($isSuperAdmin)
+                        <div class="user-stat-pill">
+                            <div class="user-stat-pill__label">Superadmin</div>
+                            <div class="user-stat-pill__val text-primary">{{ number_format($stats['superadmins'] ?? 0, 0, ',', '.') }}</div>
+                        </div>
+                        @endif
                         <div class="user-stat-pill">
                             <div class="user-stat-pill__label">Admin</div>
                             <div class="user-stat-pill__val text-primary">{{ number_format($stats['admins'], 0, ',', '.') }}</div>
@@ -143,7 +158,7 @@
                                     </td>
                                     <td class="align-middle font-weight-bold text-dark">{{ $userItem->pn }}</td>
                                     <td class="align-middle">
-                                        <span class="user-role-badge {{ $userItem->role === 'admin' ? 'user-role-badge--admin' : 'user-role-badge--user' }}">
+                                        <span class="user-role-badge {{ $userItem->isAdmin() ? 'user-role-badge--admin' : 'user-role-badge--user' }}">
                                             {{ strtoupper($userItem->role) }}
                                         </span>
                                     </td>
@@ -165,16 +180,22 @@
                                         @endif
                                     </td>
                                     <td class="text-center align-middle pr-4">
-                                        <button type="button" class="btn btn-sm btn-outline-primary user-action-btn" data-toggle="modal" data-target="#editUserModal-{{ $userItem->id }}" title="Edit User">
+                                        @if($currentManager->canManageUser($userItem))
+                                        <button type="button" class="btn btn-sm btn-outline-primary user-action-btn" data-toggle="modal" data-target="#editUserModal-{{ $userItem->id }}" title="Edit User" aria-label="Edit akun {{ $userItem->name }}">
                                             <i class="fas fa-pen"></i>
                                         </button>
+                                        @unless($userItem->role === 'superadmin' || (string) $userItem->pn === \App\Models\User::SUPERADMIN_PN || auth()->id() === $userItem->id)
                                         <form method="POST" action="{{ route('user-management.destroy', $userItem) }}" class="d-inline form-delete-user" data-user-name="{{ $userItem->name }}">
                                             @csrf
                                             @method('DELETE')
-                                            <button type="submit" class="btn btn-sm btn-outline-danger user-action-btn ml-1" {{ auth()->id() === $userItem->id ? 'disabled' : '' }} title="Hapus User">
+                                            <button type="submit" class="btn btn-sm btn-outline-danger user-action-btn ml-1" title="Hapus User" aria-label="Hapus akun {{ $userItem->name }}">
                                                 <i class="fas fa-trash-alt"></i>
                                             </button>
                                         </form>
+                                        @endunless
+                                        @else
+                                            <span class="text-muted small">Akses terbatas</span>
+                                        @endif
                                     </td>
                                 </tr>
                             @empty
@@ -195,6 +216,7 @@
 </div>
 
 @foreach ($users as $userItem)
+    @if($currentManager->canManageUser($userItem))
     @php
         $editRole = session('open_edit_user') == $userItem->id
             ? old('role', $userItem->role)
@@ -236,18 +258,26 @@
                             </div>
                             <div class="col-md-6">
                                 <div class="form-group mb-3">
-                                    <label class="user-form-label">Personal Number (PN)</label>
-                                    <input type="text" name="pn" class="form-control user-form-control @if (session('open_edit_user') == $userItem->id && $errors->updateUser->has('pn')) is-invalid @endif" value="{{ session('open_edit_user') == $userItem->id ? old('pn', $userItem->pn) : $userItem->pn }}" required>
+                                    <label class="user-form-label" for="edit-pn-{{ $userItem->id }}">Personal Number (PN)</label>
+                                    <input type="text" id="edit-pn-{{ $userItem->id }}" name="pn" class="form-control user-form-control @if (session('open_edit_user') == $userItem->id && $errors->updateUser->has('pn')) is-invalid @endif" value="{{ $userItem->isSuperAdmin() ? $userItem->pn : (session('open_edit_user') == $userItem->id ? old('pn', $userItem->pn) : $userItem->pn) }}" {{ $userItem->isSuperAdmin() ? 'readonly' : '' }} required>
                                     @if (session('open_edit_user') == $userItem->id) @error('pn', 'updateUser')<div class="invalid-feedback">{{ $message }}</div>@enderror @endif
                                 </div>
                             </div>
                             <div class="col-md-6">
                                 <div class="form-group mb-3">
-                                    <label class="user-form-label">Role Akses</label>
-                                    <select name="role" class="form-control user-form-control custom-select @if (session('open_edit_user') == $userItem->id && $errors->updateUser->has('role')) is-invalid @endif" required>
+                                    <label class="user-form-label" for="edit-role-{{ $userItem->id }}">Role Akses</label>
+                                    @if($userItem->isSuperAdmin())
+                                        <input type="hidden" name="role" value="superadmin">
+                                        <input type="text" id="edit-role-{{ $userItem->id }}" class="form-control user-form-control" value="Superadmin" readonly>
+                                        <small class="text-muted d-block mt-1">Role dan PN superadmin tetap untuk akun {{ \App\Models\User::SUPERADMIN_PN }}.</small>
+                                    @else
+                                    <select id="edit-role-{{ $userItem->id }}" name="role" class="form-control user-form-control custom-select @if (session('open_edit_user') == $userItem->id && $errors->updateUser->has('role')) is-invalid @endif" required>
                                         <option value="user" {{ $editRole === 'user' ? 'selected' : '' }}>User (Standard)</option>
-                                        <option value="admin" {{ $editRole === 'admin' ? 'selected' : '' }}>Admin (Full Control)</option>
+                                        @if($isSuperAdmin)
+                                            <option value="admin" {{ $editRole === 'admin' ? 'selected' : '' }}>Admin</option>
+                                        @endif
                                     </select>
+                                    @endif
                                     @if (session('open_edit_user') == $userItem->id) @error('role', 'updateUser')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror @endif
                                 </div>
                             </div>
@@ -289,6 +319,7 @@
             </div>
         </div>
     </div>
+    @endif
 @endforeach
 
 <!-- Login History Modal -->
@@ -506,6 +537,8 @@
     /* 5. Header Stats */
     .user-header-stats {
         display: flex;
+        flex-wrap: wrap;
+        max-width: 100%;
     }
     .user-stat-pill {
         padding: 0.35rem 0.65rem;

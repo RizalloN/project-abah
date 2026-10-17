@@ -7,33 +7,33 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Kind | Count |
 | --- | ---: |
 | command | 4 |
-| file | 155 |
+| file | 157 |
 | function | 380 |
-| method | 186 |
+| method | 189 |
 | unresolved_symbol | 10 |
 | route | 2 |
-| class | 16 |
+| class | 18 |
 | table | 5 |
 
 ## Main Hubs
 
 | Node | Kind | Degree | Source |
 | --- | --- | ---: | --- |
-| `DailyDatabaseBackupService` | class | 45 | `app/Services/DailyDatabaseBackupService.php:14` |
+| `DailyDatabaseBackupService` | class | 46 | `app/Services/DailyDatabaseBackupService.php:15` |
 | `ManagedReportBackupRecoveryService` | class | 38 | `app/Services/ManagedReportBackupRecoveryService.php:15` |
-| `backup` | method | 33 | `app/Services/DailyDatabaseBackupService.php:44` |
+| `backup` | method | 33 | `app/Services/DailyDatabaseBackupService.php:54` |
 | `up` | function | 28 | `database/migrations/2026_04_01_000003_main_report_data.php:9` |
 | `DatabaseBackupService` | class | 26 | `app/Services/DatabaseBackupService.php:11` |
 | `up` | function | 24 | `database/migrations/2026_04_01_000001_initial_core_tables.php:10` |
 | `ProgressiveBackupCommand` | class | 23 | `app/Console/Commands/ProgressiveBackupCommand.php:12` |
 | `information_schema.statistics` | table | 22 | - |
-| `createChunkedBackup` | method | 20 | `app/Services/DailyDatabaseBackupService.php:267` |
+| `createChunkedBackup` | method | 20 | `app/Services/DailyDatabaseBackupService.php:277` |
 | `up` | function | 18 | `database/migrations/2026_04_01_000005_dashboard_snapshots_and_triggers.php:10` |
 | `CachedMySqlSchemaBuilder` | class | 17 | `app/Support/CachedMySqlSchemaBuilder.php:9` |
 | `SchemaMetadataCache` | class | 15 | `app/Support/SchemaMetadataCache.php:9` |
 | `invalidate` | method | 15 | `app/Support/SchemaMetadataCache.php:62` |
 | `extractTableSqlFromBackup` | method | 14 | `app/Services/ManagedReportBackupRecoveryService.php:316` |
-| `inspectManagedBackupDirectory` | method | 14 | `app/Services/DailyDatabaseBackupService.php:1079` |
+| `inspectManagedBackupDirectory` | method | 14 | `app/Services/DailyDatabaseBackupService.php:1089` |
 | `handle` | method | 13 | `app/Console/Commands/RestoreDatabaseBackupCommand.php:29` |
 | `performOptimizedBackup` | method | 13 | `app/Console/Commands/ProgressiveBackupCommand.php:107` |
 | `write` | method | 13 | `app/Services/DatabaseBackup/ChunkedDatabaseBackupWriter.php:26` |
@@ -64,6 +64,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `ChunkedDatabaseBackupWriter` - `app/Services/DatabaseBackup/ChunkedDatabaseBackupWriter.php`
 - `CompressedDatabaseDumpRunner` - `app/Services/DatabaseBackup/CompressedDatabaseDumpRunner.php`
 - `DailyDatabaseBackupService` - `app/Services/DailyDatabaseBackupService.php`
+- `DatabaseBackupAlreadyRunningException` - `app/Exceptions/DatabaseBackupAlreadyRunningException.php`
 - `DatabaseBackupService` - `app/Services/DatabaseBackupService.php`
 - `DatabaseBackupStatusStore` - `app/Support/DatabaseBackupStatusStore.php`
 - `DatabaseSeeder` - `database/seeders/DatabaseSeeder.php`
@@ -73,6 +74,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `ProgressiveBackupCommand` - `app/Console/Commands/ProgressiveBackupCommand.php`
 - `RestoreDatabaseBackupCommand` - `app/Console/Commands/RestoreDatabaseBackupCommand.php`
 - `SchemaMetadataCache` - `app/Support/SchemaMetadataCache.php`
+- `SuperAdminSeeder` - `database/seeders/SuperAdminSeeder.php`
 
 ## Command Nodes
 
@@ -93,14 +95,14 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Direction | Count |
 | --- | ---: |
-| database -> core (instantiates) | 78 |
+| database -> core (instantiates) | 79 |
 | database -> core (checks_table) | 62 |
 | database -> core (writes_table) | 60 |
 | database -> import (checks_table) | 43 |
-| database -> core (calls) | 31 |
+| database -> core (calls) | 34 |
 | database -> dashboard-pinjaman (checks_table) | 26 |
 | database -> import (defines_table) | 24 |
-| database -> core (accepts) | 20 |
+| database -> core (accepts) | 21 |
 | database -> core (reads_table) | 17 |
 | database -> dashboard-simpanan (checks_table) | 15 |
 | database -> dashboard-pinjaman (alters_table) | 15 |
@@ -115,11 +117,11 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | database -> dashboard-simpanan (alters_table) | 8 |
 | database -> dashboard-simpanan (defines_table) | 7 |
 | database -> dashboard-harian (checks_table) | 7 |
+| database -> core (extends) | 7 |
 | database -> jobs-snapshots (alters_table) | 6 |
 | database -> core (uses_table) | 5 |
 | database -> dashboard-pinjaman (uses_table) | 5 |
 | database -> access-control (defines_table) | 5 |
 | database -> dashboard-harian (alters_table) | 5 |
-| database -> core (extends) | 5 |
 | database -> access-control (checks_table) | 4 |
 | database -> jobs-snapshots (uses_table) | 3 |

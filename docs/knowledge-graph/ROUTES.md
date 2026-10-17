@@ -2,8 +2,8 @@
 
 | Methods | URI | Name | Domain | Handler |
 | --- | --- | --- | --- | --- |
-| POST | `login` | `generated::UdaCiWxoZYkXvyXo` | access-control | `App\Http\Controllers\Auth\AuthenticatedSessionController::store` |
-| POST | `confirm-password` | `generated::p6SPxutm2QkZlKZt` | access-control | `App\Http\Controllers\Auth\ConfirmablePasswordController::store` |
+| POST | `login` | `generated::h7kJv1qqaz9eo3z8` | access-control | `App\Http\Controllers\Auth\AuthenticatedSessionController::store` |
+| POST | `confirm-password` | `generated::iYT9mcuAKJrllUqH` | access-control | `App\Http\Controllers\Auth\ConfirmablePasswordController::store` |
 | GET | `login` | `login` | access-control | `App\Http\Controllers\Auth\AuthenticatedSessionController::create` |
 | POST | `logout` | `logout` | access-control | `App\Http\Controllers\Auth\AuthenticatedSessionController::destroy` |
 | GET | `confirm-password` | `password.confirm` | access-control | `App\Http\Controllers\Auth\ConfirmablePasswordController::show` |
@@ -53,7 +53,7 @@
 | POST | `file-management/delete` | `file-management.destroy` | core | `App\Http\Controllers\Admin\FileManagementController::destroy` |
 | GET | `file-management/download` | `file-management.download` | core | `App\Http\Controllers\Admin\FileManagementDownloadController::__invoke` |
 | GET | `file-management` | `file-management.index` | core | `App\Http\Controllers\Admin\FileManagementController::index` |
-| GET | `up` | `generated::7Agywk49gaUdpXlx` | core | Closure |
+| GET | `up` | `generated::OD5k27LTOXjyd4cq` | core | Closure |
 | GET | `/` | `home` | core | Closure |
 | GET | `link-management` | `link-management.index` | core | `App\Http\Controllers\Admin\LinkManagementController::index` |
 | POST | `link-management` | `link-management.update` | core | `App\Http\Controllers\Admin\LinkManagementController::update` |
@@ -315,6 +315,8 @@
 | GET | `report/kolaborasi-perusahaan-anak/business-cluster` | `report.kolaborasi.business-cluster` | input-management | `App\Http\Controllers\Report\KolaborasiReportController::businessCluster` |
 | GET | `report/kolaborasi-perusahaan-anak/business-cluster/sppg` | `report.kolaborasi.sppg` | input-management | `App\Http\Controllers\Report\KolaborasiReportController::sppg` |
 | POST | `file-management/snapshots/latest-check` | `file-management.snapshots.latest-check` | jobs-snapshots | `App\Http\Controllers\Admin\FileManagementController::checkLatestSnapshots` |
+| POST | `job-management/runtime/control` | `job-management.runtime.control` | jobs-snapshots | `App\Http\Controllers\Admin\ServerRuntimeController::control` |
+| GET | `job-management/runtime` | `job-management.runtime.status` | jobs-snapshots | `App\Http\Controllers\Admin\ServerRuntimeController::status` |
 | GET | `workbooks/market-share.xlsx` | `public-workbooks.market-share` | marketshare | `App\Http\Controllers\PublicWorkbookController::marketShare` |
 | GET | `workbooks/market-share-mapping.xlsx` | `public-workbooks.market-share-mapping` | marketshare | `App\Http\Controllers\PublicWorkbookController::marketShareMapping` |
 | GET | `workbooks/market-share-mapping/{token}/market-share-mapping.xlsx` | `public-workbooks.market-share-mapping.token` | marketshare | `App\Http\Controllers\PublicWorkbookController::marketShareMapping` |

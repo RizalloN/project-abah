@@ -18,15 +18,7 @@ class EnforceUserBranchScope
         View::share('userBranchScope', $scope);
 
         if ($scope !== null) {
-            $scopedInput = [
-                'cabang' => $scope['label'],
-                'cabang1' => $scope['label'],
-                'kanca' => $scope['label'],
-                'mismatch_cabang1' => $scope['label'],
-                'wilayah' => $scope['key'],
-                'branch_office' => [$scope['upper_label']],
-                'kantor_cabang' => [$scope['label']],
-            ];
+            $scopedInput = UserBranchScope::requestInput($scope);
 
             $request->merge($scopedInput);
             $request->query->add($scopedInput);

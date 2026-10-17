@@ -955,7 +955,7 @@ class DashboardPinjamanReportController extends Controller
             'comparison_period' => $comparisonPeriod,
             'segments' => $payload['segments']->all(),
             'products' => $payload['products']->all(),
-            'branches' => $payload['branches']->all(),
+            'branches' => UserBranchScope::restrictOptions($payload['branches']->all()),
             'units' => $payload['units']->all(),
         ]);
     }

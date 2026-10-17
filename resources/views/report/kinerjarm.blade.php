@@ -2048,7 +2048,7 @@
                     <label for="kinerjaCabang" class="lux-label">Cabang</label>
                     <div class="lux-select-wrap">
                         <select id="kinerjaCabang" name="cabang1" class="lux-select">
-                            <option value="" @selected($selectedCabang === null)>Semua Cabang</option>
+                            @if(empty($userBranchScope))<option value="" @selected($selectedCabang === null)>Semua Cabang</option>@endif
                             @foreach($availableCabangs as $cabang)
                                 <option value="{{ $cabang }}" @selected($selectedCabang === $cabang)>{{ $cabang }}</option>
                             @endforeach

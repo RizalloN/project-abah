@@ -1,10 +1,11 @@
 <!DOCTYPE html>
-<html lang="id">
+<html lang="id" data-theme-follow-system="1">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
     <meta http-equiv="refresh" content="30">
     <title>A-Six Dashboard Maintenance</title>
+    @include('layouts.partials.theme')
     <style>
         :root {
             color-scheme: light;

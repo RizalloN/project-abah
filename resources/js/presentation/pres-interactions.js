@@ -595,7 +595,8 @@ export const setupPresentationInteractions = ({
         }
     });
 
-    const slideSurface = document.querySelector('.pres-slides-container');
+    // Swipe-to-change and tap-to-autoplay belong to the slide deck; the scroll report reads by scrolling.
+    const slideSurface = root?.dataset?.layout === 'scroll' ? null : document.querySelector('.pres-slides-container');
     slideSurface?.addEventListener('pointerdown', (event) => {
         if (event.pointerType === 'mouse' || event.target.closest('button, a, select, input, textarea, [data-pres-drilldown], [data-psd-timeseries-expand]')) {
             return;

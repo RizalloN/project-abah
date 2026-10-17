@@ -123,7 +123,7 @@
 
         function setLoadingTableState(message) {
             if (!managementTableBody) return;
-            managementTableBody.innerHTML = `<tr><td colspan="4" class="text-center text-muted py-4">${escapeHtml(message || 'Memuat data...')}</td></tr>`;
+            managementTableBody.innerHTML = `<tr><td colspan="{{ auth()->user()?->isSuperAdmin() ? 4 : 2 }}" class="text-center text-muted py-4">${escapeHtml(message || 'Memuat data...')}</td></tr>`;
             if (managementPagination) {
                 managementPagination.classList.add('d-none');
                 managementPagination.innerHTML = '';
@@ -563,7 +563,7 @@
             updateSummary(meta.rows || [], meta);
             renderPagination(meta.pagination || {});
             if (!Array.isArray(periods) || periods.length === 0) {
-                managementTableBody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-4">Tidak ada data untuk kriteria ini.</td></tr>';
+                managementTableBody.innerHTML = '<tr><td colspan="{{ auth()->user()?->isSuperAdmin() ? 4 : 2 }}" class="text-center text-muted py-4">Tidak ada data untuk kriteria ini.</td></tr>';
                 syncBulkSelectionUi();
                 return;
             }
@@ -589,9 +589,21 @@
                     const extraFiltersEncoded = encodeExtraFilters(extraFilters);
                     const rowCount = Number(row.row_count || 0);
                     const isChecked = managementState.selectedScopes.has(createScopeKey({ period_filter: row.period_is_null ? '' : String(rowPeriodFilter), kanca_filter: row.kanca_is_null ? '' : String(kanca), period_is_null: !!row.period_is_null, kanca_is_null: !!row.kanca_is_null, extra_filters: extraFilters }));
-                    return `<tr class="management-data-row" data-period="${periodEncoded}" data-period-label="${periodLabelEncoded}" data-kanca="${kancaEncoded}" data-kanca-label="${kancaLabelEncoded}" data-extra-filters="${extraFiltersEncoded}" data-row-count="${rowCount}" data-period-is-null="${periodIsNull}" data-kanca-is-null="${kancaIsNull}"><td class="text-center report-management-col-check"><input type="checkbox" class="management-row-checkbox" data-period="${periodEncoded}" data-period-label="${periodLabelEncoded}" data-kanca="${kancaEncoded}" data-kanca-label="${kancaLabelEncoded}" data-extra-filters="${extraFiltersEncoded}" data-row-count="${rowCount}" data-period-is-null="${periodIsNull}" data-kanca-is-null="${kancaIsNull}" data-period-bucket="${periodBucket}" ${isChecked ? 'checked' : ''}></td><td><span class="report-management-primary">${escapeHtml(kancaLabel)}</span></td><td class="text-right"><span class="report-management-count">${total}</span></td><td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger btn-management-delete report-management-delete-btn" data-period="${periodEncoded}" data-period-label="${periodLabelEncoded}" data-kanca="${kancaEncoded}" data-kanca-label="${kancaLabelEncoded}" data-extra-filters="${extraFiltersEncoded}" data-row-count="${rowCount}" data-period-is-null="${periodIsNull}" data-kanca-is-null="${kancaIsNull}"><i class="fas fa-trash-alt mr-1"></i> Delete</button></td></tr>`;
+                    return `<tr class="management-data-row" data-period="${periodEncoded}" data-period-label="${periodLabelEncoded}" data-kanca="${kancaEncoded}" data-kanca-label="${kancaLabelEncoded}" data-extra-filters="${extraFiltersEncoded}" data-row-count="${rowCount}" data-period-is-null="${periodIsNull}" data-kanca-is-null="${kancaIsNull}">
+                        @if(auth()->user()?->isSuperAdmin())
+                        <td class="text-center report-management-col-check"><input type="checkbox" class="management-row-checkbox" data-period="${periodEncoded}" data-period-label="${periodLabelEncoded}" data-kanca="${kancaEncoded}" data-kanca-label="${kancaLabelEncoded}" data-extra-filters="${extraFiltersEncoded}" data-row-count="${rowCount}" data-period-is-null="${periodIsNull}" data-kanca-is-null="${kancaIsNull}" data-period-bucket="${periodBucket}" ${isChecked ? 'checked' : ''}></td>
+                        @endif
+                        <td><span class="report-management-primary">${escapeHtml(kancaLabel)}</span></td><td class="text-right"><span class="report-management-count">${total}</span></td>
+                        @if(auth()->user()?->isSuperAdmin())
+                        <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger btn-management-delete report-management-delete-btn" data-period="${periodEncoded}" data-period-label="${periodLabelEncoded}" data-kanca="${kancaEncoded}" data-kanca-label="${kancaLabelEncoded}" data-extra-filters="${extraFiltersEncoded}" data-row-count="${rowCount}" data-period-is-null="${periodIsNull}" data-kanca-is-null="${kancaIsNull}"><i class="fas fa-trash-alt mr-1"></i> Delete</button></td>
+                        @endif
+                    </tr>`;
                 }).join('');
-                return `<tr class="report-management-period-row"><td colspan="4"><div class="report-management-period-card"><div><div class="report-management-period-card__title">${escapeHtml(periodLabel)}</div><div class="report-management-period-card__meta">${periodMeta}</div></div><label class="report-management-period-card__toggle"><input type="checkbox" class="management-period-checkbox" data-period-bucket="${periodBucket}"><span>Pilih semua periode ini</span></label></div></td></tr>${renderedRows}`;
+                return `<tr class="report-management-period-row"><td colspan="{{ auth()->user()?->isSuperAdmin() ? 4 : 2 }}"><div class="report-management-period-card"><div><div class="report-management-period-card__title">${escapeHtml(periodLabel)}</div><div class="report-management-period-card__meta">${periodMeta}</div></div>
+                    @if(auth()->user()?->isSuperAdmin())
+                    <label class="report-management-period-card__toggle"><input type="checkbox" class="management-period-checkbox" data-period-bucket="${periodBucket}"><span>Pilih semua periode ini</span></label>
+                    @endif
+                </div></td></tr>${renderedRows}`;
             }).join('');
             syncBulkSelectionUi();
         }
@@ -664,7 +676,7 @@
                 });
 
                 managementState.currentPage = Number(payload.pagination?.current_page || page || 1);
-                setNotice(payload.truncated ? 'warning' : 'info', payload.truncated ? 'Daftar grup dibatasi oleh server untuk menjaga performa. Pagination diterapkan pada hasil grouping yang berhasil dimuat.' : 'Data siap dikelola. Gunakan klik baris, centang per periode, dan pagination agar review data tetap ringkas.');
+                setNotice(payload.truncated ? 'warning' : 'info', payload.truncated ? 'Daftar grup dibatasi oleh server untuk menjaga performa. Pagination diterapkan pada hasil grouping yang berhasil dimuat.' : @json(auth()->user()?->isSuperAdmin() ? 'Data siap dikelola. Gunakan klik baris, centang per periode, dan pagination agar review data tetap ringkas.' : 'Data report siap ditampilkan. Gunakan pagination untuk meninjau periode lainnya.'));
                 renderManagementRows(payload.periods || [], Object.assign({}, payload, { rows: payload.rows || [] }));
             } catch (error) {
                 stopDirectLoadTimer();
@@ -695,6 +707,7 @@
         }
 
         async function deleteManagedScopes(scopes) {
+            if (!@json(auth()->user()?->isSuperAdmin() ?? false)) return;
             const deleteUrl = reportManagementCard?.dataset.deleteUrl;
             const processUrlTemplate = reportManagementCard?.dataset.deleteProcessUrlTemplate;
             const statusUrlTemplate = reportManagementCard?.dataset.deleteStatusUrlTemplate;
@@ -946,7 +959,7 @@
             managementState.activeLoadId = null;
             managementState.selectedScopes.clear();
             stopDirectLoadTimer();
-            if (managementTableBody) managementTableBody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-4"><i class="fas fa-inbox fa-2x mb-2 d-block text-muted opacity-50"></i>Pilih report untuk menampilkan data.</td></tr>';
+            if (managementTableBody) managementTableBody.innerHTML = '<tr><td colspan="{{ auth()->user()?->isSuperAdmin() ? 4 : 2 }}" class="text-center text-muted py-4"><i class="fas fa-inbox fa-2x mb-2 d-block text-muted opacity-50"></i>Pilih report untuk menampilkan data.</td></tr>';
             if (managementPagination) {
                 managementPagination.classList.add('d-none');
                 managementPagination.innerHTML = '';
