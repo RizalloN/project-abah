@@ -46,6 +46,7 @@ class DashboardHarianController extends Controller
         }
 
         $dashboardPage = [
+            'followLatest' => !$request->filled('posisi_terakhir'),
             'routes' => [
                 'data' => $dataUrl,
                 'export' => route('dashboard.harian.export'),
@@ -154,6 +155,7 @@ class DashboardHarianController extends Controller
         $filters = $this->keragaanUkerFilterOptions($selectedPeriod, $selectedKanca, $selectedUnit);
 
         $dashboardPage = [
+            'followLatest' => !$request->filled('posisi_terakhir'),
             'routes' => [
                 'data' => route('dashboard.harian.keragaan-uker.data'),
                 'exportPdf' => route('dashboard.harian.keragaan-uker.export-pdf'),
@@ -182,7 +184,9 @@ class DashboardHarianController extends Controller
     public function keragaanUkerData(Request $request): JsonResponse
     {
         [$selectedKanca, $selectedUnit] = $this->resolveKeragaanUkerFilters($request);
-        $selectedPeriod = $this->dashboardHarianSnapshotService->resolveEffectivePeriod($request->input('posisi_terakhir'));
+        $selectedPeriod = $this->dashboardHarianSnapshotService->resolveEffectivePeriod(
+            $request->boolean('follow_latest') ? null : $request->input('posisi_terakhir')
+        );
         $selectedRka = $this->dashboardHarianSnapshotService->resolveEffectiveRkaPeriod($request->input('posisi_rka'), $selectedPeriod);
         $selectedData = $this->resolveKeragaanUkerDataType($request->input('data_type'));
         $filters = $this->keragaanUkerFilterOptions($selectedPeriod, $selectedKanca, $selectedUnit);
@@ -218,7 +222,9 @@ class DashboardHarianController extends Controller
     public function data(Request $request): JsonResponse
     {
         [$selectedKanca, $selectedUnit] = $this->resolveKeragaanFilters($request);
-        $selectedPeriod = $this->dashboardHarianSnapshotService->resolveEffectivePeriod($request->input('posisi_terakhir'));
+        $selectedPeriod = $this->dashboardHarianSnapshotService->resolveEffectivePeriod(
+            $request->boolean('follow_latest') ? null : $request->input('posisi_terakhir')
+        );
         $selectedRka = $this->dashboardHarianSnapshotService->resolveEffectiveRkaPeriod($request->input('posisi_rka'), $selectedPeriod);
         $selectedMtm = $this->resolveOptionalMtmPeriod($request->input('mtm_period'), $selectedPeriod);
         $selectedYoy = $this->resolveOptionalCustomPeriod($request->input('yoy_period'), $selectedPeriod);

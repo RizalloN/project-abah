@@ -30,6 +30,7 @@ class ImportCleanupService
         'ssa_pinjaman',
         'lw325_ph',
         'gi405_recovery',
+        'gi405_singlerow',
         'performance_pis_per_produk',
     ];
     private const LIGHTWEIGHT_SYNC_TABLES = [
@@ -46,6 +47,7 @@ class ImportCleanupService
         'hourly_dpk' => 'posisi',
         'lw325_ph' => 'periode',
         'gi405_recovery' => 'periode',
+        'gi405_singlerow' => 'periode',
     ];
     private const USE_BATCHING = true;
 

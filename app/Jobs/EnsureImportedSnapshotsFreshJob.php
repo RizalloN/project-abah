@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Jobs\Middleware\DeferSnapshotJobsDuringImport;
 use App\Support\DailyLoanManualSegmentRule;
 use App\Support\DashboardHarianSnapshotService;
+use App\Support\Gi405SingleRowRecoverySource;
 use App\Support\ReportCacheVersion;
 use App\Support\ReportDataSyncService;
 use App\Support\ReportSnapshotBuilder;
@@ -137,6 +138,7 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue, ShouldBeUniqueUnti
                 'hourly_dpk' => $this->ensureHourlyDpkSnapshots($dashboardHarian, $sourceSignatures),
                 'lw325_ph' => $this->ensureReportPhSnapshots($dashboardHarian, $sourceSignatures),
                 'gi405_recovery' => $this->ensureGi405RecoverySnapshots($dashboardHarian, $sourceSignatures),
+                'gi405_singlerow' => $this->ensureGi405RecoverySnapshots($dashboardHarian, $sourceSignatures, 'gi405_singlerow'),
                 'dly_kap_resegmentasi' => $this->ensureFallbackLoanSnapshots($dashboardHarian, 'dly_kap_resegmentasi'),
                 'l1133' => $this->ensureFallbackLoanSnapshots($dashboardHarian, 'l1133'),
                 default => null,
@@ -648,8 +650,11 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue, ShouldBeUniqueUnti
             return;
         }
 
-        $dashboardHarian->rebuild($period, false);
+        $result = $dashboardHarian->rebuild($period, false);
         $after = $this->snapshotRowCount('dashboard_harian_snapshots', 'snapshot_period', $period);
+        if (($result[$period] ?? 0) <= 0 || $after <= 0) {
+            throw new \RuntimeException('Dashboard Harian snapshot was not built for SSA period '.$period);
+        }
         ReportDataSyncService::analyzeTable('dashboard_harian_snapshots');
         $rebuiltAny = true;
 
@@ -736,21 +741,27 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue, ShouldBeUniqueUnti
 
     private function ensureGi405RecoverySnapshots(
         DashboardHarianSnapshotService $dashboardHarian,
-        SnapshotSourceSignatureService $sourceSignatures
+        SnapshotSourceSignatureService $sourceSignatures,
+        string $tableName = 'gi405_recovery'
     ): void
     {
-        $period = $this->resolvePeriod('gi405_recovery', 'periode');
-        if ($period === null || !$this->sourceHasRows('gi405_recovery', 'periode', $period)) {
+        $period = $this->resolvePeriod($tableName, 'periode');
+        if ($period === null || !$this->sourceHasRows($tableName, 'periode', $period)) {
+            return;
+        }
+        if ($tableName === 'gi405_singlerow'
+            && (!app(Gi405SingleRowRecoverySource::class)->availableForPeriod($period)
+                || !$this->dashboardHarianSourcesAreAvailable($period))) {
             return;
         }
 
-        $sourceMetadata = $sourceSignatures->capture('gi405_recovery', 'periode', $period);
+        $sourceMetadata = $sourceSignatures->capture($tableName, 'periode', $period);
         $rebuiltAny = false;
 
         $before = $this->snapshotRowCount('dashboard_harian_snapshots', 'snapshot_period', $period);
         $hasAnomaly = $before > 0 && $this->snapshotHasAnomaly('dashboard_harian_snapshots', $period);
         $isFresh = !$hasAnomaly
-            && $sourceSignatures->isFresh('gi405_recovery', 'dashboard_harian_snapshots', $period, $sourceMetadata, $before);
+            && $sourceSignatures->isFresh($tableName, 'dashboard_harian_snapshots', $period, $sourceMetadata, $before);
         $isStale = $hasAnomaly || !$isFresh;
 
         if ($isFresh) {
@@ -758,13 +769,16 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue, ShouldBeUniqueUnti
         }
 
         $startedAt = microtime(true);
-        $dashboardHarian->rebuild($period, false);
+        $result = $dashboardHarian->rebuild($period, false);
         $after = $this->snapshotRowCount('dashboard_harian_snapshots', 'snapshot_period', $period);
+        if (($result[$period] ?? 0) <= 0 || $after <= 0) {
+            throw new \RuntimeException('Dashboard Harian snapshot was not built for recovery period '.$period);
+        }
         ReportDataSyncService::analyzeTable('dashboard_harian_snapshots');
         $rebuiltAny = true;
 
         if ($sourceMetadata !== null) {
-            $sourceSignatures->markBuilt('gi405_recovery', 'dashboard_harian_snapshots', $period, $sourceMetadata, [
+            $sourceSignatures->markBuilt($tableName, 'dashboard_harian_snapshots', $period, $sourceMetadata, [
                 'period_column' => 'snapshot_period',
                 'source_period' => $period,
                 'rows_before' => $before,
@@ -925,7 +939,7 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue, ShouldBeUniqueUnti
             'ssa_simpanan' => ['period_column' => 'Month_Day_Year_of_Posisi'],
             'ssa_pinjaman' => ['period_column' => 'month_day_year_of_periode'],
             'hourly_dpk' => ['period_column' => 'posisi'],
-            'lw325_ph', 'gi405_recovery', 'dly_kap_resegmentasi', 'l1133' => ['period_column' => 'periode'],
+            'lw325_ph', 'gi405_recovery', 'gi405_singlerow', 'dly_kap_resegmentasi', 'l1133' => ['period_column' => 'periode'],
             default => null,
         };
     }
@@ -1000,7 +1014,7 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue, ShouldBeUniqueUnti
     private function cacheScopeForTable(string $tableName): string
     {
         return match (strtolower(trim($tableName))) {
-            'daily_loan_dinamis', 'ssa_pinjaman', 'lw325_ph', 'gi405_recovery' => 'pinjaman',
+            'daily_loan_dinamis', 'ssa_pinjaman', 'lw325_ph', 'gi405_recovery', 'gi405_singlerow' => 'pinjaman',
             'simpanan_multipn', 'ssa_simpanan', 'hourly_dpk' => 'simpanan',
             'dly_kap_resegmentasi', 'l1133' => 'harian',
             default => 'global',
@@ -1013,7 +1027,8 @@ class EnsureImportedSnapshotsFreshJob implements ShouldQueue, ShouldBeUniqueUnti
         $hasSsaLoan = $this->sourceHasRows('ssa_pinjaman', 'month_day_year_of_periode', $period);
         $hasDlyKap = $this->sourceHasRows('dly_kap_resegmentasi', 'periode', $period);
         $hasL1133 = $this->sourceHasRows('l1133', 'periode', $period);
-        $hasGi405Recovery = !Schema::hasTable('gi405_recovery')
+        $hasGi405Recovery = app(Gi405SingleRowRecoverySource::class)->availableForPeriod($period)
+            || !Schema::hasTable('gi405_recovery')
             || $this->sourceHasRows('gi405_recovery', 'periode', $period);
 
         return $hasSsaSavings

@@ -3092,6 +3092,10 @@
             },
         };
         let latestFilters = initialFilters;
+        let followLatest = page.followLatest === true;
+        let lastAppliedQuery = null;
+        let activeRequest = null;
+        let latestRequestId = 0;
         let latestComparisonPeriods = (initialData && initialData.comparison_periods) ? initialData.comparison_periods : {};
         let mtmOverrideVisible = false;
 
@@ -4415,19 +4419,46 @@
             applyHiddenColumns();
         };
 
-        const fetchData = function () {
+        const updateFollowLatest = function () {
+            followLatest = Boolean(selects.posisi_terakhir.max && selects.posisi_terakhir.value === selects.posisi_terakhir.max);
+        };
+
+        const filterQueryKey = function () {
+            const params = buildQueryParams();
+            params.delete('hidden_columns');
+            params.delete('hidden_rows');
+            return params.toString();
+        };
+
+        const fetchData = function (background = false) {
             if (!dataUrl) {
                 return;
             }
 
             const params = buildQueryParams();
-            tableRegion.classList.add('daily-loading');
-            if (applyButton) {
-                applyButton.disabled = true;
-                applyButton.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Proses...';
+            const requestedQuery = filterQueryKey();
+            if (background && (document.hidden || !followLatest || activeRequest || lastAppliedQuery === null || requestedQuery !== lastAppliedQuery)) {
+                return;
+            }
+            if (activeRequest) {
+                activeRequest.abort();
+            }
+            activeRequest = new AbortController();
+            const requestId = ++latestRequestId;
+            if (followLatest) {
+                params.set('follow_latest', '1');
+            }
+            if (!background) {
+                tableRegion.classList.add('daily-loading');
+                if (applyButton) {
+                    applyButton.disabled = true;
+                    applyButton.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Proses...';
+                }
             }
 
             fetch(dataUrl + '?' + params.toString(), {
+                cache: 'no-store',
+                signal: activeRequest.signal,
                 headers: {
                     'X-Requested-With': 'XMLHttpRequest'
                 }
@@ -4449,14 +4480,28 @@
                     return response.json();
                 })
                 .then(function (payload) {
+                    if (requestId !== latestRequestId || requestedQuery !== filterQueryKey()) {
+                        return;
+                    }
                     applyPayload(payload);
+                    lastAppliedQuery = filterQueryKey();
                 })
                 .catch(function (error) {
+                    if (requestId !== latestRequestId || error.name === 'AbortError') {
+                        return;
+                    }
                     console.error('Gagal memuat data dashboard harian.', error);
+                    if (background) {
+                        return;
+                    }
                     const hidden = positionH1Header && positionH1Header.classList.contains('position-col-hidden');
                     body.innerHTML = '<tr><td colspan="' + (hidden ? 19 : 20) + '" class="daily-empty text-danger"><i class="fas fa-exclamation-triangle mr-2"></i>Gagal memuat data dashboard harian.</td></tr>';
                 })
                 .finally(function () {
+                    if (requestId !== latestRequestId) {
+                        return;
+                    }
+                    activeRequest = null;
                     tableRegion.classList.remove('daily-loading');
                     if (applyButton) {
                         applyButton.disabled = false;
@@ -4917,6 +4962,7 @@ if (window.jQuery && captureModal) {
 
         if (initialData && Object.keys(initialData).length) {
             applyPayload(initialData);
+            lastAppliedQuery = filterQueryKey();
         } else {
             sourceLabel.textContent = '-';
             scheduleTableViewportSync();
@@ -4955,9 +5001,17 @@ if (window.jQuery && captureModal) {
             });
         }
         if (selects.posisi_terakhir) {
-            selects.posisi_terakhir.addEventListener('change', updateFilterSummary);
+            selects.posisi_terakhir.addEventListener('change', function () {
+                updateFollowLatest();
+                updateFilterSummary();
+            });
         }
         updateFilterSummary();
+
+        window.setInterval(function () { fetchData(true); }, 60000);
+        document.addEventListener('visibilitychange', function () {
+            if (!document.hidden) fetchData(true);
+        });
 
         document.querySelectorAll('[data-mtm-toggle]').forEach(function (node) {
             node.addEventListener('dblclick', function (event) {
@@ -5570,6 +5624,7 @@ if (window.jQuery && captureModal) {
                 if (chosenDate) {
                     if (overrideKey === 'current') {
                         if (selects.posisi_terakhir) selects.posisi_terakhir.value = chosenDate;
+                        updateFollowLatest();
                     } else {
                         customPeriods[overrideKey] = chosenDate;
                     }
@@ -5587,8 +5642,9 @@ if (window.jQuery && captureModal) {
                 if (!currentModalColKey) return;
                 const overrideKey = currentModalColKey.replace('pos_', '');
                 if (overrideKey === 'current') {
-                    if (selects.posisi_terakhir && latestFilters.posisi_terakhir && latestFilters.posisi_terakhir.length) {
-                        selects.posisi_terakhir.value = latestFilters.posisi_terakhir[latestFilters.posisi_terakhir.length - 1].value;
+                    if (selects.posisi_terakhir && selects.posisi_terakhir.max) {
+                        selects.posisi_terakhir.value = selects.posisi_terakhir.max;
+                        updateFollowLatest();
                     }
                 } else {
                     customPeriods[overrideKey] = null;

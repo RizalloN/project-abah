@@ -130,7 +130,13 @@ class ImportCleanupServiceTest extends TestCase
         $this->assertNull(Cache::get('snapshot:sync:rerun:daily_loan_dinamis:2026-09-19'));
     }
 
-    public function test_dispatch_imported_job_sync_resolves_gi405_periods_and_dispatches_immediately(): void
+    public static function gi405Sources(): array
+    {
+        return [['gi405_recovery'], ['gi405_singlerow']];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('gi405Sources')]
+    public function test_dispatch_imported_job_sync_resolves_gi405_periods_and_dispatches_immediately(string $tableName): void
     {
         if (!Schema::hasTable('import_jobs')) {
             Schema::create('import_jobs', function (Blueprint $table): void {
@@ -141,10 +147,16 @@ class ImportCleanupServiceTest extends TestCase
             });
         }
 
-        Schema::dropIfExists('gi405_recovery');
-        Schema::create('gi405_recovery', function (Blueprint $table): void {
+        Schema::dropIfExists($tableName);
+        Schema::create($tableName, function (Blueprint $table) use ($tableName): void {
             $table->id();
             $table->date('periode')->nullable();
+            if ($tableName === 'gi405_singlerow') {
+                $table->string('account_number')->default('418020000010');
+                $table->string('currency')->default('IDR');
+                $table->string('posting_control')->default('*POST');
+                $table->decimal('ending_balance', 20, 2)->default(0);
+            }
             $table->timestamps();
         });
 
@@ -153,13 +165,13 @@ class ImportCleanupServiceTest extends TestCase
 
         $jobId = DB::table('import_jobs')->insertGetId([
             'id_report' => 19,
-            'job_context' => json_encode(['table_name' => 'gi405_recovery']),
+            'job_context' => json_encode(['table_name' => $tableName]),
             'created_at' => $createdAt,
             'updated_at' => $updatedAt,
         ]);
 
         foreach (['2026-07-02', '2026-07-03', '2026-07-04'] as $period) {
-            DB::table('gi405_recovery')->insert([
+            DB::table($tableName)->insert([
                 'periode' => $period,
                 'created_at' => $updatedAt,
                 'updated_at' => $updatedAt,
@@ -171,13 +183,13 @@ class ImportCleanupServiceTest extends TestCase
 
         Bus::assertDispatchedTimes(SyncImportedReportJob::class, 3);
         foreach (['2026-07-02', '2026-07-03', '2026-07-04'] as $period) {
-            Bus::assertDispatched(SyncImportedReportJob::class, function (SyncImportedReportJob $job) use ($jobId, $period): bool {
+            Bus::assertDispatched(SyncImportedReportJob::class, function (SyncImportedReportJob $job) use ($jobId, $period, $tableName): bool {
                 return $job->jobId === (int) $jobId
-                    && $job->tableName === 'gi405_recovery'
+                    && $job->tableName === $tableName
                     && $job->periodHint === $period;
             });
 
-            $this->assertNull(Cache::get('snapshot:batch:gi405_recovery:' . $period));
+            $this->assertNull(Cache::get('snapshot:batch:' . $tableName . ':' . $period));
         }
     }
 

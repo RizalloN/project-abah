@@ -274,7 +274,10 @@ class DashboardHarianSnapshotService
     public function rebuild(?string $period = null, bool $force = false, ?callable $progress = null): array
     {
         $results = [];
-        $periods = $this->resolveSharedPeriods($period);
+        // An explicit import period must never fall back to an older cached date.
+        $periods = $period === null
+            ? $this->refreshSharedPeriods()
+            : array_values(array_filter([$this->normalizeDate($period)]));
         $totalPeriods = count($periods);
 
         foreach ($periods as $index => $snapshotPeriod) {
@@ -292,7 +295,12 @@ class DashboardHarianSnapshotService
 
     public function describeRebuildPlan(?string $period = null): array
     {
-        $periods = $this->resolveSharedPeriods($period);
+        $normalizedPeriod = $this->normalizeDate($period);
+        $periods = $period === null
+            ? $this->refreshSharedPeriods()
+            : ($normalizedPeriod !== null && $this->dashboardHarianSourceCombinationAvailable($normalizedPeriod)
+                ? [$normalizedPeriod]
+                : []);
 
         return [
             'periods' => $periods,
@@ -319,7 +327,7 @@ class DashboardHarianSnapshotService
                 $missingPeriods = [];
                 $staleCandidatePeriods = $periodsToCheck;
             } else {
-                $sharedPeriods = $this->resolveSharedPeriods();
+                $sharedPeriods = $this->refreshSharedPeriods();
                 if ($sharedPeriods === []) {
                     return ['built' => 0, 'failed' => 0, 'missing' => [], 'stale' => [], 'checked' => 0];
                 }
@@ -344,6 +352,7 @@ class DashboardHarianSnapshotService
 
             $built = 0;
             $failed = 0;
+            $failedPeriods = [];
 
             $missingPeriods = [];
             $existingPeriodsToValidate = [];
@@ -359,15 +368,19 @@ class DashboardHarianSnapshotService
                 $existingPeriodsToValidate[] = $period;
             }
 
-            $buildDuePeriods = function (array $periods) use (&$built, &$failed): void {
+            $buildDuePeriods = function (array $periods) use (&$built, &$failed, &$failedPeriods): void {
                 foreach (array_values(array_unique($periods)) as $period) {
                     try {
                         $count = $this->buildPeriodSnapshot($period, false);
                         if ($count > 0) {
                             $built++;
+                        } else {
+                            $failed++;
+                            $failedPeriods[] = $period;
                         }
                     } catch (Throwable $e) {
                         $failed++;
+                        $failedPeriods[] = $period;
                         Log::warning('Failed to sync due Dashboard Harian snapshot.', [
                             'period' => $period,
                             'exception' => $e::class,
@@ -400,6 +413,7 @@ class DashboardHarianSnapshotService
             return [
                 'built' => $built,
                 'failed' => $failed,
+                'failed_periods' => array_values(array_unique($failedPeriods)),
                 'missing' => array_values($missingPeriods),
                 'stale' => array_values($stalePeriods),
                 'checked' => count($periodsToCheck),
@@ -407,7 +421,7 @@ class DashboardHarianSnapshotService
         } catch (Throwable $e) {
             Log::error('Failed to sync due Dashboard Harian snapshots', ['error' => $e->getMessage()]);
 
-            return ['built' => 0, 'failed' => 0, 'missing' => [], 'stale' => [], 'checked' => 0];
+            throw $e;
         }
     }
 
@@ -482,22 +496,28 @@ class DashboardHarianSnapshotService
             return Cache::lock($lockName, 600)->block(15, function () use ($period, $force): int {
                 return $this->buildPeriodSnapshotUnlocked($period, $force);
             });
-        } catch (LockTimeoutException) {
-            // Another worker is building this period; return existence state (1 = has data, 0 = empty).
-            return $this->snapshotPeriodHasData($period) ? 1 : 0;
+        } catch (LockTimeoutException $e) {
+            // A stale existing snapshot is not evidence that the other worker succeeded.
+            if ($this->snapshotPeriodHasData($period)
+                && !$this->snapshotPeriodHasDuplicateKeys($period)
+                && $this->snapshotSourceIsFresh($period, $this->buildSourceMetadata($period))) {
+                return (int) DB::table(self::SNAPSHOT_TABLE)->where('snapshot_period', $period)->count();
+            }
+
+            throw $e;
         } catch (Throwable $e) {
             if ($this->isSnapshotGuardException($e)) {
                 throw $e;
             }
 
-            Log::warning('Dashboard Harian snapshot build skipped because snapshot lock is unavailable.', [
+            Log::warning('Dashboard Harian snapshot build failed.', [
                 'period' => $period,
                 'force' => $force,
                 'exception' => $e::class,
                 'error' => $e->getMessage(),
             ]);
 
-            return $this->snapshotPeriodHasData($period) ? 1 : 0;
+            throw $e;
         }
     }
 
@@ -585,8 +605,9 @@ class DashboardHarianSnapshotService
     public function fetchPeriods(): Collection
     {
         $version = ReportCacheVersion::composite(['harian', 'pinjaman', 'simpanan']);
+        $latestShared = $this->resolveSharedPeriods()[0] ?? 'none';
 
-        return Cache::remember("dh:periods:v{$version}", now()->addMinutes(10), function (): Collection {
+        return Cache::remember("dh:periods:v{$version}:latest:{$latestShared}", now()->addMinutes(10), function (): Collection {
             // Check the latest raw shared periods computed from raw source tables
             $shared = $this->resolveSharedPeriods();
             $latestShared = $shared[0] ?? null;
@@ -638,11 +659,22 @@ class DashboardHarianSnapshotService
     public function resolveEffectivePeriod(?string $requestedPeriod): ?string
     {
         $targetDate = $this->normalizeDate($requestedPeriod);
-        $sourcePeriod = $this->resolveSharedPeriods($targetDate)[0] ?? null;
+        if ($targetDate === null) {
+            // Latest-mode requests probe committed sources rather than waiting for cache expiry.
+            $sourcePeriod = $this->refreshSharedPeriods()[0] ?? null;
+        } else {
+            $sourcePeriod = $this->dashboardHarianSourceCombinationAvailable($targetDate)
+                ? $targetDate
+                : ($this->resolveSharedPeriods($targetDate)[0] ?? null);
+        }
 
         if ($sourcePeriod !== null) {
             try {
                 $hasSnapshot = $this->snapshotPeriodHasData($sourcePeriod);
+
+                if ($hasSnapshot && !$this->snapshotSourceIsFresh($sourcePeriod, $this->buildSourceMetadata($sourcePeriod))) {
+                    $this->dispatchSnapshotRebuild($sourcePeriod);
+                }
 
                 if (!$hasSnapshot) {
                     // Always try to build it synchronously on-the-fly to keep local XAMPP / development environments fresh without requiring background workers
@@ -1400,13 +1432,10 @@ class DashboardHarianSnapshotService
 
     private function fetchKeragaanUkerRecoveryRows(array $periods, array|string|null $kancaKey, array|string|null $unitKey): Collection
     {
-        if (!Schema::hasTable('gi405_recovery') || !Schema::hasTable('referensi_uker')) {
+        $query = $this->gi405RecoverySourceQuery($periods);
+        if ($query === null) {
             return collect();
         }
-
-        $query = DB::table('gi405_recovery as gr')
-            ->leftJoin('referensi_uker as ru', 'gr.kode_uker', '=', 'ru.kode_uker')
-            ->whereIn('gr.periode', $periods);
 
         $this->applyKeragaanUkerSourceFilters($query, 'TRIM(COALESCE(ru.nama_cabang, \'\'))', 'TRIM(COALESCE(ru.nama_uker, gr.nama_uker, \'\'))', $kancaKey, $unitKey);
 
@@ -3122,16 +3151,17 @@ class DashboardHarianSnapshotService
         $normalizedPeriod = $this->normalizeDate($period);
         $primaryRows = collect();
 
-        // Tier 1: Check if gi405_recovery table exists and has data for the period
-        if ($normalizedPeriod && Schema::hasTable('gi405_recovery')) {
-            $exists = DB::table('gi405_recovery')->where('periode', $normalizedPeriod)->exists();
-            if ($exists) {
-                $primaryRows = $this->fetchGi405RecoveryAggregates($normalizedPeriod, $kancaKey, $unitKey);
-            }
+        // Select one GI405 source for the whole date, before branch/unit filters.
+        $hasGi405 = $normalizedPeriod && (
+            app(Gi405SingleRowRecoverySource::class)->availableForPeriod($normalizedPeriod)
+            || (Schema::hasTable('gi405_recovery') && DB::table('gi405_recovery')->where('periode', $normalizedPeriod)->exists())
+        );
+        if ($hasGi405) {
+            $primaryRows = $this->fetchGi405RecoveryAggregates($normalizedPeriod, $kancaKey, $unitKey);
         }
 
         // Tier 2: Check Cognos Recovery Table
-        if ($primaryRows->isEmpty() && $normalizedPeriod && Schema::hasTable('cognos_recovery')) {
+        if (!$hasGi405 && $primaryRows->isEmpty() && $normalizedPeriod && Schema::hasTable('cognos_recovery')) {
             $exists = DB::table('cognos_recovery')->where('periode', $normalizedPeriod)->exists();
             if ($exists) {
                 $primaryRows = $this->fetchCognosRecoveryAggregates($normalizedPeriod, $kancaKey, $unitKey);
@@ -3142,7 +3172,7 @@ class DashboardHarianSnapshotService
             ? $this->fetchPhAggregates($normalizedPeriod, $kancaKey, $unitKey)
             : collect();
 
-        if ($primaryRows->isEmpty()) {
+        if ($primaryRows->isEmpty() && !$hasGi405) {
             return $phRows;
         }
 
@@ -3712,20 +3742,53 @@ class DashboardHarianSnapshotService
             ->get();
     }
 
-    private function fetchGi405RecoveryAggregates(string $period, array|string|null $kancaKey = null, array|string|null $unitKey = null): Collection
+    private function gi405RecoverySourceQuery(array $periods): ?\Illuminate\Database\Query\Builder
     {
-        if (!Schema::hasTable('gi405_recovery')) {
-            return collect();
+        if (!Schema::hasTable('referensi_uker')) {
+            return null;
         }
 
+        $source = null;
+        $single = Schema::hasTable('gi405_singlerow')
+            ? app(Gi405SingleRowRecoverySource::class)->query()->whereIn('gr.periode', $periods)
+            : null;
+        if ($single !== null) {
+            $source = (clone $single)->select([
+                'gr.periode', 'gr.branch as kode_uker', 'gr.nama_uker',
+                'gr.ending_balance as pendapatan_koreksi_ppap_dr_angsuran_ph',
+            ]);
+        }
+        if (Schema::hasTable('gi405_recovery')) {
+            $fallback = DB::table('gi405_recovery as gr')
+                ->whereIn('gr.periode', $periods)
+                ->select(['gr.periode', 'gr.kode_uker', 'gr.nama_uker', 'gr.pendapatan_koreksi_ppap_dr_angsuran_ph']);
+            if ($single !== null) {
+                // Never add the processed report to the ledger for the same date.
+                $fallback->whereNotIn('gr.periode', (clone $single)->select('gr.periode')->distinct());
+            }
+            $source = $source === null ? $fallback : $source->unionAll($fallback);
+        }
+        if ($source === null) {
+            return null;
+        }
+
+        $integerType = DB::connection()->getDriverName() === 'sqlite' ? 'INTEGER' : 'UNSIGNED';
+
+        return DB::query()->fromSub($source, 'gr')
+            ->join('referensi_uker as ru', DB::raw("CAST(gr.kode_uker AS {$integerType})"), '=', DB::raw("CAST(ru.kode_uker AS {$integerType})"));
+    }
+
+    private function fetchGi405RecoveryAggregates(string $period, array|string|null $kancaKey = null, array|string|null $unitKey = null): Collection
+    {
         $normalizedSnapshotPeriod = $this->normalizeDate($period);
         if ($normalizedSnapshotPeriod === null) {
             return collect();
         }
 
-        $query = DB::table('gi405_recovery as gr')
-            ->join('referensi_uker as ru', 'gr.kode_uker', '=', 'ru.kode_uker')
-            ->where('gr.periode', $normalizedSnapshotPeriod);
+        $query = $this->gi405RecoverySourceQuery([$normalizedSnapshotPeriod]);
+        if ($query === null) {
+            return collect();
+        }
 
         $normalizedKanca = $this->normalizeFilterValues($kancaKey);
         if ($normalizedKanca !== []) {
@@ -3760,13 +3823,15 @@ class DashboardHarianSnapshotService
         }
 
         $valExpr = "COALESCE(gr.pendapatan_koreksi_ppap_dr_angsuran_ph, 0) * -1";
+        $unitName = "UPPER(TRIM(COALESCE(ru.nama_uker, '')))";
+        $microUnit = "({$unitName} LIKE 'UNIT%' OR {$unitName} LIKE '%-- UNIT%')";
 
         return $query
             ->selectRaw("ru.nama_cabang as raw_kanca")
             ->selectRaw("ru.nama_uker as raw_unit")
-            ->selectRaw("SUM(CASE WHEN UPPER(TRIM(SUBSTRING_INDEX(ru.nama_uker, ' -- ', -1))) NOT LIKE 'UNIT%' THEN {$valExpr} ELSE 0 END) as rec_dh_small")
+            ->selectRaw("SUM(CASE WHEN NOT {$microUnit} THEN {$valExpr} ELSE 0 END) as rec_dh_small")
             ->selectRaw("0 as rec_dh_consumer")
-            ->selectRaw("SUM(CASE WHEN UPPER(TRIM(SUBSTRING_INDEX(ru.nama_uker, ' -- ', -1))) LIKE 'UNIT%' THEN {$valExpr} ELSE 0 END) as rec_dh_micro")
+            ->selectRaw("SUM(CASE WHEN {$microUnit} THEN {$valExpr} ELSE 0 END) as rec_dh_micro")
             ->selectRaw("SUM({$valExpr}) as rec_dh_total")
             ->selectRaw("0 as ph_tupok")
             ->selectRaw("0 as ph_lunas")
@@ -4610,6 +4675,11 @@ class DashboardHarianSnapshotService
         return $normalizedDate ? Carbon::parse($normalizedDate)->format('Y-m') : null;
     }
 
+    private function refreshSharedPeriods(): array
+    {
+        return $this->sharedPeriodsRequestCache = $this->computeSharedPeriods();
+    }
+
     private function resolveSharedPeriods(?string $targetDate = null): array
     {
         // Layer 1: in-request memoization — eliminates repeated DB hits within the same request.
@@ -4812,6 +4882,9 @@ class DashboardHarianSnapshotService
         }
 
         foreach ($this->resolveRecentSourcePeriods('gi405_recovery', 'periode') as $period) {
+            $candidates[] = $period;
+        }
+        foreach ($this->resolveRecentSourcePeriods('gi405_singlerow', 'periode') as $period) {
             $candidates[] = $period;
         }
 
@@ -5116,6 +5189,11 @@ class DashboardHarianSnapshotService
     private function sourceRecoveryState(string $period): array
     {
         $normalizedPeriod = $this->normalizeDate($period);
+
+        $single = app(Gi405SingleRowRecoverySource::class);
+        if ($normalizedPeriod && $single->availableForPeriod($normalizedPeriod)) {
+            return ['gi405_singlerow', $normalizedPeriod, $single->state($normalizedPeriod)];
+        }
 
         if ($normalizedPeriod && Schema::hasTable('gi405_recovery')) {
             $exists = DB::table('gi405_recovery')->where('periode', $normalizedPeriod)->exists();
@@ -6007,7 +6085,7 @@ class DashboardHarianSnapshotService
         ?string $recoverySegment,
         ?string $recoveryProduct
     ): array {
-        if (!Schema::hasTable('gi405_recovery') || !Schema::hasTable('referensi_uker')) {
+        if ((!Schema::hasTable('gi405_recovery') && !Schema::hasTable('gi405_singlerow')) || !Schema::hasTable('referensi_uker')) {
             return [
                 'series' => [],
                 'area_total' => [],
@@ -6119,9 +6197,14 @@ class DashboardHarianSnapshotService
         array $kancas,
         array $units
     ): Collection {
-        $query = DB::table('gi405_recovery as gr')
-            ->join('referensi_uker as ru', 'gr.kode_uker', '=', 'ru.kode_uker')
-            ->whereBetween('gr.periode', [Carbon::parse($monthStart)->subDay()->toDateString(), $monthEnd]);
+        $periods = [];
+        for ($day = Carbon::parse($monthStart)->subDay(); $day->toDateString() <= $monthEnd; $day->addDay()) {
+            $periods[] = $day->toDateString();
+        }
+        $query = $this->gi405RecoverySourceQuery($periods);
+        if ($query === null) {
+            return collect();
+        }
 
         $this->applyGi405RecoveryTimeseriesFilters($query, $kancas, $units, $type);
 

@@ -1032,6 +1032,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
 
         const globalSelector = document.getElementById('pres-global-scope-selector');
+        setText('pres-global-scope-label', activeScopeLabel(data));
         if (globalSelector) {
           globalSelector.innerHTML = options.map(option => `
             <option value="${escapeHtml(option.key)}">${escapeHtml(option.label)}</option>

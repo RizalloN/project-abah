@@ -64,82 +64,245 @@ function sectorGeometry(THREE, inner, outer, start, end, depth) {
 
 export function marketRingWorld(stage, data) {
     const { THREE, scene, camera } = stage;
-    stage.useStudio(0.5);
-    stage.useLights({ key: [3.5, 7, 4], shadowSize: 4 });
-    stage.shadowFloor(16, 0.45);
+    stage.animated = true;
+    stage.useStudio(0.85);
+    stage.useLights({ key: [-3, 7, 5], keyIntensity: 2.1, shadowSize: 5 });
+    stage.shadowFloor(18, 0.4, -0.28);
     const root = new THREE.Group();
     scene.add(root);
-    const target = new THREE.Vector3(0, 0.25, 0);
-    let rings = [];
-
-    const shareMaterial = (lightness) => new THREE.MeshPhysicalMaterial({ color: new THREE.Color().setHSL(0.6, 0.9, lightness), roughness: 0.3, metalness: 0, clearcoat: 0.7, clearcoatRoughness: 0.12 });
-    const restMaterial = new THREE.MeshPhysicalMaterial({ color: 0x8fa6c8, roughness: 0.45, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.25, transparent: true, opacity: 0.24, depthWrite: false });
-
-    const build = (next) => {
-        rings.forEach(({ group }) => disposeGroup(group));
+    const chart = new THREE.Group();
+    root.add(chart);
+    const target = new THREE.Vector3(0, 0.2, 0);
+    // These two fine rims are the physical mount, not additional market-share series.
+    const mountMaterial = new THREE.MeshPhysicalMaterial({ color: 0x91aec4, metalness: 0.9, roughness: 0.26, clearcoat: 0.45 });
+    const mountGeometry = new THREE.TorusGeometry(2.88, 0.025, 10, 144);
+    const innerGeometry = new THREE.TorusGeometry(1.29, 0.018, 8, 112);
+    const mounts = [mountGeometry, innerGeometry].map((geometry) => {
+        const mesh = new THREE.Mesh(geometry, mountMaterial);
+        mesh.rotation.x = -Math.PI / 2;
+        mesh.position.y = -0.16;
+        mesh.castShadow = true;
+        root.add(mesh);
+        return mesh;
+    });
+    let pieces = [];
+    let qualityTracks = [];
+    let caption = null;
+    let payload = data || {};
+    let activeKey = null;
+    let sceneProgress = 0;
+    let sceneStarted = null;
+    let qualityMode = false;
+    let morph = null;
+    let disposed = false;
+    let frameWidth = stage.width || 1;
+    let frameHeight = stage.height || 1;
+    const staged = Boolean(stage.host?.hasAttribute?.('data-market-stage'));
+    const validShare = (value) => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100;
+    const scenes = () => Array.isArray(payload?.market?.scenes) ? payload.market.scenes.filter(Boolean) : [];
+    const selectedMarket = () => scenes().find((item) => String(item.key) === activeKey) || payload?.market || {};
+    const releaseChart = () => {
+        pieces.forEach(({ mesh }) => { mesh.geometry.dispose(); mesh.material.dispose(); });
+        qualityTracks.forEach(({ mesh }) => { mesh.geometry.dispose(); mesh.material.dispose(); });
+        pieces = [];
+        qualityTracks = [];
+        chart.clear();
         stage.clearLabels();
-        const market = next?.market || {};
-        const entries = [market.total, ...(market.branches || [])].filter((entry) => entry && finite(entry.share) > 0).slice(0, 5);
-        const widths = entries.map((_, index) => (index === 0 ? [1.42, 2.02, 0.34] : [1.2 - ((index - 1) * 0.25), 1.36 - ((index - 1) * 0.25), 0.2]));
-        rings = entries.map((entry, index) => {
-            const [inner, outer, depth] = widths[index];
-            const share = Math.min(0.999, finite(entry.share) / 100) * Math.PI * 2;
-            const start = Math.PI * 0.5;
-            const group = new THREE.Group();
-            const slice = new THREE.Mesh(sectorGeometry(THREE, inner, outer, start, start + share, depth), shareMaterial(index === 0 ? 0.36 : 0.4 + (index * 0.06)));
-            const rest = new THREE.Mesh(sectorGeometry(THREE, inner, outer, start + share + 0.03, start + (Math.PI * 2) - 0.03, depth * 0.82), restMaterial);
-            rest.material.userData.shared = true;
-            slice.castShadow = true;
-            rest.castShadow = true;
-            group.add(rest);
-            const lift = new THREE.Group();
-            lift.add(slice);
-            group.add(lift);
-            group.position.y = index === 0 ? 0 : 0.06 + (index * 0.12);
-            root.add(group);
-            const label = index === 0 ? stage.label('pres-world__label--lead', `<b>${escape(entry.label)}</b><span>${escape(entry.name)}</span>`) : null;
-            const middle = start + (share / 2);
-            const anchor = new THREE.Vector3(Math.cos(middle) * (outer + 0.12), depth + 0.2, -Math.sin(middle) * (outer + 0.12));
-            const swatch = `#${slice.material.color.getHexString()}`;
-            return { group, lift, slice, label, anchor, index, depth, entry, swatch };
-        });
-        // Branch rings read from one legend beside the sculpture, inner ring last.
-        const branches = rings.filter((ring) => ring.index > 0);
-        legend = branches.length ? stage.label('pres-world__label--legend', branches.map((ring) => `<p><i style="--tone:${ring.swatch}"></i><span>${escape(ring.entry.name)}</span><b>${escape(ring.entry.label)}</b></p>`).join('')) : null;
+        caption = null;
     };
-    let legend = null;
-    const legendAnchor = new THREE.Vector3(0, 0, 2.6);
-    build(data);
-    const anchorWorld = new THREE.Vector3();
-
+    const shareTag = (bank) => `<i style="--bank:${escape(bank.color)}"></i><b>${escape(bank.label ?? `${bank.share}%`)}</b><span>${escape(String(bank.name || '').replace(/\s*\(agregat\)$/i, ''))}</span>`;
+    const shareEntries = (market) => (market.kind === 'quality' ? [] : (Array.isArray(market.competitors) ? market.competitors.filter((bank) => bank && validShare(bank.share) && bank.share > 0) : []));
+    /** Re-cut the ring at the given shares; slices stay in order from twelve o'clock. */
+    const reshape = (shares) => {
+        let start = Math.PI * 0.5;
+        pieces.forEach((piece, index) => {
+            const arc = Math.max(0.0001, shares[index] / 100 * Math.PI * 2);
+            piece.mesh.geometry.dispose();
+            piece.mesh.geometry = sectorGeometry(THREE, 1.42, 2.72, start, start + arc, 0.48);
+            piece.middle = start + arc / 2;
+            start += arc;
+        });
+    };
+    /**
+     * Between two share scenes the ring is not rebuilt: it lifts, turns once,
+     * and its slices grow or shrink into the new shares while the colours blend.
+     */
+    const morphTo = (market) => {
+        const next = shareEntries(market);
+        if (qualityMode || !pieces.length || next.length !== pieces.length) return false;
+        morph = {
+            started: null,
+            swapped: false,
+            market,
+            from: pieces.map((piece) => piece.share),
+            to: next.map((bank) => bank.share),
+            fromColors: pieces.map((piece) => piece.mesh.material.color.clone()),
+            toColors: next.map((bank) => new THREE.Color(bank.color)),
+            banks: next,
+        };
+        return true;
+    };
+    const build = (market) => {
+        morph = null;
+        releaseChart();
+        sceneStarted = null;
+        qualityMode = market.kind === 'quality';
+        let start = Math.PI * 0.5;
+        const entries = qualityMode ? (Array.isArray(market.quality) ? market.quality.filter(Boolean).slice(0, 2) : []) : (Array.isArray(market.competitors) ? market.competitors.filter(Boolean) : []);
+        if (qualityMode) entries.forEach((entry, index) => {
+            const x = (index - (entries.length - 1) / 2) * 3.25;
+            const track = new THREE.Mesh(sectorGeometry(THREE, 0.90, 1.38, 0, Math.PI * 2, 0.28), new THREE.MeshPhysicalMaterial({
+                color: 0x61778c, metalness: 0.35, roughness: 0.40, clearcoat: 0.55, transparent: true, opacity: 0.38,
+            }));
+            track.position.set(x, -0.04, 0);
+            track.castShadow = true;
+            chart.add(track);
+            qualityTracks.push({ mesh: track, x, index });
+        });
+        pieces = entries.filter((bank) => validShare(bank.share) && bank.share > 0).map((bank, index) => {
+            const sourceIndex = entries.indexOf(bank);
+            const arc = bank.share / 100 * Math.PI * 2;
+            const beginning = qualityMode ? Math.PI * 0.5 : start;
+            const middle = beginning + arc / 2;
+            const material = new THREE.MeshPhysicalMaterial({ color: bank.color, roughness: index === 0 ? 0.19 : 0.34, metalness: index === 0 ? 0.30 : 0.16, clearcoat: 0.9, clearcoatRoughness: 0.14, emissive: bank.color, emissiveIntensity: 0.035 });
+            // Quality shares have two independent full-scale tracks; only deposit/loan shares compose one whole.
+            const mesh = new THREE.Mesh(qualityMode
+                ? sectorGeometry(THREE, 0.90, 1.38, beginning, beginning + arc, 0.30)
+                : sectorGeometry(THREE, 1.42, 2.72, beginning, beginning + arc, 0.48), material);
+            if (!qualityMode) start += arc;
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            chart.add(mesh);
+            // Every slice prints its own share on its top face, in the slice colour.
+            const tag = stage.label('pres-world__label--market-share', shareTag(bank));
+            return {
+                mesh, index: sourceIndex, middle, tag, share: bank.share,
+                x: qualityMode ? (sourceIndex - (entries.length - 1) / 2) * 3.25 : 0,
+                radius: qualityMode ? 1.14 : 2.07,
+                top: qualityMode ? 0.34 : 0.52,
+            };
+        });
+        mounts.forEach((mount) => { mount.visible = !qualityMode && pieces.length > 0; });
+        const qualityLabels = entries.map((entry) => `${entry.name}: ${entry.label ?? 'Belum tersedia'}`).join(' · ');
+        if (entries.length) {
+            caption = stage.label('pres-world__label--market-meta', `<b>${escape(market.segment)}</b><span>${escape(qualityMode ? qualityLabels : market.period)}</span>${qualityMode ? '<small>Masing-masing terhadap SML atau NPL industri, skala 0–100%</small>' : ''}`);
+            if (caption.style) {
+                caption.style.whiteSpace = 'normal';
+                caption.style.width = 'max-content';
+                caption.style.maxWidth = 'calc(100% - 24px)';
+                caption.style.translate = '-50% 0';
+            }
+        }
+    };
+    if (staged) {
+        const requested = String(stage.host.dataset?.marketScene || '');
+        activeKey = scenes().find((item) => String(item.key) === requested)
+            ? requested
+            : (scenes().length ? String(scenes()[0].key) : null);
+        const requestedProgress = Number(stage.host.dataset?.marketProgress);
+        if (Number.isFinite(requestedProgress)) sceneProgress = clamp01(requestedProgress);
+    }
+    build(selectedMarket());
+    const onFocus = (event) => {
+        if (disposed || !staged) return;
+        const key = String(event.detail?.key ?? '');
+        const selected = scenes().find((item) => String(item.key) === key);
+        if (!selected) return;
+        if (typeof event.detail?.progress === 'number' && Number.isFinite(event.detail.progress)) sceneProgress = clamp01(event.detail.progress);
+        if (key !== activeKey) { activeKey = key; if (!morphTo(selected)) build(selected); }
+        if (typeof CustomEvent !== 'undefined') stage.host.dispatchEvent(new CustomEvent('worlddirty', { bubbles: true }));
+    };
+    if (staged) stage.host.addEventListener('marketfocus', onFocus);
+    const captionAnchor = new THREE.Vector3(0, 0, 3.5);
+    const shareAnchor = new THREE.Vector3();
+    const safeCaptionAnchor = new THREE.Vector3();
+    let captionOpacity = 0;
     return {
         resize(width, height) {
-            const wide = sideShift(stage, width, height, 'lead');
-            stage.shift = wide ? { x: 0.22, y: -0.12 } : { x: 0, y: 0.2 };
+            frameWidth = width;
+            frameHeight = height;
+            stage.shift = { x: 0, y: 0 };
         },
-        setData(next) { build(next); },
+        setData(next) {
+            payload = next || {};
+            if (activeKey !== null && !scenes().some((item) => String(item.key) === activeKey)) activeKey = null;
+            build(selectedMarket());
+        },
         update(progress, time, pointer, still) {
-            const p = still ? 1 : progress;
-            rings.forEach((ring) => {
-                const k = easeBack(range(p, 0.04 + (ring.index * 0.07), 0.4 + (ring.index * 0.07)));
-                ring.lift.position.y = lerp(-0.9, 0.16 * easeOut(range(p, 0.5, 0.8)), Math.min(1, k));
-                ring.lift.rotation.y = (1 - Math.min(1, k)) * -80 * DEG;
-                ring.slice.material.opacity = 1;
+            sceneStarted ??= time;
+            const entrance = still || stage.motionPaused ? 1 : easeOut(clamp01((time - sceneStarted) / 0.55));
+            const p = still ? 1 : staged ? lerp(0.08, 0.62 + sceneProgress * 0.38, entrance) : progress;
+            const settle = easeInOut(range(p, 0.05, 0.55));
+            const ambient = still ? 0 : time;
+            const hover = still ? 0 : Math.sin(ambient * 0.65) * 0.055;
+            let arch = 0;
+            let turn = 0;
+            if (morph) {
+                morph.started ??= time;
+                const raw = still || stage.motionPaused ? 1 : clamp01((time - morph.started) / 1.15);
+                const t = easeInOut(raw);
+                arch = Math.sin(raw * Math.PI);
+                turn = t * 360;
+                reshape(morph.from.map((share, index) => lerp(share, morph.to[index], t)));
+                pieces.forEach((piece, index) => {
+                    piece.mesh.material.color.lerpColors(morph.fromColors[index], morph.toColors[index], t);
+                    piece.mesh.material.emissive.copy(piece.mesh.material.color);
+                });
+                // The printed shares change while the ring is at its highest, out of reading range.
+                if (!morph.swapped && raw >= 0.5) {
+                    morph.swapped = true;
+                    pieces.forEach((piece, index) => { if (piece.tag) piece.tag.innerHTML = shareTag(morph.banks[index]); });
+                    if (caption) caption.innerHTML = `<b>${escape(morph.market.segment)}</b><span>${escape(morph.market.period)}</span>`;
+                }
+                if (raw >= 1) {
+                    pieces.forEach((piece, index) => { piece.share = morph.to[index]; });
+                    morph = null;
+                    turn = 0;
+                }
+            }
+            pieces.forEach(({ mesh, index, middle, x }) => {
+                const local = still ? 1 : easeOut(range(p, 0.025 + index * 0.055, 0.44 + index * 0.045));
+                const separation = (1 - local) * 0.7 + arch * (index === 0 ? 0.55 : 0.3);
+                mesh.position.set(x + Math.cos(middle) * separation, lerp(index === 0 ? 1.15 : -0.08, 0.14, local) + hover + arch * (index === 0 ? 0.75 : 0.4), -Math.sin(middle) * separation);
+                mesh.rotation.y = (1 - local) * (index === 0 ? -32 : 20) * DEG;
+                mesh.scale.y = lerp(0.32, 1, local);
+                mesh.material.emissiveIntensity = 0.035 + (still ? 0 : (Math.sin(ambient * 0.42 + index * 1.7) + 1) * 0.018);
             });
-            root.rotation.y = (still ? 0 : time * 0.04) + (p * 50 * DEG);
-            orbit(camera, { target, distance: lerp(15.4, 13.8, easeInOut(p)), azimuth: lerp(-24, 8, p), elevation: lerp(26, 38, p), pointer });
+            qualityTracks.forEach(({ mesh, x, index }) => {
+                mesh.position.set(x, -0.04 - (1 - settle) * (0.15 + index * 0.12) + hover, 0);
+            });
+            root.rotation.y = (lerp(qualityMode ? -12 : -30, qualityMode ? 3 : 15, settle) + turn + (still ? 0 : Math.sin(ambient * 0.13) * (qualityMode ? 3 : 7))) * DEG;
+            root.rotation.x = arch * 10 * DEG;
+            mounts.forEach((mount, index) => { mount.position.y = -0.16 - (1 - settle) * (0.2 + index * 0.12); });
+            const compactStage = staged && frameHeight < 200 && frameWidth / frameHeight > 1.65;
+            const cameraDistance = compactStage ? (qualityMode ? 9 : 11) : lerp(16.2, 14.2, settle);
+            orbit(camera, { target, distance: cameraDistance, azimuth: lerp(-22, 8, settle) + (still ? 0 : Math.sin(ambient * 0.17) * 2.2), elevation: lerp(29, 49, settle) + (still ? 0 : Math.sin(ambient * 0.14) * 1.5), pointer });
+            captionOpacity = easeOut(range(p, 0.35, 0.65)) * (1 - arch * 0.95);
         },
         afterRender(progress) {
-            const reveal = range(progress, 0.42, 0.56);
-            rings.forEach((ring) => {
-                if (!ring.label) return;
-                anchorWorld.copy(ring.anchor);
-                ring.lift.localToWorld(anchorWorld);
-                stage.place(ring.label, anchorWorld, { opacity: reveal, hide: reveal <= 0 });
+            pieces.forEach(({ mesh, middle, radius, top, tag }) => {
+                if (!tag) return;
+                // Geometry is rotated onto the floor: shape (x, y) maps to local (x, depth, -y).
+                shareAnchor.set(Math.cos(middle) * radius, top, -Math.sin(middle) * radius);
+                mesh.localToWorld(shareAnchor);
+                stage.place(tag, shareAnchor, { opacity: captionOpacity });
             });
-            if (legend) stage.place(legend, legendAnchor, { opacity: reveal, hide: reveal <= 0 });
+            if (!caption) return;
+            safeCaptionAnchor.copy(captionAnchor).project(camera);
+            const marginX = Math.min(frameWidth / 2, (caption.offsetWidth || 220) / 2 + 12);
+            const bottom = Math.max(12, frameHeight - (caption.offsetHeight || 64) - 12);
+            safeCaptionAnchor.x = Math.max(-1 + marginX * 2 / frameWidth, Math.min(1 - marginX * 2 / frameWidth, safeCaptionAnchor.x));
+            const y = Math.max(12, Math.min(bottom, (1 - safeCaptionAnchor.y) * frameHeight / 2));
+            safeCaptionAnchor.y = 1 - y * 2 / frameHeight;
+            safeCaptionAnchor.unproject(camera);
+            stage.place(caption, safeCaptionAnchor, { opacity: captionOpacity });
         },
-        dispose() { restMaterial.dispose(); },
+        dispose() {
+            disposed = true;
+            if (staged) stage.host.removeEventListener('marketfocus', onFocus);
+            releaseChart();
+            mountGeometry.dispose(); innerGeometry.dispose(); mountMaterial.dispose();
+        },
     };
 }
 
@@ -163,6 +326,7 @@ const COIN_FINISH = {
 
 export function coinVaultWorld(stage, data) {
     const { THREE, scene, camera } = stage;
+    stage.animated = true;
     stage.useStudio(1.1);
     stage.useLights({ key: [3, 8, 5], keyIntensity: 2.8, shadowSize: 5 });
     stage.shadowFloor(20, 0.5);
@@ -172,7 +336,7 @@ export function coinVaultWorld(stage, data) {
     const quaternion = new THREE.Quaternion();
     const scale = new THREE.Vector3();
     const position = new THREE.Vector3();
-    const axis = new THREE.Vector3(0, 1, 0);
+    const coinEuler = new THREE.Euler();
     let stacks = [];
 
     const build = (next) => {
@@ -215,14 +379,17 @@ export function coinVaultWorld(stage, data) {
                     const k = still ? 1 : range(p, start, start + 0.07);
                     const fall = 1 - easeOut(k);
                     const jitter = stack.jitter[index];
-                    position.set(stack.x + jitter.x, 0.047 + (index * 0.093) + (fall * 1.6), jitter.z);
-                    quaternion.setFromAxisAngle(axis, jitter.spin + (fall * 2.4));
+                    const approach = (stack.stackIndex % 2 === 0 ? -1 : 1) * fall;
+                    position.set(stack.x + jitter.x + approach * 0.22, 0.047 + (index * 0.093) + (fall * 1.6), jitter.z + fall * 0.32);
+                    coinEuler.set(jitter.tilt + fall * 0.18, jitter.spin + (fall * 2.4), approach * 0.12);
+                    quaternion.setFromEuler(coinEuler);
                     scale.setScalar(k > 0 ? 1 : 0.0001);
                     matrix.compose(position, quaternion, scale);
                     stack.mesh.setMatrixAt(index, matrix);
                 }
                 stack.mesh.instanceMatrix.needsUpdate = true;
             });
+            if (stage.keyLight) stage.keyLight.intensity = 2.8 + (still ? 0 : Math.sin(time * 0.22) * 0.12);
             orbit(camera, { target, distance: lerp(11, 9.6, easeInOut(p)), azimuth: lerp(-22, 14, p) + (still ? 0 : Math.sin(time * 0.2) * 1.5), elevation: lerp(14, 22, p), pointer });
         },
         afterRender(progress) {
@@ -243,6 +410,7 @@ const SEGMENT_GLASS = {
 
 export function glassSkylineWorld(stage, data) {
     const { THREE, scene, camera } = stage;
+    stage.animated = true;
     stage.useStudio(1.0);
     stage.useLights({ key: [6, 10, 7], keyIntensity: 2.6, shadowSize: 8 });
     stage.shadowFloor(30, 0.5, -0.12);
@@ -301,7 +469,7 @@ export function glassSkylineWorld(stage, data) {
                 core.scale.set(width * 0.26, height * 0.98, width * 0.26);
                 tower.add(core, plates, glass);
                 city.add(tower);
-                towers.push({ tower, row, column, value: finite(segment.value) });
+                towers.push({ tower, glass, row, column, value: finite(segment.value) });
             });
         });
         rowLabels = branches.map((branch, row) => ({
@@ -327,16 +495,19 @@ export function glassSkylineWorld(stage, data) {
         setData(next) { build(next); },
         update(progress, time, pointer, still) {
             const p = still ? 1 : progress;
-            towers.forEach(({ tower, row, column }) => {
+            towers.forEach(({ tower, glass, row, column }) => {
                 const start = 0.04 + (row * 0.06) + (column * 0.05);
                 const k = still ? 1 : easeOut(range(p, start, start + 0.36));
                 tower.scale.set(1, Math.max(0.001, k), 1);
+                glass.material.emissiveIntensity = 0.12 + k * 0.04 + (still ? 0 : (Math.sin(time * 0.35 - row * 0.55 - column * 0.4) + 1) * 0.025);
             });
+            city.rotation.y = ((1 - easeOut(range(p, 0.02, 0.55))) * -8 + (still ? 0 : Math.sin(time * 0.15) * 1.4)) * DEG;
             orbit(camera, { target, distance: lerp(15.5, 13.2, easeInOut(p)), azimuth: lerp(46, 18, p) + (still ? 0 : Math.sin(time * 0.16) * 1.2), elevation: lerp(16, 28, easeInOut(p)), pointer });
         },
         afterRender(progress) {
             const reveal = range(progress, 0.32, 0.5);
-            rowLabels.forEach(({ element, position }) => stage.place(element, position, { opacity: reveal, hide: reveal <= 0 }));
+            city.updateMatrixWorld(true);
+            rowLabels.forEach(({ element, position }) => stage.place(element, city.localToWorld(position.clone()), { opacity: reveal, hide: reveal <= 0 }));
         },
         dispose() {
             box.dispose();
@@ -362,6 +533,7 @@ function crossSection(level) {
 
 export function riskCapsuleWorld(stage, data) {
     const { THREE, scene, camera, renderer } = stage;
+    stage.animated = true;
     renderer.localClippingEnabled = true;
     stage.useStudio(1.2);
     stage.useLights({ key: [3, 6, 5], keyIntensity: 2.2, shadowSize: 4 });
@@ -445,6 +617,9 @@ export function riskCapsuleWorld(stage, data) {
                 const level = INNER_BOTTOM + (INNER_HEIGHT * capsule.ratio * fill);
                 capsule.level = level;
                 capsule.plane.constant = level;
+                capsule.liquid.visible = capsule.ratio * fill > 0;
+                capsule.meniscus.visible = capsule.ratio * fill > 0;
+                capsule.bubbles.visible = capsule.ratio * fill > 0;
                 capsule.meniscus.position.y = level + 0.001;
                 capsule.meniscus.scale.setScalar(capsule.ratio * fill > 0.002 ? crossSection(level) : 0.0001);
                 for (let index = 0; index < capsule.seeds.length; index += 1) {
@@ -458,7 +633,7 @@ export function riskCapsuleWorld(stage, data) {
             });
             group.rotation.y = (pointer.x * 8 * DEG) + (still ? 0 : Math.sin(time * 0.3) * 2 * DEG);
             target.y = 0.15;
-            orbit(camera, { target, distance: lerp(12.6, 11.4, easeInOut(p)), azimuth: lerp(-10, 6, p), elevation: lerp(4, 10, p), pointer });
+            orbit(camera, { target, distance: lerp(12.6, 11.4, easeInOut(p)), azimuth: lerp(-14, 7, p) + (still ? 0 : Math.sin(time * 0.16) * 1.3), elevation: lerp(4, 10, p), pointer });
         },
         afterRender(progress) {
             const reveal = range(progress, 0.2, 0.36);
@@ -487,6 +662,7 @@ export function riskCapsuleWorld(stage, data) {
 
 export function trendRibbonWorld(stage, data) {
     const { THREE, scene, camera } = stage;
+    stage.animated = true;
     stage.useStudio(0.9);
     stage.useLights({ key: [4, 9, 6], keyIntensity: 2.2, shadow: false });
     const root = new THREE.Group();
@@ -550,14 +726,15 @@ export function trendRibbonWorld(stage, data) {
                 group.add(bead);
                 return bead;
             });
-            group.add(curtain, tube);
+            const tracer = new THREE.Mesh(new THREE.SphereGeometry(0.052, 16, 12), new THREE.MeshPhysicalMaterial({ color: 0xffffff, emissive: tone, emissiveIntensity: 0.65, metalness: 0.25, roughness: 0.12 }));
+            group.add(curtain, tube, tracer);
             root.add(group);
             const tag = stage.label('pres-world__label--series', `<i style="--tone:${escape(item.color || '#4c95ff')}"></i><b>${escape(item.label)}</b>`);
             const readings = points.map((point, pointIndex) => ({
                 element: stage.label('pres-world__label--reading', `<b>${escape((item.display || [])[item.values.length - count + pointIndex] || '')}</b>`),
                 position: point.clone().add(new THREE.Vector3(0, 0.32, 0)),
             }));
-            return { group, tube, curtain, beads, points, readings, tag, samples, z };
+            return { group, tube, curtain, tracer, curve, beads, points, readings, tag, samples, z };
         });
         months = labels.slice(-count).map((label, index) => ({
             element: stage.label('pres-world__label--month', escape(label)),
@@ -578,16 +755,22 @@ export function trendRibbonWorld(stage, data) {
             const travel = easeInOut(range(p, 0.06, 0.92));
             const focusX = lerp(0, length, travel);
             focus.set(focusX, 0, 0);
-            ribbons.forEach((ribbon) => {
+            ribbons.forEach((ribbon, index) => {
                 const drawn = still ? 1 : Math.min(1, ((focusX + 1.6) / Math.max(0.001, length)));
                 const tubeCount = ribbon.tube.geometry.index.count;
                 ribbon.tube.geometry.setDrawRange(0, Math.ceil((tubeCount / 6) * drawn) * 6);
                 ribbon.curtain.geometry.setDrawRange(0, Math.ceil(ribbon.samples * drawn) * 6);
                 ribbon.beads.forEach((bead) => { bead.visible = bead.position.x <= (drawn * length) + 0.01; });
+                ribbon.tracer.visible = !still && drawn > 0.02;
+                if (ribbon.tracer.visible) {
+                    const along = ((time * 0.055 + index * 0.29) % 1) * drawn;
+                    ribbon.curve.getPoint(along, ribbon.tracer.position);
+                }
+                ribbon.tube.material.emissiveIntensity = 0.45 + (still ? 0 : (Math.sin(time * 0.32 - index * 0.8) + 1) * 0.045);
             });
             target.set(focusX + 1.4, 1.15, 0);
             const fit = camera.userData.fit || 1;
-            camera.position.set(focusX - (4.4 * fit) + (pointer.x * 0.3), (3.6 * fit) - (pointer.y * 0.25), 9.8 * fit);
+            camera.position.set(focusX - (4.4 * fit) + (pointer.x * 0.3) + (still ? 0 : Math.sin(time * 0.13) * 0.08), (3.6 * fit) - (pointer.y * 0.25), 9.8 * fit);
             camera.lookAt(target);
             this.focusX = focusX;
         },
@@ -614,6 +797,7 @@ export function trendRibbonWorld(stage, data) {
 
 export function strategyPillarsWorld(stage, data) {
     const { THREE, scene, camera } = stage;
+    stage.animated = true;
     stage.useStudio(1.0);
     stage.useLights({ key: [3, 9, 7], keyIntensity: 2.4, shadowSize: 7 });
     stage.shadowFloor(30, 0.5);
@@ -645,7 +829,7 @@ export function strategyPillarsWorld(stage, data) {
             group.add(pillar, cap);
             scene.add(group);
             const label = stage.label(`pres-world__label--pillar is-${strategy.tone === 'red' ? 'red' : 'green'}`, `<span>${escape(strategy.title)}</span><b>${escape(strategy.value)}</b><small>${escape(strategy.trend)}</small>`);
-            return { group, label, index, height };
+            return { group, cap, label, index, height };
         });
     };
     build(data);
@@ -666,6 +850,7 @@ export function strategyPillarsWorld(stage, data) {
                 const k = still ? 1 : easeOut(range(p, start, start + 0.3));
                 pillar.group.scale.set(1, Math.max(0.001, k), 1);
                 pillar.group.position.y = (1 - k) * -0.2;
+                pillar.cap.material.emissiveIntensity = 0.9 + (still ? 0 : (Math.sin(time * 0.7 - pillar.index * 0.65) + 1) * 0.16);
             });
             orbit(camera, { target, distance: lerp(17.5, 15.6, easeInOut(p)), azimuth: lerp(-10, 10, p) + (still ? 0 : Math.sin(time * 0.18) * 1.5), elevation: lerp(13, 20, p), pointer });
         },

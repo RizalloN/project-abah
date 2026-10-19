@@ -50,6 +50,9 @@ class SnapshotSourceSignatureService
         'gi405_recovery' => [
             'pendapatan_koreksi_ppap_dr_angsuran_ph',
         ],
+        'gi405_singlerow' => [
+            'ending_balance',
+        ],
     ];
 
     /** @var array<string, array<string, true>> */
@@ -434,6 +437,7 @@ class SnapshotSourceSignatureService
             'ssa_pinjaman' => ['kanca', 'kantor_cabang'],
             'lw325_ph' => ['kanca', 'cabang'],
             'gi405_recovery' => ['kode_uker'],
+            'gi405_singlerow' => ['branch'],
             default => [],
         };
 

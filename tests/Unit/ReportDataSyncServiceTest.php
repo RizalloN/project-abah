@@ -506,6 +506,60 @@ class ReportDataSyncServiceTest extends TestCase
         $this->assertTrue(true);
     }
 
+    public function test_ssa_readiness_accepts_eligible_single_row_recovery_without_legacy_rows(): void
+    {
+        Schema::dropIfExists('ssa_simpanan');
+        Schema::dropIfExists('ssa_pinjaman');
+        Schema::dropIfExists('gi405_recovery');
+        Schema::create('ssa_simpanan', function (Blueprint $table): void {
+            $table->date('Month_Day_Year_of_Posisi');
+        });
+        Schema::create('ssa_pinjaman', function (Blueprint $table): void {
+            $table->date('month_day_year_of_periode');
+        });
+        DB::table('ssa_simpanan')->insert(['Month_Day_Year_of_Posisi' => '2026-10-17']);
+        DB::table('ssa_pinjaman')->insert(['month_day_year_of_periode' => '2026-10-17']);
+        $source = Mockery::mock(\App\Support\Gi405SingleRowRecoverySource::class);
+        $source->shouldReceive('availableForPeriod')->once()->with('2026-10-17')->andReturnTrue();
+        $this->app->instance(\App\Support\Gi405SingleRowRecoverySource::class, $source);
+        $service = new ReportDataSyncService(
+            Mockery::mock(ReportSnapshotBuilder::class), Mockery::mock(DashboardHarianSnapshotService::class),
+            Mockery::mock(PartitionMaintenanceService::class), Mockery::mock(DashboardHarianSnapshotDirtyPeriodQueue::class)
+        );
+        $method = new \ReflectionMethod($service, 'resolveSsaReadinessForPeriod');
+        $this->assertSame(['both_ready' => true, 'missing' => []], $method->invoke($service, '2026-10-17'));
+    }
+
+    public function test_single_row_import_dispatches_own_freshness_and_rebuild_when_ssa_is_ready(): void
+    {
+        Bus::fake();
+        $service = new ReportDataSyncService(
+            Mockery::mock(ReportSnapshotBuilder::class),
+            $dashboard = Mockery::mock(DashboardHarianSnapshotService::class),
+            Mockery::mock(PartitionMaintenanceService::class), Mockery::mock(DashboardHarianSnapshotDirtyPeriodQueue::class)
+        );
+        $source = Mockery::mock(\App\Support\Gi405SingleRowRecoverySource::class);
+        $source->shouldReceive('availableForPeriod')->with('2026-10-31')->andReturnTrue();
+        $this->app->instance(\App\Support\Gi405SingleRowRecoverySource::class, $source);
+        Schema::dropIfExists('ssa_simpanan');
+        Schema::dropIfExists('ssa_pinjaman');
+        Schema::create('ssa_simpanan', fn (Blueprint $table) => $table->date('Month_Day_Year_of_Posisi'));
+        Schema::create('ssa_pinjaman', fn (Blueprint $table) => $table->date('month_day_year_of_periode'));
+        DB::table('ssa_simpanan')->insert(['Month_Day_Year_of_Posisi' => '2026-10-31']);
+        DB::table('ssa_pinjaman')->insert(['month_day_year_of_periode' => '2026-10-31']);
+        $dashboard->shouldReceive('rebuild')->once()->with('2026-10-31', false)->andReturn(['2026-10-31' => 1]);
+
+        $progress = Mockery::mock(\App\Services\Import\ImportProgressService::class);
+        $progress->shouldReceive('hasActiveProcessingJobsForTable')->once()->with('gi405_singlerow', 77)->andReturnFalse();
+        $this->app->instance(\App\Services\Import\ImportProgressService::class, $progress);
+        $service->syncImportedTable('gi405_singlerow', '2026-10-31', 77, 'unit-test');
+
+        Bus::assertDispatched(EnsureImportedSnapshotsFreshJob::class, fn ($job) =>
+            (new \ReflectionProperty($job, 'tableName'))->getValue($job) === 'gi405_singlerow'
+            && (new \ReflectionProperty($job, 'periodHint'))->getValue($job) === '2026-10-31'
+        );
+    }
+
     public function test_gi405_recovery_import_dispatches_harian_rebuild(): void
     {
         Bus::fake();

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { globeWorld, descentWorld } from './globe.js';
+import { area6World, penetrationWorld } from './globe.js';
 import { marketRingWorld, coinVaultWorld, glassSkylineWorld, riskCapsuleWorld, trendRibbonWorld, strategyPillarsWorld } from './sculptures.js';
 
 /*
@@ -13,8 +13,8 @@ import { marketRingWorld, coinVaultWorld, glassSkylineWorld, riskCapsuleWorld, t
 THREE.Cache.enabled = true;
 
 const FACTORIES = {
-    globe: globeWorld,
-    descent: descentWorld,
+    area6: area6World,
+    penetration: penetrationWorld,
     pasar: marketRingWorld,
     dana: coinVaultWorld,
     pinjaman: glassSkylineWorld,
@@ -31,7 +31,8 @@ export class Stage {
         this.kind = kind;
         this.THREE = THREE;
         this.hasRendered = false;
-        this.animated = true;
+        this.animated = false;
+        this.disposed = false;
         this.width = 1;
         this.height = 1;
         this.shift = { x: 0, y: 0 };
@@ -44,28 +45,53 @@ export class Stage {
         this.labels.setAttribute('aria-hidden', 'true');
         host.append(this.canvas, this.labels);
 
-        this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
+        this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true, alpha: true, powerPreference: 'default' });
         this.renderer.setClearColor(0x000000, 0);
         this.renderer.outputColorSpace = THREE.SRGBColorSpace;
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
         this.renderer.toneMappingExposure = 1.05;
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-        this.maxPixelRatio = 1.75;
+        this.maxPixelRatio = finePointer() ? 1.75 : 1.5;
 
         this.scene = new THREE.Scene();
         this.camera = new THREE.PerspectiveCamera(30, 1, 0.05, 120);
 
         this.pointer = { x: 0, y: 0, tx: 0, ty: 0 };
         this.onPointer = (event) => {
+            if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
             const rect = host.getBoundingClientRect();
-            this.pointer.tx = ((event.clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1;
-            this.pointer.ty = ((event.clientY - rect.top) / Math.max(1, rect.height)) * 2 - 1;
+            const inside = event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom;
+            this.pointer.tx = inside ? Math.min(1, Math.max(-1, ((event.clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1)) : 0;
+            this.pointer.ty = inside ? Math.min(1, Math.max(-1, ((event.clientY - rect.top) / Math.max(1, rect.height)) * 2 - 1)) : 0;
+            host.dispatchEvent(new Event('worlddirty', { bubbles: true }));
         };
-        this.onPointerLeave = () => { this.pointer.tx = 0; this.pointer.ty = 0; };
+        this.onPointerLeave = () => { this.pointer.tx = 0; this.pointer.ty = 0; host.dispatchEvent(new Event('worlddirty', { bubbles: true })); };
         if (finePointer()) {
             window.addEventListener('pointermove', this.onPointer, { passive: true });
             host.addEventListener('pointerleave', this.onPointerLeave);
+        }
+        this.onContextLost = (event) => {
+            event.preventDefault();
+            this.suspended = true;
+            host.classList.remove('is-live');
+            host.classList.add('is-fallback');
+            host.dispatchEvent(new Event('worldcontextlost', { bubbles: true }));
+        };
+        this.onContextRestored = () => {
+            this.suspended = false;
+            host.classList.remove('is-fallback');
+            host.dispatchEvent(new Event('worlddirty', { bubbles: true }));
+        };
+        this.canvas.addEventListener('webglcontextlost', this.onContextLost);
+        this.canvas.addEventListener('webglcontextrestored', this.onContextRestored);
+        if ('ResizeObserver' in window) {
+            this.resizeObserver = new ResizeObserver(() => {
+                if (this.disposed) return;
+                this.resize();
+                host.dispatchEvent(new Event('worlddirty', { bubbles: true }));
+            });
+            this.resizeObserver.observe(host);
         }
     }
 
@@ -84,7 +110,8 @@ export class Stage {
         keyLight.position.set(...key);
         if (shadow) {
             keyLight.castShadow = true;
-            keyLight.shadow.mapSize.set(2048, 2048);
+            const resolution = finePointer() ? 2048 : 1024;
+            keyLight.shadow.mapSize.set(resolution, resolution);
             keyLight.shadow.radius = 6;
             keyLight.shadow.blurSamples = 16;
             keyLight.shadow.bias = -0.0004;
@@ -126,8 +153,17 @@ export class Stage {
         const projected = this.projectVector || (this.projectVector = new THREE.Vector3());
         projected.copy(position).project(this.camera);
         const visible = !hide && projected.z < 1 && Math.abs(projected.x) < 1.15 && Math.abs(projected.y) < 1.15;
-        const x = (projected.x * 0.5 + 0.5) * this.width;
-        const y = (-projected.y * 0.5 + 0.5) * this.height;
+        let x = (projected.x * 0.5 + 0.5) * this.width;
+        let y = (-projected.y * 0.5 + 0.5) * this.height;
+        // Keep full HTML labels inside their own canvas, including legacy chapter scenes.
+        const translation = getComputedStyle(element).translate.split(' ');
+        const offset = (value, size) => String(value || '').endsWith('%') ? (parseFloat(value) / 100) * size : (parseFloat(value) || 0);
+        const labelWidth = element.offsetWidth;
+        const labelHeight = element.offsetHeight;
+        const offsetX = offset(translation[0], labelWidth);
+        const offsetY = offset(translation[1], labelHeight);
+        x = Math.max(8 - offsetX, Math.min(this.width - labelWidth - offsetX - 8, x));
+        y = Math.max(8 - offsetY, Math.min(this.height - labelHeight - offsetY - 8, y));
         element.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0)`;
         element.style.opacity = visible ? String(opacity) : '0';
     }
@@ -147,7 +183,8 @@ export class Stage {
         const height = Math.max(1, this.host.clientHeight);
         this.width = width;
         this.height = height;
-        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.maxPixelRatio));
+        const pixelBudget = Math.sqrt(3500000 / (width * height));
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.maxPixelRatio, pixelBudget));
         this.renderer.setSize(width, height, false);
         this.camera.aspect = width / height;
         // Portrait screens see less horizontally; pull the camera back so subjects keep their margins.
@@ -158,13 +195,24 @@ export class Stage {
     }
 
     render(progress, time, still) {
-        const ease = still ? 1 : 0.08;
+        if (this.suspended || this.disposed) return false;
+        const elapsed = this.lastRenderTime === undefined ? 1 / 60 : Math.min(0.05, Math.max(0, (time - this.lastRenderTime) / 1000));
+        this.lastRenderTime = time;
+        const ease = still ? 1 : 1 - Math.exp(-elapsed / 0.16);
+        if (still) this.pointer.tx = this.pointer.ty = 0;
         this.pointer.x += (this.pointer.tx - this.pointer.x) * ease;
         this.pointer.y += (this.pointer.ty - this.pointer.y) * ease;
-        this.world.update(progress, time / 1000, this.pointer, still);
+        this.visualProgress ??= progress;
+        this.visualProgress = still ? progress : this.visualProgress + (progress - this.visualProgress) * (1 - Math.exp(-elapsed / 0.11));
+        if (Math.abs(progress - this.visualProgress) < 0.0005) this.visualProgress = progress;
+        // Resume an independent animation clock without a wall-clock jump after leaving the viewport.
+        this.motionTime ??= 0;
+        if (!still && !this.motionPaused) this.motionTime += elapsed;
+        this.world.update(this.visualProgress, this.motionTime, this.pointer, still);
         this.renderer.render(this.scene, this.camera);
-        this.world.afterRender?.(progress);
+        this.world.afterRender?.(this.visualProgress);
         this.hasRendered = true;
+        return Math.abs(progress - this.visualProgress) > 0.0005 || Math.abs(this.pointer.tx - this.pointer.x) > 0.002 || Math.abs(this.pointer.ty - this.pointer.y) > 0.002;
     }
 
     setData(data) {
@@ -172,6 +220,11 @@ export class Stage {
     }
 
     dispose() {
+        if (this.disposed) return;
+        this.disposed = true;
+        this.resizeObserver?.disconnect();
+        this.canvas.removeEventListener('webglcontextlost', this.onContextLost);
+        this.canvas.removeEventListener('webglcontextrestored', this.onContextRestored);
         window.removeEventListener('pointermove', this.onPointer);
         this.host.removeEventListener('pointerleave', this.onPointerLeave);
         this.world?.dispose?.();
@@ -186,7 +239,7 @@ export class Stage {
         });
         this.environment?.dispose();
         this.renderer.dispose();
-        this.renderer.forceContextLoss();
+        if (!this.suspended) this.renderer.forceContextLoss();
         this.canvas.remove();
         this.labels.remove();
     }
@@ -196,7 +249,12 @@ export function createStage(host, kind, data) {
     const factory = FACTORIES[kind];
     if (!factory) return null;
     const stage = new Stage(host, kind);
-    stage.world = factory(stage, data || {});
-    stage.resize();
-    return stage;
+    try {
+        stage.world = factory(stage, data || {});
+        stage.resize();
+        return stage;
+    } catch (error) {
+        stage.dispose();
+        throw error;
+    }
 }

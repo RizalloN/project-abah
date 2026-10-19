@@ -392,6 +392,8 @@ Artisan::command('reports:ensure-fresh-snapshots {--period=}', function () {
         ->onQueue('snapshots-parallel');
     EnsureImportedSnapshotsFreshJob::dispatch('gi405_recovery', $period, 'schedule:reports:ensure-fresh-snapshots')
         ->onQueue('snapshots-parallel');
+    EnsureImportedSnapshotsFreshJob::dispatch('gi405_singlerow', $period, 'schedule:reports:ensure-fresh-snapshots')
+        ->onQueue('snapshots-parallel');
 
     $this->info('Snapshot freshness check dispatched.');
 })->purpose('Dispatch self-healing checks for imported report snapshots');

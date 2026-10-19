@@ -50,7 +50,49 @@ export class PresentationScrollDeck {
 
     init() {
         document.documentElement.classList.add('pres-scroll-ready');
+        const tools = this.root.querySelector('.pres-quick-tools');
+        if (tools && !tools.querySelector('[data-presentation-motion]')) {
+            const pause = document.createElement('button');
+            pause.type = 'button';
+            pause.dataset.presentationMotion = '1';
+            pause.className = 'pres-motion-toggle';
+            pause.setAttribute('aria-label', 'Jeda animasi otomatis');
+            pause.setAttribute('title', 'Jeda animasi otomatis');
+            pause.setAttribute('aria-pressed', 'false');
+            pause.innerHTML = '<i class="fas fa-pause" aria-hidden="true"></i>';
+            tools.append(pause);
+        }
         this.root.addEventListener('click', (event) => {
+            const pause = event.target.closest('[data-presentation-motion]');
+            if (pause) {
+                this.worlds.setPaused(!this.worlds.motionPaused);
+                pause.setAttribute('aria-pressed', String(this.worlds.motionPaused));
+                pause.setAttribute('aria-label', this.worlds.motionPaused ? 'Lanjutkan animasi otomatis' : 'Jeda animasi otomatis');
+                pause.setAttribute('title', pause.getAttribute('aria-label'));
+                pause.innerHTML = `<i class="fas fa-${this.worlds.motionPaused ? 'play' : 'pause'}" aria-hidden="true"></i>`;
+                return;
+            }
+            const step = event.target.closest('[data-area6-step]');
+            if (step) {
+                const story = step.closest('[data-area6-story]');
+                const phase = Number(step.dataset.area6Step);
+                story.dataset.phase = String(phase);
+                const progress = [0.06, 0.60, 0.90][phase];
+                if (!reduceMotion() && !document.documentElement.classList.contains('pres-worlds-off')) {
+                    window.scrollTo({ top: window.scrollY + story.getBoundingClientRect().top + progress * Math.max(0, story.offsetHeight - window.innerHeight), behavior: 'smooth' });
+                }
+                return;
+            }
+            const marketStep = event.target.closest('[data-market-step]');
+            if (marketStep) {
+                const story = marketStep.closest('[data-market-story]');
+                const count = story.querySelectorAll('[data-market-beat]').length || 1;
+                const index = Number(marketStep.dataset.marketStep);
+                const travel = Math.max(0, story.offsetHeight - window.innerHeight);
+                this.stopAutoplay();
+                window.scrollTo({ top: window.scrollY + story.getBoundingClientRect().top + ((index + 0.5) / count) * travel, behavior: reduceMotion() ? 'auto' : 'smooth' });
+                return;
+            }
             const target = event.target.closest('[data-spine-target]');
             if (!target || !this.root.contains(target)) return;
             event.preventDefault();
@@ -133,6 +175,15 @@ export class PresentationScrollDeck {
             else this.reveal(element);
         });
         this.progressElements = Array.from(this.root.querySelectorAll('[data-sp]'));
+        this.territoryStories = Array.from(this.root.querySelectorAll('[data-area6-story]'));
+        this.marketStories = Array.from(this.root.querySelectorAll('[data-market-story]'));
+        this.marketJourneys = Array.from(this.root.querySelectorAll('[data-market-journey]')).map((element) => ({
+            element, host: element.querySelector('[data-market-stage]'),
+            articles: Array.from(element.querySelectorAll('.rp-market-article[data-market-scene]')),
+        }));
+        this.mappingJourneys = Array.from(this.root.querySelectorAll('[data-mapping-journey]')).map((element) => ({
+            element, articles: Array.from(element.querySelectorAll('[data-mapping-cue]')),
+        }));
         this.trendScenes = Array.from(this.root.querySelectorAll('[data-trend-scene]')).map((element) => {
             const probe = element.querySelector('[data-trend-probe]');
             let distance = 0;
@@ -190,6 +241,24 @@ export class PresentationScrollDeck {
         const viewportHeight = window.innerHeight;
         const topBar = this.topBarHeight();
         const readingLine = topBar + ((viewportHeight - topBar) * 0.38);
+        this.readNarrative(this.marketJourneys, readingLine, topBar, viewportHeight, 'market');
+        this.readNarrative(this.mappingJourneys, readingLine, topBar, viewportHeight, 'mapping');
+        this.readMarketStories(viewportHeight);
+        this.territoryStories?.forEach((story) => {
+            const rect = story.getBoundingClientRect();
+            if (rect.bottom < 0 || rect.top > viewportHeight) return;
+            if (rect.top <= readingLine && rect.bottom > readingLine && this.mappingCueKey && this.mappingCueKey !== ':members') {
+                this.root.dispatchEvent(new CustomEvent('mappingcue', { detail: { key: '', reading: 'members' } }));
+                this.mappingCueKey = ':members';
+            }
+            // The live world publishes its damped clock so text and geography arrive together.
+            if (story.querySelector('.pres-world.is-live')) return;
+            const progress = reduceMotion() ? 1 : Math.min(1, Math.max(0, -rect.top / Math.max(1, rect.height - viewportHeight)));
+            const phase = progress < 0.46 ? 0 : progress < 0.72 ? 1 : 2;
+            story.dataset.phase = String(phase);
+            story.style.setProperty('--wp', progress.toFixed(4));
+            story.querySelectorAll('[data-area6-step]').forEach((button) => button.setAttribute('aria-pressed', String(Number(button.dataset.area6Step) === phase)));
+        });
 
         // Scroll progress for drawn lines, the timeline and the cover's depth planes.
         this.progressElements.forEach((element) => {
@@ -267,6 +336,79 @@ export class PresentationScrollDeck {
             });
         }
         this.lockThrough(this.chapterOrder.indexOf(chapter));
+    }
+
+    /** Pinned market story: scroll position picks the beat; the donut morphs to its share. */
+    readMarketStories(viewportHeight) {
+        this.marketStories?.forEach((story) => {
+            const rect = story.getBoundingClientRect();
+            if (rect.bottom < 0 || rect.top > viewportHeight) return;
+            const beats = Array.from(story.querySelectorAll('[data-market-beat]'));
+            if (!beats.length) return;
+            const progress = Math.min(1, Math.max(0, -rect.top / Math.max(1, rect.height - viewportHeight)));
+            const phase = Math.min(beats.length - 1, Math.floor(progress * beats.length));
+            if (story.dataset.phase === String(phase) && story.dataset.marketReady) return;
+            story.dataset.phase = String(phase);
+            story.dataset.marketReady = '1';
+            const key = beats[phase].dataset.marketKey;
+            story.querySelectorAll('[data-market-step]').forEach((button) => button.setAttribute('aria-pressed', String(Number(button.dataset.marketStep) === phase)));
+            const art = Array.from(story.querySelectorAll('template[data-market-scene-art]')).find((item) => item.getAttribute('data-market-scene-art') === key);
+            const poster = story.querySelector('[data-market-poster]');
+            if (art && poster) poster.innerHTML = art.innerHTML;
+            const host = story.querySelector('[data-market-stage]');
+            if (!host || host.dataset.marketScene === key) return;
+            host.dataset.marketScene = key;
+            host.dataset.marketProgress = '1';
+            host.dispatchEvent(new CustomEvent('marketfocus', { detail: { key, progress: 1 } }));
+        });
+    }
+
+    /** Reading the next article changes the illustration; all source text stays in the page. */
+    readNarrative(journeys, readingLine, topBar, viewportHeight, kind) {
+        journeys?.forEach((journey) => {
+            const rect = journey.element.getBoundingClientRect();
+            if (rect.bottom < topBar || rect.top > viewportHeight || !journey.articles.length) return;
+            const narrow = window.matchMedia('(max-width: 1000px)').matches || viewportHeight <= 560;
+            const stage = journey.element.querySelector(kind === 'market' ? '.rp-market-stage' : '.rp-mapping-stage');
+            const line = narrow && stage && getComputedStyle(stage).position === 'sticky'
+                ? Math.max(topBar + 48, Math.min(viewportHeight - 40, stage.getBoundingClientRect().bottom + 56)) : readingLine;
+            if (rect.top > line) return;
+            let active = journey.articles[0];
+            for (const article of journey.articles) {
+                if (article.getBoundingClientRect().top <= line) active = article;
+                else break;
+            }
+            const bounds = active.getBoundingClientRect();
+            const progress = Math.min(1, Math.max(0, (line - bounds.top) / Math.max(1, bounds.height)));
+            const key = kind === 'market' ? active.dataset.marketScene : active.dataset.mappingCue;
+            if (kind === 'market') {
+                const changed = journey.key !== key;
+                if (changed) {
+                    journey.key = key;
+                    journey.element.querySelector('[data-market-caption]').textContent = active.dataset.marketTitle;
+                    journey.element.querySelector('[data-market-current]').innerHTML = active.querySelector('[data-market-reading]')?.innerHTML || '';
+                    journey.element.querySelector('[data-market-poster]').innerHTML = active.querySelector('[data-market-art]')?.innerHTML || '';
+                    journey.articles.forEach((article) => article.classList.toggle('is-current', article === active));
+                }
+                if (changed || Math.abs((journey.progress ?? -1) - progress) > 0.01) {
+                    journey.progress = progress;
+                    journey.host.dataset.marketScene = key;
+                    journey.host.dataset.marketProgress = progress.toFixed(4);
+                    journey.host.dispatchEvent(new CustomEvent('marketfocus', { detail: { key, progress } }));
+                }
+            } else {
+                const reading = active.dataset.mappingView || 'members';
+                const identity = `${key}:${reading}`;
+                if (this.mappingCueKey === identity) return;
+                this.mappingCueKey = identity;
+                journey.element.querySelector('[data-mapping-caption]').textContent = active.querySelector('h3')?.textContent || '';
+                journey.element.querySelector('.rp-mapping-stage__note').textContent = reading === 'penetration'
+                    ? 'Warna menunjukkan penetrasi 0–100% per kecamatan.'
+                    : 'Cakupan yang sedang dibahas terangkat pada peta.';
+                journey.articles.forEach((article) => article.classList.toggle('is-current', article === active));
+                this.root.dispatchEvent(new CustomEvent('mappingcue', { detail: { key, reading } }));
+            }
+        });
     }
 
     /** The eight strategies: the dial follows the lever under the reading line. */

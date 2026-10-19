@@ -1795,6 +1795,93 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         $this->assertSame(1, DB::table('dashboard_harian_snapshots')->where('snapshot_period', '2026-04-28')->count());
     }
 
+    public function test_explicit_rebuild_does_not_rebuild_an_older_cached_period(): void
+    {
+        $service = new class extends DashboardHarianSnapshotService {
+            public array $built = [];
+
+            public function buildPeriodSnapshot(string $period, bool $force = false): int
+            {
+                $this->built[] = $period;
+
+                return 115;
+            }
+        };
+        (new \ReflectionProperty(DashboardHarianSnapshotService::class, 'sharedPeriodsRequestCache'))
+            ->setValue($service, ['2026-10-16']);
+
+        $this->assertSame(['2026-10-17' => 115], $service->rebuild('2026-10-17'));
+        $this->assertSame(['2026-10-17'], $service->built);
+    }
+
+    public function test_latest_resolution_bypasses_stale_calendar_and_keeps_explicit_history(): void
+    {
+        $this->createSourceMetadataTables();
+        foreach (['2026-10-16', '2026-10-17'] as $period) {
+            DB::table('ssa_pinjaman')->insert(['month_day_year_of_periode' => $period, 'baki_debet' => 1000]);
+            DB::table('ssa_simpanan')->insert(['Month_Day_Year_of_Posisi' => $period, 'saldo' => 500]);
+            DB::table('dashboard_harian_snapshots')->insert([
+                'uniqueid_dhs' => $period, 'snapshot_period' => $period,
+                'kanca_key' => 'kc', 'unit_key' => 'kc',
+            ]);
+        }
+        \Illuminate\Support\Facades\Queue::fake();
+        $service = new DashboardHarianSnapshotService();
+        (new \ReflectionProperty(DashboardHarianSnapshotService::class, 'sharedPeriodsRequestCache'))
+            ->setValue($service, ['2026-10-16']);
+
+        $this->assertSame('2026-10-17', $service->resolveEffectivePeriod(null));
+        $this->assertSame('2026-10-17', $service->fetchPeriods()->first());
+        $this->assertSame('2026-10-16', $service->resolveEffectivePeriod('2026-10-16'));
+        (new \ReflectionProperty(DashboardHarianSnapshotService::class, 'sharedPeriodsRequestCache'))
+            ->setValue($service, ['2026-10-16']);
+        $this->assertSame(['2026-10-17'], $service->describeRebuildPlan('2026-10-17')['periods']);
+    }
+
+    public function test_zero_row_sync_result_is_reported_as_a_failed_period(): void
+    {
+        $this->createSourceMetadataTables();
+        DB::table('ssa_pinjaman')->insert(['month_day_year_of_periode' => '2026-10-17', 'baki_debet' => 1000]);
+        DB::table('ssa_simpanan')->insert(['Month_Day_Year_of_Posisi' => '2026-10-17', 'saldo' => 500]);
+        $service = new class extends DashboardHarianSnapshotService {
+            public function buildPeriodSnapshot(string $period, bool $force = false): int
+            {
+                return 0;
+            }
+        };
+
+        $result = $service->syncDuePeriods(['2026-10-17']);
+        $this->assertSame(0, $result['built']);
+        $this->assertSame(1, $result['failed']);
+        $this->assertSame(['2026-10-17'], $result['failed_periods']);
+    }
+
+    public function test_build_failure_with_existing_stale_rows_is_not_reported_as_success(): void
+    {
+        $this->createSourceMetadataTables();
+        DB::table('dashboard_harian_snapshots')->insert([
+            'uniqueid_dhs' => 'stale', 'snapshot_period' => '2026-10-17',
+            'kanca_key' => 'kc', 'unit_key' => 'kc', 'source_signature' => 'stale',
+        ]);
+        $cacheManager = app('cache');
+        $lock = new class {
+            public function block(int $seconds, callable $callback): int
+            {
+                throw new \RuntimeException('Simulated database failure');
+            }
+        };
+        Cache::shouldReceive('lock')->once()->andReturn($lock);
+        try {
+            (new DashboardHarianSnapshotService())->buildPeriodSnapshot('2026-10-17');
+            $this->fail('Existing stale rows must not hide build errors.');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('Simulated database failure', $e->getMessage());
+            $this->assertSame(1, DB::table('dashboard_harian_snapshots')->count());
+        } finally {
+            Cache::swap($cacheManager);
+        }
+    }
+
     public function test_sync_due_periods_rebuilds_duplicate_snapshot_keys_even_when_signature_is_fresh(): void
     {
         $this->createSourceMetadataTables();

@@ -53,10 +53,17 @@ class RebuildDashboardHarianSnapshotJob implements ShouldQueue
 
     public function handle(DashboardHarianSnapshotService $service, DashboardHarianSnapshotDirtyPeriodQueue $dirtyPeriods): void
     {
+        $restorePeriods = [];
+        $claimToken = null;
         try {
-            $periods = $this->consumeDirtyPeriods
-                ? $dirtyPeriods->consume()
-                : $this->normalizedPeriods();
+            if ($this->consumeDirtyPeriods) {
+                $claim = $dirtyPeriods->claim();
+                $claimToken = $claim['token'];
+                $periods = $claim['periods'];
+            } else {
+                $periods = $this->normalizedPeriods();
+            }
+            $restorePeriods = $periods;
 
             Log::info('RebuildDashboardHarianSnapshotJob: Starting.', [
                 'periods' => $periods,
@@ -70,34 +77,60 @@ class RebuildDashboardHarianSnapshotJob implements ShouldQueue
             }
 
             if ($periods === null || $periods === []) {
+                $restorePeriods = null;
                 $result = $service->syncDuePeriods();
+                if ((int) ($result['failed'] ?? 0) > 0) {
+                    $restorePeriods = ! empty($result['failed_periods']) ? $result['failed_periods'] : null;
+
+                    throw new \RuntimeException('Automatic Dashboard Harian snapshot sync failed; dirty periods retained for retry.');
+                }
+                $dirtyPeriods->acknowledge($claimToken);
                 Log::info('RebuildDashboardHarianSnapshotJob: Synced automatic due periods.', $result);
                 return;
             }
 
             if ($this->force) {
                 $totalRows = 0;
+                $failedPeriods = [];
+                $lastFailure = null;
                 foreach ($periods as $period) {
                     try {
                         $rows = $service->buildPeriodSnapshot($period, true);
                         $totalRows += $rows;
                         Log::info("RebuildDashboardHarianSnapshotJob: Force rebuilt period $period with $rows rows");
                     } catch (\Throwable $e) {
+                        $failedPeriods[] = $period;
+                        $lastFailure = $e;
                         Log::error("RebuildDashboardHarianSnapshotJob failed for period $period", [
                             'error' => $e->getMessage(),
                         ]);
                     }
                 }
 
+                if ($failedPeriods !== []) {
+                    $restorePeriods = $failedPeriods;
+
+                    throw new \RuntimeException('Dashboard Harian force rebuild failed for '.implode(', ', $failedPeriods).'.', 0, $lastFailure);
+                }
+
+                $dirtyPeriods->acknowledge($claimToken);
                 Log::info('RebuildDashboardHarianSnapshotJob: Completed force rebuild.', ['total_rows' => $totalRows]);
                 return;
             }
 
             $result = $service->syncDuePeriods($periods);
+            if ((int) ($result['failed'] ?? 0) > 0) {
+                $restorePeriods = ! empty($result['failed_periods']) ? $result['failed_periods'] : $periods;
+
+                throw new \RuntimeException('Dashboard Harian snapshot sync failed; dirty periods retained for retry.');
+            }
+            $dirtyPeriods->acknowledge($claimToken);
             Log::info('RebuildDashboardHarianSnapshotJob: Completed due-period sync.', $result);
         } catch (\Throwable $e) {
+            $dirtyPeriods->restore($restorePeriods);
+            $dirtyPeriods->acknowledge($claimToken);
             Log::error("RebuildDashboardHarianSnapshotJob failed", ['error' => $e->getMessage()]);
-            $this->fail($e);
+            throw $e;
         }
     }
 

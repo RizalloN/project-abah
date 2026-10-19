@@ -99,6 +99,12 @@
         <div class="pres-title-lbl">@if(!empty($userBranchScope))Kinerja {{ $userBranchScope['label'] }}@else Kinerja Area 6 <span>- Madiun, Magetan, Ngawi, Ponorogo</span>@endif</div>
       </div>
       <div class="pres-controls-right">
+        @if($presentationLayout === 'scroll')
+        <div class="pres-global-scope-control pres-scope-readout" aria-label="Cakupan presentasi">
+          <i class="fas fa-building" aria-hidden="true"></i>
+          <span><small>Cakupan laporan</small><strong id="pres-global-scope-label">{{ $presentationScopeLabel }}</strong></span>
+        </div>
+        @else
         <label class="pres-global-scope-control" title="Pilih cakupan angka untuk seluruh deck">
           <i class="fas fa-building" aria-hidden="true"></i>
           <span>
@@ -106,6 +112,8 @@
             <select id="pres-global-scope-selector" aria-label="Pilih cakupan presentasi"></select>
           </span>
         </label>
+        @endif
+        @if($presentationLayout !== 'scroll')
         <label class="pres-prognosa-control" id="pres-prognosa-control" title="Tampilkan prognosa tertulis terbaru pada matriks perbandingan">
           <input type="checkbox" id="pres-prognosa-toggle" aria-label="Gunakan Prognosa Weekly">
           <span class="pres-prognosa-switch" aria-hidden="true"><i></i></span>
@@ -114,6 +122,7 @@
             <strong id="pres-prognosa-state">Nonaktif</strong>
           </span>
         </label>
+        @endif
         <button type="button" class="pres-ppt-export-btn" title="Unduh PowerPoint siap pakai" onclick="document.getElementById('ppt-export-dialog').showModal()">
           <i class="fas fa-file-powerpoint" aria-hidden="true"></i>
           <span>Unduh PPT</span>

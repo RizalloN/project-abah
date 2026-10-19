@@ -191,6 +191,7 @@ class ReportDataSyncService
                 'ssa_pinjaman' => $this->syncSsaPinjaman($periodHint, $jobId, $source, $deleteId),
                 'lw325_ph' => $this->syncReportPh($periodHint, $jobId, $source, $deleteId),
                 'gi405_recovery' => $this->syncGi405Recovery($periodHint, $jobId, $source, $deleteId),
+                'gi405_singlerow' => $this->syncGi405Recovery($periodHint, $jobId, $source, tableName: 'gi405_singlerow'),
                 'dly_kap_resegmentasi' => $this->syncFallbackLoanSource('dly_kap_resegmentasi', $periodHint, $jobId, $source, $deleteId),
                 'l1133' => $this->syncFallbackLoanSource('l1133', $periodHint, $jobId, $source, $deleteId),
                 'performance_pis_per_produk' => $this->syncPerformanceNewPayroll($periodHint, $jobId, $source, $deleteId),
@@ -603,9 +604,15 @@ class ReportDataSyncService
         )->onQueue('snapshots-parallel');
     }
 
-    private function syncGi405Recovery(?string $periodHint, ?int $jobId, ?string $source, ?string $deleteId = null): void
+    private function syncGi405Recovery(?string $periodHint, ?int $jobId, ?string $source, ?string $deleteId = null, string $tableName = 'gi405_recovery'): void
     {
-        $this->runSnapshotAudit('gi405_recovery', $periodHint, $jobId, $source, 'snapshot_dashboard_harian', function () use ($periodHint, $deleteId) {
+        if ($tableName === 'gi405_singlerow' && !$this->resolveSsaReadinessForPeriod($periodHint)['both_ready']) {
+            $this->dispatchSnapshotFreshnessCheck($tableName, $periodHint, $source);
+
+            return;
+        }
+
+        $this->runSnapshotAudit($tableName, $periodHint, $jobId, $source, 'snapshot_dashboard_harian', function () use ($periodHint, $deleteId) {
             if ($deleteId) {
                 $this->heartbeat($deleteId, 'Rebuilding Daily Dashboard snapshots after GI405 Recovery import...');
             }
@@ -621,7 +628,7 @@ class ReportDataSyncService
             $this->refreshTableStatistics(self::DASHBOARD_HARIAN_SNAPSHOT_TABLE, $periodHint, $jobId, $source);
         }
 
-        $this->dispatchSnapshotFreshnessCheck('gi405_recovery', $periodHint, $source);
+        $this->dispatchSnapshotFreshnessCheck($tableName, $periodHint, $source);
     }
 
     private function syncFallbackLoanSource(string $tableName, ?string $periodHint, ?int $jobId, ?string $source, ?string $deleteId = null): void
@@ -836,7 +843,8 @@ class ReportDataSyncService
         $hasHourlySavings = $this->safeSourcePeriodHasRows('hourly_dpk', 'posisi', $period);
         $hasSsaLoan = $this->safeSourcePeriodHasRows('ssa_pinjaman', 'month_day_year_of_periode', $period);
         $hasFallbackLoan = $this->dashboardHarianFallbackLoanSourcePeriodHasRows($period);
-        $hasGi405 = $this->safeSourcePeriodHasRows('gi405_recovery', 'periode', $period);
+        $hasGi405 = app(Gi405SingleRowRecoverySource::class)->availableForPeriod($period)
+            || $this->safeSourcePeriodHasRows('gi405_recovery', 'periode', $period);
 
         $bothReady = (($hasSsaSavings && ($hasSsaLoan || $hasFallbackLoan))
             || (!$hasSsaSavings && $hasHourlySavings && $hasFallbackLoan))
@@ -932,6 +940,7 @@ class ReportDataSyncService
             'ssa_pinjaman',
             'lw325_ph',
             'gi405_recovery',
+            'gi405_singlerow',
             'dly_kap_resegmentasi',
             'l1133',
         ], true)) {
@@ -1045,6 +1054,7 @@ class ReportDataSyncService
             'hourly_dpk',
             'lw325_ph',
             'gi405_recovery',
+            'gi405_singlerow',
             'dly_kap_resegmentasi',
             'l1133',
         ], true)) {
@@ -1086,6 +1096,7 @@ class ReportDataSyncService
             'ssa_pinjaman' => 'month_day_year_of_periode',
             'lw325_ph' => 'periode',
             'gi405_recovery' => 'periode',
+            'gi405_singlerow' => 'periode',
             'daily_loan_dinamis' => 'periode',
             'simpanan_multipn' => 'posisi',
             'dly_kap_resegmentasi' => 'periode',
@@ -1513,7 +1524,7 @@ class ReportDataSyncService
     private function cacheScopeForTable(string $tableName): string
     {
         return match (strtolower(trim($tableName))) {
-            'daily_loan_dinamis', 'lw321pn', 'ssa_pinjaman', 'lw325_ph', 'gi405_recovery' => 'pinjaman',
+            'daily_loan_dinamis', 'lw321pn', 'ssa_pinjaman', 'lw325_ph', 'gi405_recovery', 'gi405_singlerow' => 'pinjaman',
             'simpanan_multipn', 'ssa_simpanan', 'hourly_dpk' => 'simpanan',
             'dly_kap_resegmentasi', 'l1133' => 'harian',
             default => 'global',

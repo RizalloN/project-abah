@@ -1203,6 +1203,9 @@
         let currentPayload = page.initialData || null;
         let selectedKancaValue = selectedScalar(page.selected?.kanca, '');
         let latestRequestId = 0;
+        let followLatest = page.followLatest === true;
+        let lastAppliedQuery = null;
+        let activeRequest = null;
         const tableSortState = {};
 
         document.getElementById('exportKeragaanPdf').addEventListener('click', () => {
@@ -1731,7 +1734,25 @@
                 : '';
         }
 
-        async function fetchData(resetUnit = false) {
+        function currentQuery() {
+            return new URLSearchParams({
+                kanca: els.kanca.value || '',
+                unit_kerja: els.unit.value || 'all',
+                data_type: els.dataType.value || 'pinjaman',
+                posisi_terakhir: els.period.value || '',
+                posisi_rka: els.rka.value || '',
+            });
+        }
+
+        async function fetchData(resetUnit = false, background = false) {
+            if (background && (document.hidden || !followLatest || activeRequest || lastAppliedQuery === null || currentQuery().toString() !== lastAppliedQuery)) {
+                return;
+            }
+            if (activeRequest) {
+                activeRequest.abort();
+                activeRequest = null;
+            }
+            const requestId = ++latestRequestId;
             const selection = {
                 kanca: els.kanca.value || '',
                 unit: resetUnit ? 'all' : (els.unit.value || 'all'),
@@ -1748,25 +1769,24 @@
                 return;
             }
 
-            shell.classList.add('is-loading');
-            shell.classList.remove('is-empty');
+            if (!background) {
+                shell.classList.add('is-loading');
+                shell.classList.remove('is-empty');
+            }
 
             if (resetUnit) {
                 els.unit.value = 'all';
             }
 
-            const requestId = ++latestRequestId;
-
-            const params = new URLSearchParams({
-                kanca: selection.kanca,
-                unit_kerja: selection.unit,
-                data_type: selection.dataType,
-                posisi_terakhir: els.period.value || '',
-                posisi_rka: els.rka.value || '',
-            });
+            const params = currentQuery();
+            const requestedQuery = params.toString();
+            if (followLatest) params.set('follow_latest', '1');
+            activeRequest = new AbortController();
 
             try {
                 const response = await fetch(`${page.routes.data}?${params.toString()}`, {
+                    cache: 'no-store',
+                    signal: activeRequest.signal,
                     headers: {
                         'Accept': 'application/json',
                         'X-Requested-With': 'XMLHttpRequest',
@@ -1778,21 +1798,28 @@
                 }
 
                 const payload = await response.json();
-                if (requestId !== latestRequestId) {
+                if (requestId !== latestRequestId || requestedQuery !== currentQuery().toString()) {
                     return;
                 }
 
                 buildSelects(payload, selection);
                 render(payload);
+                lastAppliedQuery = currentQuery().toString();
             } catch (error) {
-                if (requestId !== latestRequestId) {
+                if (requestId !== latestRequestId || error.name === 'AbortError') {
                     return;
                 }
 
                 console.error(error);
+                if (background) return;
                 shell.classList.remove('is-loading');
                 shell.classList.add('is-empty');
                 els.empty.textContent = 'Data gagal dimuat. Silakan coba pilih cabang kembali.';
+            } finally {
+                if (requestId === latestRequestId) {
+                    activeRequest = null;
+                    shell.classList.remove('is-loading');
+                }
             }
         }
 
@@ -1862,7 +1889,10 @@
                 clearAllSorts();
                 fetchData(false);
             });
-            els.period.addEventListener('change', () => fetchData(false));
+            els.period.addEventListener('change', () => {
+                followLatest = Boolean(els.period.max && els.period.value === els.period.max);
+                fetchData(false);
+            });
             els.rka.addEventListener('change', () => fetchData(false));
 
             document.addEventListener('click', (e) => {
@@ -1916,9 +1946,15 @@
 
         if (currentPayload) {
             render(currentPayload);
+            lastAppliedQuery = currentQuery().toString();
         } else {
             render(null);
         }
+
+        window.setInterval(() => fetchData(false, true), 60000);
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) fetchData(false, true);
+        });
     })();
 </script>
 @endsection

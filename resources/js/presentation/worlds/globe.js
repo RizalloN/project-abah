@@ -1,682 +1,377 @@
-/*
- * The planet, used twice: as the cover hero and as the orbit-to-polygon
- * descent at the top of the mapping section (the page's signature move).
- *
- * Earth textures: Solar System Scope (solarsystemscope.com/textures), CC BY 4.0,
- * as resized and merged in the three.js examples. Stored locally under
- * public/vendor/earth so the deck keeps working offline.
- */
+import {
+    AREA6_REGENCIES, numericMapValue, polygonsOf, openRing, geometryBounds, mergeMapBounds,
+    area6Frame, projectArea6, regencyFor, penetrationHex, loadArea6Geometry, districtCode,
+} from '../pres-area6-map.js';
+import { territoryFlight } from './territory-flight.js';
+import { hierarchyColors } from '../pres-mapping-hierarchy.js';
+
+/* North-up geographic relief; only the regional story approaches it from Earth. */
 
 const DEG = Math.PI / 180;
-const clamp01 = (value) => Math.min(1, Math.max(0, value));
-const range = (value, start, end) => clamp01((value - start) / (end - start));
-const easeOut = (t) => 1 - ((1 - t) ** 3);
-const easeInOut = (t) => (t < 0.5 ? 4 * t * t * t : 1 - (((-2 * t) + 2) ** 3) / 2);
-const lerp = (from, to, t) => from + ((to - from) * t);
+const clamp01 = (value) => Math.max(0, Math.min(1, value));
+const ease = (value) => 1 - (1 - clamp01(value)) ** 3;
+const smooth = (from, to, value) => { const t = clamp01((value - from) / (to - from)); return t * t * (3 - 2 * t); };
+const escape = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
 
-const AREA6_CENTER = { lat: -7.72, lon: 111.47 };
-
-const assetBase = () => {
-    const worker = window.__PRESENTATION_CONFIG__?.serviceWorkerUrl;
-    if (worker) return String(worker).replace(/presentation-sw\.js(?:\?.*)?$/, '');
-    return `${window.location.origin}/`;
-};
-
-/** Same mapping three.js SphereGeometry uses for its UVs (u = 0 at -180 degrees). */
+// Compatibility for existing imports; these worlds use only the local planar projection.
 export function latLonToVector(THREE, lat, lon, radius = 1, target = new THREE.Vector3()) {
-    const phi = (lon + 180) * DEG;
-    const theta = (90 - lat) * DEG;
-    return target.set(-radius * Math.cos(phi) * Math.sin(theta), radius * Math.cos(theta), radius * Math.sin(phi) * Math.sin(theta));
+    const [x, north] = projectArea6(lon, lat);
+    return target.set(x, radius - 1, -north);
 }
 
-function vectorToLatLon(point) {
-    const length = point.length() || 1;
-    const theta = Math.acos(Math.min(1, Math.max(-1, point.y / length)));
-    let lon = (Math.atan2(point.z, -point.x) / DEG) - 180;
-    if (lon < -180) lon += 360;
-    return { lat: 90 - (theta / DEG), lon };
-}
+export const penetrationColor = (THREE, value) => new THREE.Color(penetrationHex(value));
 
-function loadTexture(THREE, file, { color = true } = {}) {
-    const texture = new THREE.TextureLoader().load(`${assetBase()}vendor/earth/${file}`);
-    texture.colorSpace = color ? THREE.SRGBColorSpace : THREE.NoColorSpace;
-    texture.anisotropy = 8;
-    return texture;
-}
-
-/* ------------------------------------------------------------ materials -- */
-
-function earthMaterial(THREE) {
-    return new THREE.ShaderMaterial({
-        uniforms: {
-            uDay: { value: loadTexture(THREE, 'earth_day_4096.jpg') },
-            uNight: { value: loadTexture(THREE, 'earth_night_4096.jpg') },
-            uSurface: { value: loadTexture(THREE, 'earth_bump_roughness_clouds_4096.jpg', { color: false }) },
-            uSun: { value: new THREE.Vector3(-0.5, 0.35, 0.8).normalize() },
-            uFocus: { value: 0 },
-            uCloudShadow: { value: 1 },
-            uTexel: { value: new THREE.Vector2(1 / 4096, 1 / 2048) },
-            uAtmosphere: { value: new THREE.Color(0x4f8dff) },
-            uGrid: { value: 0 },
-        },
-        vertexShader: /* glsl */ `
-            varying vec2 vUv;
-            varying vec3 vNormalW;
-            varying vec3 vPositionW;
-            void main() {
-                vUv = uv;
-                vec4 world = modelMatrix * vec4(position, 1.0);
-                vPositionW = world.xyz;
-                vNormalW = normalize(mat3(modelMatrix) * normal);
-                gl_Position = projectionMatrix * viewMatrix * world;
-            }
-        `,
-        fragmentShader: /* glsl */ `
-            uniform sampler2D uDay;
-            uniform sampler2D uNight;
-            uniform sampler2D uSurface;
-            uniform vec3 uSun;
-            uniform float uFocus;
-            uniform float uCloudShadow;
-            uniform vec2 uTexel;
-            uniform vec3 uAtmosphere;
-            uniform float uGrid;
-            varying vec2 vUv;
-            varying vec3 vNormalW;
-            varying vec3 vPositionW;
-
-            // Quarter-degree graticule: crisp structure where the texture runs out of detail.
-            float graticule(vec2 uv) {
-                vec2 degrees = vec2(uv.x * 360.0 - 180.0, uv.y * 180.0 - 90.0) / 0.25;
-                vec2 cell = abs(fract(degrees - 0.5) - 0.5) / max(fwidth(degrees), vec2(1e-5));
-                return 1.0 - min(min(cell.x, cell.y), 1.0);
-            }
-
-            void main() {
-                vec3 base = normalize(vNormalW);
-                vec3 view = normalize(cameraPosition - vPositionW);
-                vec3 east = normalize(cross(vec3(0.0, 1.0, 0.0), base) + vec3(1e-5));
-                vec3 north = cross(base, east);
-
-                vec4 surface = texture2D(uSurface, vUv);
-                float hx = texture2D(uSurface, vUv + vec2(uTexel.x, 0.0)).r - surface.r;
-                float hy = texture2D(uSurface, vUv + vec2(0.0, uTexel.y)).r - surface.r;
-                vec3 normal = normalize(base - (east * hx + north * hy) * 5.0);
-
-                float light = dot(normal, uSun);
-                float daylight = smoothstep(-0.2, 0.32, dot(base, uSun));
-                vec3 day = texture2D(uDay, vUv).rgb;
-                vec3 night = texture2D(uNight, vUv).rgb;
-
-                // Clouds cast a soft shadow a little east of where they float.
-                float shadow = smoothstep(0.25, 1.0, texture2D(uSurface, vUv + vec2(0.0012, -0.0006)).b) * uCloudShadow;
-
-                vec3 color = day * (0.03 + 1.25 * max(light, 0.0)) * (1.0 - shadow * 0.42);
-
-                // Oceans are glossy, land is matte: the roughness channel drives the glint.
-                vec3 halfway = normalize(uSun + view);
-                float gloss = 1.0 - surface.g;
-                float glint = pow(max(dot(base, halfway), 0.0), 600.0) * gloss * daylight;
-                color += vec3(1.0, 0.86, 0.66) * glint * 0.3;
-
-                // City lights on the night side.
-                color += night * vec3(1.0, 0.78, 0.48) * pow(1.0 - daylight, 1.6) * 2.4;
-
-                // Atmospheric scattering thickens toward the limb.
-                float limb = pow(1.0 - max(dot(base, view), 0.0), 2.6);
-                color = mix(color, uAtmosphere * (0.18 + daylight * 0.9), limb * 0.72);
-
-                // Descent focus: the planet quiets so the polygons own the light.
-                float luminance = dot(color, vec3(0.299, 0.587, 0.114));
-                color = mix(color, vec3(luminance) * vec3(0.42, 0.56, 0.86), uFocus * 0.72);
-                color *= 1.0 - uFocus * 0.5;
-                color += vec3(0.32, 0.58, 1.0) * graticule(vUv) * 0.16 * uGrid;
-
-                gl_FragColor = vec4(color, 1.0);
-                #include <tonemapping_fragment>
-                #include <colorspace_fragment>
-            }
-        `,
+const geometryShapes = (THREE, geometry, frame) => polygonsOf(geometry).map((rings) => {
+    const contour = openRing(rings[0]);
+    if (contour.length < 3) return null;
+    const shape = new THREE.Shape(contour.map(([lon, lat]) => new THREE.Vector2(...projectArea6(lon, lat, frame))));
+    rings.slice(1).forEach((ring) => {
+        const points = openRing(ring);
+        if (points.length > 2) shape.holes.push(new THREE.Path(points.map(([lon, lat]) => new THREE.Vector2(...projectArea6(lon, lat, frame)))));
     });
-}
+    return shape;
+}).filter(Boolean);
 
-function cloudMaterial(THREE, surface) {
-    return new THREE.ShaderMaterial({
-        transparent: true,
-        depthWrite: false,
-        uniforms: {
-            uSurface: { value: surface },
-            uSun: { value: new THREE.Vector3(-0.5, 0.35, 0.8).normalize() },
-            uOpacity: { value: 1 },
-        },
-        vertexShader: /* glsl */ `
-            varying vec2 vUv;
-            varying vec3 vNormalW;
-            void main() {
-                vUv = uv;
-                vNormalW = normalize(mat3(modelMatrix) * normal);
-                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-            }
-        `,
-        fragmentShader: /* glsl */ `
-            uniform sampler2D uSurface;
-            uniform vec3 uSun;
-            uniform float uOpacity;
-            varying vec2 vUv;
-            varying vec3 vNormalW;
-            void main() {
-                float cover = smoothstep(0.22, 1.0, texture2D(uSurface, vUv).b);
-                float light = max(dot(normalize(vNormalW), uSun), 0.0);
-                vec3 color = vec3(0.92, 0.95, 1.0) * (0.05 + light * 1.25);
-                gl_FragColor = vec4(color, cover * 0.92 * uOpacity);
-                #include <tonemapping_fragment>
-                #include <colorspace_fragment>
-            }
-        `,
-    });
-}
-
-function atmosphereMaterial(THREE) {
-    return new THREE.ShaderMaterial({
-        transparent: true,
-        depthWrite: false,
-        side: THREE.BackSide,
-        blending: THREE.AdditiveBlending,
-        uniforms: {
-            uSun: { value: new THREE.Vector3(-0.5, 0.35, 0.8).normalize() },
-            uOpacity: { value: 1 },
-        },
-        vertexShader: /* glsl */ `
-            varying vec3 vNormalV;
-            varying vec3 vNormalW;
-            void main() {
-                vNormalV = normalize(normalMatrix * normal);
-                vNormalW = normalize(mat3(modelMatrix) * normal);
-                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-            }
-        `,
-        fragmentShader: /* glsl */ `
-            uniform vec3 uSun;
-            uniform float uOpacity;
-            varying vec3 vNormalV;
-            varying vec3 vNormalW;
-            void main() {
-                // Back faces of a larger shell: brightest against the planet's limb, fading into space.
-                float facing = -dot(vNormalV, vec3(0.0, 0.0, 1.0));
-                float rim = pow(clamp(facing, 0.0, 1.0), 1.6) * smoothstep(0.0, 0.18, facing);
-                float lit = smoothstep(-0.5, 0.5, dot(-vNormalW, uSun)) * 0.85 + 0.15;
-                vec3 glow = vec3(0.3, 0.56, 1.0) * rim * lit * 1.6 * uOpacity;
-                gl_FragColor = vec4(glow, clamp(max(glow.r, max(glow.g, glow.b)), 0.0, 1.0));
-            }
-        `,
-    });
-}
-
-function starField(THREE, count = 2600) {
-    const positions = new Float32Array(count * 3);
-    const colors = new Float32Array(count * 3);
-    const tint = new THREE.Color();
-    for (let index = 0; index < count; index += 1) {
-        const direction = new THREE.Vector3(Math.random() * 2 - 1, Math.random() * 2 - 1, Math.random() * 2 - 1).normalize();
-        direction.multiplyScalar(40 + Math.random() * 25).toArray(positions, index * 3);
-        tint.setHSL(0.58 + (Math.random() * 0.1), 0.35, 0.55 + (Math.random() * 0.4)).toArray(colors, index * 3);
-    }
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    const material = new THREE.PointsMaterial({ size: 1.6, sizeAttenuation: false, vertexColors: true, transparent: true, opacity: 0.85, depthWrite: false });
-    return new THREE.Points(geometry, material);
-}
-
-/** The planet as one group: surface, a cloud deck that floats above it, and the atmosphere shell. */
-function planet(THREE, segments = 160) {
-    const group = new THREE.Group();
-    const surface = earthMaterial(THREE);
-    const earth = new THREE.Mesh(new THREE.SphereGeometry(1, segments, Math.round(segments / 2)), surface);
-    const clouds = new THREE.Mesh(new THREE.SphereGeometry(1.0075, segments, Math.round(segments / 2)), cloudMaterial(THREE, surface.uniforms.uSurface.value));
-    const atmosphere = new THREE.Mesh(new THREE.SphereGeometry(1.085, 96, 48), atmosphereMaterial(THREE));
-    group.add(earth, clouds, atmosphere);
-    const setSun = (direction) => {
-        surface.uniforms.uSun.value.copy(direction);
-        clouds.material.uniforms.uSun.value.copy(direction);
-        atmosphere.material.uniforms.uSun.value.copy(direction);
-    };
-    return { group, earth, clouds, atmosphere, surface, setSun };
-}
-
-/** A pulse ring and a radial beam marking a place on the surface. */
-function beacon(THREE, lat, lon) {
-    const group = new THREE.Group();
-    const normal = latLonToVector(THREE, lat, lon, 1);
-    group.position.copy(normal);
-    group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal.clone().normalize());
-    const ringMaterial = new THREE.MeshBasicMaterial({ color: 0xff5a5f, transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
-    const rings = [0, 1].map(() => {
-        const ring = new THREE.Mesh(new THREE.RingGeometry(0.85, 1, 64), ringMaterial.clone());
-        ring.rotation.x = -Math.PI / 2;
-        ring.position.y = 0.002;
-        group.add(ring);
-        return ring;
-    });
-    const beamMaterial = new THREE.ShaderMaterial({
-        transparent: true,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-        uniforms: { uOpacity: { value: 1 } },
-        vertexShader: 'varying float vY; void main(){ vY = uv.y; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-        fragmentShader: 'uniform float uOpacity; varying float vY; void main(){ float a = pow(1.0 - vY, 2.2) * uOpacity; gl_FragColor = vec4(vec3(1.0, 0.42, 0.42) * a, a); }',
-    });
-    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.0035, 0.0035, 0.34, 12, 1, true), beamMaterial);
-    beam.position.y = 0.17;
-    const core = new THREE.Mesh(new THREE.SphereGeometry(0.009, 16, 12), new THREE.MeshBasicMaterial({ color: 0xffd1d1 }));
-    group.add(beam, core);
-    return {
-        group,
-        update(time, opacity = 1) {
-            rings.forEach((ring, index) => {
-                const phase = ((time * 0.45) + (index * 0.5)) % 1;
-                const size = 0.012 + (phase * 0.07);
-                ring.scale.setScalar(size);
-                ring.material.opacity = (1 - phase) * 0.9 * opacity;
-            });
-            beamMaterial.uniforms.uOpacity.value = opacity;
-            core.material.opacity = opacity;
-            core.visible = opacity > 0.02;
-        },
-    };
-}
-
-/* ------------------------------------------------------------ the cover -- */
-
-export function globeWorld(stage, data) {
-    const { THREE, scene, camera } = stage;
-    const center = data?.mapping?.center || AREA6_CENTER;
-    const world = planet(THREE, 180);
-    const tilt = new THREE.Group();
-    tilt.add(world.group);
-    scene.add(tilt);
-    const stars = starField(THREE);
-    scene.add(stars);
-    const marker = beacon(THREE, center.lat, center.lon);
-    world.group.add(marker.group);
-    const markerLabel = stage.label('pres-world__label--beacon', `<b>${escape(data?.scopeLabel || 'Area 6')}</b><span>Madiun, Magetan, Ngawi, Ponorogo</span>`);
-    const sun = new THREE.Vector3(-0.86, 0.28, 0.46).normalize();
-    world.setSun(sun);
-
-    const facing = -(center.lon + 90) * DEG;
-    camera.fov = 28;
-    camera.position.set(0, 0, 4.4);
-    camera.lookAt(0, 0, 0);
-    const markerWorld = new THREE.Vector3();
-    const toCamera = new THREE.Vector3();
-
-    return {
-        resize(width, height) {
-            const wide = width / height > 1.15;
-            stage.shift = wide ? { x: 0.28, y: 0.07 } : { x: 0, y: 0 };
-            camera.position.z = wide ? 4.9 : 4.6;
-        },
-        setData(next) {
-            markerLabel.innerHTML = `<b>${escape(next?.scopeLabel || 'Area 6')}</b><span>Madiun, Magetan, Ngawi, Ponorogo</span>`;
-        },
-        update(progress, time, pointer, still) {
-            const leave = easeInOut(range(progress, 0.5, 1));
-            const drift = still ? 0 : Math.sin(time * 0.05) * 3 * DEG;
-            world.group.rotation.y = facing + drift - (leave * 26 * DEG);
-            tilt.rotation.x = (center.lat * DEG * 0.9) + (pointer.y * 2.5 * DEG) - (leave * 6 * DEG);
-            tilt.rotation.y = pointer.x * 4 * DEG;
-            tilt.position.y = leave * 0.55;
-            world.clouds.rotation.y = still ? 0 : time * 0.006;
-            stars.rotation.y = (pointer.x * 1.2 * DEG) + (leave * 4 * DEG);
-            stars.rotation.x = pointer.y * 0.8 * DEG;
-            marker.update(still ? 0.3 : time, 1 - range(progress, 0.62, 0.8));
-        },
-        afterRender(progress) {
-            marker.group.getWorldPosition(markerWorld);
-            toCamera.copy(camera.position).sub(markerWorld);
-            const facingCamera = markerWorld.clone().normalize().dot(toCamera.normalize()) > 0.15;
-            markerWorld.addScaledVector(markerWorld.clone().normalize(), 0.36);
-            stage.place(markerLabel, markerWorld, { hide: !facingCamera, opacity: 1 - range(progress, 0.6, 0.75) });
-        },
-    };
-}
-
-/* ------------------------------------------------------- the descent -- */
-
-// Absolute 0 to 100% scale with more stops where Area 6 actually sits (about 30 to 80%).
-// The legend in the orbit copy uses the same stops.
-const PENETRATION_STOPS = [
-    [0, [0.1, 0.13, 0.3]],
-    [30, [0.2, 0.22, 0.62]],
-    [45, [0.04, 0.34, 0.86]],
-    [55, [0.1, 0.56, 1.0]],
-    [62, [0.13, 0.78, 0.92]],
-    [70, [0.36, 0.9, 0.74]],
-    [80, [0.78, 0.97, 0.66]],
-    [100, [1.0, 0.98, 0.86]],
-];
-
-export function penetrationColor(THREE, value) {
-    const numeric = Math.min(100, Math.max(0, Number(value) || 0));
-    for (let index = 1; index < PENETRATION_STOPS.length; index += 1) {
-        const [stop, color] = PENETRATION_STOPS[index];
-        if (numeric <= stop) {
-            const [previousStop, previous] = PENETRATION_STOPS[index - 1];
-            const t = (numeric - previousStop) / (stop - previousStop);
-            return new THREE.Color(lerp(previous[0], color[0], t), lerp(previous[1], color[1], t), lerp(previous[2], color[2], t));
-        }
-    }
-    return new THREE.Color(...PENETRATION_STOPS.at(-1)[1]);
-}
-
-const polygonsOf = (geometry) => {
-    if (!geometry) return [];
-    if (geometry.type === 'Polygon') return [geometry.coordinates];
-    if (geometry.type === 'MultiPolygon') return geometry.coordinates;
-    return [];
-};
-
-const openRing = (ring) => {
-    const points = ring.map(([lon, lat]) => [Number(lon), Number(lat)]).filter(([lon, lat]) => Number.isFinite(lon) && Number.isFinite(lat));
-    if (points.length > 2) {
-        const [firstLon, firstLat] = points[0];
-        const [lastLon, lastLat] = points.at(-1);
-        if (firstLon === lastLon && firstLat === lastLat) points.pop();
-    }
-    return points;
-};
-
-const signedArea = (points) => points.reduce((sum, [x1, y1], index) => {
-    const [x2, y2] = points[(index + 1) % points.length];
-    return sum + ((x1 * y2) - (x2 * y1));
-}, 0) / 2;
-
-/**
- * Every kecamatan as a prism standing on the sphere. Vertices sit on the unit
- * sphere; the vertex shader raises the top cap by penetration as uRise grows,
- * so all 76 prisms are one draw call and rise in a staggered wave.
- */
-function prismField(THREE, districts) {
+const boundaryGeometry = (THREE, features, frame, depth, onlyOutside = false) => {
+    const edges = new Map();
+    features.forEach((feature) => polygonsOf(feature.geometry).forEach((rings) => rings.forEach((ring) => {
+        const points = openRing(ring);
+        points.forEach((point, index) => {
+            const next = points[(index + 1) % points.length];
+            const keyA = point.map((value) => value.toFixed(5)).join(',');
+            const keyB = next.map((value) => value.toFixed(5)).join(',');
+            const key = keyA < keyB ? `${keyA}|${keyB}` : `${keyB}|${keyA}`;
+            const previous = edges.get(key);
+            if (previous) previous.count += 1;
+            else edges.set(key, { a: point, b: next, count: 1 });
+        });
+    })));
     const positions = [];
-    const normals = [];
-    const colors = [];
-    const tops = [];
-    const heights = [];
-    const delays = [];
-    const outline = { positions: [], heights: [], delays: [] };
-    const scratch = { a: new THREE.Vector3(), b: new THREE.Vector3(), c: new THREE.Vector3(), n: new THREE.Vector3(), e: new THREE.Vector3() };
-
-    const pushVertex = (point, normal, color, top, height, delay) => {
-        positions.push(point.x, point.y, point.z);
-        normals.push(normal.x, normal.y, normal.z);
-        colors.push(color.r, color.g, color.b);
-        tops.push(top);
-        heights.push(height);
-        delays.push(delay);
-    };
-
-    districts.forEach((district) => {
-        const color = district.color;
-        const side = color.clone().multiplyScalar(0.62);
-        polygonsOf(district.geometry).forEach((rings) => {
-            const contour = openRing(rings[0] || []);
-            if (contour.length < 3) return;
-            const holes = rings.slice(1).map(openRing).filter((ring) => ring.length > 2);
-            const triangles = THREE.ShapeUtils.triangulateShape(contour.map(([x, y]) => new THREE.Vector2(x, y)), holes.map((ring) => ring.map(([x, y]) => new THREE.Vector2(x, y))));
-            const flat = [...contour, ...holes.flat()];
-            triangles.forEach((triangle) => {
-                const corners = triangle.map((index) => flat[index]);
-                if (signedArea(corners) < 0) corners.reverse();
-                corners.forEach(([lon, lat]) => {
-                    const point = latLonToVector(THREE, lat, lon, 1);
-                    pushVertex(point, point, color, 1, district.height, district.delay);
-                });
-            });
-
-            const centroid = latLonToVector(THREE, district.center.lat, district.center.lon, 1);
-            [contour, ...holes].forEach((ring) => {
-                ring.forEach(([lon, lat], index) => {
-                    const [nextLon, nextLat] = ring[(index + 1) % ring.length];
-                    const a = latLonToVector(THREE, lat, lon, 1, scratch.a);
-                    const b = latLonToVector(THREE, nextLat, nextLon, 1, scratch.b);
-                    const middle = scratch.c.copy(a).add(b).multiplyScalar(0.5);
-                    const normal = scratch.n.copy(b).sub(a).cross(middle).normalize();
-                    if (normal.dot(scratch.e.copy(middle).sub(centroid)) < 0) normal.negate();
-                    // Quad a-b on the ground, a-b raised, wound to face outward.
-                    const quad = [[a, 0], [b, 0], [b, 1], [a, 0], [b, 1], [a, 1]];
-                    const edge = scratch.e.copy(b).sub(a);
-                    const up = middle.clone().normalize();
-                    const facing = edge.clone().cross(up).dot(normal) > 0;
-                    const ordered = facing ? quad : [quad[0], quad[2], quad[1], quad[3], quad[5], quad[4]];
-                    ordered.forEach(([point, top]) => pushVertex(point, normal, side, top, district.height, district.delay));
-                    outline.positions.push(a.x, a.y, a.z, b.x, b.y, b.z);
-                    outline.heights.push(district.height, district.height);
-                    outline.delays.push(district.delay, district.delay);
-                });
-            });
+    edges.forEach(({ a, b, count }) => {
+        if (onlyOutside && count > 1) return;
+        [a, b].forEach(([lon, lat]) => {
+            const [x, north] = projectArea6(lon, lat, frame);
+            positions.push(x, depth + 0.004, -north);
         });
     });
-
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
-    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-    geometry.setAttribute('aTop', new THREE.Float32BufferAttribute(tops, 1));
-    geometry.setAttribute('aH', new THREE.Float32BufferAttribute(heights, 1));
-    geometry.setAttribute('aDelay', new THREE.Float32BufferAttribute(delays, 1));
+    return geometry;
+};
 
-    const rise = { value: 0 };
-    const raise = (shader) => {
-        shader.uniforms.uRise = rise;
-        shader.vertexShader = shader.vertexShader
-            .replace('#include <common>', '#include <common>\nattribute float aTop;\nattribute float aH;\nattribute float aDelay;\nuniform float uRise;')
-            .replace('#include <begin_vertex>', `#include <begin_vertex>
-                float lift = clamp((uRise - aDelay) / 0.4, 0.0, 1.0);
-                lift = 1.0 - pow(1.0 - lift, 3.0);
-                transformed = normalize(position) * (1.00006 + aTop * aH * lift);`);
-    };
-    const material = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.38, metalness: 0.05, clearcoat: 0.5, clearcoatRoughness: 0.2, emissive: 0x06122a, emissiveIntensity: 0.5 });
-    material.onBeforeCompile = raise;
-    const mesh = new THREE.Mesh(geometry, material);
+const materialPair = (THREE, color, district = false) => [
+    new THREE.MeshPhysicalMaterial({ color, roughness: 0.31, metalness: 0.14, clearcoat: 0.65, clearcoatRoughness: 0.22, side: THREE.DoubleSide }),
+    new THREE.MeshPhysicalMaterial({ color: new THREE.Color(color).multiplyScalar(district ? 0.34 : 0.40), roughness: 0.36, metalness: 0.28, clearcoat: 0.40 }),
+];
 
-    const lineGeometry = new THREE.BufferGeometry();
-    lineGeometry.setAttribute('position', new THREE.Float32BufferAttribute(outline.positions, 3));
-    lineGeometry.setAttribute('aTop', new THREE.Float32BufferAttribute(new Array(outline.heights.length).fill(1), 1));
-    lineGeometry.setAttribute('aH', new THREE.Float32BufferAttribute(outline.heights, 1));
-    lineGeometry.setAttribute('aDelay', new THREE.Float32BufferAttribute(outline.delays, 1));
-    const lineMaterial = new THREE.LineBasicMaterial({ color: 0xdff0ff, transparent: true, opacity: 0, depthWrite: false });
-    lineMaterial.onBeforeCompile = raise;
-    const lines = new THREE.LineSegments(lineGeometry, lineMaterial);
-
-    const groundGeometry = lineGeometry.clone();
-    groundGeometry.setAttribute('aTop', new THREE.Float32BufferAttribute(new Array(outline.heights.length).fill(0), 1));
-    const groundMaterial = new THREE.LineBasicMaterial({ color: 0x9cc8ff, transparent: true, opacity: 0, depthWrite: false });
-    groundMaterial.onBeforeCompile = raise;
-    const ground = new THREE.LineSegments(groundGeometry, groundMaterial);
-
-    return { mesh, lines, ground, rise, lineMaterial, groundMaterial };
+function disposeObject(object) {
+    object.traverse((child) => {
+        child.geometry?.dispose?.();
+        child.material?.[0]?.map?.dispose?.();
+        (Array.isArray(child.material) ? child.material : [child.material]).filter(Boolean).forEach((material) => material.dispose());
+    });
+    object.parent?.remove(object);
 }
 
-function pointInRing(lon, lat, ring) {
-    let inside = false;
-    for (let index = 0, previous = ring.length - 1; index < ring.length; previous = index, index += 1) {
-        const [x1, y1] = ring[index];
-        const [x2, y2] = ring[previous];
-        if (((y1 > lat) !== (y2 > lat)) && (lon < ((x2 - x1) * (lat - y1)) / ((y2 - y1) || 1e-12) + x1)) inside = !inside;
-    }
-    return inside;
-}
+function mapWorld(stage, initialData, mode) {
+    const { THREE, scene, camera, host } = stage;
+    const districtMode = mode === 'penetration';
+    stage.animated = true;
+    stage.ready = false;
+    stage.maxPixelRatio = 1.65;
+    stage.useStudio?.(0.55);
+    stage.useLights?.({ key: [-3, 8, 5], keyIntensity: 2.2, rimIntensity: 1.4, shadowSize: 8, shadow: true });
+    stage.shadowFloor?.(20, 0.32, -0.75);
 
-function districtAt(districts, lon, lat) {
-    return districts.find((district) => {
-        const { minLon, maxLon, minLat, maxLat } = district.bounds;
-        if (lon < minLon || lon > maxLon || lat < minLat || lat > maxLat) return false;
-        return polygonsOf(district.geometry).some((rings) => pointInRing(lon, lat, openRing(rings[0] || []))
-            && !rings.slice(1).some((hole) => pointInRing(lon, lat, openRing(hole))));
-    }) || null;
-}
+    const root = new THREE.Group();
+    scene.add(root);
+    let data = initialData || {};
+    let geojson = null;
+    let disposed = false;
+    let groups = [];
+    let labels = [];
+    let frame = area6Frame();
+    let width = stage.width || 1;
+    let height = stage.height || 1;
+    const depth = districtMode ? 0.46 : 0.54;
+    const target = new THREE.Vector3(0, 0.03, 0);
+    const scratch = new THREE.Vector3();
 
-export function descentWorld(stage, data) {
-    const { THREE, scene, camera, renderer } = stage;
-    stage.maxPixelRatio = 1.6;
-    renderer.shadowMap.enabled = false;
-    const world = planet(THREE, 220);
-    scene.add(world.group);
-    const stars = starField(THREE, 1800);
-    scene.add(stars);
-    scene.add(new THREE.HemisphereLight(0xbfd8ff, 0x0a1428, 0.55));
-    const sunLight = new THREE.DirectionalLight(0xfff0dc, 1.7);
-    scene.add(sunLight);
-    const fill = new THREE.DirectionalLight(0x7fb0ff, 0.7);
-    scene.add(fill);
-
-    let field = null;
-    let districts = [];
-    let regencyLabels = [];
-    let center = AREA6_CENTER;
-    const tip = stage.host.closest('[data-world-track]')?.querySelector('[data-orbit-tip]') || null;
-    const centerPoint = new THREE.Vector3();
-    const north = new THREE.Vector3();
-    const east = new THREE.Vector3();
-    const sun = new THREE.Vector3();
-
-    const build = (next) => {
-        if (field) {
-            scene.remove(field.mesh, field.lines, field.ground);
-            [field.mesh, field.lines, field.ground].forEach((object) => { object.geometry.dispose(); object.material.dispose(); });
-            field = null;
-        }
-        stage.clearLabels();
-        const mapping = next?.mapping || {};
-        center = mapping.center || AREA6_CENTER;
-        latLonToVector(THREE, center.lat, center.lon, 1, centerPoint);
-        east.set(0, 1, 0).cross(centerPoint).normalize();
-        north.copy(centerPoint).cross(east).normalize();
-        sun.copy(centerPoint).multiplyScalar(0.72).addScaledVector(east, -0.55).addScaledVector(north, 0.42).normalize();
-        world.setSun(sun);
-        sunLight.position.copy(sun).multiplyScalar(10);
-        fill.position.copy(centerPoint).multiplyScalar(4).addScaledVector(east, 3);
-
-        const span = Math.max(0.5, mapping.span || 1.2);
-        districts = (mapping.districts || []).map((district, index, all) => {
-            const distance = Math.hypot(district.center.lon - center.lon, district.center.lat - center.lat);
-            return {
-                ...district,
-                color: penetrationColor(THREE, district.penetration),
-                height: (0.0006 + (0.0085 * Math.min(100, Math.max(0, district.penetration)) / 100)) * (span / 1.2),
-                delay: Math.min(0.6, (distance / span) * 0.85 + ((index / Math.max(1, all.length)) * 0.08)),
-            };
+    const dirty = () => { if (!disposed) host.dispatchEvent(new CustomEvent('worlddirty', { bubbles: true })); };
+    const emit = (type, detail) => host.dispatchEvent(new CustomEvent(type, { detail, bubbles: true }));
+    const flight = districtMode && !host.hasAttribute('data-mapping-stage') ? territoryFlight(stage, () => { stage.ready = groups.some((entry) => entry.mesh); dirty(); }) : null;
+    let mapOpacity = 1;
+    let footprint = null;
+    const detailStage = host.hasAttribute('data-mapping-stage');
+    let focusedKey = detailStage ? data?.mapping?.focusKey || '' : '';
+    let reading = detailStage ? data?.mapping?.reading || 'members' : 'members';
+    let lastMotionTime = null;
+    let readingBlend = reading === 'penetration' ? 1 : 0;
+    const onFocus = (event) => {
+        focusedKey = event.detail?.key || '';
+        reading = event.detail?.reading || 'members';
+        groups.forEach((entry) => {
+            if (!entry.mesh) return;
+            entry.mesh.material[0].map = reading === 'penetration' ? null : entry.stripeTexture;
+            entry.mesh.material[0].needsUpdate = true;
         });
-        if (districts.length) {
-            field = prismField(THREE, districts);
-            scene.add(field.ground, field.mesh, field.lines);
-        }
-        regencyLabels = (mapping.regencies || []).map((regency) => ({
-            ...regency,
-            // A city sits inside its regency; its label hangs below the point so the two never stack.
-            element: stage.label(`pres-world__label--regency${/^kota\s/i.test(regency.name) ? ' is-below' : ''}`, `<b>${escape(regency.name)}</b><span>Penetrasi ${escape(regency.penetrationLabel)}</span>`),
-            position: latLonToVector(THREE, regency.center.lat, regency.center.lon, 1 + (0.0098 * (span / 1.2))),
-        }));
-        stage.spanScale = span / 1.2;
-        // Hover rays meet the prisms near their average top, not the ground under them.
-        sphere.radius = 1 + (0.0055 * stage.spanScale);
+        dirty();
     };
-    // Hover reads a kecamatan: ray onto the sphere, then point-in-polygon in lon/lat.
-    const raycaster = new THREE.Raycaster();
-    const sphere = new THREE.Sphere(new THREE.Vector3(), 1);
-    build(data);
+    host.addEventListener('mappingfocus', onFocus);
 
-    const hit = new THREE.Vector3();
-    let interactive = false;
-    const onMove = (event) => {
-        if (!interactive || !tip || !districts.length) return;
-        const rect = stage.host.getBoundingClientRect();
-        const ndc = new THREE.Vector2((((event.clientX - rect.left) / rect.width) * 2) - 1, -((((event.clientY - rect.top) / rect.height) * 2) - 1));
-        raycaster.setFromCamera(ndc, camera);
-        const point = raycaster.ray.intersectSphere(sphere, hit) ? vectorToLatLon(hit) : null;
-        const found = point ? districtAt(districts, point.lon, point.lat) : null;
-        if (!found) {
-            tip.hidden = true;
+    const sourceDistricts = () => Array.isArray(data?.mapping?.districts) ? data.mapping.districts.filter(Boolean) : [];
+    const payloadFeatures = () => sourceDistricts().filter((district) => polygonsOf(district.geometry).length)
+        .map((district) => ({ type: 'Feature', geometry: district.geometry, properties: {
+            KDCPUM: district.code, KDPKAB: String(district.code || '').slice(0, 5), WADMKK: district.regency, WADMKC: district.name,
+        } }));
+
+    const clear = () => {
+        groups.forEach(({ group, stripeTexture }) => { stripeTexture?.dispose(); disposeObject(group); });
+        groups = [];
+        labels.forEach(({ element }) => element.remove());
+        labels = [];
+        if (footprint) { disposeObject(footprint); footprint = null; }
+    };
+
+    const makeMesh = (features, color, regency, district = null) => {
+        const shapes = features.flatMap((feature) => geometryShapes(THREE, feature.geometry, frame));
+        if (!shapes.length) return null;
+        const geometry = new THREE.ExtrudeGeometry(shapes, { depth, bevelEnabled: true, bevelSize: 0.012, bevelThickness: 0.018, bevelSegments: 2, steps: 1, curveSegments: 1 });
+        geometry.rotateX(-Math.PI / 2);
+        geometry.computeBoundingBox();
+        const mesh = new THREE.Mesh(geometry, materialPair(THREE, color, districtMode));
+        mesh.receiveShadow = true;
+        mesh.castShadow = true;
+        mesh.userData.districtCode = district?.code || null;
+        const group = new THREE.Group();
+        group.add(mesh);
+        const lines = new THREE.LineSegments(boundaryGeometry(THREE, features, frame, depth, !districtMode), new THREE.LineBasicMaterial({
+            color: districtMode ? 0xc3e6ed : new THREE.Color(color).lerp(new THREE.Color('#ffffff'), 0.4),
+            transparent: true, opacity: districtMode ? 0.30 : 0.54, depthWrite: false,
+        }));
+        group.add(lines);
+        root.add(group);
+        const bounds = mergeMapBounds(features.map((feature) => geometryBounds(feature.geometry)));
+        const center = projectArea6((bounds.minLon + bounds.maxLon) / 2, (bounds.minLat + bounds.maxLat) / 2, frame);
+        const entry = {
+            group, mesh, regency, center,
+            identityColor: new THREE.Color(regency?.color || '#698097'),
+            metricColor: new THREE.Color(color),
+            order: AREA6_REGENCIES.findIndex((item) => item.code === regency?.code),
+            stripeTexture: null, ownerKeys: districtMode ? data?.mapping?.hierarchy?.ownership?.[district?.code]?.groupKeys || [] : [],
+        };
+        if (districtMode) {
+            const hierarchy = data?.mapping?.hierarchy;
+            const colors = hierarchyColors(hierarchy, district?.code);
+            const owner = hierarchy?.groups?.find((item) => item.key === entry.ownerKeys[0]);
+            entry.order = Math.max(0, hierarchy?.groups?.indexOf(owner) ?? 0);
+            const ownerDistricts = sourceDistricts().filter((item) => owner?.districtCodes?.includes(item.code));
+            const ownerBounds = mergeMapBounds(ownerDistricts.map((item) => item.bounds || geometryBounds(item.geometry)));
+            entry.separation = Number.isFinite(ownerBounds.minLon) ? projectArea6((ownerBounds.minLon + ownerBounds.maxLon) / 2, (ownerBounds.minLat + ownerBounds.maxLat) / 2, frame) : center;
+            entry.identityColor.set(colors[0] || '#698097');
+            if (colors.length > 1) {
+                const canvas = document.createElement('canvas'); canvas.width = colors.length * 12; canvas.height = colors.length * 12;
+                const context = canvas.getContext('2d');
+                if (context) {
+                    colors.forEach((tone, index) => { context.fillStyle = tone; context.fillRect(index * 12, 0, 12, canvas.height); });
+                    entry.stripeTexture = new THREE.CanvasTexture(canvas);
+                    entry.stripeTexture.wrapS = entry.stripeTexture.wrapT = THREE.RepeatWrapping;
+                    entry.stripeTexture.colorSpace = THREE.SRGBColorSpace;
+                    entry.stripeTexture.repeat.set(1.8, 1.8);
+                    entry.identityColor.set('#ffffff');
+                    if (reading !== 'penetration') mesh.material[0].map = entry.stripeTexture;
+                }
+            }
+        }
+        groups.push(entry);
+        return entry;
+    };
+
+    const build = () => {
+        if (disposed) return;
+        const local = payloadFeatures();
+        const selectedCodes = new Set(sourceDistricts().map((district) => String(district.code)));
+        // Cover always establishes the complete Area 6; the analytical map follows the active scope exactly.
+        const geography = geojson?.features?.length ? geojson.features : (districtMode ? local : []);
+        const features = geography.filter((feature) => regencyFor(feature)
+            && (!districtMode || selectedCodes.has(districtCode(feature))));
+        if (!features.length) {
+            clear();
+            stage.ready = false;
+            host.classList?.remove('is-live');
+            dirty();
             return;
         }
-        tip.hidden = false;
-        tip.innerHTML = `<b>${escape(found.name)}</b><span>${escape(found.regency)}</span><dl><div><dt>Penetrasi</dt><dd>${escape(found.penetrationLabel)}</dd></div><div><dt>Potensi</dt><dd>${escape(found.potentialLabel)}</dd></div><div><dt>Existing</dt><dd>${escape(found.existingLabel)}</dd></div></dl>`;
-        tip.style.transform = `translate3d(${(event.clientX - rect.left + 18).toFixed(0)}px, ${(event.clientY - rect.top + 18).toFixed(0)}px, 0)`;
-    };
-    const onLeave = () => { if (tip) tip.hidden = true; };
-    stage.host.addEventListener('pointermove', onMove, { passive: true });
-    stage.host.addEventListener('pointerleave', onLeave);
+        clear();
+        frame = area6Frame(features);
+        flight?.setFrame(frame);
+        const districts = new Map(sourceDistricts().map((district) => [String(district.code), district]));
+        const byRegency = AREA6_REGENCIES.map((regency) => ({ regency, features: features.filter((feature) => regencyFor(feature)?.code === regency.code) })).filter((item) => item.features.length);
 
-    const cameraPoint = new THREE.Vector3();
-    const target = new THREE.Vector3();
-    const up = new THREE.Vector3();
-    const worldUp = new THREE.Vector3(0, 1, 0);
+        if (districtMode) features.forEach((feature) => {
+            const code = districtCode(feature);
+            const source = districts.get(code);
+            const district = source || { code, name: feature.properties?.WADMKC || 'Kecamatan', regency: feature.properties?.WADMKK || '-', penetration: null, penetrationLabel: 'Belum tersedia', potentialLabel: 'Belum tersedia', existingLabel: 'Belum tersedia' };
+            makeMesh([feature], penetrationHex(district.penetration), regencyFor(feature), district);
+        });
+        else byRegency.forEach(({ regency, features: regionFeatures }) => makeMesh(regionFeatures, regency.color, regency));
+
+        const hierarchy = data?.mapping?.hierarchy;
+        const labelRegions = districtMode && hierarchy ? hierarchy.groups.map((sourceGroup, index) => ({
+            sourceGroup,
+            regency: { code: sourceGroup.key, name: sourceGroup.label, color: sourceGroup.color, labelSide: ['madiun', 'ponorogo'].includes(sourceGroup.key) || hierarchy.level === 'unit' ? 'right' : 'left' },
+            features: features.filter((feature) => sourceGroup.districtCodes.includes(districtCode(feature))),
+        })).filter((item) => item.features.length) : byRegency;
+        labelRegions.forEach(({ regency, features: regionFeatures, sourceGroup }, index) => {
+            const bounds = mergeMapBounds(regionFeatures.map((feature) => geometryBounds(feature.geometry)));
+            const center = projectArea6((bounds.minLon + bounds.maxLon) / 2, (bounds.minLat + bounds.maxLat) / 2, frame);
+            const side = regency.labelSide === 'left' ? -1 : 1;
+            const source = sourceGroup ? { penetrationLabel: `${sourceGroup.unitCount} unit` } : (data?.mapping?.regencies || []).find((item) => String(item.name).toLowerCase().replace(/kabupaten|kab\.?/g, '').trim() === regency.name.toLowerCase().replace('kabupaten ', ''));
+            const element = stage.label(`pres-world__label--regency pres-world__label--area6 is-${regency.labelSide}`, `<i style="--tone:${regency.color}"></i><b>${escape(regency.name)}</b>${districtMode && sourceGroup ? `<span>${escape(sourceGroup.code || `${sourceGroup.unitCount} unit`)} / ${sourceGroup.districtCodes.length} kecamatan</span>` : ''}`);
+            const north = sourceGroup ? ({ madiun: 1.0, magetan: 0.2, ngawi: 2.9, ponorogo: -2.8 }[sourceGroup.key] ?? 0.2) : regency.code === '35.21' ? 2.65 : regency.code === '35.20' ? 0.15 : regency.code === '35.77' ? 1.25 : regency.code === '35.19' ? -0.35 : -2.65;
+            const anchor = new THREE.Vector3(center[0], depth + 0.018, -center[1]);
+            const labelAnchor = new THREE.Vector3(side * 2.6, depth + 0.12, -north);
+            const leaderGeometry = new THREE.BufferGeometry().setFromPoints([anchor, new THREE.Vector3(side * 2.4, depth + 0.12, -north), labelAnchor]);
+            const leader = new THREE.Line(leaderGeometry, new THREE.LineBasicMaterial({ color: regency.color, transparent: true, opacity: 0.62, depthWrite: false }));
+            root.add(leader);
+            groups.push({ group: leader, order: index, leader: true, labelKey: sourceGroup?.key });
+            labels.push({ element, position: labelAnchor, key: sourceGroup?.key, unitLabel: hierarchy?.level === 'unit' });
+        });
+        footprint = new THREE.Group();
+        const plateGeometry = new THREE.ShapeGeometry(features.flatMap((feature) => geometryShapes(THREE, feature.geometry, frame)));
+        plateGeometry.rotateX(-Math.PI / 2);
+        const plate = new THREE.Mesh(plateGeometry, new THREE.MeshPhysicalMaterial({ color: '#284a6c', metalness: 0.36, roughness: 0.38, transparent: true, opacity: 0.45, side: THREE.DoubleSide, depthWrite: false }));
+        plate.position.y = -0.62; plate.receiveShadow = true; footprint.add(plate);
+        footprint.add(new THREE.LineSegments(boundaryGeometry(THREE, features, frame, -0.60, true), new THREE.LineBasicMaterial({ color: '#6eaccb', transparent: true, opacity: 0.36, depthWrite: false })));
+        root.add(footprint);
+        stage.ready = groups.some((entry) => entry.mesh) && (!flight || flight.ready);
+        dirty();
+    };
+
+    build();
+    loadArea6Geometry().then((next) => { if (!disposed) { geojson = next; build(); } }).catch((error) => {
+        if (disposed) return;
+        stage.ready = false;
+        host.classList?.remove('is-live');
+        emit('area6:error', { message: error.message });
+        dirty();
+    });
 
     return {
-        resize(width, height) {
+        resize(nextWidth, nextHeight) {
+            width = nextWidth;
+            height = nextHeight;
             const wide = width / height > 1.15;
-            stage.shift = wide ? { x: 0.16, y: 0.07 } : { x: 0, y: 0.16 };
-            camera.fov = wide ? 30 : 38;
+            stage.shift = { x: 0, y: 0 };
+            camera.fov = wide ? 31 : 37;
+            labels.forEach(({ element }) => { element.style.fontSize = wide ? '' : '11px'; });
         },
-        setData(next) {
-            build(next);
-        },
-        update(progress, time, pointer, still) {
-            const p = still ? 1 : progress;
-            const turn = easeInOut(range(p, 0, 0.56));
-            const dive = easeInOut(range(p, 0.1, 0.6));
-            const lean = easeInOut(range(p, 0.56, 0.86));
-            const settle = range(p, 0.86, 1);
-            const scale = stage.spanScale || 1;
-
-            // Orbit to the region: longitude turns under us while the radius falls geometrically.
-            const lat = lerp(12, center.lat, turn) - (lean * 1.7 * scale) + (pointer.y * 0.08 * lean);
-            const lon = lerp(center.lon - 46, center.lon, turn) + (settle * 0.22 * scale) + (pointer.x * 0.12 * lean);
-            const far = 3.7;
-            const near = 1 + (0.105 * scale);
-            const radius = lerp(1 + ((far - 1) * ((near - 1) / (far - 1)) ** dive), 1 + (0.058 * scale), lean);
-            latLonToVector(THREE, lat, lon, radius, cameraPoint);
-            camera.position.copy(cameraPoint);
-            target.set(0, 0, 0).lerp(centerPoint, easeOut(range(p, 0.18, 0.58)));
-            up.copy(worldUp).lerp(north, easeOut(range(p, 0.3, 0.6))).lerp(centerPoint, lean).normalize();
-            camera.up.copy(up);
+        setData(next) { data = next || {}; focusedKey = detailStage ? data?.mapping?.focusKey || '' : ''; reading = detailStage ? data?.mapping?.reading || 'members' : 'members'; build(); },
+        update(progress, time, pointerInput, still) {
+            const p = clamp01(progress);
+            const delta = lastMotionTime === null ? 1 / 60 : Math.max(0, Math.min(0.05, time - lastMotionTime));
+            lastMotionTime = time;
+            const follow = still || stage.motionPaused ? 1 : 1 - Math.exp(-delta / 0.22);
+            const assembly = still ? 1 : ease(p / (districtMode ? 0.28 : 0.34));
+            const tilt = still ? 1 : ease((p - 0.49) / 0.30);
+            readingBlend += ((reading === 'penetration' ? 1 : 0) - readingBlend) * follow;
+            const choropleth = districtMode ? readingBlend : 0;
+            const separation = still ? 0.45 : smooth(0.46, 0.70, p) * (1 - smooth(0.85, 1, p) * 0.5);
+            const ambient = still ? 0 : Math.sin(time * 0.27) * 0.016;
+            // The region first establishes location; actual penetration replaces its colors as the story advances.
+            // North remains up through the short, input-driven shift from plan view to geographic relief.
+            const elevation = (districtMode ? 89.8 - tilt * 40.8 : 80 - assembly * 30) * DEG;
+            const azimuth = districtMode ? smooth(0.49, 0.85, p) * (8 * DEG + (still ? 0 : (pointerInput.x * 2.2 + Math.sin(time * 0.19) * 1.25) * DEG)) : (still ? 0 : (Math.sin(time * 0.15) + pointerInput.x * 2) * DEG);
+            const portrait = width / height <= 1.15;
+            const baseDistance = (portrait ? 12.4 : 14.4) * Math.max(1, Math.min(1.7, Math.sqrt(height / Math.max(1, width))));
+            const spanX = frame.bounds ? (frame.bounds.maxLon - frame.bounds.minLon) * Math.cos(frame.lat * DEG) * frame.scale : 6.8;
+            const spanZ = frame.bounds ? (frame.bounds.maxLat - frame.bounds.minLat) * frame.scale : 6.8;
+            const tangent = Math.tan(camera.fov * DEG / 2) * 0.90;
+            let fitDistance = 0;
+            // Local mesh boxes fit the real silhouette, without reserving empty map-wide corners.
+            groups.forEach((entry) => {
+                if (!entry.mesh) return;
+                const local = still ? 1 : ease((assembly - Math.max(0, entry.order) * 0.035) / 0.86);
+                const selected = focusedKey && entry.ownerKeys.includes(focusedKey);
+                entry.focusLift ??= selected ? 0.28 : 0;
+                entry.focusLift += ((selected ? 0.28 : 0) - entry.focusLift) * follow;
+                entry.focusWeight ??= focusedKey && !selected ? 0.24 : 1;
+                entry.focusWeight += ((focusedKey && !selected ? 0.24 : 1) - entry.focusWeight) * follow;
+                const direction = entry.separation || entry.center;
+                const length = Math.max(0.5, Math.hypot(...direction));
+                entry.group.position.x = districtMode ? direction[0] / length * separation * 0.56 : direction[0] / Math.max(1, Math.hypot(...direction)) * (1 - assembly) * 0.3;
+                entry.group.position.z = districtMode ? -direction[1] / length * separation * 0.56 : -direction[1] / Math.max(1, Math.hypot(...direction)) * (1 - assembly) * 0.3;
+                entry.group.position.y = (1 - local) * -0.8 + (districtMode ? separation * (0.15 + entry.order % 4 * 0.065) : 0) + entry.focusLift + ambient;
+                entry.group.scale.y = 0.25 + local * 0.75;
+                const bounds = entry.mesh.geometry.boundingBox;
+                for (const bx of [bounds.min.x, bounds.max.x]) for (const bz of [bounds.min.z, bounds.max.z]) for (const by of [bounds.min.y, bounds.max.y]) {
+                    const x = bx + entry.group.position.x, z = bz + entry.group.position.z, y = by * entry.group.scale.y + entry.group.position.y;
+                    const forward = x * Math.sin(azimuth) * Math.cos(elevation) + (y - target.y) * Math.sin(elevation) + z * Math.cos(azimuth) * Math.cos(elevation);
+                    const horizontal = x * Math.cos(azimuth) - z * Math.sin(azimuth);
+                    const vertical = -x * Math.sin(azimuth) * Math.sin(elevation) + (y - target.y) * Math.cos(elevation) - z * Math.cos(azimuth) * Math.sin(elevation);
+                    fitDistance = Math.max(fitDistance, forward + Math.abs(horizontal) / (tangent * Math.max(0.1, width / height)), forward + Math.abs(vertical) / tangent);
+                }
+            });
+            const distance = Math.max(baseDistance, fitDistance);
+            camera.position.set(Math.sin(azimuth) * Math.cos(elevation) * distance, Math.sin(elevation) * distance, Math.cos(azimuth) * Math.cos(elevation) * distance);
+            camera.up.set(0, 1, 0);
             camera.lookAt(target);
-            const altitude = radius - 1;
-            camera.near = Math.max(0.0008, altitude * 0.12);
-            camera.far = Math.max(4, radius + 2);
-            camera.updateProjectionMatrix();
-
-            world.surface.uniforms.uFocus.value = easeInOut(range(p, 0.26, 0.56));
-            world.surface.uniforms.uGrid.value = range(p, 0.36, 0.6);
-            world.surface.uniforms.uCloudShadow.value = 1 - range(p, 0.42, 0.56);
-            // The cloud deck thickens, then the camera breaks through it.
-            world.clouds.material.uniforms.uOpacity.value = (1 - range(p, 0.44, 0.56)) * (0.75 + range(p, 0.3, 0.44) * 0.25);
-            world.clouds.visible = world.clouds.material.uniforms.uOpacity.value > 0.01;
-            world.clouds.rotation.y = still ? 0 : time * 0.004;
-            world.atmosphere.material.uniforms.uOpacity.value = 1 - range(p, 0.38, 0.5);
-            world.atmosphere.visible = world.atmosphere.material.uniforms.uOpacity.value > 0.01;
-            stars.visible = radius > 1.4;
-
-            if (field) {
-                field.rise.value = range(p, 0.5, 0.86) * 1.0;
-                field.groundMaterial.opacity = range(p, 0.4, 0.56) * 0.55;
-                field.lineMaterial.opacity = range(p, 0.6, 0.86) * 0.5;
+            camera.near = 0.1;
+            camera.far = 60;
+            const journey = flight?.update(p, still, camera, distance, time);
+            mapOpacity = journey?.opacity ?? 1;
+            // Match the planetary camera at handover; the final relief tilt begins after arrival.
+            if (journey && !journey.flight) {
+                camera.position.set(Math.sin(azimuth) * Math.cos(elevation) * distance, Math.sin(elevation) * distance, Math.cos(azimuth) * Math.cos(elevation) * distance);
+                camera.lookAt(target);
+                camera.far = 60;
             }
-            interactive = p > 0.8;
-            if (!interactive && tip) tip.hidden = true;
+            root.visible = mapOpacity > 0.001;
+            camera.updateProjectionMatrix();
+            if (footprint) footprint.visible = mapOpacity > 0.5;
+            groups.forEach((entry) => {
+                if (entry.leader) { entry.group.visible = mapOpacity > 0.99 && (!entry.labelKey || (!focusedKey && data?.mapping?.hierarchy?.level !== 'unit') || focusedKey === entry.labelKey) && (typeof window === 'undefined' || window.innerWidth > 760); return; }
+                const selected = focusedKey && entry.ownerKeys.includes(focusedKey);
+                entry.group.traverse((object) => {
+                    (Array.isArray(object.material) ? object.material : [object.material]).filter(Boolean).forEach((material) => {
+                        material.transparent = true;
+                        material.opacity = mapOpacity * (object.isLineSegments ? (districtMode ? 0.44 : 0.64) : 1) * entry.focusWeight;
+                        material.depthWrite = mapOpacity > 0.99 && !object.isLineSegments;
+                    });
+                });
+                if (districtMode) {
+                    entry.mesh.material[0].color.copy(entry.identityColor).lerp(entry.metricColor, choropleth);
+                    entry.mesh.material[1].color.copy(entry.mesh.material[0].color).multiplyScalar(0.43);
+                }
+            });
         },
-        afterRender(progress) {
-            const reveal = range(progress, 0.72, 0.84);
-            regencyLabels.forEach((regency) => stage.place(regency.element, regency.position, { opacity: reveal, hide: reveal <= 0 }));
+        afterRender() {
+            root.updateMatrixWorld(true);
+            labels.forEach(({ element, position, key, unitLabel }) => {
+                // Constrain the complete HTML label, including long source names, to its own map frame.
+                // The depth stays unchanged while the screen-space anchor moves inward when needed.
+                scratch.copy(position).project(camera);
+                const halfWidth = Math.min(width / 2 - 12, (element.offsetWidth || 120) / 2 + 12);
+                const halfHeight = Math.min(height / 2 - 12, (element.offsetHeight || 36) / 2 + 12);
+                const limitX = Math.max(0, 1 - (halfWidth * 2 / Math.max(1, width)));
+                const limitY = Math.max(0, 1 - (halfHeight * 2 / Math.max(1, height)));
+                scratch.x = Math.max(-limitX, Math.min(limitX, scratch.x));
+                scratch.y = Math.max(-limitY, Math.min(limitY, scratch.y));
+                scratch.unproject(camera);
+                stage.place(element, scratch, { opacity: mapOpacity > 0.99 && (!key || (unitLabel ? key === focusedKey : !focusedKey || key === focusedKey)) ? 1 : 0 });
+            });
         },
         dispose() {
-            stage.host.removeEventListener('pointermove', onMove);
-            stage.host.removeEventListener('pointerleave', onLeave);
-            if (tip) tip.hidden = true;
+            disposed = true;
+            host.removeEventListener('mappingfocus', onFocus);
+            clear();
+            flight?.dispose();
+            root.parent?.remove(root);
         },
     };
 }
 
-function escape(value) {
-    return String(value ?? '').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
-}
+export const area6World = (stage, data) => mapWorld(stage, data, 'area6');
+export const penetrationWorld = (stage, data) => mapWorld(stage, data, 'penetration');
+export const globeWorld = area6World;
+export const descentWorld = penetrationWorld;

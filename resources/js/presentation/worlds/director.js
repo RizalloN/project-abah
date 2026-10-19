@@ -24,7 +24,7 @@ const loadEngine = () => {
 const supportsWebGL = () => {
     try {
         const canvas = document.createElement('canvas');
-        const context = canvas.getContext('webgl2') || canvas.getContext('webgl');
+        const context = canvas.getContext('webgl2');
         context?.getExtension('WEBGL_lose_context')?.loseContext();
         return Boolean(context);
     } catch (_) {
@@ -39,8 +39,11 @@ export class WorldDirector {
         this.stages = new Map();
         this.visibility = new WeakMap();
         this.pending = new WeakSet();
+        this.requested = new WeakSet();
+        this.observed = new Set();
         this.frame = null;
         this.enabled = false;
+        this.motionPaused = false;
     }
 
     init() {
@@ -51,8 +54,13 @@ export class WorldDirector {
         this.enabled = true;
         document.documentElement.classList.add('pres-worlds-on');
         this.near = new IntersectionObserver((entries) => entries.forEach((entry) => {
-            if (entry.isIntersecting) this.mount(entry.target);
-            else this.unmount(entry.target);
+            if (entry.isIntersecting) {
+                this.requested.add(entry.target);
+                this.mount(entry.target);
+            } else {
+                this.requested.delete(entry.target);
+                this.unmount(entry.target);
+            }
         }), { rootMargin: '110% 0px 110% 0px' });
         this.view = new IntersectionObserver((entries) => entries.forEach((entry) => {
             this.visibility.set(entry.target, entry.isIntersecting);
@@ -64,6 +72,16 @@ export class WorldDirector {
             this.kick();
         }, { passive: true });
         document.addEventListener('visibilitychange', () => this.kick());
+        this.root.addEventListener('worlddirty', () => this.kick());
+        this.root.addEventListener('worldcontextlost', (event) => {
+            const host = event.target.closest('[data-world]');
+            if (!host) return;
+            this.unmount(host);
+            host.classList.add('is-fallback');
+            // The source-backed poster stays usable. Re-entering the viewport can create a fresh context.
+        });
+        this.motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+        if (this.motionQuery.addEventListener) this.motionQuery.addEventListener('change', () => this.kick());
         this.scan(this.root);
     }
 
@@ -74,6 +92,7 @@ export class WorldDirector {
         scope.querySelectorAll('[data-world]').forEach((host) => {
             if (host.dataset.worldObserved) return;
             host.dataset.worldObserved = '1';
+            this.observed.add(host);
             this.near.observe(host);
             this.view.observe(host);
         });
@@ -82,6 +101,13 @@ export class WorldDirector {
 
     /** A rerendered section detaches its old hosts; release their GPU resources. */
     prune() {
+        this.observed.forEach((host) => {
+            if (host.isConnected) return;
+            this.near?.unobserve(host);
+            this.view?.unobserve(host);
+            this.requested.delete(host);
+            this.observed.delete(host);
+        });
         this.stages.forEach((stage, host) => {
             if (host.isConnected) return;
             stage.dispose();
@@ -111,11 +137,10 @@ export class WorldDirector {
         this.pending.add(host);
         try {
             const { createStage } = await loadEngine();
-            if (!host.isConnected || this.stages.has(host)) return;
+            if (!host.isConnected || !this.requested.has(host) || this.stages.has(host)) return;
             const stage = createStage(host, host.dataset.world, this.data());
             if (!stage) return;
             this.stages.set(host, stage);
-            host.classList.add('is-live');
             this.kick();
         } catch (error) {
             host.classList.add('is-fallback');
@@ -138,6 +163,11 @@ export class WorldDirector {
         this.frame = window.requestAnimationFrame((time) => this.tick(time));
     }
 
+    setPaused(paused) {
+        this.motionPaused = Boolean(paused);
+        this.kick();
+    }
+
     tick(time) {
         this.frame = null;
         if (document.hidden) return;
@@ -147,13 +177,28 @@ export class WorldDirector {
             const visible = this.visibility.get(host) !== false;
             if (!visible && stage.hasRendered) return;
             const track = this.trackOf(host);
-            const progress = still ? 1 : this.progress(track);
-            if (track && track._wp !== progress) {
-                track._wp = progress;
-                track.style.setProperty('--wp', progress.toFixed(4));
+            const progress = still ? 1 : host.hasAttribute('data-mapping-stage') ? 0.74 + this.progress(track) * 0.26 : this.progress(track);
+            try {
+                stage.motionPaused = this.motionPaused;
+                const settling = stage.render(progress, time, still);
+                const visual = stage.visualProgress ?? progress;
+                if (track && track._wp !== visual) {
+                    track._wp = visual;
+                    track.style.setProperty('--wp', visual.toFixed(4));
+                    if (track.hasAttribute('data-area6-story')) {
+                        const phase = visual < 0.46 ? 0 : visual < 0.72 ? 1 : 2;
+                        track.dataset.phase = String(phase);
+                        track.querySelectorAll('[data-area6-step]').forEach((button) => button.setAttribute('aria-pressed', String(Number(button.dataset.area6Step) === phase)));
+                    }
+                }
+                if (stage.hasRendered && stage.ready !== false && !stage.suspended) host.classList.add('is-live');
+                else host.classList.remove('is-live');
+                if (visible && !still && ((stage.animated && !this.motionPaused) || settling)) again = true;
+            } catch (error) {
+                this.unmount(host);
+                host.classList.add('is-fallback');
+                console.warn('Presentation map uses its accessible fallback.', error);
             }
-            stage.render(progress, time, still);
-            if (visible && !still && stage.animated) again = true;
         });
         if (again) this.kick();
     }

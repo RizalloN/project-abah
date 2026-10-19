@@ -100,12 +100,15 @@ it('rebuilds every section with the scroll renderer while reading data through t
         ->toContain('this.timeseriesSeries(')
         ->toContain('this.marketShareAreaPayload()')
         ->toContain('Posisi historis')
-        ->toContain('id="psd-marketshare-map"')
-        ->toContain('id="psd-timeseries-chart"')
-        ->toContain('data-psd-funding-product')
-        ->toContain('data-psd-micro-view')
-        ->toContain('data-psd-trend-group')
-        ->toContain('data-psd-marketshare-segment')
+        ->toContain('data-market-journey')
+        ->toContain('data-market-scene')
+        ->toContain('data-mapping-cue')
+        ->toContain('data-psd-timeseries-keys')
+        ->not->toContain('data-psd-funding-product')
+        ->not->toContain('data-psd-micro-view')
+        ->not->toContain('data-psd-trend-group')
+        ->not->toContain('data-psd-marketshare-segment')
+        ->not->toContain('<select')
         ->not->toContain('—');
 
     foreach (['scrollCover', 'scrollAgenda', 'scrollMarketShare', 'scrollMapping', 'scrollFundingSummary', 'scrollFundingProducts',
@@ -143,17 +146,21 @@ it('gives every chapter opener a 3D world while keeping the CSS sculptures as th
         ->toContain('class="pres-chapter__art pres-world__fallback" data-chapter-art="kualitas"');
 });
 
-it('falls from orbit onto the mapping polygons and reads every world figure through the deck accessors', function (): void {
+it('opens on Area 6 geography and keeps the penetration map tied to the report data', function (): void {
     $renderer = file_get_contents(resource_path('js/presentation/pres-scroll-report.js'));
     $director = file_get_contents(resource_path('js/presentation/worlds/director.js'));
     $globe = file_get_contents(resource_path('js/presentation/worlds/globe.js'));
     $engine = file_get_contents(resource_path('js/presentation/pres-engine.js'));
 
     expect($renderer)
-        ->toContain('data-world="globe"')
-        ->toContain('data-world="descent"')
+        ->toContain('data-world="area6"')
+        ->toContain('data-world="penetration"')
         ->toContain('data-world-track="pin"')
-        ->toContain('data-orbit-tip')
+        ->not->toContain('data-area6-district')
+        ->toContain('Bank lain (agregat)')
+        ->toContain('Potensi per cabang.')
+        ->not->toContain('Mulai dari Bumi')
+        ->not->toContain('Setiap prisma')
         ->toContain('worldData()')
         ->toContain('this.marketShareDistrictValues(code, units, \'total\')')
         ->not->toContain('—')
@@ -162,11 +169,18 @@ it('falls from orbit onto the mapping polygons and reads every world figure thro
         ->and($director)->toContain("import('./engine.js')")
         ->toContain('supportsWebGL()')
         ->toContain('pres-worlds-off')
-        ->and($globe)->toContain('CC BY 4.0');
+        ->and($globe)->toContain('territoryFlight')
+        ->and(file_get_contents(resource_path('js/presentation/worlds/territory-flight.js')))->toContain('earth_day_4096.jpg');
 
-    foreach (['earth_day_4096.jpg', 'earth_night_4096.jpg', 'earth_bump_roughness_clouds_4096.jpg'] as $texture) {
-        expect(file_exists(public_path('vendor/earth/'.$texture)))->toBeTrue();
-    }
+    $geography = json_decode(file_get_contents(public_path('data/marketshare-area6-kecamatan.geojson')), true, flags: JSON_THROW_ON_ERROR);
+    $features = collect($geography['features']);
+    $codes = $features->pluck('properties.KDCPUM');
+    expect($features)->toHaveCount(76)
+        ->and($codes->unique())->toHaveCount(76)
+        ->and($features->countBy('properties.KDPKAB')->sortKeys()->all())->toBe([
+            '35.02' => 21, '35.19' => 15, '35.20' => 18, '35.21' => 19, '35.77' => 3,
+        ])
+        ->and(file_exists(public_path('images/area6-regions.svg')))->toBeTrue();
 });
 
 it('keeps the depth layer readable without motion', function (): void {
