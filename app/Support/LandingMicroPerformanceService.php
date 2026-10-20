@@ -21,7 +21,7 @@ final class LandingMicroPerformanceService
 
     private const PERFORMANCE_RM_SNAPSHOT_TABLE = 'performance_rm_snapshots';
 
-    private const CACHE_VERSION = 'v40-mantri-per-booking-floor';
+    private const CACHE_VERSION = 'v41-mantri-verified-booking-cohort';
 
     private const PERIOD_LOOKUP_INDEXES = [
         'idx_snapshot_filter_optimized',

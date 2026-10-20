@@ -128,6 +128,7 @@ class MantriManualFormulaTest extends TestCase
             $this->row('2026-12-19', '2026-11-05', 'POSITION-ANCHOR', 1, ['cifno' => 'OTHER-CIF']),
         ]);
 
+        $this->inputStore()->captureDailyLoanPeriod('2026-12-08');
         $rows = app(MicroNettDisbursementCalculator::class)->mantriAccounts('2026-12-19');
         $this->assertCount(1, $rows);
         $this->assertSame('12345', $rows[0]['account_key']);
@@ -360,6 +361,7 @@ class MantriManualFormulaTest extends TestCase
             ]),
         ]);
         $store = $this->inputStore();
+        $store->captureDailyLoanPeriod('2026-11-10');
         $store->write('2026-10-17', [
             'source' => ['source_kind' => 'manual_workbook_position'], 'complete_presence' => true,
             'presence' => ['8001'], 'bookings' => [], 'unclassified_accounts' => [], 'owner_evidence' => [
@@ -401,6 +403,7 @@ class MantriManualFormulaTest extends TestCase
             $this->row('2026-10-17', '2026-09-05', 'POSITION-ANCHOR', 1, ['cifno' => 'OTHER-CIF']),
             $this->row('2026-10-19', '2026-10-19', '1002', 80_000_000, ['cifno' => 'OTHER-CIF']),
         ]);
+        $this->inputStore()->captureDailyLoanPeriod('2026-10-13');
         $calculator = app(MicroNettDisbursementCalculator::class);
         $first = $calculator->mantriAccounts('2026-10-17');
         $this->assertCount(1, $first);
@@ -434,6 +437,7 @@ class MantriManualFormulaTest extends TestCase
             $this->row('2026-10-17', '2026-10-18', '1002', 100_000_000),
             $this->row('2026-10-19', '2026-09-05', 'POSITION-ANCHOR', 1, ['cifno' => 'OTHER-CIF']),
         ]);
+        $this->inputStore()->captureDailyLoanPeriod('2026-10-17');
         $calculator = app(MicroNettDisbursementCalculator::class);
         $later = $calculator->mantriAccounts('2026-10-19');
         $this->assertCount(2, $later);
@@ -564,6 +568,7 @@ class MantriManualFormulaTest extends TestCase
             ]),
             $this->row('2026-10-19', '2026-10-19', '1002', 80_000_000, ['cifno' => 'OTHER-CIF']),
         ]);
+        $this->inputStore()->captureDailyLoanPeriod('2026-10-13');
         $calculator = app(MicroNettDisbursementCalculator::class);
         $earlier = $calculator->mantriAccounts('2026-10-17');
         $this->assertCount(1, $earlier);

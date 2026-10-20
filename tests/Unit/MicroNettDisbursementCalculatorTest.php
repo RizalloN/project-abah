@@ -2,17 +2,29 @@
 
 namespace Tests\Unit;
 
+use App\Support\MantriSourceInputStore;
 use App\Support\MicroNettDisbursementCalculator;
 use App\Support\ReportCacheVersion;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 class MicroNettDisbursementCalculatorTest extends TestCase
 {
+    private ?string $cohortDirectory = null;
+
+    protected function tearDown(): void
+    {
+        if ($this->cohortDirectory !== null) {
+            File::deleteDirectory($this->cohortDirectory);
+        }
+        parent::tearDown();
+    }
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -166,6 +178,14 @@ class MicroNettDisbursementCalculatorTest extends TestCase
             $this->kurRow('KUR-CURRENT', 200_000_000),
         ]);
 
+        $this->cohortDirectory = storage_path('framework/testing/mantri-nett-cohort-'.bin2hex(random_bytes(8)));
+        $store = new MantriSourceInputStore($this->cohortDirectory);
+        $this->app->instance(MantriSourceInputStore::class, $store);
+        $store->write('2026-09-05', [
+            'source' => ['source_kind' => 'audited_complete_workbook_position'],
+            'complete_presence' => true, 'presence' => ['DISAPPEARED'],
+            'bookings' => [$this->row('DISAPPEARED', 500_000_000, ['periode' => '2026-09-05'])],
+        ]);
         $calculator = app(MicroNettDisbursementCalculator::class);
         $this->assertSame(725_000_000.0, $calculator->mantri('2026-09-19')[0]['realisasi_os']);
         $this->assertSame(2, $calculator->mantri('2026-09-19')[0]['realisasi_deb']);

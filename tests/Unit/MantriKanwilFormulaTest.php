@@ -9,12 +9,15 @@ use Carbon\Carbon;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class MantriKanwilFormulaTest extends TestCase
 {
+    private ?string $cohortDirectory = null;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -36,6 +39,14 @@ class MantriKanwilFormulaTest extends TestCase
             $table->decimal('plafon', 20, 2)->nullable();
             $table->decimal('baki_debet1', 20, 2)->nullable();
         });
+    }
+
+    protected function tearDown(): void
+    {
+        if ($this->cohortDirectory !== null) {
+            File::deleteDirectory($this->cohortDirectory);
+        }
+        parent::tearDown();
     }
 
     public static function reportPositions(): array
@@ -74,6 +85,15 @@ class MantriKanwilFormulaTest extends TestCase
             $row('FUTURE', 900_000_000, ['tgl_realisasi' => $date->copy()->addDay()->toDateString()]),
         ]);
 
+        $cohortPeriod = $date->copy()->subDay()->toDateString();
+        $this->cohortDirectory = storage_path('framework/testing/mantri-kanwil-cohort-'.bin2hex(random_bytes(8)));
+        $store = new MantriSourceInputStore($this->cohortDirectory);
+        $this->app->instance(MantriSourceInputStore::class, $store);
+        $store->write($cohortPeriod, [
+            'source' => ['source_kind' => 'audited_complete_workbook_position'],
+            'complete_presence' => true, 'presence' => ['DISAPPEARED'],
+            'bookings' => [$row('DISAPPEARED', 999_000_000, ['periode' => $cohortPeriod])],
+        ]);
         $this->assertNull(app(MantriProductivityReference::class)->dataForPeriod($period));
         $calculator = app(MicroNettDisbursementCalculator::class);
         $accounts = collect($calculator->mantriAccounts($period))->keyBy('account_key');

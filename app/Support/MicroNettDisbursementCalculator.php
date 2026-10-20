@@ -22,7 +22,7 @@ final class MicroNettDisbursementCalculator
 
     private const READ_CACHE_VERSION = 'v2-kanwil-gross-singlepn';
 
-    private const MANTRI_READ_CACHE_VERSION = 'v15-initiator-per-booking-floor';
+    private const MANTRI_READ_CACHE_VERSION = 'v16-verified-booking-cohort';
 
     private const READ_CACHE_SECONDS = 1800;
 
@@ -185,9 +185,15 @@ final class MicroNettDisbursementCalculator
         $archivedRows = [];
         $approvedOwners = [];
         $rawOwners = [];
+        $registeredBookings = [];
+        $firstVerifiedPosition = $period;
         foreach ($inputs as $input) {
+            if (! empty($input['complete_presence'])) {
+                $firstVerifiedPosition = min($firstVerifiedPosition, $input['period']);
+            }
             foreach ($input['bookings'] ?? [] as $row) {
                 $archivedRows[] = (object) $row;
+                $registeredBookings[$this->mantriBookingIdentity($row['nomor_rekening1'], $row['cifno'], $row['tgl_realisasi'])] = true;
                 if (($input['source']['source_kind'] ?? '') === 'lw321_import'
                     && ($row['raw_singlepn_available'] ?? false) === true) {
                     $key = $row['periode'].'|'.$this->mantriBookingIdentity($row['nomor_rekening1'], $row['cifno'], $row['tgl_realisasi']);
@@ -214,8 +220,9 @@ final class MicroNettDisbursementCalculator
                 $row->pn_pengelola1 = $rawOwners[$key];
             }
         });
-        // MTD is a flow ledger: a disbursement remains after its account closes.
-        // Database rows are last at equal positions and retain source precedence.
+        // Carry the recorded reference cohort and subsequent observations.
+        // Older stock history can enrich identity, but cannot introduce a
+        // booking already absent when the verified cohort was initialized.
         $rows = collect($archivedRows)->merge($rows)->filter(function (object $row) use ($periodStart, $period): bool {
             return (string) $row->tgl_realisasi >= $periodStart && (string) $row->tgl_realisasi <= $period;
         });
@@ -223,6 +230,8 @@ final class MicroNettDisbursementCalculator
             $row->{$ownerColumn} = $this->mantriSinglePn($row->{$ownerColumn} ?? null);
         });
         $rows = $this->deduplicateMantriBookings($rows)
+            ->filter(fn (object $row): bool => (string) $row->periode >= $firstVerifiedPosition
+                || isset($registeredBookings[$this->mantriBookingIdentity($row->nomor_rekening1, $row->cifno, $row->tgl_realisasi)]))
             ->reject(fn (object $row): bool => $this->excludedMantriBooking($row))
             ->sortBy(fn (object $row): string => (string) $row->tgl_realisasi.'|'.$this->canonicalAccount($row->nomor_rekening1 ?? null))
             ->values();

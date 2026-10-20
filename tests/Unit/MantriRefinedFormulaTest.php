@@ -114,6 +114,78 @@ class MantriRefinedFormulaTest extends TestCase
     }
 
     #[DataProvider('futureFloorImports')]
+    public function test_registered_cohort_survives_next_imports_without_resurrecting_uncaptured_earlier_stock(bool $lw, string $period, int $hke): void
+    {
+        $date = Carbon::parse($period);
+        $previous = $date->copy()->startOfMonth()->subDay()->toDateString();
+        $before = $date->copy()->subDays(2)->toDateString();
+        $next = $date->copy()->addDay()->toDateString();
+        $last = $date->copy()->addDays(2)->toDateString();
+        $this->importPosition($previous, [
+            $this->loan($previous, 'CLOSED-BASELINE', 30_000_000, ['tgl_realisasi' => $previous]),
+        ], $lw);
+        DB::table('daily_loan_dinamis')->insert(
+            $this->loan($before, 'UNCAPTURED-HISTORY', 99_000_000, ['tgl_realisasi' => $before])
+        );
+        // An attribution supplement proves the owner, not financial membership.
+        app(MantriSourceInputStore::class)->write($before, [
+            'source' => ['source_kind' => 'manual_workbook_owner_evidence'],
+            'complete_presence' => false, 'presence' => [], 'bookings' => [],
+            'owner_evidence' => [[
+                'account' => 'UNCAPTURED-HISTORY', 'cif' => 'CIF-UJI', 'realization_date' => $before,
+                'pn' => '801', 'name' => 'Initiator', 'as_of' => $before, 'owner_basis' => 'pn_pemrakarsa1',
+            ]],
+        ]);
+        $this->importPosition($period, [
+            $this->loan($period, 'REGISTERED', 100_000_000, ['tgl_realisasi' => $period]),
+        ], $lw);
+        $calculator = app(MicroNettDisbursementCalculator::class);
+        $first = $calculator->cachedMantriAccounts($period);
+        $this->assertSame(['REGISTERED'], array_column($first, 'account_key'));
+        $this->assertSame(70_000_000.0, $first[0]['net_amount']);
+
+        $this->importPosition($next, [
+            $this->loan($next, 'SUBSEQUENT', 80_000_000, ['tgl_realisasi' => $next]),
+        ], $lw);
+        $rows = collect($calculator->cachedMantriAccounts($next))->keyBy('account_key');
+        $this->assertEqualsCanonicalizing(['REGISTERED', 'SUBSEQUENT'], $rows->keys()->all());
+        $this->assertSame(120_000_000.0, $rows->sum('net_amount'));
+        $this->assertSame(180_000_000.0, $rows->sum('plafon'));
+        $this->assertSame([30_000_000.0], $rows->pluck('previous_os')->unique()->values()->all());
+
+        $landing = app(LandingMicroPerformanceService::class)->payload($next);
+        $kpi = (new ReflectionMethod(KinerjaRmMikroReportController::class, 'mantriProductivityPayload'))
+            ->invoke(new KinerjaRmMikroReportController, $next);
+        $this->assertTrue(data_get($landing, 'meta.available'), (string) data_get($landing, 'meta.error'));
+        $this->assertSame(120_000_000.0, (float) data_get($landing, 'mantri_performance.total.net_disbursement.amount'));
+        $this->assertSame(120_000_000.0, (float) $kpi['total']['realisasi_os']);
+        $this->assertSame(2, data_get($landing, 'mantri_performance.total.net_disbursement.deb'));
+        $this->assertSame(2, (int) $kpi['total']['realisasi_deb']);
+        $this->assertSame(120_000_000.0 / $kpi['working_days'], (float) data_get($landing, 'mantri_performance.total.net_disbursement.average_per_hke'));
+
+        $this->importPosition($last, [
+            $this->loan($last, 'NEXT-IMPORT', 20_000_000, ['tgl_realisasi' => $last, 'cifno' => 'FRESH-CIF', 'cifno_clean' => 'FRESH-CIF']),
+        ], $lw);
+        $final = $calculator->cachedMantriAccounts($last);
+        $this->assertCount(3, $final);
+        $this->assertSame(140_000_000.0, collect($final)->sum('net_amount'));
+        $this->assertNotContains('UNCAPTURED-HISTORY', array_column($final, 'account_key'));
+        $this->assertSame($first, $calculator->cachedMantriAccounts($period));
+    }
+
+    public function test_without_registered_inputs_only_selected_position_initializes_financial_cohort(): void
+    {
+        DB::table('daily_loan_dinamis')->insert([
+            $this->loan('2027-01-07', 'OLDER-UNCAPTURED', 99_000_000, ['tgl_realisasi' => '2027-01-05']),
+            $this->loan('2027-01-11', 'CURRENT', 80_000_000, ['tgl_realisasi' => '2027-01-05']),
+        ]);
+        $rows = app(MicroNettDisbursementCalculator::class)->mantriAccounts('2027-01-11');
+        $this->assertSame(['CURRENT'], array_column($rows, 'account_key'));
+        $this->assertSame(80_000_000.0, $rows[0]['net_amount']);
+        $this->assertSame([], app(MantriSourceInputStore::class)->periods());
+    }
+
+    #[DataProvider('futureFloorImports')]
     public function test_floor_applies_to_each_account_before_same_initiator_totals_tiers_and_hke_in_both_consumers(bool $lw, string $period, int $hke): void
     {
         $previous = Carbon::parse($period)->startOfMonth()->subDay()->toDateString();

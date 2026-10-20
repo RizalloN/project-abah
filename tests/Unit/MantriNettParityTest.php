@@ -14,12 +14,23 @@ use Illuminate\Support\Defer\DeferredCallbackCollection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Schema;
 use ReflectionMethod;
 use Tests\TestCase;
 
 class MantriNettParityTest extends TestCase
 {
+    private ?string $cohortDirectory = null;
+
+    protected function tearDown(): void
+    {
+        if ($this->cohortDirectory !== null) {
+            File::deleteDirectory($this->cohortDirectory);
+        }
+        parent::tearDown();
+    }
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -76,6 +87,7 @@ class MantriNettParityTest extends TestCase
 
     public function test_landing_and_kpi_reconcile_per_mantri_and_branch_including_zero_net_and_missing_bookings(): void
     {
+        $this->registerCohort('2026-10-04');
         $landing = $this->landing();
         $kpi = $this->kpi();
 
@@ -98,6 +110,7 @@ class MantriNettParityTest extends TestCase
 
     public function test_branch_scope_follows_active_mantri_placement_after_loan_branch_transfer(): void
     {
+        $this->registerCohort('2026-10-04');
         auth()->setUser(new GenericUser(['id' => '0045']));
         $landing = $this->landing(UserBranchScope::forKey('madiun'));
         $kpi = $this->kpi();
@@ -110,6 +123,7 @@ class MantriNettParityTest extends TestCase
 
     public function test_subsequent_import_refreshes_both_consumers_without_changing_kur_rm(): void
     {
+        $this->registerCohort('2026-10-04');
         $calculator = app(MicroNettDisbursementCalculator::class);
         $first = $this->landing();
         $firstKpi = $this->kpi();
@@ -136,6 +150,7 @@ class MantriNettParityTest extends TestCase
 
     public function test_baseline_reimport_is_applied_to_landing_and_kpi_using_the_same_version(): void
     {
+        $this->registerCohort('2026-10-04');
         $this->landing();
         $this->kpi();
 
@@ -194,6 +209,7 @@ class MantriNettParityTest extends TestCase
 
     public function test_active_mantri_with_unknown_employment_category_remains_in_nett_totals(): void
     {
+        $this->registerCohort('2026-10-04');
         DB::table('brihc_pemasar')->insert([
             'uniqueid_namareport' => 'roster-444', 'pernr' => '000444',
             'completename' => 'Mantri Kategori Belum Terpetakan',
@@ -327,6 +343,7 @@ class MantriNettParityTest extends TestCase
             $this->loan('current-non-roster', 'CIF-OTHER', 'OTHER-NEW', 50_000_000, ['pn_pengelola1' => '00000999']),
         ]);
 
+        $this->registerCohort('2026-10-05');
         $landing = $this->landing();
         $kpi = $this->kpi();
         $this->assertMantriParity($landing, $kpi, ['111' => [0.0, 1], '222' => [0.0, 0]]);
@@ -466,6 +483,14 @@ class MantriNettParityTest extends TestCase
             unlink($directory.'/.write.lock');
             rmdir($directory);
         }
+    }
+
+    private function registerCohort(string $period): void
+    {
+        $this->cohortDirectory = storage_path('framework/testing/mantri-parity-cohort-'.bin2hex(random_bytes(8)));
+        $store = new MantriSourceInputStore($this->cohortDirectory);
+        $this->app->instance(MantriSourceInputStore::class, $store);
+        $store->captureDailyLoanPeriod($period);
     }
 
     private function assertMantriParity(array $landing, array $kpi, array $expected): void

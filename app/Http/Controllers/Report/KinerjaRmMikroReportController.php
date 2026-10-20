@@ -208,7 +208,7 @@ class KinerjaRmMikroReportController extends Controller
     {
         $reference = app(\App\Support\MicroRmRosterReference::class);
         $referenceVersion = $mantri ? app(MantriSourceInputStore::class)->fingerprint($period) : $reference->fingerprint();
-        $cachePrefix = $mantri ? 'nett_workbook_v13-mantri-per-booking-floor' : 'nett_workbook_v6-kanwil-gross';
+        $cachePrefix = $mantri ? 'nett_workbook_v14-mantri-verified-cohort' : 'nett_workbook_v6-kanwil-gross';
 
         return Cache::remember($this->cacheKey($cachePrefix, $period, [$referenceVersion, $mantri ? 'mantri' : 'rm']), 600, function () use ($period, $mantri, $reference): array {
             if (! $mantri) {
@@ -1180,7 +1180,7 @@ class KinerjaRmMikroReportController extends Controller
             : '';
         $cacheFingerprint .= ':'.app(MantriSourceInputStore::class)->fingerprint($period);
 
-        return Cache::remember('kinerja_rm_mikro_mantri_v26_per_booking_floor:'.$this->reportCacheVersion().':'.$period.':'.$category.':'.$extremeLowView.$cacheFingerprint, 600, function () use ($category, $period, $extremeLowView): array {
+        return Cache::remember('kinerja_rm_mikro_mantri_v27_verified_cohort:'.$this->reportCacheVersion().':'.$period.':'.$category.':'.$extremeLowView.$cacheFingerprint, 600, function () use ($category, $period, $extremeLowView): array {
             return match ($category) {
                 'kuadran' => $this->mantriKuadranPayload($period),
                 'produktivitas_mantri' => $this->mantriProductivityPayload($period),
@@ -1574,7 +1574,7 @@ class KinerjaRmMikroReportController extends Controller
     private function cachedExtremeLowMantriRosterRows(string $period): Collection
     {
         return Cache::remember(
-            'kinerja_rm_mikro_extreme_low_roster_v12_floor:'.$this->reportCacheVersion().':'.$period.':'.$this->dailyLoanPeriodCacheFingerprint($period).':'.app(MantriSourceInputStore::class)->fingerprint($period),
+            'kinerja_rm_mikro_extreme_low_roster_v13_cohort:'.$this->reportCacheVersion().':'.$period.':'.$this->dailyLoanPeriodCacheFingerprint($period).':'.app(MantriSourceInputStore::class)->fingerprint($period),
             600,
             fn (): Collection => $this->extremeLowMantriRosterRows($period)
         );
