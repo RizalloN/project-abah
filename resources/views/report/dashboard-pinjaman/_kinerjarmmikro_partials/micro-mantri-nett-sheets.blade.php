@@ -153,6 +153,6 @@
             @endif
         </section>
     @endforeach
-    <p class="micro-nett-help">Nett mengikuti perhitungan KPI dan penempatan roster aktif BRIHC. Ratas / HKE adalah nett dibagi hari kerja efektif. Unit tanpa pemetaan MBM ditandai “Belum dipetakan”. Klik 2x pada angka untuk melihat daftar Mantri.</p>
+    <p class="micro-nett-help">Nett setiap rekening adalah plafon dikurangi OS CIF mikro akhir bulan sebelumnya yang rekeningnya sudah tidak ada pada posisi berjalan, dengan batas minimum nol sebelum dijumlahkan menjadi nett MTD. Pemilik mengikuti PN Pemrakarsa dan bukti atribusi sumber saat pencairan, sedangkan penempatan mengikuti roster aktif BRIHC Area 6. Ratas / Mantri / HKE adalah nett dibagi jumlah Mantri PT Non Briguna dan Kontrak, lalu dibagi hari kerja efektif. Unit tanpa pemetaan MBM ditandai “Belum dipetakan”. Klik 2x pada angka untuk melihat daftar Mantri.</p>
     @include('report.dashboard-pinjaman._kinerjarmmikro_partials.micro-nett-drilldown')
 </div>

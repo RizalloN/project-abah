@@ -27,8 +27,8 @@
       "pn": "00167231",
       "name": "Sandi Prayogo",
       "branch": "KC PONOROGO",
-      "unit": "KC PONOROGO",
-      "office_type": "kc",
+      "unit": "KCP SUDIRMAN PONOROGO",
+      "office_type": "kcp",
       "role": "RM MIKRO",
       "employment_status": "PT (peserta pens.)",
       "effective_from": "2026-02-01"
@@ -153,5 +153,11 @@
       "role": "RM MIKRO",
       "employment_status": "PT (peserta pens.)"
     }
-  ]
+  ],
+  "placement_source": {
+    "file": "REALISASI RM KUR Kecil.xlsx",
+    "sha256": "a09d76a976dbc0eee41a6d60b3f9cc00d275f1b2277c6e58cc6137a2aa65490b",
+    "position_date": "2026-10-17",
+    "basis": "Identitas dan penempatan saja; nominal tetap dihitung dari Daily Loan tiap periode."
+  }
 }

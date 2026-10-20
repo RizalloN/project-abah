@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use Carbon\Carbon;
 use RuntimeException;
 
 final class MantriProductivityReference
@@ -24,8 +25,9 @@ final class MantriProductivityReference
         if ($this->data === null) {
             $contents = (string) file_get_contents($path);
             $data = json_decode($contents, true, 512, JSON_THROW_ON_ERROR);
-            if (($data['version'] ?? null) !== 1
-                || ! isset($data['month_start'], $data['as_of'], $data['baseline_period'], $data['people'], $data['accounts'], $data['baseline_accounts'], $data['current_accounts'], $data['sources'])) {
+            if (! in_array($data['version'] ?? null, [1, 2], true)
+                || ! isset($data['month_start'], $data['as_of'], $data['baseline_period'], $data['people'], $data['accounts'], $data['baseline_accounts'], $data['current_accounts'], $data['sources'])
+                || (($data['version'] ?? null) === 2 && ! is_array($data['baseline_cif_os'] ?? null))) {
                 throw new RuntimeException('Referensi produktivitas Mantri tidak lengkap.');
             }
             $this->data = $data;
@@ -38,7 +40,7 @@ final class MantriProductivityReference
 
     public function fingerprint(string $period): string
     {
-        return $this->dataForPeriod($period) === null
+        return ($this->dataForPeriod($period) ?? $this->baselineDataForPeriod($period)) === null
             ? 'brihc'
             : $this->loadedFingerprint;
     }
@@ -52,7 +54,9 @@ final class MantriProductivityReference
         $this->accountIndex ??= array_column($data['accounts'], null, 'account');
         $reference = $this->accountIndex[$this->accountKey($account)] ?? null;
 
-        return is_array($reference) && $reference['cif'] === strtoupper(trim($cif))
+        return is_array($reference)
+            && (($data['version'] ?? 1) === 1 || $period === $data['as_of'])
+            && $reference['cif'] === strtoupper(trim($cif))
             && $reference['realization_date'] === substr($realizationDate, 0, 10)
             && $reference['realization_date'] <= $period
             ? $reference : null;
@@ -87,6 +91,31 @@ final class MantriProductivityReference
         }
 
         return $closed;
+    }
+
+    /** Audited CIF exposure from the source month's previous MICRO position. */
+    public function previousMicroOsByCif(string $period, array $cifs): ?array
+    {
+        $data = $this->baselineDataForPeriod($period);
+        if ($data === null) {
+            return null;
+        }
+
+        $requested = array_fill_keys(array_map(static fn ($cif): string => strtoupper(trim((string) $cif)), $cifs), true);
+
+        return array_map('floatval', array_intersect_key($data['baseline_cif_os'], $requested));
+    }
+
+    private function baselineDataForPeriod(string $period): ?array
+    {
+        $monthStart = Carbon::parse($period)->startOfMonth();
+        $data = $this->dataForPeriod($monthStart->toDateString());
+
+        // A previous-month position stays valid for every report in that month.
+        // Account ownership above remains restricted to the source position.
+        return $data !== null && ($data['version'] ?? 1) === 2
+            && $data['baseline_period'] === $monthStart->subDay()->toDateString()
+            ? $data : null;
     }
 
     private function accountKey(string $value): string

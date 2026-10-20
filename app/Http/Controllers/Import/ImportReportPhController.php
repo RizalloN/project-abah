@@ -14,9 +14,12 @@ use App\Services\Import\ImportExecutionService;
 use App\Services\Import\ImportProgressService;
 use App\Services\Import\ImportNotificationSyncService;
 use App\Services\Import\MySqlBulkLoadService;
+use App\Services\Import\SchemaDrift\ColumnFormatMemory;
+use App\Services\Import\SchemaIntrospectionService;
 use App\Support\ReportDataSyncService;
 use App\Support\ImportPreviewErrorHandler;
 use App\Support\SargableDateFilter;
+use App\Services\Import\Strategies\Lw325PhImportStrategy;
 use App\Support\StrictDateParser;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -40,7 +43,7 @@ class ImportReportPhController extends Controller
     private const UNIQUE_SUFFIX = '_RPH';
     private const REPORT_LABEL = 'Report Nominatif Rekening Pinjaman PH';
     private const COLUMN_DELIMITER = ',';
-    private const ROW_NUMBER_HEADERS = ['textbox3', 'no', 'row_num', 'nomor_baris', 'rownumber'];
+    private const ROW_NUMBER_HEADERS = Lw325PhImportStrategy::ROW_NUMBER_HEADERS;
     private const EXPECTED_HEADERS = [
         'textbox3', 'periode', 'acctno', 'kanwil', 'kanca', 'unit', 'nama_debitur', 'cif1',
         'fksegmen', 'segmen_dashboard', 'description', 'produk_dashboard', 'tgl_ph',
@@ -80,39 +83,7 @@ class ImportReportPhController extends Controller
         'sai_deffered_ph', 'wcbal', 'waccint', 'wadvpmt', 'wpenint', 'wmisc', 'wothchg',
         'wpmtamt', 'wamount', 'clmamt', 'clmapr',
     ];
-    private const EXCEL_HEADER_ALIASES = [
-        'no' => 'textbox3',
-        'nomor_rekening' => 'acctno',
-        'nomor_rekening_1' => 'acctno',
-        'nomor_rekening1' => 'acctno',
-        'segmen' => 'segmen_dashboard',
-        'deskripsi_segmen' => 'description',
-        'produk' => 'produk_dashboard',
-        'currency' => 'curtyp',
-        'sisa_awal_ph_pokok' => 'saldo_pertama_ph_pokok',
-        'sisa_awal_ph_bunga' => 'saldo_pertama_ph_bunga',
-        'sisa_akhir_ph_pokok' => 'pokok',
-        'sisa_akhir_ph_bunga' => 'bunga',
-        'kumulatif_angsuran_pokok' => 'angpok',
-        'kumulatif_angsuran_bunga' => 'angbung',
-        'sisa_pokok' => 'sisapok',
-        'sisa_bunga' => 'sisabun',
-        'alih_tagih_asuransi' => 'clmamt1',
-        'saldo_tagihan_alih_tagih_asuransi' => 'clmapr1',
-        'total_kewajiban' => 'os_penuh_berjalan1',
-        'kecamatan_tempat_tinggal' => 'kecamatan_t_tinggal',
-        'kelurahan_tempat_tinggal' => 'kelurahan_t_tinggal',
-        'kodepos_tempat_tinggal' => 'kodepos_t_tinggal',
-        'kecamatan_tempat_usaha' => 'kecamatan_t_usaha',
-        'kelurahan_tempat_usaha' => 'kelurahan_t_usaha',
-        'kodepos_tempat_usaha' => 'kodepos_t_usaha',
-        'pn_pengelola_2' => 'pn_pengelola2',
-        'pn_crr' => 'pn_crr1',
-        'pn_jumlah' => 'jumlah_pn',
-        'deffered_bunga_cutoff_ph' => 'deffered_bunga_ph',
-        'sai_tunggakan_cutoff_ph' => 'sai_tunggakan_ph',
-        'sai_deffered_cutoff_ph' => 'sai_deffered_ph',
-    ];
+    private const EXCEL_HEADER_ALIASES = Lw325PhImportStrategy::HEADER_ALIASES;
     private const EXCEL_HEADER_OCCURRENCE_ALIASES = [
         'cif' => [
             1 => 'cif1',
@@ -217,7 +188,7 @@ class ImportReportPhController extends Controller
         $normalizedFilters = [];
 
         foreach ($activeFilters as $columnIndex => $allowedValues) {
-            $column = self::TARGET_COLUMNS[(int) $columnIndex] ?? null;
+            $column = $this->targetColumns()[(int) $columnIndex] ?? null;
             if ($column === null) {
                 continue;
             }
@@ -297,7 +268,7 @@ class ImportReportPhController extends Controller
         $loadColumns = ['uniqueid_namareport', 'created_at', 'updated_at'];
 
         foreach ($selectedColumns as $index) {
-            $column = self::TARGET_COLUMNS[(int) $index] ?? null;
+            $column = $this->targetColumns()[(int) $index] ?? null;
             if ($column === null || in_array($column, ['id', 'uniqueid_namareport'], true)) {
                 continue;
             }
@@ -416,6 +387,8 @@ class ImportReportPhController extends Controller
             'delimiter' => $delimiter,
             'output_csv_path' => $outputCsvPath,
             'active_filters' => $this->normalizeActiveFiltersForPolars($activeFilters),
+            'extra_columns' => $this->extraTargetColumnSpecs(),
+            'date_orders' => $this->learnedDateOrders(),
         ], $extraConfig), JSON_UNESCAPED_UNICODE));
 
         $cmd = escapeshellarg($pythonExe)
@@ -900,7 +873,7 @@ class ImportReportPhController extends Controller
         $previewRows = [];
         $uniqueValues = [];
 
-        foreach (self::TARGET_COLUMNS as $index => $column) {
+        foreach ($this->targetColumns() as $index => $column) {
             $uniqueValues[$index] = [];
         }
 
@@ -908,7 +881,7 @@ class ImportReportPhController extends Controller
         foreach ((array) ($previewPayload['preview_rows_indexed'] ?? []) as $rowValues) {
             $previewRow = [];
 
-            foreach (self::TARGET_COLUMNS as $displayIndex => $column) {
+            foreach ($this->targetColumns() as $displayIndex => $column) {
                 $sourceIndex = $sourceIndexes[$column] ?? null;
                 $value = $sourceIndex !== null ? ($rowValues[$sourceIndex] ?? null) : null;
                 $normalizedValue = $this->normalizeCellValue($column, $value);
@@ -941,7 +914,7 @@ class ImportReportPhController extends Controller
         }
 
         $displayFilterMap = [];
-        foreach (self::TARGET_COLUMNS as $displayIndex => $column) {
+        foreach ($this->targetColumns() as $displayIndex => $column) {
             if (array_key_exists($column, $sourceIndexes)) {
                 $displayFilterMap[$displayIndex] = (int) $sourceIndexes[$column];
             }
@@ -951,7 +924,7 @@ class ImportReportPhController extends Controller
             'path' => $relativePath,
             'staged_csv_path' => null,
             'header_index' => (int) ($previewPayload['header_index'] ?? 0),
-            'normalized_headers' => self::TARGET_COLUMNS,
+            'normalized_headers' => $this->targetColumns(),
             'source_headers' => $normalizedSourceHeaders,
             'total_rows' => $resolvedTotalRows,
             'delimiter' => null,
@@ -1154,7 +1127,7 @@ class ImportReportPhController extends Controller
             ]);
 
             return view('import.preview', [
-                'headers' => self::TARGET_COLUMNS,
+                'headers' => $this->targetColumns(),
                 'previewData' => (array) ($previewState['previewData'] ?? []),
                 'filePath' => $relativePath,
                 'formattedUniqueValues' => (array) ($previewState['formattedUniqueValues'] ?? []),
@@ -1362,7 +1335,7 @@ class ImportReportPhController extends Controller
             $bulkLoadColumns = $this->buildPolarsLoadColumns($selectedColumns);
             $totalRows = $this->estimateImportRows($workingPath, (int) ($context['header_line'] ?? 1));
             $headerIndex = max(0, ((int) ($context['header_line'] ?? 1)) - 1);
-            $queueHeaders = array_values((array) ($context['headers'] ?? self::TARGET_COLUMNS));
+            $queueHeaders = array_values((array) ($context['headers'] ?? $this->targetColumns()));
             $sourceTotalRows = $totalRows + $headerIndex + 1;
 
             if ($totalRows === 0) {
@@ -1726,7 +1699,9 @@ class ImportReportPhController extends Controller
         $stagedCsvPath = (string) ($params['staged_csv_path'] ?? '');
         if ($stagedCsvPath !== '' && file_exists($stagedCsvPath)) {
             $sourcePath = $stagedCsvPath;
-            $cleanupPaths[] = $stagedCsvPath;
+            if (realpath($stagedCsvPath) !== realpath($absolutePath)) {
+                $cleanupPaths[] = $stagedCsvPath;
+            }
         }
 
         $send('progress', [
@@ -1781,12 +1756,7 @@ class ImportReportPhController extends Controller
         }
 
         if (!$this->validateReportPhBulkStage($filteredCsvPath, $loadColumns, (string) ($params['periode'] ?? ''))) {
-            foreach (array_unique($cleanupPaths) as $cleanupPath) {
-                if (is_string($cleanupPath) && $cleanupPath !== '' && file_exists($cleanupPath)) {
-                    @unlink($cleanupPath);
-                }
-            }
-
+            @unlink($filteredCsvPath);
             return $this->executeQueuedCsvFallback($sourcePath, $selectedColumns, $activeFilters, $params, $send);
         }
 
@@ -2009,6 +1979,16 @@ class ImportReportPhController extends Controller
 
         $preparedRows = $totalSuccess + $totalFailed;
 
+        if ($preparedRows <= 0) {
+            return [
+                'status' => 'failed',
+                'message' => 'Fallback CSV LW325 - PH tidak menghasilkan baris valid. Tidak ada data yang diimpor.',
+                'total_success' => 0,
+                'total_failed' => 0,
+                'total_rows' => 0,
+            ];
+        }
+
         try {
             $this->assertReportPhImportIntegrity($expectedPeriod, $preparedRows);
         } catch (\Throwable $e) {
@@ -2163,7 +2143,7 @@ class ImportReportPhController extends Controller
             'header_line' => $structure['header_row']['record_number'],
             'source_headers' => $structure['parsed_headers'],
             'source_indexes' => $this->buildSourceIndexes($structure['parsed_headers']),
-            'headers' => self::TARGET_COLUMNS,
+            'headers' => $this->targetColumns(),
             'periode' => $periode,
             'detected_profile_summary' => [
                 'delimiter' => $delimiter,
@@ -2277,7 +2257,7 @@ class ImportReportPhController extends Controller
                     continue;
                 }
 
-                return $this->normalizeDateValue($row[$periodeIndex] ?? null);
+                return $this->normalizeDateValue($row[$periodeIndex] ?? null, 'periode');
             }
         } finally {
             fclose($handle);
@@ -2491,35 +2471,35 @@ class ImportReportPhController extends Controller
             return null;
         }
 
-        if (in_array($column, self::DATE_COLUMNS, true)) {
-            return $this->normalizeDateValue($value);
+        if ($this->isDateColumn($column)) {
+            return $this->normalizeDateValue($value, $column);
         }
 
-        if (in_array($column, self::INTEGER_COLUMNS, true)) {
+        if ($this->isIntegerColumn($column)) {
             return $this->normalizeIntegerValue($value);
         }
 
-        if (in_array($column, self::DECIMAL_COLUMNS, true)) {
+        if ($this->isDecimalColumn($column)) {
             return $this->normalizeDecimalValue($value);
         }
 
         return $value;
     }
 
-    private function normalizeDateValue(?string $value): ?string
+    private function normalizeDateValue(?string $value, ?string $column = null): ?string
     {
         $value = trim($this->smartNormalizeQuotedCsvCellValue($value));
         if ($value === '') {
             return null;
         }
 
-        return StrictDateParser::normalize($value, [
+        return StrictDateParser::normalizeWithOrder($value, $column !== null ? ($this->learnedDateOrders()[$column] ?? null) : null, [
             'n/j/Y g:i:s A',
             'm/d/Y g:i:s A',
         ]);
     }
 
-    private function normalizeDateForDatabase(mixed $value): ?string
+    private function normalizeDateForDatabase(mixed $value, ?string $column = null): ?string
     {
         if ($value === null) {
             return null;
@@ -2530,7 +2510,7 @@ class ImportReportPhController extends Controller
             return null;
         }
 
-        $normalized = $this->normalizeDateValue($raw);
+        $normalized = $this->normalizeDateValue($raw, $column);
         if ($normalized !== null) {
             return $normalized;
         }
@@ -2672,8 +2652,8 @@ class ImportReportPhController extends Controller
             }
 
             $value = $row[$index] ?? null;
-            if (in_array($column, self::DATE_COLUMNS, true)) {
-                $value = $this->normalizeDateForDatabase($value);
+            if ($this->isDateColumn($column)) {
+                $value = $this->normalizeDateForDatabase($value, $column);
             }
 
             $insertRow[$column] = $value;
@@ -2697,7 +2677,7 @@ class ImportReportPhController extends Controller
         ];
 
         foreach ($selectedColumns as $index) {
-            $column = self::TARGET_COLUMNS[$index] ?? null;
+            $column = $this->targetColumns()[$index] ?? null;
             if ($column === null || in_array($column, ['id', 'uniqueid_namareport'], true)) {
                 continue;
             }
@@ -2710,8 +2690,8 @@ class ImportReportPhController extends Controller
                 }
             }
 
-            if (in_array($column, self::DATE_COLUMNS, true)) {
-                $value = $this->normalizeDateForDatabase($value);
+            if ($this->isDateColumn($column)) {
+                $value = $this->normalizeDateForDatabase($value, $column);
             }
 
             $insertRow[$column] = $value;
@@ -2741,11 +2721,11 @@ class ImportReportPhController extends Controller
     {
         $selected = array_map('intval', $selectedColumns);
         $required = [
-            array_search('periode', self::TARGET_COLUMNS, true),
-            array_search('acctno', self::TARGET_COLUMNS, true),
-            array_search('kanca', self::TARGET_COLUMNS, true),
-            array_search('unit', self::TARGET_COLUMNS, true),
-            array_search('nama_debitur', self::TARGET_COLUMNS, true),
+            array_search('periode', $this->targetColumns(), true),
+            array_search('acctno', $this->targetColumns(), true),
+            array_search('kanca', $this->targetColumns(), true),
+            array_search('unit', $this->targetColumns(), true),
+            array_search('nama_debitur', $this->targetColumns(), true),
         ];
 
         foreach ($required as $index) {
@@ -2756,8 +2736,94 @@ class ImportReportPhController extends Controller
 
         return array_values(array_unique(array_filter(
             $selected,
-            static fn (int $index): bool => isset(self::TARGET_COLUMNS[$index])
+            fn (int $index): bool => isset($this->targetColumns()[$index])
         )));
+    }
+
+    private ?array $extraTargetColumnKinds = null;
+    private ?array $targetColumnCache = null;
+    private ?array $learnedDateOrderCache = null;
+
+    /**
+     * Fixed LW325 columns followed by columns added through an accepted schema
+     * drift decision. Appending keeps every existing column index stable.
+     */
+    private function targetColumns(): array
+    {
+        return $this->targetColumnCache ??= array_merge(self::TARGET_COLUMNS, array_keys($this->extraTargetColumnKinds()));
+    }
+
+    /**
+     * @return array<string, string> column => date|decimal|integer|text
+     */
+    private function extraTargetColumnKinds(): array
+    {
+        if ($this->extraTargetColumnKinds !== null) {
+            return $this->extraTargetColumnKinds;
+        }
+
+        $kinds = [];
+        try {
+            $known = array_fill_keys(array_merge(self::TARGET_COLUMNS, ['id', 'uniqueid_namareport', 'created_at', 'updated_at']), true);
+            foreach (app(SchemaIntrospectionService::class)->getColumnMetadata(self::TABLE_NAME) as $lower => $meta) {
+                if (isset($known[$lower]) || !preg_match('/^[a-z][a-z0-9_]*$/', $lower)) {
+                    continue;
+                }
+
+                $baseType = strtolower((string) ($meta['base_type'] ?? ''));
+                $kinds[$lower] = match (true) {
+                    in_array($baseType, ['date', 'datetime', 'timestamp'], true) => 'date',
+                    !empty($meta['is_decimal']) => 'decimal',
+                    in_array($baseType, ['tinyint', 'smallint', 'mediumint', 'int', 'integer', 'bigint'], true) => 'integer',
+                    default => 'text',
+                };
+            }
+        } catch (\Throwable) {
+            $kinds = [];
+        }
+
+        return $this->extraTargetColumnKinds = $kinds;
+    }
+
+    private function extraTargetColumnSpecs(): array
+    {
+        $specs = [];
+        foreach ($this->extraTargetColumnKinds() as $name => $kind) {
+            $specs[] = ['name' => $name, 'kind' => $kind];
+        }
+
+        return $specs;
+    }
+
+    private function isDateColumn(string $column): bool
+    {
+        return in_array($column, self::DATE_COLUMNS, true) || ($this->extraTargetColumnKinds()[$column] ?? null) === 'date';
+    }
+
+    private function isIntegerColumn(string $column): bool
+    {
+        return in_array($column, self::INTEGER_COLUMNS, true) || ($this->extraTargetColumnKinds()[$column] ?? null) === 'integer';
+    }
+
+    private function isDecimalColumn(string $column): bool
+    {
+        return in_array($column, self::DECIMAL_COLUMNS, true) || ($this->extraTargetColumnKinds()[$column] ?? null) === 'decimal';
+    }
+
+    /**
+     * Column-level day/month order learned from previous previews of this report.
+     */
+    private function learnedDateOrders(): array
+    {
+        if ($this->learnedDateOrderCache !== null) {
+            return $this->learnedDateOrderCache;
+        }
+
+        try {
+            return $this->learnedDateOrderCache = app(ColumnFormatMemory::class)->dateOrders(self::TABLE_NAME);
+        } catch (\Throwable) {
+            return $this->learnedDateOrderCache = [];
+        }
     }
 
     private function bulkLoadService(): MySqlBulkLoadService
@@ -2857,7 +2923,7 @@ class ImportReportPhController extends Controller
 
         $loadColumns = ['uniqueid_namareport', 'created_at', 'updated_at'];
         foreach ($selectedColumns as $index) {
-            $column = self::TARGET_COLUMNS[$index] ?? null;
+            $column = $this->targetColumns()[$index] ?? null;
             if ($column === null || in_array($column, ['id', 'uniqueid_namareport'], true)) {
                 continue;
             }
@@ -3181,6 +3247,10 @@ class ImportReportPhController extends Controller
 
     private function assertReportPhImportIntegrity(string $periode, int $expectedRows): void
     {
+        if ($expectedRows <= 0) {
+            throw new \RuntimeException('Validasi import LW325 - PH gagal: tidak ada baris data yang diimpor.');
+        }
+
         $periode = trim($periode);
         if ($periode === '' || StrictDateParser::normalize($periode) === null) {
             throw new \RuntimeException('Periode validasi import LW325 - PH tidak valid.');

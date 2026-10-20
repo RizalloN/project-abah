@@ -10697,10 +10697,13 @@ body.sme-vendor-modal-open { overflow: hidden; }
       <div class="kc-label"><span class="kc-icon-box"><i class="fas fa-piggy-bank"></i></span>Dana Simpanan</div>
       <div class="kc-val">{{ data_get($simpananReport,'value','–') }}</div>
       <div class="kc-sub">{{ data_get($simpananReport,'meta','–') }}</div>
-      @php $sm = (float)str_replace(['+','%',','],['','','.'],data_get($simpananReport,'trend','0')); @endphp
-      <span class="kc-delta {{ $sm>=0?'pos':'neg' }}">
+      @php
+        $sm = (float)data_get($simpananReport,'trend_raw',0);
+        $smNominal = data_get($simpananReport,'trend_nominal');
+      @endphp
+      <span class="kc-delta {{ $sm>=0?'pos':'neg' }}" title="MtM dibanding {{ data_get($simpananReport,'trend_period','-') }}: {{ $smNominal ?? 'Rp0' }}">
         <i class="fas {{ $sm>=0?'fa-arrow-up':'fa-arrow-down' }}"></i>
-        {{ data_get($simpananReport,'trend','0%') }} MtM
+        {{ $smNominal ?? 'Rp0' }} MtM
       </span>
       <button type="button" class="kc-link dashboard-detail-trigger" data-detail='@json(data_get($simpananReport,"detail_payload",[]))' data-link="{{ data_get($simpananReport,'link','#') }}" data-link-label="{{ data_get($simpananReport,'link_label','Buka report') }}">Detail <i class="fas fa-info-circle"></i></button>
     </div>
@@ -10711,10 +10714,13 @@ body.sme-vendor-modal-open { overflow: hidden; }
       <div class="kc-label"><span class="kc-icon-box"><i class="fas fa-hand-holding-usd"></i></span>OS</div>
       <div class="kc-val">{{ data_get($pinjamanReport,'value','–') }}</div>
       <div class="kc-sub">{{ data_get($pinjamanReport,'meta','–') }}</div>
-      @php $pm = (float)str_replace(['+','%',','],['','','.'],data_get($pinjamanReport,'trend','0')); @endphp
-      <span class="kc-delta {{ $pm>=0?'pos':'neg' }}">
+      @php
+        $pm = (float)data_get($pinjamanReport,'trend_raw',0);
+        $pmNominal = data_get($pinjamanReport,'trend_nominal');
+      @endphp
+      <span class="kc-delta {{ $pm>=0?'pos':'neg' }}" title="MtM dibanding {{ data_get($pinjamanReport,'trend_period','-') }}: {{ $pmNominal ?? 'Rp0' }}">
         <i class="fas {{ $pm>=0?'fa-arrow-up':'fa-arrow-down' }}"></i>
-        {{ data_get($pinjamanReport,'trend','0%') }} MtM
+        {{ $pmNominal ?? 'Rp0' }} MtM
       </span>
       <button type="button" class="kc-link dashboard-detail-trigger" data-detail='@json(data_get($pinjamanReport,"detail_payload",[]))' data-link="{{ data_get($pinjamanReport,'link','#') }}" data-link-label="{{ data_get($pinjamanReport,'link_label','Buka report') }}">Detail <i class="fas fa-info-circle"></i></button>
     </div>

@@ -1699,6 +1699,66 @@ class DashboardPinjamanRecoveryMetricsTest extends TestCase
         $this->assertCount(3, $payloadAlias['rows']);
     }
 
+    public function test_matrix_periods_require_native_daily_loan_for_current_and_comparison_dates(): void
+    {
+        DB::table('daily_loan_dinamis')->insert([
+            ['periode' => '2026-08-31', 'uniqueid_namareport' => null],
+            ['periode' => '2026-09-18', 'uniqueid_namareport' => 'DAILY:CURRENT'],
+            ['periode' => '2026-09-19', 'uniqueid_namareport' => 'LW321PN:CURRENT'],
+            ['periode' => '2026-09-30', 'uniqueid_namareport' => 'LW321PN:BASELINE'],
+            ['periode' => '2026-10-18', 'uniqueid_namareport' => 'DAILY:OCTOBER'],
+        ]);
+        DB::table('lw325_ph')->insert([
+            ['periode' => '2026-09-18', 'acctno' => '999000111222333', 'pokok' => 0],
+            ['periode' => '2026-10-18', 'acctno' => '999000111222333', 'pokok' => 0],
+        ]);
+
+        $controller = new DashboardPinjamanReportController();
+        $periods = new ReflectionMethod($controller, 'fetchRecoveryReportPeriods');
+        $this->assertSame(['2026-09-18'], $periods->invoke($controller)->all());
+        $comparison = new ReflectionMethod($controller, 'resolveComparisonPeriod');
+        $this->assertNull($comparison->invoke($controller, '2026-10-18'));
+        $response = $controller->data(Request::create('/', 'GET', ['periode' => '2026-09-19']));
+        $this->assertSame('empty', $response->getData(true)['status']);
+    }
+
+    public function test_matrix_excludes_normalized_named_and_anonymous_rows_from_pivot_and_export_query(): void
+    {
+        $base = ['kolek' => '1', 'umur_tunggakan' => 0, 'segmen_dashboard' => 'SME', 'produk_dashboard' => 'NATIVE', 'cabang1' => 'KC Madiun', 'unit1' => 'Native Unit'];
+        foreach ([
+            ['periode' => '2026-09-30', 'uniqueid_namareport' => null, 'nomor_rekening1' => 'NATIVE', 'baki_debet1' => 100],
+            ['periode' => '2026-09-30', 'uniqueid_namareport' => 'LW321PN:PREVIOUS', 'nomor_rekening1' => 'NATIVE', 'baki_debet1' => 900],
+            ['periode' => '2026-10-18', 'uniqueid_namareport' => '', 'nomor_rekening1' => 'NATIVE', 'baki_debet1' => 90],
+            ['periode' => '2026-10-18', 'uniqueid_namareport' => 'DAILY:ANON', 'nomor_rekening1' => null, 'baki_debet1' => 20],
+            ['periode' => '2026-10-18', 'uniqueid_namareport' => 'LW321PN:CURRENT', 'nomor_rekening1' => 'LW-ONLY', 'baki_debet1' => 800],
+            ['periode' => '2026-10-18', 'uniqueid_namareport' => 'LW321PN:ANON', 'nomor_rekening1' => null, 'baki_debet1' => 700],
+        ] as $row) {
+            DB::table('daily_loan_dinamis')->insert(array_merge($base, $row));
+        }
+        DB::table('daily_loan_dinamis')->where('uniqueid_namareport', 'LW321PN:CURRENT')->update(['produk_dashboard' => 'LW PRODUCT', 'unit1' => 'LW Unit']);
+        DB::table('lw325_ph')->insert(['periode' => '2026-10-18', 'acctno' => '999000111222333', 'pokok' => 0]);
+
+        $controller = new DashboardPinjamanReportController();
+        $payload = $controller->data(Request::create('/', 'GET', ['periode' => '2026-10-18']))->getData(true);
+        $this->assertSame('ready', $payload['status']);
+        $this->assertEqualsWithDelta(120, $payload['grand_total_value'], 0.001);
+        $this->assertEqualsWithDelta(110, $payload['reconciliation']['current_position'], 0.001);
+        $this->assertSame(2, $payload['reconciliation']['matrix_accounts']);
+
+        $queryMethod = new ReflectionMethod($controller, 'buildMatrixDrilldownQuery');
+        $filters = ['segmen' => [], 'produk' => [], 'cabang' => [], 'unit' => []];
+        $columns = ['nomor_rekening1', 'baki_debet1', 'pivot_previous_balance'];
+        $rows = $queryMethod->invoke($controller, '2026-10-18', '2026-09-30', $filters, 'TOTAL', $columns, 'L')->get();
+        $this->assertCount(2, $rows);
+        $native = $rows->firstWhere('nomor_rekening1', 'NATIVE');
+        $this->assertEqualsWithDelta(100, $native->pivot_previous_balance, 0.001);
+        $this->assertEqualsWithDelta(110, $rows->sum('baki_debet1'), 0.001);
+
+        $options = (new ReflectionMethod($controller, 'buildPeriodFilterOptions'))->invoke($controller, '2026-10-18', $filters);
+        $this->assertSame(['NATIVE'], $options['products']->all());
+        $this->assertSame(['Native Unit'], $options['units']->all());
+    }
+
     private function invokeShouldUseLw325RecoveryMetrics(string $period): bool
     {
         $controller = new DashboardPinjamanReportController();

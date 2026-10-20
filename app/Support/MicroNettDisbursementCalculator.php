@@ -20,9 +20,9 @@ final class MicroNettDisbursementCalculator
 
     private const AREA_6_BRANCHES = ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'];
 
-    private const READ_CACHE_VERSION = 'v1';
+    private const READ_CACHE_VERSION = 'v2-kanwil-gross-singlepn';
 
-    private const MANTRI_READ_CACHE_VERSION = 'v5-mantri-source-reference';
+    private const MANTRI_READ_CACHE_VERSION = 'v15-initiator-per-booking-floor';
 
     private const READ_CACHE_SECONDS = 1800;
 
@@ -60,28 +60,28 @@ final class MicroNettDisbursementCalculator
 
         $periodDate = Carbon::parse($period);
         $periodStart = $periodDate->copy()->startOfMonth()->toDateString();
-        $rows = $this->kurRitelBaseQuery()
-            ->whereBetween('periode', [$periodStart, $period])
+        $ownerColumn = Schema::hasColumn(self::SOURCE_TABLE, 'pn_pengelola1') ? 'pn_pengelola1' : 'pn_pemrakarsa1';
+        $rows = $this->kurRitelQuery($period)
             ->whereBetween('tgl_realisasi', [$periodStart, $period])
+            ->whereIn(DB::raw('UPPER(TRIM(cabang1))'), self::AREA_6_BRANCHES)
             ->get([
                 'periode', 'cabang_normalized', 'cabang1', 'unit_normalized', 'unit1',
-                'branch_normalized', 'branch1', 'pn_pemrakarsa1', 'nomor_rekening1',
+                'branch_normalized', 'branch1', $ownerColumn, 'nomor_rekening1',
                 'cifno', 'plafon', 'tgl_realisasi',
             ]);
-        $rows = $this->deduplicateCurrentAccounts($rows);
+        $rows = $this->deduplicateCurrentAccounts($rows, $ownerColumn, true);
 
         if ($rows->isEmpty()) {
             return [];
         }
 
-        $previousOs = $this->previousKurRitelOsByCif($periodDate, $rows->pluck('cifno')->all());
         $metrics = [];
 
         foreach ($rows as $row) {
             $cabang = $this->normalizedValue($row->cabang_normalized ?? null, $row->cabang1 ?? null);
             $unit = $this->normalizedValue($row->unit_normalized ?? null, $row->unit1 ?? null);
             $branchCode = $this->normalizedValue($row->branch_normalized ?? null, $row->branch1 ?? null);
-            $rm = strtoupper(trim((string) ($row->pn_pemrakarsa1 ?? '')));
+            $rm = strtoupper(trim((string) ($row->{$ownerColumn} ?? '')));
             if ($rm === '') {
                 $rm = self::UNASSIGNED_RM;
             }
@@ -92,21 +92,24 @@ final class MicroNettDisbursementCalculator
             $account = $this->canonicalAccount($row->nomor_rekening1 ?? null);
             $cif = strtoupper(trim((string) ($row->cifno ?? '')));
             $plafond = (float) ($row->plafon ?? 0);
-            // The prior closed exposure belongs to this distinct booking
-            // event. Daily-position duplicates have already been collapsed,
-            // so apply it once per canonical account, not once per CIF/month.
-            $nett = $plafond - (float) ($previousOs[$cif] ?? 0);
+            // Kanwil RM KUR COUNTIFS/SUMIFS uses the current SinglePN manager
+            // and booking plafond. A prior CIF balance is not deducted here.
+            $nett = $plafond;
             $date = Carbon::parse((string) $row->tgl_realisasi);
             $week = min(4, intdiv(max(0, $date->day - 1), 7) + 1);
 
-            $metrics[$key]['accounts'][$account !== '' ? $account : $cif] = true;
+            if ($plafond > 0) {
+                $metrics[$key]['accounts'][$account !== '' ? $account : $cif] = true;
+                $metrics[$key]["w{$week}_accounts"][$account !== '' ? $account : $cif] = true;
+            }
             $metrics[$key]['realisasi_os'] += $nett;
-            $metrics[$key]["w{$week}_accounts"][$account !== '' ? $account : $cif] = true;
             $metrics[$key]["w{$week}_realisasi_os"] += $nett;
 
             $tier = $plafond < 250000000 ? 'lt_250' : ($plafond > 250000000 ? 'gt_250' : null);
             if ($tier !== null) {
-                $metrics[$key]["{$tier}_accounts"][$account !== '' ? $account : $cif] = true;
+                if ($plafond > 0) {
+                    $metrics[$key]["{$tier}_accounts"][$account !== '' ? $account : $cif] = true;
+                }
                 $metrics[$key]["{$tier}_realisasi_os"] += $nett;
             }
         }
@@ -125,10 +128,10 @@ final class MicroNettDisbursementCalculator
     }
 
     /**
-     * Nett Mantri Mikro non-Briguna mengikuti workbook Kanwil:
-     * pemilik dari PN pengelola, dan pengurang berupa OS CIF akhir bulan
-     * sebelumnya untuk rekening yang sudah tidak ada pada posisi berjalan.
-     * Nilai negatif dibatasi menjadi nol.
+     * Nett Mantri non-Briguna memakai ledger booking PN pemrakarsa.
+     * Pengurang adalah OS akhir bulan sebelumnya untuk rekening CIF yang
+     * sudah tidak ada pada posisi berjalan. Nett minimum nol diterapkan pada
+     * setiap rekening sebelum agregasi PN, kategori, maupun periode.
      *
      * @return array<int, array<string, int|float|string>>
      */
@@ -150,19 +153,77 @@ final class MicroNettDisbursementCalculator
 
         $periodDate = Carbon::parse($period);
         $periodStart = $periodDate->copy()->startOfMonth()->toDateString();
-        $ownerColumn = Schema::hasColumn(self::SOURCE_TABLE, 'pn_pengelola1')
-            ? 'pn_pengelola1' : 'pn_pemrakarsa1';
-        $rows = $this->sourceQueryForPeriodRange()
-            ->whereBetween('periode', [$periodStart, $period])
-            ->whereBetween('tgl_realisasi', [$periodStart, $period])
-            ->where('segmen_kinerja', 'MICRO')
-            ->whereNotIn('produk_kinerja', ['BRIGUNAMIKRO', 'BRIGUNAKONSUMER'])
-            ->get([
-                'periode', 'cabang_normalized', 'cabang1', 'unit_normalized', 'unit1',
-                'branch_normalized', 'branch1', $ownerColumn, 'nomor_rekening1',
-                'cifno', 'plafon', 'tgl_realisasi',
-            ]);
-        $rows = $this->deduplicateCurrentAccounts($rows, $ownerColumn, true)
+        $inputStore = app(MantriSourceInputStore::class);
+        $inputs = [];
+        foreach ($inputStore->inputPeriods($periodStart, $period) as $inputPeriod) {
+            if ($inputPeriod >= $periodStart && $inputPeriod <= $period) {
+                $input = $inputStore->read($inputPeriod);
+                // Historical positions contribute MTD bookings and identity;
+                // only the selected position proves current account presence.
+                unset($input['unclassified_accounts'], $input['baseline_accounts']);
+                if ($inputPeriod !== $period) {
+                    unset($input['presence']);
+                }
+                $inputs[$inputPeriod] = $input;
+            }
+        }
+        $hasCurrentSource = DB::table(self::SOURCE_TABLE)->where('periode', $period)->exists();
+        if (($inputs[$period]['source']['source_kind'] ?? '') === 'lw321_import'
+            && $this->hasNativeMantriSource($period)) {
+            // Native Daily Loan replaces that LW position. Earlier flow
+            // archives and audited origination evidence remain independent.
+            $inputs[$period]['bookings'] = [];
+            $inputs[$period]['presence'] = [];
+            $inputs[$period]['complete_presence'] = false;
+        }
+        if (! $hasCurrentSource && empty($inputs[$period]['complete_presence'])) {
+            return [];
+        }
+        $ownerColumn = 'pn_pemrakarsa1';
+        $ownerColumns = array_values(array_filter(['pn_pemrakarsa1', 'pn_pengelola1'], fn (string $column): bool => Schema::hasColumn(self::SOURCE_TABLE, $column)));
+        $rows = $this->mantriSourceRows($periodStart, $period, $ownerColumns);
+        $archivedRows = [];
+        $approvedOwners = [];
+        $rawOwners = [];
+        foreach ($inputs as $input) {
+            foreach ($input['bookings'] ?? [] as $row) {
+                $archivedRows[] = (object) $row;
+                if (($input['source']['source_kind'] ?? '') === 'lw321_import'
+                    && ($row['raw_singlepn_available'] ?? false) === true) {
+                    $key = $row['periode'].'|'.$this->mantriBookingIdentity($row['nomor_rekening1'], $row['cifno'], $row['tgl_realisasi']);
+                    $rawOwners[$key] = $row['pn_pengelola_singlepn'];
+                }
+            }
+            foreach ($input['owner_evidence'] ?? [] as $evidence) {
+                $ownerBasis = $evidence['owner_basis'] ?? $input['source']['owner_basis'] ?? '';
+                $sourceColumn = $evidence['source_owner_column'] ?? $input['source']['source_owner_column'] ?? '';
+                if (($ownerBasis !== 'pn_pemrakarsa1' && $sourceColumn !== 'AM')
+                    || ($evidence['as_of'] ?? $input['period']) > $period) {
+                    continue;
+                }
+                $key = $this->mantriBookingIdentity($evidence['account'] ?? '', $evidence['cif'] ?? '', $evidence['realization_date'] ?? '');
+                $approvedOwners[$key] = $evidence;
+            }
+        }
+        $rows->each(function (object $row) use ($rawOwners): void {
+            $key = $row->periode.'|'.$this->mantriBookingIdentity($row->nomor_rekening1, $row->cifno, $row->tgl_realisasi);
+            if (str_starts_with((string) ($row->uniqueid_namareport ?? ''), Lw321DailyLoanSyncService::TARGET_ID_PREFIX)
+                && array_key_exists($key, $rawOwners)) {
+                // A materialized legacy-manager fallback cannot replace an
+                // explicitly blank SinglePN in its matching raw import.
+                $row->pn_pengelola1 = $rawOwners[$key];
+            }
+        });
+        // MTD is a flow ledger: a disbursement remains after its account closes.
+        // Database rows are last at equal positions and retain source precedence.
+        $rows = collect($archivedRows)->merge($rows)->filter(function (object $row) use ($periodStart, $period): bool {
+            return (string) $row->tgl_realisasi >= $periodStart && (string) $row->tgl_realisasi <= $period;
+        });
+        $rows->each(function (object $row) use ($ownerColumn): void {
+            $row->{$ownerColumn} = $this->mantriSinglePn($row->{$ownerColumn} ?? null);
+        });
+        $rows = $this->deduplicateMantriBookings($rows)
+            ->reject(fn (object $row): bool => $this->excludedMantriBooking($row))
             ->sortBy(fn (object $row): string => (string) $row->tgl_realisasi.'|'.$this->canonicalAccount($row->nomor_rekening1 ?? null))
             ->values();
 
@@ -170,12 +231,7 @@ final class MicroNettDisbursementCalculator
             return [];
         }
 
-        $reference = app(MantriProductivityReference::class);
-        $sourcePreviousOs = $reference->closedPreviousOsByCif($period, $rows->pluck('cifno')->all());
-        $previousOs = $this->previousCompleteOsByCif($periodDate, $rows->pluck('cifno')->all());
-        if ($sourcePreviousOs !== null) {
-            $previousOs = array_replace($previousOs, $sourcePreviousOs);
-        }
+        [$previousOs, $supplementedCifs] = $this->previousClosedMantriOs($periodDate, $rows->pluck('cifno')->all(), $inputs[$period] ?? null, $inputStore);
         $bookings = [];
 
         foreach ($rows as $row) {
@@ -189,32 +245,233 @@ final class MicroNettDisbursementCalculator
 
             $account = $this->canonicalAccount($row->nomor_rekening1 ?? null);
             $cif = strtoupper(trim((string) ($row->cifno ?? '')));
-            $identity = $reference->accountReference($period, $account, $cif, (string) $row->tgl_realisasi);
-            if ($identity !== null) {
-                $cabang = strtoupper(trim((string) $identity['branch']));
-                $unit = strtoupper(trim((string) $identity['unit']));
-                $branchCode = trim((string) $identity['bc']);
-                $owner = strtoupper(str_pad((string) $identity['pn'], 8, '0', STR_PAD_LEFT).' - '.trim((string) $identity['name']));
+            $identity = $approvedOwners[$this->mantriBookingIdentity($account, $cif, (string) $row->tgl_realisasi)] ?? null;
+            $approvedOwner = $identity === null ? '' : $this->mantriSinglePn(str_pad((string) ($identity['pn'] ?? ''), 8, '0', STR_PAD_LEFT).' - '.($identity['name'] ?? ''));
+            if ($approvedOwner !== '') {
+                // Audited origination attribution is independent of a later
+                // portfolio transfer. HR placement still comes from live BRIHC.
+                $owner = $approvedOwner;
             }
             $plafond = (float) ($row->plafon ?? 0);
-            // The source workbook subtracts the complete closed prior CIF
-            // exposure from each distinct booking, including negative nett.
             $closedPreviousOs = (float) ($previousOs[$cif] ?? 0);
-            $nett = $plafond - $closedPreviousOs;
+            $nett = max(0.0, $plafond - $closedPreviousOs);
             $bookings[] = [
                 'periode' => $period, 'cabang' => $cabang, 'unit' => $unit,
                 'branch_code' => $branchCode, 'owner' => $owner,
                 'account_key' => $account !== '' ? $account : ($cif !== '' ? 'CIF:'.$cif : 'ROW:'.count($bookings)),
                 'cif_key' => $cif, 'plafon' => $plafond,
+                'product' => (string) ($row->produk_kinerja ?? ''),
                 'previous_os' => $closedPreviousOs, 'net_amount' => $nett,
                 'realization_date' => (string) $row->tgl_realisasi,
-                'identity_source' => $identity === null ? self::SOURCE_TABLE : 'mantri_productivity_reference',
-                'baseline_source' => $sourcePreviousOs !== null && array_key_exists($cif, $sourcePreviousOs)
-                    ? 'mantri_productivity_reference' : self::SOURCE_TABLE,
+                'identity_source' => $approvedOwner === '' ? self::SOURCE_TABLE : 'mantri_origination_ledger',
+                'baseline_source' => isset($supplementedCifs[$cif]) ? 'mantri_source_input' : self::SOURCE_TABLE,
             ];
         }
 
         return $bookings;
+    }
+
+    /** Reuse overlapping report periods, invalidated by every loan mutation. */
+    private function mantriSourceRows(string $start, string $period, array $ownerColumns): Collection
+    {
+        $version = ReportCacheVersion::get('pinjaman');
+        $prefix = 'micro-nett:mantri-position-v2:'.$version.':';
+        $periods = DB::table(self::SOURCE_TABLE)->whereBetween('periode', [$start, $period])
+            ->distinct()->orderBy('periode')->pluck('periode')->all();
+        $slices = [];
+        $missing = [];
+        foreach ($periods as $date) {
+            $slice = Cache::get($prefix.$date);
+            if (is_array($slice)) {
+                $slices[$date] = $slice;
+            } else {
+                $missing[] = $date;
+            }
+        }
+        if ($missing !== []) {
+            $build = function () use ($prefix, $missing, $start, $ownerColumns): array {
+                $result = [];
+                $load = [];
+                foreach ($missing as $date) {
+                    $slice = Cache::get($prefix.$date);
+                    if (is_array($slice)) {
+                        $result[$date] = $slice;
+                    } else {
+                        $load[] = $date;
+                    }
+                }
+                if ($load === []) {
+                    return $result;
+                }
+                $columns = [
+                    'periode', 'cabang_normalized', 'cabang1', 'unit_normalized', 'unit1',
+                    'branch_normalized', 'branch1', ...$ownerColumns, 'nomor_rekening1',
+                    'cifno', 'plafon', 'tgl_realisasi', 'description', 'produk_kinerja',
+                ];
+                if (Schema::hasColumn(self::SOURCE_TABLE, 'uniqueid_namareport')) {
+                    $columns[] = 'uniqueid_namareport';
+                }
+                foreach ($load as $date) {
+                    $result[$date] = [];
+                }
+                $rows = $this->sourceQueryForPeriodRange()->whereIn('periode', $load)
+                    ->whereBetween('tgl_realisasi', [$start, Carbon::parse($start)->endOfMonth()->toDateString()])
+                    ->whereIn(DB::raw("UPPER(COALESCE(NULLIF(TRIM(cabang1), ''), TRIM(cabang_normalized)))"), self::AREA_6_BRANCHES)->get($columns);
+                foreach ($rows as $row) {
+                    $result[(string) $row->periode][] = (array) $row;
+                }
+                foreach ($load as $date) {
+                    Cache::put($prefix.$date, $result[$date], now()->addSeconds(self::READ_CACHE_SECONDS));
+                }
+
+                return $result;
+            };
+            try {
+                $slices += Cache::lock($prefix.$start.':build', 300)->block(120, $build);
+            } catch (LockTimeoutException) {
+                $slices += $build();
+            }
+        }
+        ksort($slices, SORT_STRING);
+        $rows = collect();
+        foreach ($slices as $slice) {
+            foreach ($slice as $row) {
+                if ((string) $row['tgl_realisasi'] <= $period) {
+                    $rows->push((object) $row);
+                }
+            }
+        }
+
+        return $rows;
+    }
+
+    private function excludedMantriBooking(object $row): bool
+    {
+        $product = $this->normalizeToken((string) ($row->produk_kinerja ?? ''));
+        $description = $this->normalizeToken((string) ($row->description ?? ''));
+
+        return in_array($product, ['BRIGUNAMIKRO', 'BRIGUNAKONSUMER', 'KURKECIL', 'KURRITEL'], true)
+            || $description === $this->normalizeToken(self::KUR_RITEL_DESCRIPTION)
+            || $description === 'KREDITMIKROGBT' || str_contains($description, 'BRIGUNA');
+    }
+
+    private function hasNativeMantriSource(string $period): bool
+    {
+        return Schema::hasColumn(self::SOURCE_TABLE, 'uniqueid_namareport')
+            && DB::table(self::SOURCE_TABLE)->where('periode', $period)
+                ->where(function (Builder $query): void {
+                    $query->whereNull('uniqueid_namareport')
+                        ->orWhere('uniqueid_namareport', 'not like', Lw321DailyLoanSyncService::TARGET_ID_PREFIX.'%');
+                })->exists();
+    }
+
+    private function mantriSinglePn(mixed $value): string
+    {
+        $value = trim((string) $value);
+        $prefix = trim(substr($value, 0, 8));
+        if (! ctype_digit($prefix) || (int) $prefix === 0) {
+            return '';
+        }
+        $name = str_contains($value, '-') ? trim(explode('-', $value, 2)[1]) : '';
+
+        return str_pad($prefix, 8, '0', STR_PAD_LEFT).($name !== '' ? ' - '.strtoupper($name) : '');
+    }
+
+    private function mantriBookingIdentity(mixed $account, mixed $cif, mixed $date): string
+    {
+        return $this->canonicalAccount($account).'|'.strtoupper(trim((string) $cif)).'|'.substr((string) $date, 0, 10);
+    }
+
+    private function deduplicateMantriBookings(Collection $rows): Collection
+    {
+        $accounts = [];
+        $ordered = $rows->values()->sortBy(static fn (object $row, int $index): string => (string) $row->periode.'|'.str_pad((string) $index, 12, '0', STR_PAD_LEFT));
+        foreach ($ordered as $index => $row) {
+            $account = $this->canonicalAccount($row->nomor_rekening1 ?? null);
+            $key = $account !== '' ? $account : 'ROW:'.$index;
+            $old = $accounts[$key] ?? null;
+            $next = clone $row;
+            if ($old !== null && $this->mantriBookingIdentity($old->nomor_rekening1, $old->cifno, $old->tgl_realisasi)
+                === $this->mantriBookingIdentity($row->nomor_rekening1, $row->cifno, $row->tgl_realisasi)) {
+                if ((string) $old->periode === (string) $row->periode) {
+                    $next->plafon = max((float) $old->plafon, (float) $row->plafon);
+                }
+                if (trim((string) ($next->pn_pengelola1 ?? '')) === '') {
+                    $next->pn_pengelola1 = $old->pn_pengelola1 ?? '';
+                }
+                if (trim((string) ($next->pn_pemrakarsa1 ?? '')) === '') {
+                    // Preserve a previously observed initiator only for the
+                    // exact same booking; a manager is never an initiator.
+                    $next->pn_pemrakarsa1 = $old->pn_pemrakarsa1 ?? '';
+                }
+            }
+            $accounts[$key] = $next;
+        }
+
+        return collect(array_values($accounts));
+    }
+
+    /** @return array{array<string,float>,array<string,bool>} */
+    private function previousClosedMantriOs(Carbon $periodDate, array $cifs, ?array $currentInput, MantriSourceInputStore $inputStore): array
+    {
+        $period = $periodDate->toDateString();
+        $baselinePeriod = $periodDate->copy()->startOfMonth()->subDay()->toDateString();
+        $requested = array_fill_keys(array_filter(array_map(static fn ($cif) => strtoupper(trim((string) $cif)), $cifs)), true);
+        $present = array_fill_keys($currentInput['presence'] ?? [], true);
+        foreach (DB::table(self::SOURCE_TABLE)->where('periode', $period)->select('nomor_rekening1')->cursor() as $row) {
+            $present[$this->canonicalAccount($row->nomor_rekening1)] = true;
+        }
+
+        $prior = DB::table(self::SOURCE_TABLE)->where('periode', $baselinePeriod)
+            ->whereIn(DB::raw('UPPER(TRIM(cifno))'), array_keys($requested))
+            ->get(['nomor_rekening1', 'cifno', 'baki_debet1', 'description', 'produk_kinerja', 'segmen_kinerja', 'unit1', 'unit_normalized', 'cabang1', 'cabang_normalized']);
+        $known = [];
+        $closed = [];
+        foreach ($prior as $row) {
+            $account = $this->canonicalAccount($row->nomor_rekening1);
+            if ($account === '') {
+                continue;
+            }
+            $known[$account] = true;
+            $segment = strtoupper(trim((string) $row->segmen_kinerja));
+            $eligibleSegment = $segment === 'MICRO'
+                || ($segment === '' && trim((string) $row->produk_kinerja) === ''
+                    && str_starts_with($this->normalizedValue($row->unit1, $row->unit_normalized), 'UNIT'));
+            if (! $eligibleSegment || ! in_array($this->normalizedValue($row->cabang1, $row->cabang_normalized), self::AREA_6_BRANCHES, true)
+                || $this->normalizeToken((string) $row->description) === $this->normalizeToken(self::KUR_RITEL_DESCRIPTION)
+                || in_array($this->normalizeToken((string) $row->produk_kinerja), ['KURKECIL', 'KURRITEL'], true) || isset($present[$account])) {
+                continue;
+            }
+            $cif = strtoupper(trim((string) $row->cifno));
+            $key = $cif.'|'.$account;
+            $closed[$key] = isset($closed[$key]) ? max($closed[$key], (float) $row->baki_debet1) : (float) $row->baki_debet1;
+        }
+        $supplemented = [];
+        $baselineInput = $inputStore->read($baselinePeriod);
+        $archiveSupplement = ($baselineInput['source']['source_kind'] ?? '') !== 'lw321_import'
+            || ! $this->hasNativeMantriSource($baselinePeriod);
+        foreach ($inputStore->baselineAccounts($archiveSupplement ? $baselineInput : null) as $row) {
+            if (in_array($baselineInput['source']['source_kind'] ?? '', ['lw321_import', 'daily_loan_import'], true)
+                && strtoupper(trim((string) ($row['segmen_kinerja'] ?? ''))) !== 'MICRO'
+                && ! str_starts_with($this->normalizedValue($row['unit1'] ?? null, $row['unit_normalized'] ?? null), 'UNIT')) {
+                // An unknown KC product is not evidence of a MICRO balance.
+                continue;
+            }
+            $account = $this->canonicalAccount($row['nomor_rekening1']);
+            $cif = strtoupper(trim((string) ($row['cifno'] ?? '')));
+            if (isset($known[$account]) || isset($present[$account]) || ! isset($requested[$cif])) {
+                continue;
+            }
+            $closed[$cif.'|'.$account] = (float) $row['baki_debet1'];
+            $supplemented[$cif] = true;
+        }
+        $totals = [];
+        foreach ($closed as $key => $amount) {
+            $cif = strstr($key, '|', true);
+            $totals[$cif] = ($totals[$cif] ?? 0.0) + $amount;
+        }
+
+        return [$totals, $supplemented];
     }
 
     /** @param array<int, array<string, int|float|string>> $bookings */
@@ -279,10 +536,12 @@ final class MicroNettDisbursementCalculator
     }
 
     /** @param array<int, mixed> $cifs */
-    private function previousCompleteOsByCif(Carbon $periodDate, array $cifs): array
+    private function previousCompleteOsByCif(Carbon $periodDate, array $cifs, ?string &$previousPeriod = null): array
     {
         $previousPeriod = DB::table(self::SOURCE_TABLE)
             ->where('periode', '<=', $periodDate->copy()->subMonthNoOverflow()->endOfMonth()->toDateString())
+            ->where('segmen_kinerja', 'MICRO')
+            ->whereIn(DB::raw('UPPER(TRIM(cabang1))'), self::AREA_6_BRANCHES)
             ->orderByDesc('periode')->value('periode');
         $cifs = array_values(array_unique(array_filter(array_map(
             static fn ($cif): string => strtoupper(trim((string) $cif)),
@@ -295,30 +554,13 @@ final class MicroNettDisbursementCalculator
 
         $query = DB::table(self::SOURCE_TABLE)
             ->where('periode', $previousPeriod)
+            ->where('segmen_kinerja', 'MICRO')
+            ->whereIn(DB::raw('UPPER(TRIM(cabang1))'), self::AREA_6_BRANCHES)
             ->whereIn(DB::raw('UPPER(TRIM(cifno))'), $cifs);
 
         $previousRows = $query->get(['cifno', 'nomor_rekening1', 'baki_debet1']);
-        $accounts = $previousRows->map(fn (object $row): string => $this->canonicalAccount($row->nomor_rekening1 ?? null))
-            ->filter(fn (string $account): bool => $account !== '')->unique()->values();
-        $currentAccounts = [];
-        if ($accounts->isNotEmpty()) {
-            $accountSql = DB::getDriverName() === 'mysql'
-                ? "TRIM(LEADING '0' FROM UPPER(TRIM(nomor_rekening1)))"
-                : "LTRIM(UPPER(TRIM(nomor_rekening1)), '0')";
-            $currentAccounts = DB::table(self::SOURCE_TABLE)
-                ->where('periode', $periodDate->toDateString())
-                // Presence is checked across all CIFs/branches/products: a
-                // transferred or relabelled live account is still open.
-                ->whereIn(DB::raw("COALESCE(NULLIF({$accountSql}, ''), '0')"), $accounts->all())
-                ->pluck('nomor_rekening1')
-                ->mapWithKeys(fn ($account): array => [$this->canonicalAccount($account) => true])->all();
-        }
 
-        return $this->accountRowsOsByCif($previousRows->reject(function (object $row) use ($currentAccounts): bool {
-            $account = $this->canonicalAccount($row->nomor_rekening1 ?? null);
-
-            return $account !== '' && isset($currentAccounts[$account]);
-        }));
+        return $this->accountRowsOsByCif($previousRows);
     }
 
     /** @return array<string, float> */
@@ -371,6 +613,7 @@ final class MicroNettDisbursementCalculator
 
             if (! isset($accounts[$key])) {
                 $accounts[$key] = clone $row;
+
                 continue;
             }
 
@@ -440,7 +683,7 @@ final class MicroNettDisbursementCalculator
             ReportCacheVersion::get('pinjaman'), Carbon::parse($period)->toDateString(),
         ];
         if (str_starts_with($kind, 'mantri')) {
-            $keyParts[] = app(MantriProductivityReference::class)->fingerprint($period);
+            $keyParts[] = app(MantriSourceInputStore::class)->fingerprint($period);
         }
         $key = implode(':', $keyParts);
         $cached = Cache::get($key);

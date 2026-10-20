@@ -60,6 +60,11 @@ final class Lw321DailyLoanSyncService
             if ($periodResult['skipped']) {
                 $result['skipped_periods'][] = $period;
             }
+            if ($periodResult['mutated'] && ! $periodResult['skipped'] && $periodResult['source_rows'] > 0) {
+                DB::afterCommit(static function () use ($period): void {
+                    app(MantriSourceInputStore::class)->captureLw321Period($period);
+                });
+            }
         }
 
         return $result;

@@ -52,8 +52,13 @@ class LandingMicroPerformanceServiceTest extends TestCase
             $table->string('cabang1')->nullable();
             $table->string('kode_cabang1')->nullable();
             $table->string('cabang_normalized')->nullable();
+            $table->string('unit_normalized')->nullable();
+            $table->string('branch_normalized')->nullable();
+            $table->string('branch1')->nullable();
             $table->string('unit1')->nullable();
             $table->string('segmen_kinerja')->nullable();
+            $table->string('produk_kinerja')->nullable();
+            $table->string('description')->nullable();
             $table->string('produk_dashboard')->nullable();
             $table->string('ln_type')->nullable();
             $table->string('nama_debitur1')->nullable();
@@ -62,6 +67,7 @@ class LandingMicroPerformanceServiceTest extends TestCase
             $table->string('pn_pemutus1')->nullable();
             $table->string('pn_pemutus_normalized')->nullable();
             $table->string('pn_pengelola1')->nullable();
+            $table->string('pn_pemrakarsa1')->nullable();
             $table->string('pn_name1')->nullable();
             $table->string('kolek_detail')->nullable();
             $table->integer('umur_tunggakan')->nullable();
@@ -579,6 +585,7 @@ class LandingMicroPerformanceServiceTest extends TestCase
 
         $payload = app(LandingMicroPerformanceService::class)->payload('2026-09-23', null, true);
 
+        $this->assertSame('', data_get($payload, 'meta.error'));
         $this->assertSame(2, data_get($payload, 'meta.identity_coverage.total_accounts'));
         $this->assertSame(1, data_get($payload, 'meta.identity_coverage.covered_accounts'));
         $this->assertSame(0, data_get($payload, 'meta.identity_coverage.current_period_accounts'));
@@ -886,15 +893,17 @@ class LandingMicroPerformanceServiceTest extends TestCase
         $this->assertSame(500_000_000.0, data_get($madiun, 'daily_net_disbursement.amount'));
         $this->assertEqualsWithDelta(70_000_000.0, data_get($madiun, 'realization.average_per_hke'), 0.01);
         $this->assertSame(850_000_000.0, data_get($madiun, 'net_disbursement.amount'));
+        $this->assertEqualsWithDelta(850_000_000.0 / 3 / 15, data_get($madiun, 'net_disbursement.average_per_mantri_hke'), 0.01);
         $this->assertSame(1_050_000_000.0, data_get($payload, 'total.realization.amount'));
         $this->assertSame(1, data_get($payload, 'excluded_non_roster.realization.deb'));
         $this->assertSame(50_000_000.0, data_get($payload, 'excluded_non_roster.realization.amount'));
         $this->assertSame(30_000_000.0, data_get($payload, 'excluded_non_roster.net_disbursement.amount'));
-        $this->assertSame(1, $ptBuckets->firstWhere('key', 'none')['mantri']);
+        $this->assertSame(0, $ptBuckets->firstWhere('key', 'none')['mantri']);
+        $this->assertSame(1, $ptBuckets->firstWhere('key', 'extreme_low')['mantri']);
         $this->assertSame(1, $ptBuckets->firstWhere('key', 'low')['mantri']);
         $this->assertSame(1, $contractBuckets->firstWhere('key', 'low')['mantri']);
-        $this->assertSame('PT Belum', data_get($ptBuckets->firstWhere('key', 'none'), 'people.0.name'));
-        $this->assertSame(0.0, data_get($ptBuckets->firstWhere('key', 'none'), 'people.0.net_amount'));
+        $this->assertSame('PT Belum', data_get($ptBuckets->firstWhere('key', 'extreme_low'), 'people.0.name'));
+        $this->assertSame(0.0, data_get($ptBuckets->firstWhere('key', 'extreme_low'), 'people.0.net_amount'));
         $this->assertSame('PT Aktif', data_get($ptBuckets->firstWhere('key', 'low'), 'people.0.name'));
         $this->assertSame(500_000_000.0, data_get($ptBuckets->firstWhere('key', 'low'), 'people.0.net_amount'));
         $this->assertSame(1, data_get($contractBuckets->firstWhere('key', 'low'), 'people.0.net_deb'));
@@ -905,8 +914,8 @@ class LandingMicroPerformanceServiceTest extends TestCase
     public function test_mantri_pt_and_contract_tiers_preserve_exact_source_boundaries_and_signed_values(): void
     {
         $cases = [
-            'pt' => [[-1, 'none'], [0, 'none'], [1, 'extreme_low'], [399_999_999, 'extreme_low'], [400_000_000, 'low'], [800_000_000, 'low'], [800_000_001, 'mid'], [1_000_000_000, 'mid'], [1_000_000_001, 'high']],
-            'contract' => [[-1, 'none'], [0, 'none'], [1, 'extreme_low'], [174_999_999, 'extreme_low'], [175_000_000, 'low'], [350_000_000, 'low'], [350_000_001, 'mid'], [450_000_000, 'mid'], [450_000_001, 'high']],
+            'pt' => [[-1, 'extreme_low'], [0, 'extreme_low'], [1, 'extreme_low'], [399_999_999, 'extreme_low'], [400_000_000, 'low'], [800_000_000, 'low'], [800_000_001, 'mid'], [1_000_000_000, 'mid'], [1_000_000_001, 'high']],
+            'contract' => [[-1, 'extreme_low'], [0, 'extreme_low'], [1, 'extreme_low'], [174_999_999, 'extreme_low'], [175_000_000, 'low'], [350_000_000, 'low'], [350_000_001, 'mid'], [450_000_000, 'mid'], [450_000_001, 'high']],
         ];
         foreach ($cases as $category => $values) {
             $people = collect();
@@ -918,7 +927,7 @@ class LandingMicroPerformanceServiceTest extends TestCase
             }
             $payload = $this->invokePrivate(app(LandingMicroPerformanceService::class), 'mantriTierPayload', [$people, $metrics, $category]);
             $buckets = collect($payload['buckets'])->keyBy('key');
-            $this->assertSame(['none' => 2, 'extreme_low' => 2, 'low' => 2, 'mid' => 2, 'high' => 1], $buckets->map(fn (array $bucket): int => $bucket['mantri'])->all());
+            $this->assertSame(['none' => 0, 'extreme_low' => 4, 'low' => 2, 'mid' => 2, 'high' => 1], $buckets->map(fn (array $bucket): int => $bucket['mantri'])->all());
             foreach ($values as $index => [$amount, $tier]) {
                 $person = collect($buckets->get($tier)['people'])->firstWhere('pn', (string) ($index + 1));
                 $this->assertNotNull($person, $category.' '.$amount.' '.$tier);
@@ -927,6 +936,36 @@ class LandingMicroPerformanceServiceTest extends TestCase
             }
             $this->assertEqualsWithDelta(100, $buckets->sum('share'), 0.00001);
         }
+    }
+
+    public function test_mantri_payload_floors_each_cif_booking_before_category_and_hke_calculation(): void
+    {
+        DB::table('brihc_pemasar')->insert([
+            'uniqueid_namareport' => 'reference_brihc_hc_111', 'pernr' => '00000111',
+            'completename' => 'Mantri Pemrakarsa', 'esgdesc' => 'PT', 'positiondesc' => 'MANTRI',
+            'orgdesc' => 'UNIT MADIUN', 'psadesc' => 'KC Madiun', 'bc' => '45',
+        ]);
+        $ownership = ['pn_pemrakarsa1' => '00000111 - Mantri Pemrakarsa', 'pn_pengelola1' => '00000222 - Manager Lain'];
+        DB::table('daily_loan_dinamis')->insert([
+            $this->dailyLoanRow('floor-baseline', '2026-07-31', 'CIF-FLOOR', 'CLOSED-FLOOR', 350_000_000, 'MICRO', 'Kupedes', null, $ownership),
+            $this->dailyLoanRow('floor-negative', '2026-08-25', 'CIF-FLOOR', 'NEW-NEGATIVE', 100_000_000, 'MICRO', 'Kupedes', '2026-08-25', $ownership),
+            $this->dailyLoanRow('floor-positive', '2026-08-25', 'CIF-FLOOR', 'NEW-POSITIVE', 800_000_000, 'MICRO', 'Kupedes', '2026-08-25', $ownership),
+        ]);
+
+        $payload = app(LandingMicroPerformanceService::class)->payload('2026-08-25');
+        $this->assertTrue(data_get($payload, 'meta.available'), (string) data_get($payload, 'meta.error'));
+        $this->assertSame(450_000_000.0, data_get($payload, 'mantri_performance.total.net_disbursement.amount'));
+        $this->assertSame(450_000_000.0, data_get($payload, 'mantri_performance.total.daily_net_disbursement.amount'));
+        $this->assertSame(900_000_000.0, data_get($payload, 'mantri_performance.total.realization.amount'));
+        $this->assertSame(2, data_get($payload, 'mantri_performance.total.net_disbursement.deb'));
+        $this->assertSame(15, data_get($payload, 'mantri_performance.working_days'));
+        $this->assertSame(30_000_000.0, data_get($payload, 'mantri_performance.total.net_disbursement.average_per_hke'));
+        $buckets = collect(data_get($payload, 'mantri_performance.total.tiers.pt.buckets'))->keyBy('key');
+        $this->assertSame(1, $buckets->get('low')['mantri']);
+        $this->assertSame(0, $buckets->get('extreme_low')['mantri']);
+        $this->assertSame('111', $buckets->get('low')['people'][0]['pn']);
+        $this->assertSame(450_000_000.0, $buckets->get('low')['people'][0]['net_amount']);
+        $this->assertSame(2, $buckets->get('low')['people'][0]['net_deb']);
     }
 
     public function test_unproductive_mantri_uses_consecutive_closed_micro_months_and_current_branch_roster(): void
@@ -1229,6 +1268,7 @@ class LandingMicroPerformanceServiceTest extends TestCase
         $service = app(LandingMicroPerformanceService::class);
         $initialKey = $this->invokePrivate($service, 'durablePayloadCacheKey', ['2026-10-13', null]);
         $first = $service->payload('2026-10-13');
+        $this->assertSame('', data_get($first, 'meta.error'));
         $this->assertSame(1, data_get($first, 'realization.mantri_roster.total_active'));
         Cache::put($initialKey, array_merge($first, ['old_hc_roster_marker' => true]));
         $pinjamanVersion = ReportCacheVersion::get('pinjaman');
@@ -1263,6 +1303,7 @@ class LandingMicroPerformanceServiceTest extends TestCase
         ));
         $service = app(LandingMicroPerformanceService::class);
         $first = $service->payload('2026-10-13');
+        $this->assertSame('', data_get($first, 'meta.error'));
         $this->assertSame(1, data_get($first, 'realization.mantri_roster.total_active'));
         ReportCacheVersion::bump('pinjaman');
         $pending = $service->payload('2026-10-13');
@@ -1309,6 +1350,7 @@ class LandingMicroPerformanceServiceTest extends TestCase
 
         $service = app(LandingMicroPerformanceService::class);
         $first = $service->payload('2026-08-25');
+        $this->assertSame('', data_get($first, 'meta.error'));
         $this->assertSame(1, data_get($first, 'realization.mantri_roster.total_active'));
 
         DB::table('brihc_pemasar')->insert([
@@ -1944,6 +1986,8 @@ class LandingMicroPerformanceServiceTest extends TestCase
             'cabang_normalized' => 'KC MADIUN',
             'unit1' => 'UNIT Madiun',
             'segmen_kinerja' => $segment,
+            'produk_kinerja' => preg_replace('/[^A-Z0-9]/', '', strtoupper($product)),
+            'description' => $product,
             'produk_dashboard' => $product,
             'ln_type' => 'BULANAN',
             'nama_debitur1' => null,

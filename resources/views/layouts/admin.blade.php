@@ -2140,6 +2140,9 @@
         </ul>
 
         <ul class="navbar-nav ml-auto">
+            @if(Auth::user()?->isAdmin() && \Illuminate\Support\Facades\Route::has('import.schema-drift.notifications'))
+                @include('layouts.partials.schema-drift-bell')
+            @endif
             <li class="nav-item d-flex align-items-center mr-2">
                 <button type="button" class="theme-toggle" data-theme-toggle aria-pressed="false" aria-label="Ganti ke mode gelap" title="Ganti ke mode gelap">
                     <i class="fas fa-moon theme-toggle__icon theme-toggle__icon--moon" aria-hidden="true"></i>

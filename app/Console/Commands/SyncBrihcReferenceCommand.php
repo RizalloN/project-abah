@@ -94,6 +94,21 @@ class SyncBrihcReferenceCommand extends Command
             $source['stale_brihc_pairs'] = $source['format'] === 'update_hc'
                 ? $this->scopedReferencePairs($source['role_tokens'], $source['branch_labels'])
                 : [];
+            if (($source['layout'] ?? null) === 'update_hc_mantri_roles') {
+                // This complete Area 6 feed also owns HC rows whose pemasar
+                // counterpart was removed; they must not survive a refresh.
+                $source['stale_brihc_pairs'] = collect($source['stale_brihc_pairs'])
+                    ->merge($this->outsideArea6MantriQuery()
+                        ->get(['pernr', 'positiondesc'])
+                        ->map(fn ($row): array => ['pn' => $this->normalizePn($row->pernr), 'role' => $row->positiondesc]))
+                    ->merge(DB::table('brihc')
+                        ->where('uniqueid_brihc', 'like', 'reference_brihc_hc_%')
+                        ->whereIn('jabatan', array_values(self::UPDATE_HC_MANTRI_SHEETS))
+                        ->get(['pn', 'jabatan'])
+                        ->map(fn ($row): array => ['pn' => $this->normalizePn($row->pn), 'role' => $row->jabatan]))
+                    ->unique(fn (array $pair): string => $this->referenceRecordKey($pair['pn'], $pair['role']))
+                    ->values()->all();
+            }
             if ($source['unresolved_incomplete_fields'] !== []) {
                 throw new RuntimeException(
                     'Data target memiliki BC/UKER kosong yang tidak dapat dipulihkan dari referensi lama: '
@@ -126,7 +141,10 @@ class SyncBrihcReferenceCommand extends Command
                         : $this->countReferenceRows('brihc_pemasar', 'positiondesc', $source['role_tokens']))
                     : 0,
                 'dry_run' => $dryRun,
+                'outside_area6_mantri' => ($source['layout'] ?? null) === 'update_hc_mantri_roles'
+                    ? $this->outsideArea6MantriQuery()->count() : 0,
             ];
+            $summary['would_delete_brihc_pemasar'] += $summary['outside_area6_mantri'];
 
             if ($dryRun) {
                 $this->line(json_encode($summary, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
@@ -150,8 +168,12 @@ class SyncBrihcReferenceCommand extends Command
                 }
 
                 $deletedPemasar = 0;
+                $deletedOutsideArea6 = 0;
                 $insertedPemasar = 0;
                 if ($source['sync_brihc_pemasar']) {
+                    if (($source['layout'] ?? null) === 'update_hc_mantri_roles') {
+                        $deletedOutsideArea6 = $this->outsideArea6MantriQuery()->delete();
+                    }
                     $deletedPemasar = $isScopedReference
                         ? ($source['format'] === 'update_hc'
                             ? $this->deleteExactReferenceRowsForBranches('brihc_pemasar', 'positiondesc', $source['role_tokens'], $source['branch_labels'])
@@ -180,7 +202,8 @@ class SyncBrihcReferenceCommand extends Command
                 return [
                     'brihc_deleted' => $deletedBrihc,
                     'brihc_inserted' => count($source['rows']),
-                    'brihc_pemasar_deleted' => $deletedPemasar,
+                    'brihc_pemasar_deleted' => $deletedPemasar + $deletedOutsideArea6,
+                    'outside_area6_mantri_deleted' => $deletedOutsideArea6,
                     'brihc_pemasar_inserted' => $insertedPemasar,
                 ];
             });
@@ -194,7 +217,9 @@ class SyncBrihcReferenceCommand extends Command
                 'cache_version_bumped' => ['pinjaman', 'consumer', 'brihc'],
                 'preserved' => [
                     'brihc_roles_outside_source' => 'not changed',
-                    'brihc_pemasar_outside_source_branches' => in_array($source['format'], ['mantri_reference', 'update_hc'], true) ? 'not changed' : null,
+                    'brihc_pemasar_outside_source_branches' => ($source['layout'] ?? null) === 'update_hc_mantri_roles'
+                        ? 'three Mantri roles outside Area 6 removed'
+                        : (in_array($source['format'], ['mantri_reference', 'update_hc'], true) ? 'not changed' : null),
                     'brihc_pemasar' => $source['sync_brihc_pemasar'] ? 'synchronized' : 'not changed',
                     'wilayah_mbm' => 'not changed',
                 ],
@@ -216,6 +241,13 @@ class SyncBrihcReferenceCommand extends Command
                 throw new RuntimeException("Tabel referensi {$table} tidak tersedia.");
             }
         }
+    }
+
+    private function outsideArea6MantriQuery(): mixed
+    {
+        return DB::table('brihc_pemasar')
+            ->whereIn(DB::raw("UPPER(TRIM(COALESCE(positiondesc, '')))"), array_values(self::UPDATE_HC_MANTRI_SHEETS))
+            ->whereNotIn(DB::raw("UPPER(TRIM(COALESCE(psadesc, '')))"), array_map('strtoupper', array_column(self::AREA_6_BRANCHES, 'label')));
     }
 
     /**
@@ -461,7 +493,7 @@ class SyncBrihcReferenceCommand extends Command
             'format' => 'update_hc',
             'layout' => 'update_hc_mantri_roles',
             'sync_brihc_pemasar' => true,
-            'branch_labels' => array_values($branchLabels),
+            'branch_labels' => array_column(self::AREA_6_BRANCHES, 'label'),
         ];
     }
 

@@ -351,7 +351,7 @@ class SyncBrihcReferenceCommandTest extends TestCase
                 'created_at' => $timestamp, 'updated_at' => $timestamp,
             ]);
         }
-        $retainedIds = ['keep-collection', 'keep-rm-small', 'keep-kaunit', 'keep-outside-area'];
+        $retainedIds = ['keep-collection', 'keep-rm-small', 'keep-kaunit'];
         $retainedBefore = $this->app['db']->table('brihc_pemasar')->whereIn('uniqueid_namareport', $retainedIds)->orderBy('uniqueid_namareport')->get()->all();
         $versions = collect(['pinjaman', 'consumer', 'brihc'])->mapWithKeys(fn (string $name): array => [$name => ReportCacheVersion::get($name)]);
         $rowsBySheet = $this->mantriHcRows();
@@ -385,7 +385,7 @@ class SyncBrihcReferenceCommandTest extends TestCase
             'mkj' => '4 tahun', 'descprogrammasuk' => 'PDP', 'status' => 'AKTIF',
             'tmt_masuk' => '2010-02-03', 'tmt_jabatan' => '2024-01-02',
         ]);
-        foreach (['old-madiun', 'stale-ngawi', 'stale-briguna', 'stale-recovery'] as $id) {
+        foreach (['old-madiun', 'stale-ngawi', 'stale-briguna', 'stale-recovery', 'keep-outside-area'] as $id) {
             $this->assertDatabaseMissing('brihc_pemasar', ['uniqueid_namareport' => $id]);
             $this->assertDatabaseMissing('brihc', ['uniqueid_brihc' => $id]);
         }

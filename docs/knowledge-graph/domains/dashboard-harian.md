@@ -8,7 +8,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | --- | ---: |
 | command | 2 |
 | file | 18 |
-| method | 314 |
+| method | 319 |
 | route | 10 |
 | class | 11 |
 | table | 2 |
@@ -18,36 +18,36 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Node | Kind | Degree | Source |
 | --- | --- | ---: | --- |
-| `DashboardHarianSnapshotService` | class | 208 | `app/Support/DashboardHarianSnapshotService.php:15` |
+| `DashboardHarianSnapshotService` | class | 210 | `app/Support/DashboardHarianSnapshotService.php:15` |
 | `DashboardHarianController` | class | 51 | `app/Http/Controllers/DashboardHarianController.php:21` |
 | `HourlyDpkDashboardService` | class | 40 | `app/Support/HourlyDpkDashboardService.php:11` |
-| `normalizeDate` | method | 36 | `app/Support/DashboardHarianSnapshotService.php:5382` |
+| `normalizeDate` | method | 38 | `app/Support/DashboardHarianSnapshotService.php:5460` |
 | `dashboard_harian_snapshots` | table | 27 | - |
-| `fillDashboardHarianSheet` | method | 23 | `app/Http/Controllers/DashboardHarianController.php:713` |
-| `normalizeFilterValues` | method | 23 | `app/Support/DashboardHarianSnapshotService.php:5448` |
-| `buildKeragaanUkerPayload` | method | 22 | `app/Support/DashboardHarianSnapshotService.php:834` |
-| `rebuild` | method | 22 | `app/Support/DashboardHarianSnapshotService.php:274` |
-| `normalizeKancaLabel` | method | 20 | `app/Support/DashboardHarianSnapshotService.php:4412` |
-| `syncDuePeriods` | method | 20 | `app/Support/DashboardHarianSnapshotService.php:312` |
+| `fillDashboardHarianSheet` | method | 23 | `app/Http/Controllers/DashboardHarianController.php:719` |
+| `normalizeFilterValues` | method | 23 | `app/Support/DashboardHarianSnapshotService.php:5526` |
+| `rebuild` | method | 23 | `app/Support/DashboardHarianSnapshotService.php:274` |
+| `buildKeragaanUkerPayload` | method | 22 | `app/Support/DashboardHarianSnapshotService.php:866` |
+| `resolveEffectivePeriod` | method | 22 | `app/Support/DashboardHarianSnapshotService.php:659` |
+| `buildPeriodSnapshot` | method | 20 | `app/Support/DashboardHarianSnapshotService.php:487` |
+| `normalizeKancaLabel` | method | 20 | `app/Support/DashboardHarianSnapshotService.php:4477` |
+| `syncDuePeriods` | method | 20 | `app/Support/DashboardHarianSnapshotService.php:320` |
 | `OptimizedDashboardHarianSnapshotService` | class | 19 | `app/Support/OptimizedDashboardHarianSnapshotServiceV2.php:21` |
-| `buildAggregatedRowsForPeriod` | method | 18 | `app/Support/DashboardHarianSnapshotService.php:2396` |
-| `buildDashboardPayloadWithCustomPeriods` | method | 18 | `app/Support/DashboardHarianSnapshotService.php:1802` |
+| `buildAggregatedRowsForPeriod` | method | 18 | `app/Support/DashboardHarianSnapshotService.php:2425` |
+| `buildDashboardPayloadWithCustomPeriods` | method | 18 | `app/Support/DashboardHarianSnapshotService.php:1831` |
 | `payload` | method | 18 | `app/Support/HourlyDpkDashboardService.php:38` |
-| `resolveEffectivePeriod` | method | 18 | `app/Support/DashboardHarianSnapshotService.php:638` |
-| `buildPeriodSnapshot` | method | 17 | `app/Support/DashboardHarianSnapshotService.php:473` |
-| `slugKey` | method | 17 | `app/Support/DashboardHarianSnapshotService.php:4407` |
-| `exportExcel` | method | 16 | `app/Http/Controllers/DashboardHarianController.php:250` |
-| `keragaanUker` | method | 16 | `app/Http/Controllers/DashboardHarianController.php:148` |
-| `loadMetricsForPeriods` | method | 16 | `app/Support/DashboardHarianSnapshotService.php:2197` |
+| `keragaanUker` | method | 17 | `app/Http/Controllers/DashboardHarianController.php:149` |
+| `slugKey` | method | 17 | `app/Support/DashboardHarianSnapshotService.php:4472` |
+| `exportExcel` | method | 16 | `app/Http/Controllers/DashboardHarianController.php:256` |
+| `loadMetricsForPeriods` | method | 16 | `app/Support/DashboardHarianSnapshotService.php:2226` |
 | `__invoke` | method | 15 | `app/Http/Controllers/KeragaanPdfController.php:16` |
-| `buildPeriodSnapshotUnlocked` | method | 15 | `app/Support/DashboardHarianSnapshotService.php:509` |
-| `fetchLoanAggregates` | method | 15 | `app/Support/DashboardHarianSnapshotService.php:3024` |
-| `finalizeMetrics` | method | 15 | `app/Support/DashboardHarianSnapshotService.php:4012` |
+| `buildPeriodSnapshotUnlocked` | method | 15 | `app/Support/DashboardHarianSnapshotService.php:529` |
+| `buildSourceMetadata` | method | 15 | `app/Support/DashboardHarianSnapshotService.php:5079` |
+| `fetchLoanAggregates` | method | 15 | `app/Support/DashboardHarianSnapshotService.php:3053` |
+| `finalizeMetrics` | method | 15 | `app/Support/DashboardHarianSnapshotService.php:4077` |
+| `index` | method | 15 | `app/Http/Controllers/DashboardHarianController.php:30` |
 | `RebuildDashboardHarianSnapshotJob` | class | 14 | `app/Jobs/RebuildDashboardHarianSnapshotJob.php:26` |
-| `index` | method | 14 | `app/Http/Controllers/DashboardHarianController.php:30` |
-| `resolveEffectiveRkaPeriod` | method | 14 | `app/Support/DashboardHarianSnapshotService.php:755` |
-| `timeseries` | method | 14 | `app/Http/Controllers/DashboardHarianController.php:67` |
-| `buildSourceMetadata` | method | 13 | `app/Support/DashboardHarianSnapshotService.php:5006` |
+| `resolveEffectiveRkaPeriod` | method | 14 | `app/Support/DashboardHarianSnapshotService.php:787` |
+| `timeseries` | method | 14 | `app/Http/Controllers/DashboardHarianController.php:68` |
 
 ## Route Nodes
 
@@ -99,18 +99,18 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Direction | Count |
 | --- | ---: |
-| dashboard-harian -> core (calls) | 79 |
+| dashboard-harian -> core (calls) | 83 |
 | dashboard-harian -> access-control (protected_by) | 60 |
 | dashboard-harian -> core (accepts) | 23 |
 | import -> dashboard-harian (calls) | 12 |
 | import -> dashboard-harian (accepts) | 10 |
 | core -> dashboard-harian (calls) | 10 |
 | jobs-snapshots -> dashboard-harian (calls) | 9 |
-| dashboard-harian -> import (reads_table) | 8 |
+| dashboard-harian -> import (checks_table) | 8 |
 | database -> dashboard-harian (checks_table) | 7 |
-| dashboard-harian -> import (checks_table) | 7 |
-| dashboard-harian -> core (instantiates) | 6 |
+| dashboard-harian -> core (instantiates) | 7 |
 | dashboard-harian -> access-control (calls) | 6 |
+| dashboard-harian -> import (reads_table) | 6 |
 | database -> dashboard-harian (alters_table) | 5 |
 | dashboard-harian -> platform (calls) | 5 |
 | dashboard-harian -> dashboard-pinjaman (reads_table) | 5 |
@@ -123,9 +123,9 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | dashboard-pinjaman -> dashboard-harian (reads_table) | 3 |
 | jobs-snapshots -> dashboard-harian (accepts) | 3 |
 | dashboard-harian -> core (checks_table) | 3 |
-| dashboard-harian -> core (joins_table) | 3 |
 | dashboard-harian -> jobs-snapshots (uses_queue) | 2 |
 | jobs-snapshots -> dashboard-harian (reads_table) | 2 |
 | dashboard-simpanan -> dashboard-harian (references_route) | 2 |
 | dashboard-harian -> dashboard-pinjaman (checks_table) | 2 |
 | core -> dashboard-harian (injects) | 2 |
+| dashboard-simpanan -> dashboard-harian (contains) | 2 |

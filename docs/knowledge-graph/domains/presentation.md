@@ -75,7 +75,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | presentation -> core (accepts) | 24 |
 | presentation -> core (instantiates) | 16 |
 | jobs-snapshots -> presentation (calls) | 9 |
-| presentation -> dashboard-simpanan (references_route) | 7 |
+| presentation -> dashboard-simpanan (references_route) | 8 |
 | dashboard-simpanan -> presentation (accepts) | 4 |
 | access-control -> presentation (calls) | 4 |
 | presentation -> import (reads_table) | 4 |

@@ -4,7 +4,7 @@ namespace Tests\Unit;
 
 use App\Http\Controllers\Report\KinerjaRmMikroReportController;
 use App\Support\LandingMicroPerformanceService;
-use App\Support\MantriProductivityReference;
+use App\Support\MantriSourceInputStore;
 use App\Support\MicroNettDisbursementCalculator;
 use App\Support\ReportCacheVersion;
 use App\Support\UserBranchScope;
@@ -80,16 +80,16 @@ class MantriNettParityTest extends TestCase
         $kpi = $this->kpi();
 
         $this->assertTrue(data_get($landing, 'meta.available'), (string) data_get($landing, 'meta.error'));
-        $this->assertSame(215_000_000.0, (float) data_get($landing, 'mantri_performance.total.net_disbursement.amount'));
+        $this->assertSame(295_000_000.0, (float) data_get($landing, 'mantri_performance.total.net_disbursement.amount'));
         $this->assertSame(5, data_get($landing, 'mantri_performance.total.net_disbursement.deb'));
         $this->assertSame(375_000_000.0, (float) data_get($landing, 'mantri_performance.total.realization.amount'));
-        $this->assertSame(100_000_000.0, (float) data_get($landing, 'mantri_performance.total.daily_net_disbursement.amount'));
+        $this->assertSame(150_000_000.0, (float) data_get($landing, 'mantri_performance.total.daily_net_disbursement.amount'));
         $this->assertSame(3, data_get($landing, 'mantri_performance.total.daily_net_disbursement.deb'));
         $this->assertSame(230_000_000.0, (float) data_get($landing, 'mantri_performance.total.daily_realization.amount'));
-        $this->assertSame(230_000_000.0, (float) data_get($landing, 'mantri_performance.excluded_non_roster.net_disbursement.amount'));
+        $this->assertSame(30_000_000.0, (float) data_get($landing, 'mantri_performance.excluded_non_roster.net_disbursement.amount'));
 
-        $this->assertMantriParity($landing, $kpi, ['111' => [125_000_000.0, 4], '222' => [90_000_000.0, 1]]);
-        foreach (['KC MADIUN' => 125_000_000.0, 'KC NGAWI' => 90_000_000.0] as $branch => $amount) {
+        $this->assertMantriParity($landing, $kpi, ['111' => [175_000_000.0, 4], '222' => [120_000_000.0, 1]]);
+        foreach (['KC MADIUN' => 175_000_000.0, 'KC NGAWI' => 120_000_000.0] as $branch => $amount) {
             $landingRow = collect(data_get($landing, 'mantri_performance.rows'))->firstWhere('branch', $branch);
             $this->assertSame($amount, (float) data_get($landingRow, 'net_disbursement.amount'));
             $this->assertSame($amount, (float) collect($kpi['rows'])->where('cabang', $branch)->sum('realisasi_os'));
@@ -103,9 +103,9 @@ class MantriNettParityTest extends TestCase
         $kpi = $this->kpi();
 
         $this->assertSame(['KC MADIUN'], array_column(data_get($landing, 'mantri_performance.rows'), 'branch'));
-        $this->assertSame(125_000_000.0, (float) data_get($landing, 'mantri_performance.total.net_disbursement.amount'));
-        $this->assertSame(125_000_000.0, (float) $kpi['total']['realisasi_os']);
-        $this->assertMantriParity($landing, $kpi, ['111' => [125_000_000.0, 4]]);
+        $this->assertSame(175_000_000.0, (float) data_get($landing, 'mantri_performance.total.net_disbursement.amount'));
+        $this->assertSame(175_000_000.0, (float) $kpi['total']['realisasi_os']);
+        $this->assertMantriParity($landing, $kpi, ['111' => [175_000_000.0, 4]]);
     }
 
     public function test_subsequent_import_refreshes_both_consumers_without_changing_kur_rm(): void
@@ -115,7 +115,7 @@ class MantriNettParityTest extends TestCase
         $firstKpi = $this->kpi();
         $kurBefore = $calculator->kurRm('2026-10-12');
         $this->assertSame(200_000_000.0, (float) $kurBefore[0]['realisasi_os']);
-        $this->assertSame(215_000_000.0, (float) $firstKpi['total']['realisasi_os']);
+        $this->assertSame(295_000_000.0, (float) $firstKpi['total']['realisasi_os']);
 
         DB::table('daily_loan_dinamis')->where('uniqueid_namareport', 'a-current')->update(['plafon' => 200_000_000]);
         ReportCacheVersion::bump('pinjaman');
@@ -128,9 +128,9 @@ class MantriNettParityTest extends TestCase
             $second = $this->landing();
         }
 
-        $this->assertMantriParity($second, $this->kpi(), ['111' => [125_000_000.0, 4], '222' => [170_000_000.0, 1]]);
+        $this->assertMantriParity($second, $this->kpi(), ['111' => [175_000_000.0, 4], '222' => [200_000_000.0, 1]]);
         $this->assertSame($kurBefore, $calculator->kurRm('2026-10-12'));
-        $this->assertSame(295_000_000.0, (float) data_get($second, 'mantri_performance.total.net_disbursement.amount'));
+        $this->assertSame(375_000_000.0, (float) data_get($second, 'mantri_performance.total.net_disbursement.amount'));
         $this->assertSame(455_000_000.0, (float) data_get($second, 'mantri_performance.total.realization.amount'));
     }
 
@@ -139,7 +139,7 @@ class MantriNettParityTest extends TestCase
         $this->landing();
         $this->kpi();
 
-        DB::table('daily_loan_dinamis')->where('uniqueid_namareport', 'closed')->update(['baki_debet1' => 50_000_000]);
+        DB::table('daily_loan_dinamis')->where('uniqueid_namareport', 'zero-baseline')->update(['baki_debet1' => 110_000_000]);
         ReportCacheVersion::bump('pinjaman');
         $landing = $this->landing();
         if (data_get($landing, 'meta.refresh_pending')) {
@@ -147,8 +147,8 @@ class MantriNettParityTest extends TestCase
             $landing = $this->landing();
         }
 
-        $this->assertMantriParity($landing, $this->kpi(), ['111' => [105_000_000.0, 4], '222' => [70_000_000.0, 1]]);
-        $this->assertSame(175_000_000.0, (float) data_get($landing, 'mantri_performance.total.net_disbursement.amount'));
+        $this->assertMantriParity($landing, $this->kpi(), ['111' => [175_000_000.0, 4], '222' => [120_000_000.0, 1]]);
+        $this->assertSame(295_000_000.0, (float) data_get($landing, 'mantri_performance.total.net_disbursement.amount'));
     }
 
     public function test_next_month_uses_its_own_baseline_without_carrying_prior_month_bookings(): void
@@ -204,14 +204,14 @@ class MantriNettParityTest extends TestCase
         $landing = $this->landing();
         $kpi = $this->kpi();
 
-        $this->assertSame(255_000_000.0, (float) data_get($landing, 'mantri_performance.total.net_disbursement.amount'));
-        $this->assertSame(255_000_000.0, (float) $kpi['total']['realisasi_os']);
+        $this->assertSame(335_000_000.0, (float) data_get($landing, 'mantri_performance.total.net_disbursement.amount'));
+        $this->assertSame(335_000_000.0, (float) $kpi['total']['realisasi_os']);
         $this->assertSame(6, data_get($landing, 'mantri_performance.total.net_disbursement.deb'));
         $this->assertSame(6, (int) $kpi['total']['realisasi_deb']);
         $this->assertSame(40_000_000.0, (float) collect($kpi['rows'])->firstWhere('pn_mantri', '00000444')['realisasi_os']);
     }
 
-    public function test_full_closed_cif_deduction_is_independent_of_booking_and_observation_order(): void
+    public function test_floored_closed_micro_cif_deduction_is_independent_of_current_row_insertion_order(): void
     {
         DB::table('daily_loan_dinamis')->insert([
             $this->loan('reverse-baseline', 'CIF-REVERSE', 'REVERSE-OLD', 70_000_000, ['periode' => '2026-09-30', 'tgl_realisasi' => null]),
@@ -225,9 +225,9 @@ class MantriNettParityTest extends TestCase
         $kurBefore = $calculator->cachedKurRm('2026-10-12');
         $reverseAccounts = collect($firstAccounts)->where('cif_key', 'CIF-REVERSE')->keyBy('account_key');
 
-        $this->assertSame(-20_000_000.0, $reverseAccounts['REVERSE-A']['net_amount']);
+        $this->assertSame(0.0, $reverseAccounts['REVERSE-A']['net_amount']);
         $this->assertSame(70_000_000.0, $reverseAccounts['REVERSE-A']['previous_os']);
-        $this->assertSame(-10_000_000.0, $reverseAccounts['REVERSE-B']['net_amount']);
+        $this->assertSame(0.0, $reverseAccounts['REVERSE-B']['net_amount']);
         $this->assertSame(70_000_000.0, $reverseAccounts['REVERSE-B']['previous_os']);
         foreach ($firstMetrics as $metric) {
             $accounts = collect($firstAccounts)->where('owner', $metric['owner'])
@@ -236,8 +236,11 @@ class MantriNettParityTest extends TestCase
             $this->assertSame($metric['realisasi_deb'], $accounts->pluck('account_key')->unique()->count());
         }
 
-        DB::table('daily_loan_dinamis')->where('uniqueid_namareport', 'reverse-a')->update(['periode' => '2026-10-02']);
-        DB::table('daily_loan_dinamis')->where('uniqueid_namareport', 'reverse-b')->update(['periode' => '2026-10-12']);
+        $ids = ['reverse-a', 'reverse-b-current'];
+        $reinsert = DB::table('daily_loan_dinamis')->whereIn('uniqueid_namareport', $ids)->get()
+            ->reverse()->map(fn ($row): array => array_diff_key((array) $row, ['id' => true]))->all();
+        DB::table('daily_loan_dinamis')->whereIn('uniqueid_namareport', $ids)->delete();
+        DB::table('daily_loan_dinamis')->insert($reinsert);
         ReportCacheVersion::bump('pinjaman');
 
         $this->assertSame($firstAccounts, $calculator->cachedMantriAccounts('2026-10-12'));
@@ -245,7 +248,7 @@ class MantriNettParityTest extends TestCase
         $this->assertSame($kurBefore, $calculator->cachedKurRm('2026-10-12'));
     }
 
-    public function test_signed_negative_per_account_nett_remains_identical_in_landing_kpi_and_all_workbook_sheets(): void
+    public function test_negative_gross_minus_baseline_becomes_zero_in_landing_kpi_and_all_workbook_sheets(): void
     {
         DB::table('daily_loan_dinamis')->delete();
         DB::table('daily_loan_dinamis')->insert([
@@ -255,54 +258,136 @@ class MantriNettParityTest extends TestCase
         ]);
         $landing = $this->landing();
         $kpi = $this->kpi();
-        $this->assertMantriParity($landing, $kpi, ['111' => [-100_000_000.0, 1], '222' => [-150_000_000.0, 1]]);
-        $this->assertSame(-250_000_000.0, (float) data_get($landing, 'mantri_performance.total.net_disbursement.amount'));
-        $this->assertSame(-250_000_000.0, (float) data_get($landing, 'mantri_performance.total.daily_net_disbursement.amount'));
+        $this->assertMantriParity($landing, $kpi, ['111' => [0.0, 1], '222' => [0.0, 1]]);
+        $this->assertSame(0.0, (float) data_get($landing, 'mantri_performance.total.net_disbursement.amount'));
+        $this->assertSame(0.0, (float) data_get($landing, 'mantri_performance.total.daily_net_disbursement.amount'));
         $this->assertSame(150_000_000.0, (float) data_get($landing, 'mantri_performance.total.realization.amount'));
         $this->assertSame(2, data_get($landing, 'mantri_performance.total.net_disbursement.deb'));
-        $this->assertLessThan(0, (float) data_get($landing, 'mantri_performance.total.net_disbursement.average_per_hke'));
+        $this->assertSame(0.0, (float) data_get($landing, 'mantri_performance.total.net_disbursement.average_per_hke'));
         foreach (['pt', 'contract'] as $category) {
-            $this->assertSame(1, collect(data_get($landing, 'mantri_performance.total.tiers.'.$category.'.buckets'))->firstWhere('key', 'none')['mantri']);
+            $this->assertSame(1, collect(data_get($landing, 'mantri_performance.total.tiers.'.$category.'.buckets'))->firstWhere('key', 'extreme_low')['mantri']);
         }
         $workbookPayload = (new ReflectionMethod(KinerjaRmMikroReportController::class, 'nettWorkbookPayload'))
             ->invoke(new KinerjaRmMikroReportController, '2026-10-12', true);
         $workbook = $workbookPayload['nett_workbook']['mantriPerformance'];
         foreach ($workbook['sheet_rows'] as $sheet => $groups) {
-            $this->assertSame(-250_000_000.0, (float) collect($groups)->sum('net_disbursement.amount'), $sheet);
+            $this->assertSame(0.0, (float) collect($groups)->sum('net_disbursement.amount'), $sheet);
             $this->assertSame(2, (int) collect($groups)->sum('net_disbursement.deb'), $sheet);
             $people = collect($groups)->flatMap(fn (array $group): array => $group['members'])->keyBy('pn');
-            $this->assertSame(-100_000_000.0, $people->get('111')['net_amount'], $sheet);
-            $this->assertSame(-150_000_000.0, $people->get('222')['net_amount'], $sheet);
-            $this->assertSame('none', $people->get('111')['nett_tier'], $sheet);
-            $this->assertSame('none', $people->get('222')['nett_tier'], $sheet);
+            $this->assertSame(0.0, $people->get('111')['net_amount'], $sheet);
+            $this->assertSame(0.0, $people->get('222')['net_amount'], $sheet);
+            $this->assertSame('extreme_low', $people->get('111')['nett_tier'], $sheet);
+            $this->assertSame('extreme_low', $people->get('222')['nett_tier'], $sheet);
         }
     }
 
-    public function test_period_source_people_and_exact_account_lineage_override_stale_database_without_mutating_raw_rows(): void
+    public function test_same_pn_negative_and_positive_bookings_are_floored_before_pn_branch_and_workbook_aggregation(): void
     {
         DB::table('daily_loan_dinamis')->delete();
         DB::table('daily_loan_dinamis')->insert([
-            $this->loan('source-old', 'CIF-SOURCE', 'SOURCE-DB-OLD', 5_000_000, ['periode' => '2026-09-30', 'tgl_realisasi' => null]),
+            $this->loan('mixed-baseline', 'CIF-MIXED', 'CLOSED-MIXED', 200_000_000, ['periode' => '2026-09-30', 'tgl_realisasi' => null]),
+            $this->loan('mixed-negative', 'CIF-MIXED', 'MIXED-NEGATIVE', 100_000_000),
+            $this->loan('mixed-positive', 'CIF-MIXED', 'MIXED-POSITIVE', 250_000_000),
+            $this->loan('other-positive', 'CIF-OTHER', 'OTHER-POSITIVE', 50_000_000, ['pn_pengelola1' => '000222']),
+        ]);
+        $accounts = collect(app(MicroNettDisbursementCalculator::class)->mantriAccounts('2026-10-12'))->keyBy('account_key');
+        $this->assertSame(200_000_000.0, $accounts['MIXED-NEGATIVE']['previous_os']);
+        $this->assertSame(200_000_000.0, $accounts['MIXED-POSITIVE']['previous_os']);
+        $this->assertSame(0.0, $accounts['MIXED-NEGATIVE']['net_amount']);
+        $this->assertSame(50_000_000.0, $accounts['MIXED-POSITIVE']['net_amount']);
+
+        $landing = $this->landing();
+        $kpi = $this->kpi();
+        $this->assertMantriParity($landing, $kpi, ['111' => [50_000_000.0, 2], '222' => [50_000_000.0, 1]]);
+        $this->assertSame(100_000_000.0, (float) data_get($landing, 'mantri_performance.total.net_disbursement.amount'));
+        $this->assertSame(100_000_000.0, (float) data_get($landing, 'mantri_performance.total.daily_net_disbursement.amount'));
+        $this->assertSame(400_000_000.0, (float) data_get($landing, 'mantri_performance.total.realization.amount'));
+        $this->assertEqualsWithDelta(100_000_000.0 / data_get($landing, 'mantri_performance.working_days'), data_get($landing, 'mantri_performance.total.net_disbursement.average_per_hke'), 0.01);
+        $workbook = (new ReflectionMethod(KinerjaRmMikroReportController::class, 'nettWorkbookPayload'))
+            ->invoke(new KinerjaRmMikroReportController, '2026-10-12', true);
+        foreach ($workbook['nett_workbook']['mantriPerformance']['sheet_rows'] as $sheet => $groups) {
+            $this->assertSame(100_000_000.0, (float) collect($groups)->sum('net_disbursement.amount'), $sheet);
+            $this->assertSame(3, (int) collect($groups)->sum('net_disbursement.deb'), $sheet);
+            $people = collect($groups)->flatMap(fn (array $group): array => $group['members'])->keyBy('pn');
+            $this->assertSame(50_000_000.0, $people->get('111')['net_amount'], $sheet);
+            $this->assertSame(2, $people->get('111')['net_deb'], $sheet);
+        }
+    }
+
+    public function test_closed_only_mtd_booking_still_realizes_its_owner_without_inflating_current_source_realization(): void
+    {
+        DB::table('daily_loan_dinamis')->delete();
+        DB::table('daily_loan_dinamis')->insert([
+            $this->loan('historical-baseline', 'CIF-HISTORICAL', 'HISTORICAL-OLD', 120_000_000, [
+                'periode' => '2026-09-30', 'tgl_realisasi' => null,
+            ]),
+            $this->loan('historical-booking', 'CIF-HISTORICAL', 'HISTORICAL-NEW', 100_000_000, [
+                'periode' => '2026-10-05', 'tgl_realisasi' => '2026-10-05',
+            ]),
+            $this->loan('current-non-roster', 'CIF-OTHER', 'OTHER-NEW', 50_000_000, ['pn_pengelola1' => '00000999']),
+        ]);
+
+        $landing = $this->landing();
+        $kpi = $this->kpi();
+        $this->assertMantriParity($landing, $kpi, ['111' => [0.0, 1], '222' => [0.0, 0]]);
+        $this->assertSame(2, data_get($landing, 'realization.mantri_roster.kupedes_eligible'));
+        $this->assertSame(1, data_get($landing, 'realization.mantri_roster.kupedes_realized'));
+        $this->assertSame(1, data_get($landing, 'realization.mantri_roster.kupedes_not_realized'));
+        $this->assertSame(['222'], array_column(data_get($landing, 'realization.kupedes_not_realized'), 'pn'));
+        $this->assertSame(1, data_get($landing, 'realization.mantri.realized'));
+        $this->assertSame(1, data_get($landing, 'realization.mantri.not_realized'));
+        $this->assertSame(100_000_000.0, data_get($landing, 'mantri_performance.total.realization.amount'));
+        $this->assertSame(0.0, data_get($landing, 'mantri_performance.total.net_disbursement.amount'));
+        $this->assertSame(50_000_000.0, data_get($landing, 'mantri_performance.excluded_non_roster.net_disbursement.amount'));
+        $this->assertSame(50_000_000.0, data_get($landing, 'realization.total.amount'));
+        $this->assertSame(1, data_get($landing, 'realization.total.deb'));
+        $kupedes = collect(data_get($landing, 'realization.products'))->firstWhere('label', 'Kupedes');
+        $this->assertSame(50_000_000.0, $kupedes['amount']);
+        $this->assertSame(1, $kupedes['mantri_realized']);
+        $this->assertSame(1, $kupedes['mantri_not_realized']);
+    }
+
+    public function test_account_level_source_inputs_and_approved_owner_follow_live_roster_without_mutating_raw_rows(): void
+    {
+        DB::table('daily_loan_dinamis')->delete();
+        DB::table('daily_loan_dinamis')->insert([
             $this->loan('source-current', 'CIF-SOURCE', '0001001', 100_000_000, ['periode' => '2026-10-05', 'tgl_realisasi' => '2026-10-05']),
             $this->loan('source-current-asof', 'CIF-SOURCE', '1001', 100_000_000, ['tgl_realisasi' => '2026-10-05']),
             $this->loan('other-old', 'CIF-OTHER', 'OTHER-OLD', 10_000_000, ['periode' => '2026-09-30', 'tgl_realisasi' => null]),
             $this->loan('other-current', 'CIF-OTHER', 'OTHER-NEW', 50_000_000),
+            $this->loan('source-earlier', 'CIF-SOURCE', '1001', 100_000_000, ['periode' => '2026-10-11', 'tgl_realisasi' => '2026-10-05']),
+            $this->loan('source-later', 'CIF-SOURCE', '1001', 100_000_000, ['periode' => '2026-10-13', 'tgl_realisasi' => '2026-10-05']),
+            $this->loan('other-later', 'CIF-OTHER', 'OTHER-NEW', 50_000_000, ['periode' => '2026-10-13']),
         ]);
-        $data = [
-            'version' => 1, 'month_start' => '2026-10-01', 'as_of' => '2026-10-12', 'baseline_period' => '2026-09-30', 'sources' => ['test-workbook.xlsx'],
-            'people' => [
-                ['pn' => '555', 'name' => 'Mantri Sumber PT', 'branch' => 'KC NGAWI', 'unit' => 'UNIT NGAWI SUMBER', 'bc' => '3201', 'category' => 'pt'],
-                ['pn' => '556', 'name' => 'Mantri Sumber Nol', 'branch' => 'KC NGAWI', 'unit' => 'UNIT NGAWI SUMBER', 'bc' => '3201', 'category' => 'contract'],
+        DB::table('brihc_pemasar')->delete();
+        foreach ([['555', 'Mantri Sumber PT', 'PT'], ['556', 'Mantri Sumber Nol', 'KONTRAK']] as [$pn, $name, $status]) {
+            DB::table('brihc_pemasar')->insert([
+                'uniqueid_namareport' => 'reference_brihc_hc_'.$pn, 'pernr' => str_pad($pn, 8, '0', STR_PAD_LEFT),
+                'pn_mantri' => str_pad($pn, 8, '0', STR_PAD_LEFT), 'completename' => $name, 'positiondesc' => 'MANTRI',
+                'psadesc' => 'KC NGAWI', 'orgdesc' => 'UNIT NGAWI SUMBER', 'bc' => '3201', 'esgdesc' => $status,
+            ]);
+        }
+        $directory = sys_get_temp_dir().'/mantri-source-parity-'.bin2hex(random_bytes(8));
+        $store = new MantriSourceInputStore($directory);
+        $this->app->instance(MantriSourceInputStore::class, $store);
+        $baseline = [
+            'source' => ['source_kind' => 'manual_workbook_baseline'], 'complete_presence' => false,
+            'presence' => [], 'bookings' => [], 'unclassified_accounts' => [
+                $this->loan('source-unknown', 'CIF-SOURCE', 'SOURCE-CLOSED', 120_000_000, [
+                    'periode' => '2026-09-30', 'tgl_realisasi' => null,
+                    'description' => null, 'segmen_kinerja' => null, 'produk_kinerja' => null,
+                ]),
             ],
-            'accounts' => [
-                ['account' => '1001', 'cif' => 'CIF-SOURCE', 'realization_date' => '2026-10-05', 'pn' => '555', 'name' => 'Mantri Sumber PT', 'branch' => 'KC NGAWI', 'unit' => 'UNIT NGAWI SUMBER', 'bc' => '3201'],
-            ],
-            'baseline_accounts' => [['account' => 'SOURCE-CLOSED', 'cif' => 'CIF-SOURCE', 'balance' => 120_000_000]],
-            'current_accounts' => ['1001'],
         ];
-        $path = tempnam(sys_get_temp_dir(), 'mantri_source_parity_');
-        file_put_contents($path, json_encode($data, JSON_THROW_ON_ERROR));
-        $this->app->instance(MantriProductivityReference::class, new MantriProductivityReference($path));
+        $store->write('2026-09-30', $baseline);
+        $store->write('2026-10-12', [
+            'source' => ['source_kind' => 'manual_workbook_position'], 'complete_presence' => true,
+            'presence' => ['1001', 'OTHER-NEW'], 'bookings' => [], 'unclassified_accounts' => [],
+            'owner_evidence' => [
+                ['account' => '1001', 'cif' => 'CIF-SOURCE', 'realization_date' => '2026-10-05',
+                    'pn' => '555', 'name' => 'Mantri Sumber PT', 'as_of' => '2026-10-12', 'owner_basis' => 'pn_pemrakarsa1'],
+            ],
+        ]);
         $rawLoans = DB::table('daily_loan_dinamis')->orderBy('uniqueid_namareport')->get()->all();
         $rawRoster = DB::table('brihc_pemasar')->orderBy('uniqueid_namareport')->get()->all();
         try {
@@ -310,19 +395,21 @@ class MantriNettParityTest extends TestCase
             $accounts = collect($calculator->mantriAccounts('2026-10-12'))->keyBy('account_key');
             $this->assertSame('00000555 - MANTRI SUMBER PT', $accounts['1001']['owner']);
             $this->assertSame(120_000_000.0, $accounts['1001']['previous_os']);
-            $this->assertSame(-20_000_000.0, $accounts['1001']['net_amount']);
-            $this->assertSame('mantri_productivity_reference', $accounts['1001']['identity_source']);
+            $this->assertSame(0.0, $accounts['1001']['net_amount']);
+            $this->assertSame('mantri_origination_ledger', $accounts['1001']['identity_source']);
+            $this->assertSame('mantri_source_input', $accounts['1001']['baseline_source']);
             $this->assertSame(10_000_000.0, $accounts['OTHER-NEW']['previous_os']);
             $this->assertSame(40_000_000.0, $accounts['OTHER-NEW']['net_amount']);
             $this->assertSame('daily_loan_dinamis', $accounts['OTHER-NEW']['baseline_source']);
             $earlier = collect($calculator->mantriAccounts('2026-10-11'))->keyBy('account_key');
-            $this->assertSame('00000555 - MANTRI SUMBER PT', $earlier['1001']['owner']);
-            $this->assertSame(5_000_000.0, $earlier['1001']['previous_os']);
-            $this->assertSame(95_000_000.0, $earlier['1001']['net_amount']);
-            $this->assertSame('daily_loan_dinamis', $earlier['1001']['baseline_source']);
+            $this->assertSame('00000111', $earlier['1001']['owner']);
+            $this->assertSame(120_000_000.0, $earlier['1001']['previous_os']);
+            $this->assertSame(0.0, $earlier['1001']['net_amount']);
+            $this->assertSame('daily_loan_dinamis', $earlier['1001']['identity_source']);
+            $this->assertSame('mantri_source_input', $earlier['1001']['baseline_source']);
             $landing = $this->landing();
             $kpi = $this->kpi();
-            $this->assertMantriParity($landing, $kpi, ['555' => [-20_000_000.0, 1], '556' => [0.0, 0]]);
+            $this->assertMantriParity($landing, $kpi, ['555' => [0.0, 1], '556' => [0.0, 0]]);
             $this->assertSame(2, array_sum(data_get($landing, 'mantri_performance.total.headcount')));
             $this->assertSame(2, (int) $kpi['total']['jumlah_mantri']);
             $this->assertSame(2, data_get($landing, 'realization.mantri_roster.kupedes_eligible'));
@@ -337,37 +424,47 @@ class MantriNettParityTest extends TestCase
             $this->assertSame('556', $contractBuckets->get('extreme_low')['people'][0]['pn']);
             $workbook = (new ReflectionMethod(KinerjaRmMikroReportController::class, 'nettWorkbookPayload'))
                 ->invoke(new KinerjaRmMikroReportController, '2026-10-12', true);
-            $sourceWorkbook = $workbook['nett_workbook']['mantriPerformance'];
-            foreach ($sourceWorkbook['sheet_rows'] as $sheet => $groups) {
-                $sourcePeople = collect($groups)->flatMap(fn (array $group): array => $group['members'])->keyBy('pn');
-                $this->assertSame(0.0, $sourcePeople->get('556')['net_amount'], $sheet);
-                $this->assertSame('extreme_low', $sourcePeople->get('556')['nett_tier'], $sheet);
-                $this->assertSame('extreme_low', $sourcePeople->get('555')['nett_tier'], $sheet);
+            foreach ($workbook['nett_workbook']['mantriPerformance']['sheet_rows'] as $sheet => $groups) {
+                $people = collect($groups)->flatMap(fn (array $group): array => $group['members'])->keyBy('pn');
+                $this->assertSame(0.0, $people->get('555')['net_amount'], $sheet);
+                $this->assertSame(0.0, $people->get('556')['net_amount'], $sheet);
+                $this->assertSame('extreme_low', $people->get('555')['nett_tier'], $sheet);
+                $this->assertSame('extreme_low', $people->get('556')['nett_tier'], $sheet);
             }
 
-            // The next position falls outside this source's as-of date and uses the raw DB references.
-            $outside = collect($calculator->mantriAccounts('2026-10-13'))->keyBy('account_key');
-            $this->assertSame('000111', $outside['1001']['owner']);
-            $this->assertSame(5_000_000.0, $outside['1001']['previous_os']);
-            $this->assertSame(95_000_000.0, $outside['1001']['net_amount']);
-            $outsideKpi = (new ReflectionMethod(KinerjaRmMikroReportController::class, 'mantriProductivityPayload'))
-                ->invoke(new KinerjaRmMikroReportController, '2026-10-13');
-            $this->assertNotContains('Mantri Sumber PT', array_column($outsideKpi['rows'], 'nama_mantri'));
-            $this->assertSame(135_000_000.0, (float) $outsideKpi['total']['realisasi_os']);
+            // Approved booking credit persists after later stock ownership changes.
+            $later = collect($calculator->mantriAccounts('2026-10-13'))->keyBy('account_key');
+            $this->assertSame('00000555 - MANTRI SUMBER PT', $later['1001']['owner']);
+            $this->assertSame(120_000_000.0, $later['1001']['previous_os']);
+            $this->assertSame(0.0, $later['1001']['net_amount']);
+            $this->assertSame('mantri_origination_ledger', $later['1001']['identity_source']);
+            $this->assertSame('mantri_source_input', $later['1001']['baseline_source']);
+
             $versionBefore = ReportCacheVersion::get('pinjaman');
             $calculator->cachedMantriAccounts('2026-10-12');
-            $data['baseline_accounts'][0]['balance'] = 150_000_000;
-            file_put_contents($path, json_encode($data, JSON_THROW_ON_ERROR));
-            $this->app->instance(MantriProductivityReference::class, new MantriProductivityReference($path));
+            $baseline['unclassified_accounts'][0]['baki_debet1'] = 150_000_000;
+            $store->write('2026-09-30', $baseline);
+            $this->assertNotSame($versionBefore, ReportCacheVersion::get('pinjaman'));
             $refreshed = collect($calculator->cachedMantriAccounts('2026-10-12'))->keyBy('account_key');
             $this->assertSame(150_000_000.0, $refreshed['1001']['previous_os']);
-            $this->assertSame(-50_000_000.0, $refreshed['1001']['net_amount']);
-            $this->assertMantriParity($this->landing(), $this->kpi(), ['555' => [-50_000_000.0, 1], '556' => [0.0, 0]]);
-            $this->assertSame($versionBefore, ReportCacheVersion::get('pinjaman'));
+            $this->assertSame(0.0, $refreshed['1001']['net_amount']);
+            $freshLanding = $this->landing();
+            if (data_get($freshLanding, 'meta.refresh_pending')) {
+                app(DeferredCallbackCollection::class)->invoke();
+                $freshLanding = $this->landing();
+            }
+            $this->assertMantriParity($freshLanding, $this->kpi(), ['555' => [0.0, 1], '556' => [0.0, 0]]);
+            $versionAfter = ReportCacheVersion::get('pinjaman');
+            $store->write('2026-09-30', $baseline);
+            $this->assertSame($versionAfter, ReportCacheVersion::get('pinjaman'));
             $this->assertEquals($rawLoans, DB::table('daily_loan_dinamis')->orderBy('uniqueid_namareport')->get()->all());
             $this->assertEquals($rawRoster, DB::table('brihc_pemasar')->orderBy('uniqueid_namareport')->get()->all());
         } finally {
-            @unlink($path);
+            foreach (glob($directory.'/*') as $file) {
+                unlink($file);
+            }
+            unlink($directory.'/.write.lock');
+            rmdir($directory);
         }
     }
 
@@ -421,9 +518,9 @@ class MantriNettParityTest extends TestCase
     {
         DB::table('daily_loan_dinamis')->insert([
             $this->loan('closed', 'CIF-X', 'CLOSED', 30_000_000, ['periode' => '2026-09-30', 'tgl_realisasi' => null, 'segmen_kinerja' => 'SMALL', 'produk_kinerja' => 'KOMERSIAL']),
-            $this->loan('open-baseline', 'CIF-X', '000OPEN', 40_000_000, ['periode' => '2026-09-30', 'tgl_realisasi' => null]),
-            // A transferred live baseline account must not become a closed-CIF deduction.
-            $this->loan('open-current', 'CIF-TRANSFERRED', 'OPEN', 35_000_000, ['tgl_realisasi' => null, 'segmen_kinerja' => 'CONSUMER', 'cabang1' => 'KC NGAWI']),
+            $this->loan('open-baseline', 'CIF-X', '0009001', 40_000_000, ['periode' => '2026-09-30', 'tgl_realisasi' => null]),
+            // A transferred account is still present and must not be treated as closed.
+            $this->loan('open-current', 'CIF-TRANSFERRED', '9001', 35_000_000, ['tgl_realisasi' => null, 'segmen_kinerja' => 'CONSUMER', 'cabang1' => 'KC NGAWI']),
             $this->loan('zero-baseline', 'CIF-ZERO', 'ZERO-OLD', 100_000_000, ['periode' => '2026-09-30', 'tgl_realisasi' => null, 'produk_kinerja' => 'BRIGUNAMIKRO']),
             $this->loan('same-baseline', 'CIF-SAME', 'SAME', 20_000_000, ['periode' => '2026-09-30', 'tgl_realisasi' => null]),
             $this->loan('a-first', 'CIF-X', '0001001', 100_000_000, ['periode' => '2026-10-05', 'tgl_realisasi' => '2026-10-05']),
@@ -432,7 +529,7 @@ class MantriNettParityTest extends TestCase
             $this->loan('b-current', 'CIF-X', '1002', 80_000_000, ['cabang1' => 'KC NGAWI', 'cabang_normalized' => 'KC NGAWI']),
             $this->loan('zero-current', 'CIF-ZERO', 'ZERO-NEW', 80_000_000),
             $this->loan('same-current', 'CIF-SAME', 'SAME', 70_000_000),
-            // A booking that disappeared from the selected daily position remains MTD.
+            // MTD keeps a completed booking after its account disappears from the stock position.
             $this->loan('missing-current', 'CIF-MISSING', 'MISSING', 25_000_000, ['periode' => '2026-10-04', 'tgl_realisasi' => '2026-10-04']),
             $this->loan('unmatched', 'CIF-UNMATCHED', 'UNMATCHED', 20_000_000, ['pn_pengelola1' => '000999']),
             $this->loan('collection', 'CIF-COLLECTION', 'COLLECTION', 10_000_000, ['pn_pengelola1' => '000333']),
@@ -443,6 +540,8 @@ class MantriNettParityTest extends TestCase
 
     private function loan(string $id, string $cif, string $account, float $amount, array $overrides = []): array
     {
+        $overrides += ['pn_pemrakarsa1' => $overrides['pn_pengelola1'] ?? '000111'];
+
         return array_merge([
             'uniqueid_namareport' => $id,
             'periode' => '2026-10-12',
@@ -466,7 +565,7 @@ class MantriNettParityTest extends TestCase
             'ln_type' => 'BULANAN',
             'freq_payment' => 1,
             'pn_pengelola1' => '000111',
-            'pn_pemrakarsa1' => '000888',
+            'pn_pemrakarsa1' => '000111',
             'pn_pemutus1' => '',
             'pn_pemutus_normalized' => '',
             'kolek' => 1,

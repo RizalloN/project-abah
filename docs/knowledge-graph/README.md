@@ -25,9 +25,9 @@ If stale, rebuild with `php artisan knowledge:graph --build`.
 
 | Metric | Count |
 | --- | ---: |
-| Source files | 686 |
-| Graph nodes | 8,646 |
-| Graph edges | 34,663 |
+| Source files | 708 |
+| Graph nodes | 8,903 |
+| Graph edges | 35,630 |
 | Domains | 18 |
 
 ## Read The Right Artifact
@@ -45,26 +45,26 @@ If stale, rebuild with `php artisan knowledge:graph --build`.
 
 | Node | Kind | Domain | Degree |
 | --- | --- | --- | ---: |
-| `ImportExcelController` | class | import | 384 |
-| `DashboardSimpananController` | class | dashboard-simpanan | 345 |
-| `DashboardHarianSnapshotService` | class | dashboard-harian | 208 |
-| `DashboardPinjamanReportController` | class | dashboard-pinjaman | 161 |
+| `ImportExcelController` | class | import | 387 |
+| `DashboardSimpananController` | class | dashboard-simpanan | 347 |
+| `DashboardHarianSnapshotService` | class | dashboard-harian | 210 |
+| `DashboardPinjamanReportController` | class | dashboard-pinjaman | 165 |
 | `ImportIndexController` | class | import | 159 |
-| `nama_report` | table | core | 146 |
+| `nama_report` | table | core | 153 |
 | `ReportSnapshotBuilder` | class | jobs-snapshots | 129 |
 | `ImportFileController` | class | import | 125 |
-| `import_jobs` | table | import | 113 |
+| `import_jobs` | table | import | 115 |
 | `KinerjaRmReportController` | class | dashboard-pinjaman | 105 |
 | `ImportProgressService` | class | import | 102 |
-| `daily_loan_dinamis` | table | dashboard-pinjaman | 99 |
-| `ImportReportPhController` | class | import | 95 |
+| `ImportReportPhController` | class | import | 102 |
+| `daily_loan_dinamis` | table | dashboard-pinjaman | 96 |
 | `AlmafactsDashboardController` | class | almafacts | 91 |
-| `KinerjaRmMikroReportController` | class | dashboard-pinjaman | 87 |
-| `LandingMicroPerformanceService` | class | core | 84 |
+| `KinerjaRmMikroReportController` | class | dashboard-pinjaman | 88 |
+| `LandingMicroPerformanceService` | class | core | 85 |
 | `ImportPerformancePisPerProdukController` | class | import | 83 |
 | `DriveAsixFile` | class | bank-pipeline | 80 |
-| `NativeOpenXmlPowerPointRenderer` | class | presentation | 71 |
-| `ReportDataSyncService` | class | core | 71 |
+| `normalize` | method | core | 79 |
+| `ReportDataSyncService` | class | core | 72 |
 
 ## Edge Semantics
 

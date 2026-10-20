@@ -44,6 +44,25 @@ SSA_PINJAMAN_COLUMNS = [
 ]
 
 REQUIRED_HEADERS = set(SSA_PINJAMAN_COLUMNS)
+BASE_COLUMNS = SSA_PINJAMAN_COLUMNS
+
+# Columns added to the target table through an accepted schema drift decision.
+# They are carried through untouched (after the fixed layout) so LOAD DATA keeps
+# its positional contract for the original columns.
+EXTRA_COLUMNS: list[str] = []
+
+
+def configure_extra_columns(config: dict) -> None:
+    EXTRA_COLUMNS.clear()
+    for name in config.get("extra_columns") or []:
+        name = str(name).strip().lower()
+        if re.fullmatch(r"[a-z][a-z0-9_]{0,63}", name) and name not in BASE_COLUMNS and name not in EXTRA_COLUMNS:
+            EXTRA_COLUMNS.append(name)
+
+
+def output_columns(available) -> list[str]:
+    available = set(available)
+    return list(BASE_COLUMNS) + [column for column in EXTRA_COLUMNS if column in available]
 
 INDONESIAN_MONTHS = {
     "januari": "january",
@@ -357,7 +376,7 @@ def resolve_source_headers(raw_headers: list[str], sample_row: list[object]) -> 
     if missing == ["segmen_lama"]:
         raise RuntimeError("Kolom wajib SSA Pinjaman tidak lengkap: segmen_lama")
 
-    if set(headers) >= REQUIRED_HEADERS and len(headers) == len(SSA_PINJAMAN_COLUMNS):
+    if set(headers) >= REQUIRED_HEADERS and len(set(headers)) == len(headers):
         return headers
 
     values = [normalize_cell(value) for value in sample_row]
@@ -491,7 +510,8 @@ def sanitize_source_optimized(source_path: str, delimiter: str, max_rows: int | 
             & pl.col("jumlah_rekening_aktif").is_not_null()
         )
 
-        df_collected = df_normalized.collect().select(SSA_PINJAMAN_COLUMNS)
+        df_collected = df_normalized.collect()
+        df_collected = df_collected.select(output_columns(df_collected.columns))
         total_records = int(df_collected.height) + 1
 
         send_progress(
@@ -519,7 +539,7 @@ def sanitize_source_optimized(source_path: str, delimiter: str, max_rows: int | 
         validation_skipped = 0
         valid_rows = int(df_collected.height)
 
-        return temp_path, list(SSA_PINJAMAN_COLUMNS), total_records, structural_skipped, validation_skipped, True, [], valid_rows
+        return temp_path, list(df_collected.columns), total_records, structural_skipped, validation_skipped, True, [], valid_rows
 
     except Exception as e:
         try:
@@ -683,7 +703,7 @@ def stage_trusted_csv(config: dict, source_path: str, output_csv_path: str, deli
 
     # LOAD DATA is positional, so source column order must never decide which
     # target field receives a value.
-    filtered_df = filtered_df.select(SSA_PINJAMAN_COLUMNS)
+    filtered_df = filtered_df.select(output_columns(filtered_df.columns))
 
     send_progress(72, "Fast-path staging aktif. Menulis CSV hasil Polars...", int(filtered_df.height), total_data_rows, 0, "", "polars")
 
@@ -972,7 +992,7 @@ def stage_ssa_pinjaman(config: dict) -> None:
         if df.height == 0:
             raise RuntimeError("Polars tidak menemukan baris data SSA Pinjaman yang valid.")
 
-        df = df.select(SSA_PINJAMAN_COLUMNS)
+        df = df.select(output_columns(df.columns))
 
         written_rows = int(df.height)
         skipped_total = int(structural_skipped + validation_skipped)
@@ -1034,6 +1054,7 @@ def main() -> int:
 
     try:
         config = load_config(args.config)
+        configure_extra_columns(config)
         if "mode" not in config:
             config["_cli_mode"] = args.mode
         stage_ssa_pinjaman(config)

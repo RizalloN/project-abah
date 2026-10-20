@@ -149,6 +149,37 @@ class DashboardSimpananHarianSnapshotSourceTest extends TestCase
         $this->assertSame(54, $pinjaman['account_count']);
     }
 
+    public function test_landing_mtm_uses_same_date_instead_of_month_end_that_reverses_the_color(): void
+    {
+        DB::table('dashboard_harian_snapshots')->insert([
+            $this->summaryRow('2026-09-17', 'KC Madiun', 100_000_000, 200_000_000, 1, 1),
+            $this->summaryRow('2026-09-30', 'KC Madiun', 180_000_000, 300_000_000, 1, 1),
+            $this->summaryRow('2026-10-17', 'KC Madiun', 150_000_000, 250_000_000, 1, 1),
+        ]);
+        $controller = app(DashboardSimpananController::class);
+        $mtm = $this->invokePrivate($controller, 'resolveLandingCardMtmPeriod', ['2026-10-17']);
+        $this->assertSame('2026-09-17', $mtm);
+        $current = $this->invokePrivate($controller, 'querySimpananSummaryFromHarianSnapshot', ['2026-10-17']);
+        $previous = $this->invokePrivate($controller, 'querySimpananSummaryFromHarianSnapshot', [$mtm]);
+        $delta = $current['total_balance'] - $previous['total_balance'];
+        $this->assertSame('+Rp50,00 Jt', $this->invokePrivate($controller, 'formatSignedCurrencyCompact', [$delta]));
+        $this->assertSame('text-success', $this->invokePrivate($controller, 'deltaClass', [$delta]));
+    }
+
+    public function test_landing_mtm_uses_previous_available_date_and_clamps_short_months(): void
+    {
+        DB::table('dashboard_harian_snapshots')->insert([
+            $this->summaryRow('2026-02-28', 'KC Madiun', 100, 200, 1, 1),
+            $this->summaryRow('2026-03-31', 'KC Madiun', 150, 250, 1, 1),
+            $this->summaryRow('2026-09-16', 'KC Madiun', 100, 200, 1, 1),
+            $this->summaryRow('2026-09-30', 'KC Madiun', 180, 300, 1, 1),
+            $this->summaryRow('2026-10-17', 'KC Madiun', 150, 250, 1, 1),
+        ]);
+        $controller = app(DashboardSimpananController::class);
+        $this->assertSame('2026-02-28', $this->invokePrivate($controller, 'resolveLandingCardMtmPeriod', ['2026-03-31']));
+        $this->assertSame('2026-09-16', $this->invokePrivate($controller, 'resolveLandingCardMtmPeriod', ['2026-10-17']));
+    }
+
     public function test_dashboard_dana_uses_dashboard_harian_summary_rows(): void
     {
         DB::table('dashboard_harian_snapshots')->insert([

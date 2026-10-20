@@ -106,6 +106,12 @@ class KinerjaMicroNettRouteTest extends TestCase
     {
         Queue::fake();
         foreach (['KC MADIUN', 'KC NGAWI'] as $index => $branch) {
+            DB::table('daily_loan_dinamis')->insert([
+                'periode' => '2026-09-30', 'cabang1' => $branch, 'cabang_normalized' => $branch,
+                'segmen_kinerja' => 'MICRO', 'produk_kinerja' => 'KUPEDES', 'description' => 'Kupedes',
+                'nomor_rekening1' => 'MANTRI-SOURCE-'.$index, 'tgl_realisasi' => '2026-01-01',
+                'plafon' => 0, 'baki_debet1' => 0,
+            ]);
             DB::table('performance_rm_snapshots')->insert([
                 'periode' => '2026-09-30', 'cabang' => $branch, 'unit' => 'Unit '.$index,
                 'branch_code' => $index === 0 ? '45' : '57', 'rm' => 'RM '.$branch,
@@ -166,6 +172,26 @@ class KinerjaMicroNettRouteTest extends TestCase
         $response = $this->get(route('report.dashboard-pinjaman.kinerjarmmikro', ['kategori_rm' => 'mantri']));
         $response->assertOk()->assertViewHas('selectedReportCategory', 'nett_disbursement');
         $response->assertSee('micro-mantri-sheet', false);
+    }
+
+    public function test_kpi_pages_render_when_route_cache_has_no_import_notification_routes(): void
+    {
+        $this->seedReport();
+        $routes = new \Illuminate\Routing\RouteCollection();
+        foreach (app('router')->getRoutes() as $route) {
+            if (! str_starts_with((string) $route->getName(), 'import.schema-drift.')) {
+                $routes->add($route);
+            }
+        }
+        app('router')->setRoutes($routes);
+        app('url')->setRoutes($routes);
+
+        foreach (['rm_mikro_kur', 'mantri'] as $category) {
+            $this->get(route('report.dashboard-pinjaman.kinerjarmmikro', ['kategori_rm' => $category]))
+                ->assertOk()
+                ->assertSee('<h1>Kinerja RM Mikro</h1>', false)
+                ->assertDontSee('id="schemaDriftBell"', false);
+        }
     }
 }
 

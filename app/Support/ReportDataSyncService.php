@@ -18,6 +18,8 @@ use Throwable;
 
 class ReportDataSyncService
 {
+    private bool $mantriSourceCaptureFailed = false;
+
     public static function analyzeTable(string $tableName): bool
     {
         if (!config('import.snapshot.enable_analyze_table', false)) {
@@ -134,6 +136,7 @@ class ReportDataSyncService
 
     public function syncImportedTable(string $tableName, ?string $periodHint = null, ?int $jobId = null, ?string $source = null, ?string $deleteId = null, ?string $rebuildId = null): void
     {
+        $this->mantriSourceCaptureFailed = false;
         $normalizedTable = strtolower(trim($tableName));
         if ($normalizedTable === '') {
             return;
@@ -215,7 +218,7 @@ class ReportDataSyncService
             // Materialisasi LW321 adalah syarat data dapat dipakai sebagai
             // Daily Loan. Jangan menandai job sinkronisasi selesai secara diam-
             // diam bila tahap ini gagal; biarkan queue melakukan retry.
-            if ($normalizedTable === 'lw321pn') {
+            if ($normalizedTable === 'lw321pn' || ($normalizedTable === 'daily_loan_dinamis' && $this->mantriSourceCaptureFailed)) {
                 throw $e;
             }
         }
@@ -290,6 +293,7 @@ class ReportDataSyncService
 
         try {
             $this->ensureDailyLoanShadowColumnsReady($periodForDispatch, $jobId, $source);
+            $captureFailure = $this->captureMantriSourceInputs($periodForDispatch, $jobId, $source);
             $this->captureConsumerRmPositionHistory($periodForDispatch, $jobId, $source);
 
             $batchId = ParallelSnapshotBatchCoordinator::dispatchDailyLoanParallelRebuild(
@@ -313,6 +317,53 @@ class ReportDataSyncService
             ]);
 
             throw $e;
+        }
+
+        if ($captureFailure !== null) {
+            // Other reports can finish their rebuild while this import sync retries
+            // the required Mantri inputs instead of silently reporting success.
+            throw $captureFailure;
+        }
+    }
+
+    private function captureMantriSourceInputs(?string $period, ?int $jobId, ?string $source): ?Throwable
+    {
+        if ($period === null || trim($period) === '') {
+            $this->writeAudit('daily_loan_dinamis', $period, $jobId, $source, 'mantri_source_input_archive', 'skipped', [
+                'context' => ['reason' => 'period_hint_unavailable'],
+            ]);
+
+            return null;
+        }
+        $startedAt = microtime(true);
+        try {
+            $result = app(MantriSourceInputStore::class)->captureDailyLoanPeriod($period);
+            $status = ($result['deferred'] ?? false) ? 'deferred'
+                : ((($result['skipped'] ?? false) || ($result['disabled'] ?? false)) ? 'skipped' : 'success');
+            $this->writeAudit('daily_loan_dinamis', $period, $jobId, $source, 'mantri_source_input_archive', $status, [
+                'duration_ms' => $this->elapsedMs($startedAt),
+                'affected_rows' => $result['source']['row_count'] ?? null,
+                'context' => [
+                    'reason' => $result['reason'] ?? null,
+                    'source' => $result['source'] ?? null,
+                    'complete_presence' => $result['complete_presence'] ?? false,
+                ],
+            ]);
+
+            return null;
+        } catch (Throwable $e) {
+            $this->mantriSourceCaptureFailed = true;
+            $this->writeAudit('daily_loan_dinamis', $period, $jobId, $source, 'mantri_source_input_archive', 'failed', [
+                'duration_ms' => $this->elapsedMs($startedAt),
+                'message' => $e->getMessage(),
+            ]);
+            Log::warning('Mantri source input capture failed; report synchronization will retry after dispatching other snapshots.', [
+                'period' => $period,
+                'exception' => $e::class,
+                'message' => $e->getMessage(),
+            ]);
+
+            return $e;
         }
     }
 
@@ -1199,6 +1250,15 @@ class ReportDataSyncService
                     'message' => $e->getMessage(),
                 ]);
             }
+        }
+
+        if ($normalizedTable === 'daily_loan_dinamis') {
+            // Keep the new Native input archive consistent with the existing
+            // managed deletion and LW fallback, without restoring deleted rows.
+            $mantriInputs = app(MantriSourceInputStore::class)->refreshDailyLoanAfterDelete($periodHint);
+            $this->writeAudit('daily_loan_dinamis', $periodHint, null, $source, 'mantri_source_input_after_delete', 'success', [
+                'context' => $mantriInputs,
+            ]);
         }
 
         $cleanupMap = match ($normalizedTable) {

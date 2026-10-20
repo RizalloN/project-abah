@@ -7,6 +7,7 @@ use App\Support\DashboardPinjamanChartPeriodikService;
 use App\Support\ReportIndexHintResolver;
 use App\Support\ReportCacheVersion;
 use App\Support\LoanQualityBucketMapper;
+use App\Support\Lw321DailyLoanSyncService;
 use App\Support\DashboardPinjamanKreditService;
 use App\Support\UserBranchScope;
 use Carbon\Carbon;
@@ -57,7 +58,7 @@ class DashboardPinjamanReportController extends Controller
 
     private array $lw325RecoveryPeriodQuality = [];
     private array $dailyLoanSimpleAccountGrain = [];
-    private const KOLEK_MISMATCH_RULE_LABEL = 'kolek_vs_umur_tunggakan_v3';
+    private const KOLEK_MISMATCH_RULE_LABEL = 'kolek_vs_umur_tunggakan_v4';
     private const MATRIX_MODAL_COLUMNS = [
         'pivot_before_bucket',
         'pivot_after_bucket',
@@ -246,7 +247,7 @@ class DashboardPinjamanReportController extends Controller
 
     public function smallArrearsIndex(Request $request)
     {
-        $availablePeriods = $this->fetchPeriods();
+        $availablePeriods = $this->fetchNativeDailyLoanPeriods();
         $selectedPeriod = $this->resolveSmallArrearsSelectedPeriod($request->input('periode'), $availablePeriods);
         $branchSelection = $this->resolveSmallArrearsBranchSelection($request->input('cabang1'));
         $selectedBranches = $branchSelection['selected_values'];
@@ -256,7 +257,7 @@ class DashboardPinjamanReportController extends Controller
         $branchOptions = $this->smallArrearsBranchOptions();
         $unitOptions = $branchSelection['is_area_all']
             ? collect()
-            : collect([self::SMALL_ARREARS_ALL_UKER])->merge($this->fetchSmallArrearsDistinctValues('unit1', $selectedPeriod, $effectiveBranches))->values();
+            : collect([self::SMALL_ARREARS_ALL_UKER])->merge($this->fetchSmallArrearsDistinctValues('unit1', $selectedPeriod, $effectiveBranches, nativeOnly: true))->values();
         $selectedUnits = $branchSelection['is_area_all']
             ? []
             : array_values(array_intersect($selectedUnits, $unitOptions->all()));
@@ -539,7 +540,7 @@ class DashboardPinjamanReportController extends Controller
         @set_time_limit(30);
         $this->releaseSessionLockIfNeeded();
 
-        $availablePeriods = $this->fetchPeriods();
+        $availablePeriods = $this->fetchNativeDailyLoanPeriods();
         $selectedPeriod = $this->resolveSmallArrearsSelectedPeriod($request->input('periode'), $availablePeriods);
         $branchSelection = $this->resolveSmallArrearsBranchSelection($request->input('cabang1'));
         $selectedBranches = $branchSelection['selected_values'];
@@ -547,7 +548,7 @@ class DashboardPinjamanReportController extends Controller
         $unitSelection = $this->resolveSmallArrearsUnitSelection($request->input('unit1'), $branchSelection['is_area_all']);
         $forceRefresh = $request->boolean('refresh');
 
-        $cacheKey = 'dashboard_pinjaman_tunggakan_kecil_filters:v1:' . md5(json_encode([
+        $cacheKey = 'dashboard_pinjaman_tunggakan_kecil_filters:v2-native:' . md5(json_encode([
             'cache_version' => $this->reportCacheVersion(),
             'periode' => $selectedPeriod,
             'cabang1' => $selectedBranches,
@@ -557,7 +558,7 @@ class DashboardPinjamanReportController extends Controller
         $payload = $this->rememberPayload($cacheKey, now()->addMinutes(3), function () use ($selectedPeriod, $selectedBranches, $effectiveBranches, $branchSelection, $unitSelection) {
             $unitOptions = $branchSelection['is_area_all']
                 ? collect()
-                : collect([self::SMALL_ARREARS_ALL_UKER])->merge($this->fetchSmallArrearsDistinctValues('unit1', $selectedPeriod, $effectiveBranches))->values();
+                : collect([self::SMALL_ARREARS_ALL_UKER])->merge($this->fetchSmallArrearsDistinctValues('unit1', $selectedPeriod, $effectiveBranches, nativeOnly: true))->values();
 
             return [
                 'branch_options' => $this->smallArrearsBranchOptions()->all(),
@@ -598,7 +599,7 @@ class DashboardPinjamanReportController extends Controller
         DB::connection()->disableQueryLog();
         $this->releaseSessionLockIfNeeded();
 
-        $availablePeriods = $this->fetchPeriods();
+        $availablePeriods = $this->fetchNativeDailyLoanPeriods();
         $selectedPeriod = $this->resolveSmallArrearsSelectedPeriod($request->input('periode'), $availablePeriods);
         $branchSelection = $this->resolveSmallArrearsBranchSelection($request->input('cabang1'));
         $selectedBranches = $branchSelection['selected_values'];
@@ -631,7 +632,7 @@ class DashboardPinjamanReportController extends Controller
             ]);
         }
 
-        $cacheKey = 'dashboard_pinjaman_tunggakan_kecil_data:v3:' . md5(json_encode([
+        $cacheKey = 'dashboard_pinjaman_tunggakan_kecil_data:v5-native:' . md5(json_encode([
             'cache_version' => $this->reportCacheVersion(),
             'periode' => $selectedPeriod,
             'cabang1' => $selectedBranches,
@@ -672,7 +673,7 @@ class DashboardPinjamanReportController extends Controller
         DB::connection()->disableQueryLog();
         $this->releaseSessionLockIfNeeded();
 
-        $availablePeriods = $this->fetchPeriods();
+        $availablePeriods = $this->fetchNativeDailyLoanPeriods();
         $selectedPeriod = $this->resolveSmallArrearsSelectedPeriod($request->input('periode'), $availablePeriods)
             ?? $availablePeriods->first();
 
@@ -878,7 +879,7 @@ class DashboardPinjamanReportController extends Controller
     private function renderIndex(Request $request, string $mode)
     {
         $isMatrixMode = $this->normalizeReportMode($mode) === 'matrix';
-        $periods = $isMatrixMode ? $this->fetchRecoveryReportPeriods() : $this->fetchPeriods();
+        $periods = $isMatrixMode ? $this->fetchRecoveryReportPeriods() : $this->fetchNativeDailyLoanPeriods();
 
         $requestedPeriod = $request->input('periode');
         $selectedPeriod = $isMatrixMode
@@ -934,7 +935,7 @@ class DashboardPinjamanReportController extends Controller
             ]);
         }
 
-        $cacheKey = 'dashboard_pinjaman_filters:v3-combination-map:' . md5(json_encode([
+        $cacheKey = 'dashboard_pinjaman_filters:v4-native:' . md5(json_encode([
             'cache_version' => $this->reportCacheVersion(),
             'periode' => $selectedPeriod,
             'filters' => $filters,
@@ -1014,7 +1015,7 @@ class DashboardPinjamanReportController extends Controller
             ], 422);
         }
 
-        $cacheKey = 'dashboard_pinjaman_matrix_direct:v16-opening-stock-complete:' . md5(json_encode([
+        $cacheKey = 'dashboard_pinjaman_matrix_direct:v17-native:' . md5(json_encode([
             'cache_version' => $this->reportCacheVersion(),
             'periode' => $selectedPeriod,
             'comparison' => $comparisonPeriod,
@@ -1159,7 +1160,7 @@ class DashboardPinjamanReportController extends Controller
 
         $selectedPeriod = $this->resolveRecoveryReportPeriod($request->input('periode'))
             ?? $this->fetchRecoveryReportPeriods()->first()
-            ?? $this->fetchPeriods()->first();
+            ?? $this->fetchNativeDailyLoanPeriods()->first();
 
         if (!$selectedPeriod) {
             return redirect()->back()->with('error', 'Periode matrix pergeseran kolek belum tersedia.');
@@ -1246,13 +1247,13 @@ class DashboardPinjamanReportController extends Controller
             ]);
         }
 
-        $cacheKey = 'dashboard_pinjaman_kolek_mismatch_filters:v2:' . md5(json_encode([
+        $cacheKey = 'dashboard_pinjaman_kolek_mismatch_filters:v3-native:' . md5(json_encode([
             'cache_version' => $this->reportCacheVersion(),
             'periode' => $selectedPeriod,
         ]));
 
         $branches = $this->rememberPayload($cacheKey, now()->addMinutes(3), function () use ($selectedPeriod) {
-            $availableBranches = DB::table('daily_loan_dinamis')
+            $availableBranches = $this->nativeDailyLoanQuery()
                 ->where('periode', $selectedPeriod)
                 ->whereNotNull('cabang1')
                 ->where('cabang1', '<>', '')
@@ -1317,7 +1318,7 @@ class DashboardPinjamanReportController extends Controller
             ]);
         }
 
-        $cacheKey = 'dashboard_pinjaman_kolek_mismatch_data:v9:' . md5(json_encode([
+        $cacheKey = 'dashboard_pinjaman_kolek_mismatch_data:v11-native:' . md5(json_encode([
             'cache_version' => $this->reportCacheVersion(),
             'periode' => $selectedPeriod,
             'cabang1' => $selectedBranches,
@@ -1356,7 +1357,7 @@ class DashboardPinjamanReportController extends Controller
         $this->releaseSessionLockIfNeeded();
 
         $selectedPeriod = $this->resolveEffectivePeriod($request->input('periode'))
-            ?? $this->fetchPeriods()->first();
+            ?? $this->fetchNativeDailyLoanPeriods()->first();
 
         if (!$selectedPeriod) {
             return redirect()->back()->with('error', 'Periode data kolek tidak sesuai belum tersedia.');
@@ -1879,7 +1880,7 @@ class DashboardPinjamanReportController extends Controller
         $bucketExpression = $this->buildQualityBucketExpression($alias);
         $bucketRankExpression = $this->buildMovementBucketRankExpression("({$bucketExpression})");
         $balanceExpression = $this->buildNonNegativeExposureExpression("{$alias}.baki_debet1");
-        $rawRows = DB::table(DB::raw($this->buildLoanSnapshotSource($alias, $filters)))
+        $rawRows = $this->nativeDailyLoanQuery($alias, $this->buildLoanSnapshotSource($alias, $filters))
             ->where("{$alias}.periode", $selectedPeriod)
             ->selectRaw("
                 {$accountKey} as account_number,
@@ -2413,7 +2414,7 @@ class DashboardPinjamanReportController extends Controller
             : $this->buildEmptyAggregatedLoanSnapshotQuery();
         $previousAccountKey = $this->accountKeySql('prev_bucket.account_number');
 
-        $rows = DB::table(DB::raw($this->buildLoanSnapshotSource($alias, $filters)))
+        $rows = $this->nativeDailyLoanQuery($alias, $this->buildLoanSnapshotSource($alias, $filters))
             ->leftJoinSub($previousSnapshot, 'prev_bucket', function ($join) use ($currentAccountKey, $previousAccountKey) {
                 $join->on(DB::raw($currentAccountKey), '=', DB::raw($previousAccountKey));
             })
@@ -2633,7 +2634,7 @@ class DashboardPinjamanReportController extends Controller
         $balanceExpression = $this->buildNonNegativeExposureExpression("{$alias}.baki_debet1");
         $anonymousAccountKey = $this->buildAnonymousAccountKeyExpression($alias);
 
-        $rowQuery = DB::table(DB::raw($this->buildLoanSnapshotSource($alias, $filters)))
+        $rowQuery = $this->nativeDailyLoanQuery($alias, $this->buildLoanSnapshotSource($alias, $filters))
             ->where("{$alias}.periode", $period)
             ->where(function ($query) use ($alias) {
                 $query->whereNull("{$alias}.nomor_rekening1")
@@ -2746,7 +2747,7 @@ class DashboardPinjamanReportController extends Controller
         $balanceAlias = $alias === 'curr' ? 'current_balance' : 'previous_balance';
         $bucketAlias = $alias === 'curr' ? 'after_bucket' : 'before_bucket';
 
-        $query = DB::table(DB::raw($this->buildLoanSnapshotSource($alias, $filters)))
+        $query = $this->nativeDailyLoanQuery($alias, $this->buildLoanSnapshotSource($alias, $filters))
             ->where("{$alias}.periode", $period)
             ->whereNotNull("{$alias}.nomor_rekening1")
             ->where("{$alias}.nomor_rekening1", '<>', '')
@@ -2775,7 +2776,7 @@ class DashboardPinjamanReportController extends Controller
             return $this->dailyLoanSimpleAccountGrain[$period];
         }
 
-        $cacheKey = 'dashboard_pinjaman_daily_account_grain:v1:' . md5(json_encode([
+        $cacheKey = 'dashboard_pinjaman_daily_account_grain:v2-native:' . md5(json_encode([
             'cache_version' => $this->reportCacheVersion(),
             'period' => $period,
         ]));
@@ -2786,7 +2787,7 @@ class DashboardPinjamanReportController extends Controller
                 $accountColumn = "{$alias}.nomor_rekening1";
                 $trimmedAccount = "TRIM(COALESCE({$accountColumn}, ''))";
                 $canonicalAccount = $this->accountKeySql($accountColumn);
-                $stats = DB::table(DB::raw($this->buildLoanSnapshotSource($alias, $this->emptyMatrixFilters())))
+                $stats = $this->nativeDailyLoanQuery($alias, $this->buildLoanSnapshotSource($alias, $this->emptyMatrixFilters()))
                     ->where("{$alias}.periode", $period)
                     ->whereNotNull($accountColumn)
                     ->where($accountColumn, '<>', '')
@@ -3017,7 +3018,7 @@ class DashboardPinjamanReportController extends Controller
      */
     private function buildPeriodFilterOptions(string $period, array $filters, bool $forceRefresh = false): array
     {
-        $cacheKey = 'dashboard_pinjaman_filter_dimensions:v2-covering-pairs:' . md5(json_encode([
+        $cacheKey = 'dashboard_pinjaman_filter_dimensions:v3-native:' . md5(json_encode([
             'cache_version' => $this->reportCacheVersion(),
             'periode' => $period,
         ]));
@@ -3038,12 +3039,12 @@ class DashboardPinjamanReportController extends Controller
                 );
 
                 return [
-                    'segment_products' => DB::table(DB::raw($segmentProductSource))
+                    'segment_products' => $this->nativeDailyLoanQuery('filter_sp', $segmentProductSource)
                         ->where('filter_sp.periode', $period)
                         ->select(['filter_sp.segmen_dashboard', 'filter_sp.produk_dashboard'])
                         ->distinct()
                         ->get(),
-                    'branch_units' => DB::table(DB::raw($branchUnitSource))
+                    'branch_units' => $this->nativeDailyLoanQuery('filter_bu', $branchUnitSource)
                         ->where('filter_bu.periode', $period)
                         ->select(['filter_bu.cabang1', 'filter_bu.unit1'])
                         ->distinct()
@@ -3119,16 +3120,44 @@ class DashboardPinjamanReportController extends Controller
         });
     }
 
+    private function nativeDailyLoanQuery(?string $alias = null, ?string $source = null): Builder
+    {
+        $query = DB::table($source !== null ? DB::raw($source) : 'daily_loan_dinamis');
+        $column = $alias !== null ? "{$alias}.uniqueid_namareport" : 'uniqueid_namareport';
+
+        // Normalisasi LW321PN tidak menyediakan detail tunggakan/kolek Daily Loan asli.
+        return $query->where(function (Builder $query) use ($column): void {
+            $query->whereNull($column)
+                ->orWhere($column, 'not like', Lw321DailyLoanSyncService::TARGET_ID_PREFIX . '%');
+        });
+    }
+
+    private function fetchNativeDailyLoanPeriods(): Collection
+    {
+        $cacheKey = 'dashboard_pinjaman_native_periods:v1:' . $this->reportCacheVersion();
+
+        return Cache::remember($cacheKey, now()->addMinutes(10), function () {
+            return $this->nativeDailyLoanQuery()
+                ->whereNotNull('periode')
+                ->where('periode', '<>', '')
+                ->distinct()
+                ->orderByDesc('periode')
+                ->pluck('periode')
+                ->map(fn ($period) => Carbon::parse($period)->format('Y-m-d'))
+                ->values();
+        });
+    }
+
     private function fetchRecoveryReportPeriods(): Collection
     {
-        $cacheKey = 'dashboard_pinjaman_recovery_periods:v5-ph-coverage-validated:' . $this->reportCacheVersion();
+        $cacheKey = 'dashboard_pinjaman_recovery_periods:v6-native:' . $this->reportCacheVersion();
 
         return Cache::remember($cacheKey, now()->addMinutes(10), function () {
             if (!Schema::hasTable('daily_loan_dinamis') || !Schema::hasTable(self::PH_TABLE)) {
                 return collect();
             }
 
-            $periods = DB::table('daily_loan_dinamis')
+            $periods = $this->nativeDailyLoanQuery()
                 ->whereNotNull('periode')
                 ->distinct()
                 ->pluck('periode')
@@ -3155,7 +3184,7 @@ class DashboardPinjamanReportController extends Controller
 
             $comparisonLookup = $comparisonPeriods->isEmpty()
                 ? collect()
-                : DB::table('daily_loan_dinamis')
+                : $this->nativeDailyLoanQuery()
                     ->whereIn('periode', $comparisonPeriods->all())
                     ->distinct()
                     ->pluck('periode')
@@ -3381,7 +3410,7 @@ class DashboardPinjamanReportController extends Controller
         ];
     }
 
-    private function fetchSmallArrearsDistinctValues(string $column, ?string $selectedPeriod, array $selectedBranches = []): Collection
+    private function fetchSmallArrearsDistinctValues(string $column, ?string $selectedPeriod, array $selectedBranches = [], bool $nativeOnly = false): Collection
     {
         if (!$selectedPeriod) {
             return collect();
@@ -3390,12 +3419,13 @@ class DashboardPinjamanReportController extends Controller
         $cacheKey = 'dashboard_pinjaman_tunggakan_kecil_distinct:v1:' . md5(json_encode([
             'cache_version' => $this->reportCacheVersion(),
             'column' => $column,
+            'native_only' => $nativeOnly,
             'periode' => $selectedPeriod,
             'branches' => array_values($selectedBranches),
         ]));
 
-        return Cache::remember($cacheKey, now()->addMinutes(5), function () use ($column, $selectedPeriod, $selectedBranches) {
-            $query = DB::table('daily_loan_dinamis')
+        return Cache::remember($cacheKey, now()->addMinutes(5), function () use ($column, $selectedPeriod, $selectedBranches, $nativeOnly) {
+            $query = ($nativeOnly ? $this->nativeDailyLoanQuery() : DB::table('daily_loan_dinamis'))
                 ->where('periode', $selectedPeriod)
                 ->whereNotNull($column)
                 ->where($column, '<>', '')
@@ -3420,13 +3450,13 @@ class DashboardPinjamanReportController extends Controller
             return [];
         }
 
-        $cacheKey = 'dashboard_pinjaman_tunggakan_kecil_units_by_branch:v1:' . md5(json_encode([
+        $cacheKey = 'dashboard_pinjaman_tunggakan_kecil_units_by_branch:v2-native:' . md5(json_encode([
             'cache_version' => $this->reportCacheVersion(),
             'branches' => array_values($selectedBranches),
         ]));
 
         return Cache::remember($cacheKey, now()->addMinutes(5), function () use ($selectedBranches) {
-            return DB::table('daily_loan_dinamis')
+            return $this->nativeDailyLoanQuery()
                 ->whereIn('cabang1', $selectedBranches)
                 ->whereNotNull('unit1')
                 ->where('unit1', '<>', '')
@@ -3456,13 +3486,14 @@ class DashboardPinjamanReportController extends Controller
         if ($penaltyColumn !== null) {
             $totalExpression .= " + COALESCE({$penaltyColumn}, 0)";
         }
-        $qualifiedAccountExpression = "CASE WHEN ({$totalExpression}) > 0 AND ({$totalExpression}) <= 100000 THEN {$accountColumn} END";
-        $qualifiedAmountExpression = "CASE WHEN ({$totalExpression}) > 0 AND ({$totalExpression}) <= 100000 THEN ({$totalExpression}) ELSE 0 END";
-        $currentPeriodHasData = DB::table('daily_loan_dinamis')
+        $qualifyingCondition = $this->smallArrearsQualifyingCondition($totalExpression);
+        $qualifiedAccountExpression = "CASE WHEN {$qualifyingCondition} THEN {$accountColumn} END";
+        $qualifiedAmountExpression = "CASE WHEN {$qualifyingCondition} THEN ({$totalExpression}) ELSE 0 END";
+        $currentPeriodHasData = $this->nativeDailyLoanQuery()
             ->where('periode', $selectedPeriod)
             ->when($selectedBranches !== [], fn (Builder $query) => $query->whereIn('cabang1', $selectedBranches))
             ->when($selectedUnits !== [], fn (Builder $query) => $query->whereIn('unit1', $selectedUnits))
-            ->whereRaw("({$totalExpression}) > 0 AND ({$totalExpression}) <= 100000")
+            ->whereRaw($qualifyingCondition)
             ->exists();
 
         $periodsToQuery = collect([
@@ -3471,7 +3502,7 @@ class DashboardPinjamanReportController extends Controller
             $comparisonPeriods['ytd'],
         ])->filter()->unique()->values()->all();
 
-        $rows = DB::table('daily_loan_dinamis')
+        $rows = $this->nativeDailyLoanQuery()
             ->selectRaw("{$groupColumn} as grouping_label")
             ->selectRaw("COUNT(DISTINCT CASE WHEN periode = ? THEN {$qualifiedAccountExpression} END) as current_count", [$selectedPeriod])
             ->selectRaw("COUNT(DISTINCT CASE WHEN periode = ? THEN {$qualifiedAccountExpression} END) as ytd_base", [$comparisonPeriods['ytd']])
@@ -3580,16 +3611,24 @@ class DashboardPinjamanReportController extends Controller
             ? 'nomor_rekening1'
             : $this->resolveIdentityColumn('daily_loan_dinamis');
 
-        return DB::table('daily_loan_dinamis')
+        return $this->nativeDailyLoanQuery()
             ->select($this->qualifyDailyLoanColumns($this->collectSmallArrearsExportSourceColumns()))
             ->selectRaw("({$totalExpression}) as total_tunggakan_terhitung")
             ->where('periode', $selectedPeriod)
-            ->whereRaw("({$totalExpression}) > 0 AND ({$totalExpression}) <= 100000")
+            ->whereRaw($this->smallArrearsQualifyingCondition($totalExpression))
             ->when($selectedBranches !== [], fn (Builder $query) => $query->whereIn('cabang1', $selectedBranches))
             ->when($selectedUnits !== [], fn (Builder $query) => $query->whereIn('unit1', $selectedUnits))
             ->orderBy('cabang1')
             ->orderBy('unit1')
             ->orderBy($orderingColumn);
+    }
+
+    private function smallArrearsQualifyingCondition(string $totalExpression): string
+    {
+        // Rekening wajib benar-benar menunggak pokok/bunga. Sisa denda (penalti)
+        // saja tidak dihitung sebagai tunggakan kecil, tetapi tetap masuk nominal.
+        return "((COALESCE(tunggakan_pokok, 0) + COALESCE(tunggakan_bunga, 0)) > 0"
+            . " AND ({$totalExpression}) > 0 AND ({$totalExpression}) <= 100000)";
     }
 
     private function collectSmallArrearsExportSourceColumns(): array
@@ -3643,7 +3682,7 @@ class DashboardPinjamanReportController extends Controller
 
     private function resolveSmallArrearsComparisonPeriods(string $selectedPeriod): array
     {
-        $cacheKey = 'dashboard_pinjaman_tunggakan_kecil_compare:v1:' . md5(json_encode([
+        $cacheKey = 'dashboard_pinjaman_tunggakan_kecil_compare:v2-native:' . md5(json_encode([
             'cache_version' => $this->reportCacheVersion(),
             'periode' => $selectedPeriod,
         ]));
@@ -3652,10 +3691,10 @@ class DashboardPinjamanReportController extends Controller
             $currentDate = Carbon::parse($selectedPeriod);
 
             return [
-                'ytd' => DB::table('daily_loan_dinamis')
+                'ytd' => $this->nativeDailyLoanQuery()
                     ->where('periode', '<=', $currentDate->copy()->subYearNoOverflow()->endOfYear()->toDateString())
                     ->max('periode'),
-                'mtd' => DB::table('daily_loan_dinamis')
+                'mtd' => $this->nativeDailyLoanQuery()
                     ->where('periode', '<=', $currentDate->copy()->subMonthNoOverflow()->endOfMonth()->toDateString())
                     ->max('periode'),
             ];
@@ -3666,15 +3705,15 @@ class DashboardPinjamanReportController extends Controller
     {
         try {
             if ($requestedPeriod) {
-                return DB::table('daily_loan_dinamis')
+                return $this->nativeDailyLoanQuery()
                     ->where('periode', '<=', Carbon::parse($requestedPeriod)->format('Y-m-d'))
                     ->max('periode');
             }
 
-            $cacheKey = 'dashboard_pinjaman_latest_period:v' . $this->reportCacheVersion();
+            $cacheKey = 'dashboard_pinjaman_native_latest_period:v' . $this->reportCacheVersion();
 
             return Cache::remember($cacheKey, now()->addMinutes(10), function () {
-                return DB::table('daily_loan_dinamis')->max('periode');
+                return $this->nativeDailyLoanQuery()->max('periode');
             });
         } catch (Throwable) {
             return null;
@@ -3726,7 +3765,7 @@ class DashboardPinjamanReportController extends Controller
                 ->subDay()
                 ->format('Y-m-d');
 
-            return DB::table('daily_loan_dinamis')
+            return $this->nativeDailyLoanQuery()
                 ->where('periode', $previousMonthEnd)
                 ->value('periode');
         } catch (Throwable) {
@@ -4319,7 +4358,7 @@ class DashboardPinjamanReportController extends Controller
                     : $this->resolveIdentityColumn('daily_loan_dinamis'));
         }
 
-        $query = DB::table('daily_loan_dinamis')
+        $query = $this->nativeDailyLoanQuery()
             ->where('periode', $selectedPeriod)
             ->whereIn(DB::raw('TRIM(cabang1)'), $selectedBranches)
             ->whereIn(DB::raw('TRIM(status_rekening1)'), ['1', '3'])
@@ -4375,34 +4414,54 @@ class DashboardPinjamanReportController extends Controller
         $rawUmur = $row->umur_tunggakan ?? null;
         $normalizedUmur = $this->normalizeUmurTunggakanValue($rawUmur);
 
+        // Kolektibilitas ditentukan tunggakan pokok/bunga; sisa denda (penalti)
+        // saja tidak menjadikan rekening menunggak.
+        $tp = $this->normalizeAmountValue($row->tunggakan_pokok ?? 0);
+        $tb = $this->normalizeAmountValue($row->tunggakan_bunga ?? 0);
+        $hasPrincipalOrInterestArrears = $tp > 0 || $tb > 0;
+
         if ($normalizedUmur !== null) {
+            // Umur <= 0 tetapi ada tunggakan pokok/bunga: pakai tanggal_menunggak
+            // sebagai bukti. Tanggal menunggak = periode berarti jatuh bayar hari
+            // ini (umur 0, belum menunggak), bukan DPK.
+            if ($normalizedUmur <= 0 && $hasPrincipalOrInterestArrears) {
+                $daysSinceArrears = $this->daysSinceTanggalMenunggak($row, $selectedPeriod);
+
+                return $daysSinceArrears !== null ? max(0, $daysSinceArrears) : 1;
+            }
+
             return $normalizedUmur;
         }
 
         // Fallback when umur_tunggakan is null or blank:
-        $tp = $this->normalizeAmountValue($row->tunggakan_pokok ?? 0);
-        $tb = $this->normalizeAmountValue($row->tunggakan_bunga ?? 0);
-        $tpen = $this->normalizeAmountValue($row->tunggakan_penalti ?? 0);
-
-        if ($tp <= 0 && $tb <= 0 && $tpen <= 0) {
+        if (!$hasPrincipalOrInterestArrears) {
             return 0; // Pure current / lancar
         }
 
         // If there are positive arrears but umur_tunggakan is null/blank, calculate days from tanggal_menunggak:
-        $tglMenunggak = $row->tanggal_menunggak ?? null;
-        $periode = $selectedPeriod ?: ($row->periode ?? null);
-
-        if ($tglMenunggak && $periode) {
-            try {
-                $days = Carbon::parse($tglMenunggak)->startOfDay()
-                    ->diffInDays(Carbon::parse($periode)->startOfDay(), false);
-
-                return max(1, (int) $days);
-            } catch (\Throwable) {
-            }
+        $daysSinceArrears = $this->daysSinceTanggalMenunggak($row, $selectedPeriod);
+        if ($daysSinceArrears !== null) {
+            return max(0, $daysSinceArrears);
         }
 
         return 1; // At least 1 day overdue when positive arrears exist
+    }
+
+    private function daysSinceTanggalMenunggak($row, ?string $selectedPeriod = null): ?int
+    {
+        $tglMenunggak = $row->tanggal_menunggak ?? null;
+        $periode = $selectedPeriod ?: ($row->periode ?? null);
+
+        if (!$tglMenunggak || !$periode) {
+            return null;
+        }
+
+        try {
+            return (int) Carbon::parse($tglMenunggak)->startOfDay()
+                ->diffInDays(Carbon::parse($periode)->startOfDay(), false);
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     private function expectedKolekFromUmurTunggakan($value, float $tunggakanPokok = 0.0, float $tunggakanBunga = 0.0): ?int
@@ -4413,8 +4472,10 @@ class DashboardPinjamanReportController extends Controller
             return null;
         }
 
-        // Guard: positive principal or interest arrears cannot be Kolek 1 (Lancar)
-        if (($tunggakanPokok > 0 || $tunggakanBunga > 0) && $umurTunggakan <= 0) {
+        // Guard: positive principal or interest arrears with negative aging is
+        // inconsistent data, treat it as at least one day overdue. Umur 0 with
+        // arrears is resolved upstream from tanggal_menunggak (due today = Lancar).
+        if (($tunggakanPokok > 0 || $tunggakanBunga > 0) && $umurTunggakan < 0) {
             $umurTunggakan = 1;
         }
 
@@ -4450,9 +4511,10 @@ class DashboardPinjamanReportController extends Controller
         $periode = $selectedPeriod ?: ($row->periode ?? null);
         $tglAkad = $row->tgl_akad_restruk ?? null;
 
+        // Sisa denda (penalti) tidak memengaruhi kolek, jadi tidak membatalkan
+        // masa tunggu penyesuaian kolek restruk.
         $hasNoTunggakan = $this->isValueEmptyOrZero($row->tunggakan_pokok ?? null)
-            && $this->isValueEmptyOrZero($row->tunggakan_bunga ?? null)
-            && $this->isValueEmptyOrZero($row->tunggakan_penalti ?? null);
+            && $this->isValueEmptyOrZero($row->tunggakan_bunga ?? null);
 
         $isNplMethodN = strtoupper(trim((string) ($row->npl_method ?? ''))) === 'N';
         $flagRestruk = strtoupper(trim((string) ($row->flag_restruk ?? '')));

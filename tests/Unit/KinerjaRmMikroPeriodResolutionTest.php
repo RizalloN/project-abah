@@ -5,6 +5,7 @@ namespace Tests\Unit;
 use App\Http\Controllers\DashboardSimpananController;
 use App\Http\Controllers\Report\KinerjaRmMikroReportController;
 use App\Jobs\SyncImportedReportJob;
+use App\Support\MantriSourceInputStore;
 use App\Support\UserBranchScope;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Request;
@@ -18,6 +19,8 @@ use Tests\TestCase;
 
 class KinerjaRmMikroPeriodResolutionTest extends TestCase
 {
+    private array $inputDirectories = [];
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -42,7 +45,7 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
             $table->string('unit_normalized')->nullable();
             $table->string('unit1')->nullable();
             $table->string('cabang_normalized')->nullable();
-            $table->string('cabang1')->nullable();
+            $table->string('cabang1')->nullable()->default('KC MADIUN');
             $table->string('rm_normalized')->nullable();
             $table->string('pn_pengelola1')->nullable();
             $table->string('pn_pemrakarsa1')->nullable();
@@ -76,7 +79,7 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
         Schema::create('performance_rm_snapshots', function (Blueprint $table) {
             $table->id();
             $table->date('periode');
-            $table->string('cabang')->nullable();
+            $table->string('cabang')->nullable()->default('KC MADIUN');
             $table->string('unit')->nullable();
             $table->string('branch_code')->nullable();
             $table->string('rm')->nullable();
@@ -106,7 +109,89 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
         Cache::forget('report_cache_version:simpanan');
     }
 
-    public function test_period_options_use_micro_kur_snapshot_periods_without_scanning_daily_loan_source(): void
+    protected function tearDown(): void
+    {
+        foreach ($this->inputDirectories as $directory) {
+            foreach (glob($directory.'/*') as $file) {
+                unlink($file);
+            }
+            if (is_file($directory.'/.write.lock')) {
+                unlink($directory.'/.write.lock');
+            }
+            rmdir($directory);
+        }
+        parent::tearDown();
+    }
+
+    public function test_verified_complete_source_archive_is_available_only_for_mantri_and_baseline_is_not_selectable(): void
+    {
+        $this->insertDailyLoan(['periode' => '2026-10-16', 'tgl_realisasi' => '2026-10-05']);
+        DB::table('performance_rm_snapshots')->insert([
+            'periode' => '2026-10-16', 'segmen' => 'MICRO', 'produk' => 'KUR-MIKRO',
+        ]);
+        $store = $this->inputStore();
+        $store->write('2026-09-30', [
+            'source' => ['source_kind' => 'manual_workbook_baseline'], 'complete_presence' => false,
+            'presence' => [], 'bookings' => [], 'unclassified_accounts' => [],
+        ]);
+        $store->write('2026-10-17', $this->archivedPosition('2026-10-17'));
+        file_put_contents($this->inputDirectories[0].'/2026-10-18.json.gz', 'invalid archive');
+        $controller = new KinerjaRmMikroReportController;
+
+        $this->assertSame(['2026-10-17', '2026-10-16'], $this->invokePrivateMethod($controller, 'fetchAvailablePeriods', true)->all());
+        $this->assertSame(['2026-10-16'], $this->invokePrivateMethod($controller, 'fetchAvailablePeriods', false)->all());
+        $this->assertSame('2026-10-17', $this->invokePrivateMethod($controller, 'resolveEmbeddedReadyPeriod', '2026-10-17', true));
+        $this->assertSame('2026-10-16', $this->invokePrivateMethod($controller, 'resolveEmbeddedReadyPeriod', '2026-10-16', true));
+        $this->assertNull($this->invokePrivateMethod($controller, 'resolveEmbeddedReadyPeriod', '2026-10-15', true));
+        $this->assertSame('2026-10-16', $this->invokePrivateMethod($controller, 'resolveEmbeddedReadyPeriod', '2026-10-17', false));
+    }
+
+    public function test_archive_only_nett_payload_uses_its_exact_period_and_probation_contract_roster(): void
+    {
+        Queue::fake();
+        $this->inputStore()->write('2026-10-17', $this->archivedPosition('2026-10-17'));
+        $this->insertBrihcPemasar([
+            'uniqueid_namareport' => 'reference_brihc_hc_1', 'pernr' => '1', 'pn_mantri' => '1',
+            'completename' => 'Mantri Probation', 'positiondesc' => 'MANTRI', 'esgdesc' => 'Probation',
+        ]);
+
+        $payload = (new KinerjaRmMikroReportController)->buildEmbeddedPayload('nett_disbursement', '2026-10-17', true);
+        $this->assertSame('2026-10-17', $payload['meta']['requested_period']);
+        $this->assertSame('2026-10-17', $payload['meta']['data_period']);
+        $this->assertFalse($payload['meta']['refresh_pending']);
+        $this->assertSame(100_000_000.0, data_get($payload, 'nett_workbook.mantriPerformance.total.net_disbursement.amount'));
+        $this->assertSame(1, data_get($payload, 'nett_workbook.mantriPerformance.total.headcount.contract'));
+        $this->assertSame(0, data_get($payload, 'nett_workbook.mantriPerformance.total.headcount.pt_non_briguna'));
+        $this->assertSame(0, DB::table('daily_loan_dinamis')->where('periode', '2026-10-17')->count());
+        Queue::assertNothingPushed();
+    }
+
+    public function test_source_archive_write_invalidates_period_and_nett_caches_without_manual_cache_flush(): void
+    {
+        Queue::fake();
+        $store = $this->inputStore();
+        $controller = new KinerjaRmMikroReportController;
+        $this->assertSame([], $this->invokePrivateMethod($controller, 'fetchAvailablePeriods', true)->all());
+        $this->assertNull($this->invokePrivateMethod($controller, 'resolveEmbeddedReadyPeriod', '2026-12-19', true));
+        $this->insertBrihcPemasar([
+            'uniqueid_namareport' => 'reference_brihc_hc_1', 'pernr' => '1', 'pn_mantri' => '1',
+            'completename' => 'Mantri Aktif', 'positiondesc' => 'MANTRI',
+        ]);
+        $position = $this->archivedPosition('2026-12-19');
+        $store->write('2026-12-19', $position);
+        $this->assertSame(['2026-12-19'], $this->invokePrivateMethod($controller, 'fetchAvailablePeriods', true)->all());
+        $this->assertSame('2026-12-19', $this->invokePrivateMethod($controller, 'resolveEmbeddedReadyPeriod', '2026-12-19', true));
+        $first = $controller->buildEmbeddedPayload('nett_disbursement', '2026-12-19', true);
+        $this->assertSame(100_000_000.0, data_get($first, 'nett_workbook.mantriPerformance.total.net_disbursement.amount'));
+        $position['bookings'][0]['plafon'] = 125_000_000;
+        $store->write('2026-12-19', $position);
+        $second = $controller->buildEmbeddedPayload('nett_disbursement', '2026-12-19', true);
+        $this->assertSame(125_000_000.0, data_get($second, 'nett_workbook.mantriPerformance.total.net_disbursement.amount'));
+        $this->assertSame(1, data_get($second, 'nett_workbook.mantriPerformance.total.net_disbursement.deb'));
+        $this->assertSame('2026-12-19', $second['meta']['data_period']);
+    }
+
+    public function test_period_options_include_area6_micro_kur_snapshots_and_matching_daily_loan_source(): void
     {
         DB::table('daily_loan_dinamis')->insert([
             ['periode' => '2026-05-06', 'segmen_kinerja' => 'MICRO', 'produk_kinerja' => 'KURMIKRO', 'description' => 'Kredit Mikro - KUR Ritel 2015'],
@@ -121,6 +206,28 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
         $periods = $this->invokePrivateMethod(new KinerjaRmMikroReportController(), 'fetchAvailablePeriods');
 
         $this->assertSame(['2026-05-06', '2026-04-30'], $periods->all());
+    }
+
+    public function test_source_period_discovery_bounds_text_filters_by_date_and_batches_queries(): void
+    {
+        $this->insertDailyLoan(['periode' => '2026-05-06', 'produk_kinerja' => 'KURMIKRO', 'description' => 'Kredit Mikro - KUR Ritel 2015']);
+        $this->insertDailyLoan(['periode' => '2026-05-05', 'produk_kinerja' => 'KURMIKRO', 'description' => 'KUR Mikro Baru']);
+        $this->insertDailyLoan(['periode' => '2026-05-07', 'produk_kinerja' => 'KURMIKRO', 'description' => 'Kredit Mikro - KUR Ritel 2015', 'cabang1' => 'KC SURABAYA']);
+
+        DB::enableQueryLog();
+        DB::flushQueryLog();
+        $controller = new KinerjaRmMikroReportController;
+        $this->assertSame(['2026-05-06'], $this->invokePrivateMethod($controller, 'fetchAvailablePeriods')->all());
+        $sourceQueries = collect(DB::getQueryLog())->filter(fn ($query) => str_contains($query['query'], 'from "daily_loan_dinamis"'))->values();
+        $this->assertCount(2, $sourceQueries);
+        $this->assertStringNotContainsString('description', $sourceQueries[0]['query']);
+        $this->assertStringContainsString('"periode" = ?', $sourceQueries[1]['query']);
+        $this->assertStringContainsString('union all', $sourceQueries[1]['query']);
+
+        DB::flushQueryLog();
+        $this->assertSame(['2026-05-06'], $this->invokePrivateMethod($controller, 'fetchAvailablePeriods')->all());
+        $this->assertSame([], DB::getQueryLog());
+        DB::disableQueryLog();
     }
 
     public function test_mantri_period_options_include_latest_daily_loan_period_when_snapshot_lags(): void
@@ -139,7 +246,46 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
 
         $periods = $this->invokePrivateMethod(new KinerjaRmMikroReportController(), 'fetchAvailablePeriods', true);
 
-        $this->assertSame(['2026-07-14', '2026-07-12'], $periods->all());
+        $this->assertSame(['2026-07-14'], $periods->all());
+    }
+
+    public function test_mantri_ready_period_requires_area6_nominative_and_discloses_earlier_source_date(): void
+    {
+        Queue::fake();
+        $this->insertDailyLoan(['periode' => '2026-07-13', 'tgl_realisasi' => '2026-07-13']);
+        $this->insertDailyLoan([
+            'periode' => '2026-07-15', 'tgl_realisasi' => '2026-07-15',
+            'cabang1' => 'KC BANYUWANGI', 'cabang_normalized' => 'KC BANYUWANGI',
+        ]);
+        DB::table('performance_rm_snapshots')->insert([
+            'periode' => '2026-07-14', 'segmen' => 'MICRO', 'produk' => 'KUR-MIKRO',
+        ]);
+        $this->insertBrihcPemasar([
+            'pernr' => '0001', 'pn_mantri' => '0001', 'esgdesc' => 'PT',
+            'positiondesc' => 'MANTRI', 'psadesc' => 'KC MADIUN', 'orgdesc' => 'UNIT TEST',
+        ]);
+        $controller = new KinerjaRmMikroReportController;
+        $this->assertSame(['2026-07-13'], $this->invokePrivateMethod($controller, 'fetchAvailablePeriods', true)->all());
+        $payload = $controller->buildEmbeddedPayload('produktivitas_mantri', '2026-07-14', true);
+
+        $this->assertSame('2026-07-14', $payload['meta']['requested_period']);
+        $this->assertSame('2026-07-13', $payload['meta']['data_period']);
+        $this->assertTrue($payload['meta']['refresh_pending']);
+        $this->assertSame(100_000_000.0, (float) $payload['total']['realisasi_os']);
+    }
+
+    public function test_snapshot_without_mantri_nominative_is_not_reported_as_zero_productivity(): void
+    {
+        DB::table('performance_rm_snapshots')->insert([
+            'periode' => '2026-07-14', 'segmen' => 'MICRO', 'produk' => 'KUR-MIKRO',
+        ]);
+        $controller = new KinerjaRmMikroReportController;
+        $payload = $controller->buildEmbeddedPayload('nett_disbursement', '2026-07-14', true);
+
+        $this->assertNull($payload['meta']['data_period']);
+        $this->assertSame([], $payload['rows']);
+        $this->assertSame([], $payload['total']);
+        $this->assertSame('2026-07-14', $this->invokePrivateMethod($controller, 'resolveEmbeddedReadyPeriod', '2026-07-14', false));
     }
 
     public function test_nett_workbook_scopes_zero_realization_roster_and_cache_per_branch(): void
@@ -299,7 +445,7 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
         $this->assertCount(1, $payload['rows']);
         $this->assertSame('UNIT TEST', $payload['rows'][0]['unit']);
         $this->assertSame(2, (int) $payload['total']['total_deb']);
-        $this->assertSame(500000000.0, (float) $payload['total']['total_os']);
+        $this->assertSame(340000000.0, (float) $payload['total']['total_os']);
         $this->assertSame(2, (int) $payload['total']['lancar_deb']);
         $this->assertSame(500000000.0, (float) $payload['total']['realisasi_os']);
     }
@@ -370,7 +516,7 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
         $this->assertSame(2, (int) data_get($rekap, 'total.total_rm'));
     }
 
-    public function test_mantri_payload_includes_all_non_briguna_products(): void
+    public function test_mantri_payload_excludes_briguna_and_rm_kur_ritel_products(): void
     {
         $this->insertDailyLoan([
             'produk_kinerja' => 'KURMIKRO',
@@ -394,15 +540,16 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
         $payload = $this->invokePrivateMethod(new KinerjaRmMikroReportController(), 'mantriProductivityPayload', '2026-05-06');
 
         $this->assertCount(1, $payload['rows']);
-        $this->assertSame(3, (int) $payload['rows'][0]['realisasi_deb']);
-        $this->assertSame(600000000.0, (float) $payload['rows'][0]['realisasi_os']);
+        $this->assertSame(2, (int) $payload['rows'][0]['realisasi_deb']);
+        $this->assertSame(500000000.0, (float) $payload['rows'][0]['realisasi_os']);
     }
 
-    public function test_mantri_productivity_payload_is_grouped_by_pn_pengelola(): void
+    public function test_mantri_productivity_payload_uses_initiator_without_approved_evidence(): void
     {
         $this->insertDailyLoan([
-            'pn_pengelola1' => '0001 - Mantri Satu',
-            'rm_normalized' => '0001 - MANTRI SATU',
+            'pn_pengelola1' => '0888 - Pengelola Lama',
+            'pn_pemrakarsa1' => '0001 - Mantri Satu',
+            'rm_normalized' => '0888 - PENGELOLA LAMA',
             'produk_kinerja' => 'KUPEDES',
             'description' => 'Kupedes',
             'nomor_rekening1' => 'RM1-1',
@@ -431,7 +578,7 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
         $this->assertCount(2, $payload['rows']);
         $this->assertSame(100000000.0, (float) $rows->get('MANTRI SATU')['realisasi_os']);
         $this->assertSame('00000001', $rows->get('MANTRI SATU')['pn_mantri']);
-        $this->assertSame(1249000000.0, (float) $rows->get('MANTRI DUA')['realisasi_os']);
+        $this->assertSame(250000000.0, (float) $rows->get('MANTRI DUA')['realisasi_os']);
         $this->assertSame('00000002', $rows->get('MANTRI DUA')['pn_mantri']);
         $this->assertSame(2, (int) $payload['total']['jumlah_mantri']);
     }
@@ -779,12 +926,12 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
         $this->assertCount(1, $payload['rows']);
         $this->assertNotNull($unitRow);
         $this->assertSame(3, (int) $unitRow['total_mantri']);
-        $this->assertSame(1, (int) $unitRow['buckets']['el_0_100']['deb']);
+        $this->assertSame(2, (int) $unitRow['buckets']['el_0_100']['deb']);
         $this->assertSame(1, (int) $unitRow['buckets']['el_200_400']['deb']);
-        $this->assertSame(1, (int) $unitRow['buckets']['mid_1000_1200']['deb']);
-        $this->assertSame(2, (int) $unitRow['extreme_low']['deb']);
+        $this->assertSame(0, (int) $unitRow['buckets']['mid_1000_1200']['deb']);
+        $this->assertSame(3, (int) $unitRow['extreme_low']['deb']);
         $this->assertSame(3, (int) $payload['total']['total_mantri']);
-        $this->assertSame(2, (int) $payload['total']['extreme_low']['deb']);
+        $this->assertSame(3, (int) $payload['total']['extreme_low']['deb']);
 
         $branchPayload = $this->invokePrivateMethod(new KinerjaRmMikroReportController(), 'mantriExtremeLowPayload', '2026-05-31', 'per_cabang');
         $branchRow = collect($branchPayload['rows'])->firstWhere('branch_office', 'KC MADIUN');
@@ -792,14 +939,14 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
         $this->assertSame('per_cabang', $branchPayload['view']);
         $this->assertNotNull($branchRow);
         $this->assertSame(3, (int) $branchRow['total_mantri']);
-        $this->assertSame(1, (int) $branchRow['buckets']['el_0_100']['deb']);
+        $this->assertSame(2, (int) $branchRow['buckets']['el_0_100']['deb']);
         $this->assertSame(1, (int) $branchRow['buckets']['el_200_400']['deb']);
-        $this->assertSame(1, (int) $branchRow['buckets']['mid_1000_1200']['deb']);
-        $this->assertSame(2, (int) $branchRow['extreme_low']['deb']);
-        $this->assertSame(2, (int) $branchRow['under_800']['deb']);
-        $this->assertEqualsWithDelta(33.3333, $branchRow['buckets']['el_0_100']['pct'], 0.0001);
-        $this->assertEqualsWithDelta(66.6667, $branchRow['extreme_low']['pct'], 0.0001);
-        $this->assertEqualsWithDelta(66.6667, $branchRow['under_800']['pct'], 0.0001);
+        $this->assertSame(0, (int) $branchRow['buckets']['mid_1000_1200']['deb']);
+        $this->assertSame(3, (int) $branchRow['extreme_low']['deb']);
+        $this->assertSame(3, (int) $branchRow['under_800']['deb']);
+        $this->assertEqualsWithDelta(66.6667, $branchRow['buckets']['el_0_100']['pct'], 0.0001);
+        $this->assertEqualsWithDelta(100.0, $branchRow['extreme_low']['pct'], 0.0001);
+        $this->assertEqualsWithDelta(100.0, $branchRow['under_800']['pct'], 0.0001);
     }
 
     public function test_extreme_low_hc_roster_uses_latest_assignment_and_includes_zero_account_pt_people(): void
@@ -931,7 +1078,7 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
         DB::table('performance_rm_snapshots')->insert([
             [
                 'periode' => '2026-05-31',
-                'cabang' => 'KC TEST',
+                'cabang' => 'KC MADIUN',
                 'unit' => 'UNIT TEST',
                 'branch_code' => '001',
                 'rm' => '0001 - RM AKTIF',
@@ -950,7 +1097,7 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
             ],
             [
                 'periode' => '2026-05-31',
-                'cabang' => 'KC TEST',
+                'cabang' => 'KC MADIUN',
                 'unit' => 'UNIT TEST',
                 'branch_code' => '001',
                 'rm' => '0002 - RM PINDAH',
@@ -1245,6 +1392,11 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
 
     private function insertDailyLoan(array $overrides): void
     {
+        foreach (['pn_pengelola1', 'pn_pemrakarsa1'] as $column) {
+            if (isset($overrides[$column]) && preg_match('/^(\d+)\s*(-.*)?$/', $overrides[$column], $matches)) {
+                $overrides[$column] = str_pad($matches[1], 8, '0', STR_PAD_LEFT).(isset($matches[2]) ? ' '.$matches[2] : '');
+            }
+        }
         if (array_key_exists('pn_pengelola1', $overrides) && !array_key_exists('pn_pemrakarsa1', $overrides)) {
             $overrides['pn_pemrakarsa1'] = $overrides['pn_pengelola1'];
         }
@@ -1261,8 +1413,8 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
             'cabang_normalized' => 'KC MADIUN',
             'cabang1' => 'KC MADIUN',
             'rm_normalized' => '0001 - MANTRI SATU',
-            'pn_pengelola1' => '0001 - Mantri Satu',
-            'pn_pemrakarsa1' => '0001 - Mantri Satu',
+            'pn_pengelola1' => '00000001 - Mantri Satu',
+            'pn_pemrakarsa1' => '00000001 - Mantri Satu',
             'nomor_rekening1' => 'TEST-1',
             'cifno' => 'CIF-' . uniqid(),
             'plafon' => 100000000,
@@ -1288,6 +1440,29 @@ class KinerjaRmMikroPeriodResolutionTest extends TestCase
             'pn_mantri' => '6494 | 0001 - Mantri Test',
             'status' => null,
         ], $overrides));
+    }
+
+    private function inputStore(): MantriSourceInputStore
+    {
+        $directory = sys_get_temp_dir().'/mantri-period-resolution-'.bin2hex(random_bytes(8));
+        $this->inputDirectories[] = $directory;
+        $store = new MantriSourceInputStore($directory);
+        $this->app->instance(MantriSourceInputStore::class, $store);
+
+        return $store;
+    }
+
+    private function archivedPosition(string $period): array
+    {
+        return [
+            'source' => ['source_kind' => 'manual_workbook_position'], 'complete_presence' => true,
+            'presence' => ['ARCHIVED-ACCOUNT'], 'unclassified_accounts' => [], 'bookings' => [[
+                'periode' => $period, 'nomor_rekening1' => 'ARCHIVED-ACCOUNT', 'cifno' => 'ARCHIVED-CIF',
+                'tgl_realisasi' => substr($period, 0, 7).'-05', 'plafon' => 100_000_000, 'baki_debet1' => 100_000_000,
+                'pn_pengelola1' => '00000001 - Mantri Aktif', 'pn_pemrakarsa1' => '00000001 - Mantri Aktif', 'description' => 'KREDIT MIKRO - KUPEDES',
+                'cabang1' => 'KC MADIUN', 'unit1' => 'UNIT TEST', 'branch1' => '001',
+            ]],
+        ];
     }
 
     private function invokePrivateMethod(object $object, string $method, mixed ...$arguments): mixed

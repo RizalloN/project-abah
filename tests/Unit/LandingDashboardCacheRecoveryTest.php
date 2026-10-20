@@ -22,6 +22,20 @@ class LandingDashboardCacheRecoveryTest extends TestCase
         $this->assertSame($valid, $read->invoke($controller, 'landing-valid', true));
     }
 
+    public function test_landing_cards_from_the_old_mtm_basis_are_rejected_in_primary_and_durable_cache(): void
+    {
+        config(['cache.default' => 'array']);
+        $controller = app(DashboardSimpananController::class);
+        $read = new ReflectionMethod($controller, 'readLandingPayloadCache');
+        foreach (['live_reports' => [['key' => 'simpanan']], 'kpi_summary' => ['total_simpanan' => []]] as $type => $cards) {
+            foreach ([false, true] as $durable) {
+                Cache::put('old-mtm', ['period' => '2026-10-17', $type => $cards], 3600);
+                $this->assertNull($read->invoke($controller, 'old-mtm', $durable));
+                $this->assertFalse(Cache::has('old-mtm'));
+            }
+        }
+    }
+
     public function test_pending_payload_is_bounded_and_cannot_be_used_as_durable(): void
     {
         config(['cache.default' => 'array']);
@@ -37,5 +51,16 @@ class LandingDashboardCacheRecoveryTest extends TestCase
         Cache::put('landing-pending', $pending, 3600);
         $this->assertNull($read->invoke($controller, 'landing-pending', true));
         $this->travelBack();
+    }
+
+    public function test_mtm_migration_preserves_retry_backoff_for_an_empty_pending_landing(): void
+    {
+        config(['cache.default' => 'array']);
+        $controller = app(DashboardSimpananController::class);
+        $payload = ['period' => null, 'live_reports' => [], 'meta' => [
+            'refresh_pending' => true, 'retry_after' => now()->addSeconds(30)->timestamp,
+        ]];
+        Cache::put('empty-pending-mtm', $payload, 30);
+        $this->assertSame($payload, (new ReflectionMethod($controller, 'readLandingPayloadCache'))->invoke($controller, 'empty-pending-mtm'));
     }
 }

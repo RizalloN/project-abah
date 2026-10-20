@@ -18,12 +18,12 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Node | Kind | Degree | Source |
 | --- | --- | ---: | --- |
-| `layouts.admin` | view | 69 | `resources/views/layouts/admin.blade.php:1` |
+| `layouts.admin` | view | 70 | `resources/views/layouts/admin.blade.php:1` |
 | `layouts.sidebar` | view | 55 | `resources/views/layouts/sidebar.blade.php:1` |
 | `composite` | method | 28 | `app/Support/ReportCacheVersion.php:17` |
-| `get` | method | 25 | `app/Support/ReportCacheVersion.php:9` |
+| `get` | method | 26 | `app/Support/ReportCacheVersion.php:9` |
+| `bump` | method | 16 | `app/Support/ReportCacheVersion.php:31` |
 | `AppServiceProvider` | class | 15 | `app/Providers/AppServiceProvider.php:25` |
-| `bump` | method | 15 | `app/Support/ReportCacheVersion.php:31` |
 | `boot` | method | 11 | `app/Providers/AppServiceProvider.php:70` |
 | `shouldFinishEarly` | method | 11 | `app/Http/Middleware/FinishResponseBeforeDeferredCallbacks.php:55` |
 | `handle` | method | 10 | `app/Console/Commands/WarmDashboardCache.php:34` |
@@ -33,7 +33,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `CacheMaintenanceService` | class | 8 | `app/Services/CacheMaintenanceService.php:9` |
 | `PartitionMaintenanceService` | class | 8 | `app/Support/PartitionMaintenanceService.php:8` |
 | `WarmDashboardCache` | class | 8 | `app/Console/Commands/WarmDashboardCache.php:15` |
-| `securityRateLimitKey` | method | 8 | `app/Providers/AppServiceProvider.php:145` |
+| `securityRateLimitKey` | method | 8 | `app/Providers/AppServiceProvider.php:147` |
 | `ReportCacheVersion` | class | 7 | `app/Support/ReportCacheVersion.php:7` |
 | `maintain` | method | 7 | `app/Services/CacheMaintenanceService.php:16` |
 | `resolveSinglePartitionForValue` | method | 7 | `app/Support/PartitionMaintenanceService.php:15` |
@@ -44,8 +44,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `layouts.partials.theme` | view | 6 | `resources/views/layouts/partials/theme.blade.php:1` |
 | `pruneOrphanedDbSessions` | method | 6 | `app/Services/CacheMaintenanceService.php:135` |
 | `refreshSourceCache` | method | 6 | `app/Services/Reports/SppgReportService.php:103` |
-| `registerCustomQueueExtensions` | method | 6 | `app/Providers/AppServiceProvider.php:341` |
-| `registerSecurityRateLimiters` | method | 6 | `app/Providers/AppServiceProvider.php:132` |
+| `registerCustomQueueExtensions` | method | 6 | `app/Providers/AppServiceProvider.php:343` |
+| `registerSecurityRateLimiters` | method | 6 | `app/Providers/AppServiceProvider.php:134` |
 | `supportsPartitionDdl` | method | 6 | `app/Support/PartitionMaintenanceService.php:10` |
 | `components.guest.layout` | view | 5 | - |
 
@@ -87,8 +87,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Direction | Count |
 | --- | ---: |
 | platform -> core (calls) | 35 |
-| core -> platform (calls) | 23 |
-| dashboard-pinjaman -> platform (calls) | 15 |
+| core -> platform (calls) | 24 |
+| dashboard-pinjaman -> platform (calls) | 16 |
 | core -> platform (extends_view) | 15 |
 | dashboard-pinjaman -> platform (extends_view) | 15 |
 | platform -> dashboard-pinjaman (references_route) | 14 |

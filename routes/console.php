@@ -279,6 +279,11 @@ Schedule::command('micro-pipeline:sync')
     ->withoutOverlapping(60)
     ->runInBackground();
 
+Schedule::command('reference:sync-mantri-spreadsheet')
+    ->everyMinute()
+    ->withoutOverlapping(2)
+    ->runInBackground();
+
 Schedule::command('dashboard-sources:refresh --queue --only-stale')
     ->everyFiveMinutes()
     ->withoutOverlapping(10)

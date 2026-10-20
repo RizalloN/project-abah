@@ -141,7 +141,9 @@ class ImportSimpananMultiPnCsvControllerTest extends TestCase
         $posisiClause = collect($plan['set_clauses'] ?? [])->first(fn (string $clause) => str_contains($clause, '`posisi`'));
 
         $this->assertNotNull($posisiClause);
-        $this->assertStringContainsString('`posisi` = CASE', $posisiClause);
+        // The date CASE is wrapped in DATE_ADD(..., INTERVAL 0 DAY) so impossible
+        // calendar dates (31/02) become NULL instead of an invalid DATE value.
+        $this->assertStringContainsString('`posisi` = DATE_ADD(CASE', $posisiClause);
     }
 
     public function test_direct_csv_load_plan_honors_configured_validation_sample_size(): void

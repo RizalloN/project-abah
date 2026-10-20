@@ -21,7 +21,7 @@ final class LandingMicroPerformanceService
 
     private const PERFORMANCE_RM_SNAPSHOT_TABLE = 'performance_rm_snapshots';
 
-    private const CACHE_VERSION = 'v35-mantri-source-counters';
+    private const CACHE_VERSION = 'v40-mantri-per-booking-floor';
 
     private const PERIOD_LOOKUP_INDEXES = [
         'idx_snapshot_filter_optimized',
@@ -244,7 +244,7 @@ final class LandingMicroPerformanceService
                 $branchScope
             );
             $brihcVersion = ReportCacheVersion::get('brihc');
-            $referenceFingerprint = app(MantriProductivityReference::class)->fingerprint($period);
+            $referenceFingerprint = $this->mantriInputFingerprint($period);
             $dataVersion = implode('.', [
                 ReportCacheVersion::get('pinjaman'),
                 ReportCacheVersion::get('harian'),
@@ -505,9 +505,17 @@ final class LandingMicroPerformanceService
             self::CACHE_VERSION,
             'last-valid',
             $brihcVersion ?? ReportCacheVersion::get('brihc'),
-            $referenceFingerprint ?? app(MantriProductivityReference::class)->fingerprint($period),
+            $referenceFingerprint ?? $this->mantriInputFingerprint($period),
             $period,
             $branchScope['key'] ?? UserBranchScope::AREA_SCOPE,
+        ]);
+    }
+
+    private function mantriInputFingerprint(string $period): string
+    {
+        return implode('.', [
+            app(MantriProductivityReference::class)->fingerprint($period),
+            app(MantriSourceInputStore::class)->fingerprint($period),
         ]);
     }
 
@@ -911,16 +919,41 @@ final class LandingMicroPerformanceService
     private function decorateRealizationWithMantri(array $realization, array $rows, Collection $roster, ?string $period = null): array
     {
         if ($period !== null) {
-            $reference = app(MantriProductivityReference::class);
-            $rows = array_map(function (object|array $row) use ($reference, $period): array {
+            $bookingKey = static function (mixed $account, mixed $cif, mixed $date): string {
+                $account = strtoupper(trim((string) $account));
+                if (ctype_digit($account)) {
+                    $account = ltrim($account, '0') ?: '0';
+                }
+
+                return $account.'|'.strtoupper(trim((string) $cif)).'|'.substr((string) $date, 0, 10);
+            };
+            $owners = [];
+            $bookings = app(MicroNettDisbursementCalculator::class)->cachedMantriAccounts($period);
+            foreach ($bookings as $booking) {
+                $owners[$bookingKey($booking['account_key'], $booking['cif_key'], $booking['realization_date'])] = $booking['owner'];
+            }
+            $seen = [];
+            $rows = array_map(function (object|array $row) use ($owners, $bookingKey, &$seen): array {
                 $copy = (array) $row;
-                $identity = $reference->accountReference($period, (string) ($copy['account_key'] ?? ''), (string) ($copy['cif_key'] ?? ''), (string) ($copy['realization_date'] ?? ''));
-                if ($identity !== null) {
-                    $copy['manager_pn'] = $identity['pn'];
+                $key = $bookingKey($copy['account_key'] ?? '', $copy['cif_key'] ?? '', $copy['realization_date'] ?? '');
+                $seen[$key] = true;
+                if (isset($owners[$key])) {
+                    $copy['manager_pn'] = $this->normalisePn($owners[$key]);
                 }
 
                 return $copy;
             }, $rows);
+            foreach ($bookings as $booking) {
+                $key = $bookingKey($booking['account_key'], $booking['cif_key'], $booking['realization_date']);
+                if (! isset($seen[$key]) && (float) $booking['plafon'] > 0) {
+                    // Realized people follow monthly booking flow even when a
+                    // booked account disappears from a later portfolio position.
+                    $rows[] = [
+                        'manager_pn' => $this->normalisePn($booking['owner']),
+                        'product' => $booking['product'] ?? '',
+                    ];
+                }
+            }
         }
         $realizedByProduct = collect($rows)
             ->groupBy(fn (object|array $row): string => $this->normaliseToken($this->microProductLabel((string) data_get($row, 'product', ''))))
@@ -2369,7 +2402,7 @@ final class LandingMicroPerformanceService
                     'amount' => (float) $excludedNet['amount'],
                 ],
             ],
-            'source' => 'Daily Loan Dinamis khusus pengelola yang terdaftar sebagai Mantri aktif BRIHC',
+            'source' => 'Booking PN Pemrakarsa dengan bukti atribusi sumber, khusus Mantri aktif BRIHC Area 6',
         ];
     }
 
@@ -2403,6 +2436,10 @@ final class LandingMicroPerformanceService
                 'average_per_hke' => $workingDays > 0 ? $amount / $workingDays : 0.0,
             ];
         };
+        $mantriCount = $people->whereIn('category', ['pt', 'contract'])->count();
+        $netDisbursement = $metric($netMetric);
+        $netDisbursement['average_per_mantri_hke'] = $workingDays > 0 && $mantriCount > 0
+            ? $netDisbursement['amount'] / $mantriCount / $workingDays : 0.0;
 
         return [
             'branch_code' => $branchCode !== '' ? $branchCode : '-',
@@ -2415,7 +2452,7 @@ final class LandingMicroPerformanceService
             'daily_realization' => $metric($dailyRealizationMetric),
             'daily_net_disbursement' => $metric($dailyNetMetric),
             'realization' => $metric($realizationMetric),
-            'net_disbursement' => $metric($netMetric),
+            'net_disbursement' => $netDisbursement,
             'tiers' => [
                 'pt' => $this->mantriTierPayload($people->where('category', 'pt')->values(), $netByManager, 'pt'),
                 'contract' => $this->mantriTierPayload($people->where('category', 'contract')->values(), $netByManager, 'contract'),
@@ -2457,7 +2494,6 @@ final class LandingMicroPerformanceService
             $managerMetric = $netByManager[(string) ($person['pn'] ?? '')] ?? ['amount' => 0.0, 'accounts' => []];
             $amount = (float) ($managerMetric['amount'] ?? 0.0);
             $key = match (true) {
-                $amount <= 0.0 && ($person['roster_source'] ?? '') !== 'workbook_reference' => 'none',
                 $category === 'contract' && $amount < 175_000_000 => 'extreme_low',
                 $category === 'contract' && $amount <= 350_000_000 => 'low',
                 $category === 'contract' && $amount <= 450_000_000 => 'mid',
@@ -2671,7 +2707,7 @@ final class LandingMicroPerformanceService
 
                 $category = match (true) {
                     $position === 'MANTRI BRIGUNA' => 'briguna',
-                    $position === 'MANTRI' && str_contains($employment, 'KONTRAK') => 'contract',
+                    $position === 'MANTRI' && (str_contains($employment, 'KONTRAK') || str_contains($employment, 'PROBATION')) => 'contract',
                     $position === 'MANTRI' && str_contains($employment, 'PT') => 'pt',
                     default => null,
                 };

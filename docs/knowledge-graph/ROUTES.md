@@ -2,8 +2,8 @@
 
 | Methods | URI | Name | Domain | Handler |
 | --- | --- | --- | --- | --- |
-| POST | `login` | `generated::h7kJv1qqaz9eo3z8` | access-control | `App\Http\Controllers\Auth\AuthenticatedSessionController::store` |
-| POST | `confirm-password` | `generated::iYT9mcuAKJrllUqH` | access-control | `App\Http\Controllers\Auth\ConfirmablePasswordController::store` |
+| POST | `login` | `generated::ErmTNOUdzW8g5lkh` | access-control | `App\Http\Controllers\Auth\AuthenticatedSessionController::store` |
+| POST | `confirm-password` | `generated::zaoDjlUakAcHw07z` | access-control | `App\Http\Controllers\Auth\ConfirmablePasswordController::store` |
 | GET | `login` | `login` | access-control | `App\Http\Controllers\Auth\AuthenticatedSessionController::create` |
 | POST | `logout` | `logout` | access-control | `App\Http\Controllers\Auth\AuthenticatedSessionController::destroy` |
 | GET | `confirm-password` | `password.confirm` | access-control | `App\Http\Controllers\Auth\ConfirmablePasswordController::show` |
@@ -53,7 +53,7 @@
 | POST | `file-management/delete` | `file-management.destroy` | core | `App\Http\Controllers\Admin\FileManagementController::destroy` |
 | GET | `file-management/download` | `file-management.download` | core | `App\Http\Controllers\Admin\FileManagementDownloadController::__invoke` |
 | GET | `file-management` | `file-management.index` | core | `App\Http\Controllers\Admin\FileManagementController::index` |
-| GET | `up` | `generated::OD5k27LTOXjyd4cq` | core | Closure |
+| GET | `up` | `generated::90IlLSPE7nTPQjLh` | core | Closure |
 | GET | `/` | `home` | core | Closure |
 | GET | `link-management` | `link-management.index` | core | `App\Http\Controllers\Admin\LinkManagementController::index` |
 | POST | `link-management` | `link-management.update` | core | `App\Http\Controllers\Admin\LinkManagementController::update` |
@@ -261,6 +261,11 @@
 | POST | `import/report-ph/process` | `import.reportph.process` | import | `App\Http\Controllers\Import\ImportReportPhController::processImport` |
 | GET | `import/report-ph/stream` | `import.reportph.stream` | import | `App\Http\Controllers\Import\ImportReportPhController::processImportStream` |
 | POST | `import/report-ph/upload` | `import.reportph.upload` | import | `App\Http\Controllers\Import\ImportReportPhController::upload` |
+| POST | `import/schema-drift/{event}/accept` | `import.schema-drift.accept` | import | `App\Http\Controllers\Import\ImportSchemaDriftController::accept` |
+| POST | `import/schema-drift/{event}/acknowledge` | `import.schema-drift.acknowledge` | import | `App\Http\Controllers\Import\ImportSchemaDriftController::acknowledge` |
+| POST | `import/schema-drift/analyze` | `import.schema-drift.analyze` | import | `App\Http\Controllers\Import\ImportSchemaDriftController::analyze` |
+| GET | `import/schema-drift/notifications` | `import.schema-drift.notifications` | import | `App\Http\Controllers\Import\ImportSchemaDriftController::notifications` |
+| POST | `import/schema-drift/{event}/reject` | `import.schema-drift.reject` | import | `App\Http\Controllers\Import\ImportSchemaDriftController::reject` |
 | GET | `import/select` | `import.select` | import | Closure |
 | POST | `import-excel/simpanan-multipn/chunk` | `import.simpanan.chunk` | import | `App\Http\Controllers\Import\ImportExcelController::chunkSimpananMultiPnImport` |
 | POST | `import-csv/simpanan-multipn/init` | `import.simpanan.csv.init` | import | `App\Http\Controllers\Import\ImportSimpananMultiPnCsvController::initImport` |

@@ -12,6 +12,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use ReflectionMethod;
 use Tests\TestCase;
 
 class PerformanceRmIncrementalSnapshotTest extends TestCase
@@ -1022,6 +1023,173 @@ class PerformanceRmIncrementalSnapshotTest extends TestCase
         $this->assertSame(1, $monthEnd->realisasi_deb);
     }
 
+    public function test_primary_sql_kur_position_uses_area6_positive_balances_and_preserves_other_scope(): void
+    {
+        $this->assertKurSnapshotPositionPath('sql');
+    }
+
+    public function test_portable_kur_position_uses_area6_positive_balances_and_preserves_other_scope(): void
+    {
+        $this->assertKurSnapshotPositionPath('portable');
+    }
+
+    public function test_micro_realization_refresh_preserves_every_outside_area6_snapshot_field(): void
+    {
+        $period = '2026-10-16';
+        $this->insertDailyLoanRow('LIVE-KUR', 'KURMIKRO', 100_000_000, 80_000_000, 'LIVE-KUR', $period, 'MICRO');
+        DB::table('daily_loan_dinamis')->where('nomor_rekening1', 'LIVE-KUR')->update([
+            'description' => 'Kredit Mikro - KUR Ritel 2015',
+        ]);
+        DB::table('performance_rm_snapshots')->insert(array_replace($this->stalePerformanceRmRow(), [
+            'periode' => $period, 'cabang' => 'KC BANYUWANGI', 'segmen' => 'MICRO', 'produk' => 'KUR-MIKRO',
+            'loan_os' => 900_000_000, 'realisasi_deb' => 3, 'realisasi_os' => 450_000_000,
+            'w1_realisasi_deb' => 1, 'w1_realisasi_os' => 50_000_000,
+            'w2_realisasi_deb' => 2, 'w2_realisasi_os' => 400_000_000,
+            'lt_250_realisasi_deb' => 2, 'lt_250_realisasi_os' => 150_000_000,
+            'gt_250_realisasi_deb' => 1, 'gt_250_realisasi_os' => 300_000_000,
+        ]));
+        $before = DB::table('performance_rm_snapshots')->where('cabang', 'KC BANYUWANGI')->first();
+        $builder = new ReportSnapshotBuilder(app(DashboardHarianSnapshotService::class));
+
+        (new ReflectionMethod($builder, 'updateMicroPerformanceRmRealizationMetrics'))->invoke(
+            $builder, $period, 'performance_rm_snapshots', array_flip(Schema::getColumnListing('performance_rm_snapshots'))
+        );
+
+        $this->assertEquals($before, DB::table('performance_rm_snapshots')->where('cabang', 'KC BANYUWANGI')->first());
+        $area6 = DB::table('performance_rm_snapshots')->where('cabang', 'KC MADIUN')->first();
+        $this->assertNotNull($area6);
+        $this->assertSame(1, (int) $area6->realisasi_deb);
+        $this->assertSame(100_000_000.0, (float) $area6->realisasi_os);
+    }
+
+    private function assertKurSnapshotPositionPath(string $path): void
+    {
+        DB::connection()->getPdo()->sqliteCreateFunction('NOW', static fn (): string => '2026-10-16 12:00:00', 0);
+        $period = '2026-10-16';
+        foreach ([
+            ['LANCAR', 500_000_000, 120_000_000, 1],
+            ['SML', 400_000_000, 60_000_000, 2],
+            ['NPL', 300_000_000, 30_000_000, 5],
+            ['ZERO', 250_000_000, 0, 1],
+        ] as [$account, $plafon, $balance, $kolek]) {
+            $this->insertDailyLoanRow($account, 'KURMIKRO', $plafon, $balance, 'CIF-'.$account, $period, 'MICRO', kolek: $kolek, tglRealisasi: $account === 'ZERO' ? '2025-01-01' : '2026-10-05');
+        }
+        DB::table('daily_loan_dinamis')->update(['description' => 'Kredit Mikro - KUR Ritel 2015']);
+
+        foreach ([['UNASSIGNED-NULL', null, '', 150_000_000, 120_000_000], ['UNASSIGNED-EMPTY', '', 'RM LAIN', 100_000_000, 80_000_000]] as [$account, $pn, $rm, $plafon, $balance]) {
+            $this->insertDailyLoanRow($account, 'KURMIKRO', $plafon, $balance, $account, $period, 'MICRO', tglRealisasi: '2026-10-05');
+            DB::table('daily_loan_dinamis')->where('nomor_rekening1', $account)->update([
+                'description' => 'Kredit Mikro - KUR Ritel 2015', 'pn_pengelola1' => $pn, 'rm_normalized' => $rm,
+            ]);
+            DB::table('simpanan_multipn')->insert(['posisi' => $period, 'CIFNO' => $account, 'saldo_idr' => 500_000_000]);
+        }
+        foreach ([
+            ['UNASSIGNED-OUT', 'MICRO', 'KURMIKRO', 'KC BANYUWANGI', 'KC BANYUWANGI', 'Kredit Mikro - KUR Ritel 2015'],
+            ['UNASSIGNED-SHADOW-BRANCH', 'MICRO', 'KURMIKRO', 'KC BANYUWANGI', 'KC MADIUN', 'Kredit Mikro - KUR Ritel 2015'],
+            ['UNASSIGNED-KUPEDES', 'MICRO', 'KUPEDES', 'KC MADIUN', 'KC MADIUN', 'Kupedes'],
+            ['UNASSIGNED-SMALL', 'SMALL', 'COMMERCIAL', 'KC MADIUN', 'KC MADIUN', 'Commercial'],
+            ['UNASSIGNED-SHADOW', 'MICRO', 'KURMIKRO', 'KC MADIUN', 'KC MADIUN', 'KUR Ritel Shadow Classification'],
+        ] as [$account, $segment, $product, $rawBranch, $normalizedBranch, $description]) {
+            $this->insertDailyLoanRow($account, $product, 900_000_000, 850_000_000, $account, $period, $segment);
+            DB::table('daily_loan_dinamis')->where('nomor_rekening1', $account)->update([
+                'pn_pengelola1' => null, 'rm_normalized' => '', 'cabang1' => $rawBranch,
+                'cabang_normalized' => $normalizedBranch, 'description' => $description,
+            ]);
+        }
+
+        foreach (['RAW-POSITIVE' => 80_000_000, 'RAW-ZERO' => 0] as $account => $balance) {
+            $this->insertDailyLoanRow($account, 'KURMIKRO', 250_000_000, $balance, $account, $period, 'MICRO');
+            DB::table('daily_loan_dinamis')->where('nomor_rekening1', $account)->update([
+                'description' => 'Kredit Mikro - KUR Ritel 2015', 'cabang_normalized' => '',
+                'cabang1' => 'KC MADIUN', 'rm_normalized' => 'RM RAW',
+            ]);
+        }
+        foreach (['OUT-POSITIVE' => 10_000_000, 'OUT-ZERO' => 0] as $account => $balance) {
+            $this->insertDailyLoanRow($account, 'KURMIKRO', 250_000_000, $balance, $account, $period, 'MICRO');
+            DB::table('daily_loan_dinamis')->where('nomor_rekening1', $account)->update([
+                'description' => 'Kredit Mikro - KUR Ritel 2015',
+                'cabang_normalized' => 'KC BANYUWANGI', 'cabang1' => 'KC BANYUWANGI', 'rm_normalized' => 'RM OUT',
+            ]);
+        }
+        $this->insertDailyLoanRow('OTHER-MICRO', 'KUPEDES', 700_000_000, 0, 'OTHER-MICRO', $period, 'MICRO');
+        $this->insertDailyLoanRow('OTHER-SMALL', 'COMMERCIAL', 400_000_000, 0, 'OTHER-SMALL', $period, 'SMALL');
+        $this->insertDailyLoanRow('SHADOW', 'KURMIKRO', 900_000_000, 850_000_000, 'SHADOW', $period, 'MICRO');
+        DB::table('daily_loan_dinamis')->where('nomor_rekening1', 'SHADOW')->update([
+            'description' => 'KUR Ritel Shadow Classification', 'rm_normalized' => 'RM SHADOW',
+        ]);
+
+        $builder = new ReportSnapshotBuilder(app(DashboardHarianSnapshotService::class));
+        $ruleSets = [
+            'MICRO' => [
+                ['segment' => 'MICRO', 'products' => ['KURMIKRO', 'KURKECIL'], 'descriptions' => ['KREDITMIKROKURRITEL2015']],
+                ['segment' => 'MICRO', 'products' => ['KUPEDES'], 'descriptions' => []],
+            ],
+            'SMALL' => [['segment' => 'SMALL', 'products' => ['COMMERCIAL'], 'descriptions' => []]],
+        ];
+        $results = [];
+        foreach ($ruleSets as $segment => $rules) {
+            if ($path === 'sql') {
+                (new ReflectionMethod($builder, 'insertPerformanceRmSegmentSnapshotSqlFirst'))->invoke(
+                    $builder, $period, $segment, $rules, null,
+                    array_flip(Schema::getColumnListing('performance_rm_snapshots')), 'performance_rm_snapshots'
+                );
+                $results[$segment] = DB::table('performance_rm_snapshots')->where('segmen', $segment)->get()->map(fn ($row): array => (array) $row);
+            } else {
+                $results[$segment] = collect((new ReflectionMethod($builder, 'fetchSegmentRmAggregates'))->invoke($builder, $period, $segment, $rules, $segment === 'SMALL'));
+            }
+        }
+
+        $this->assertCount(5, $results['MICRO']);
+        $this->assertCount(1, $results['SMALL']);
+        $this->assertCount(0, $results['MICRO']->where('rm', ''));
+        $this->assertCount(1, $results['MICRO']->where('rm', 'RM LAIN'));
+        $unassigned = $results['MICRO']->firstWhere('rm', 'RM LAIN');
+        $this->assertSame(200_000_000.0, (float) $unassigned['loan_os']);
+        $this->assertSame(250_000_000.0, (float) $unassigned['plafon']);
+        $this->assertSame(2, (int) $unassigned['total_deb']);
+        $this->assertSame(2, (int) $unassigned['realisasi_deb']);
+        $this->assertSame(250_000_000.0, (float) $unassigned['realisasi_os']);
+        if ($path === 'portable') {
+            $this->assertEmpty($unassigned['cifno_list']);
+            $snapshotRows = (new ReflectionMethod($builder, 'computePerformanceRmRows'))->invoke($builder, $period);
+            $unassignedSnapshot = collect($snapshotRows)->firstWhere('rm', 'RM LAIN');
+            $this->assertSame(0.0, (float) $unassignedSnapshot['total_deposit']);
+            DB::table('performance_rm_snapshots')->insert($unassignedSnapshot);
+        }
+        $unassignedId = DB::table('performance_rm_snapshots')->where('rm', 'RM LAIN')->value('id');
+        (new ReflectionMethod($builder, 'updateMicroPerformanceRmRealizationMetrics'))->invoke(
+            $builder, $period, 'performance_rm_snapshots', array_flip(Schema::getColumnListing('performance_rm_snapshots'))
+        );
+        $unassignedAfter = DB::table('performance_rm_snapshots')->where('rm', 'RM LAIN')->get();
+        $this->assertCount(1, $unassignedAfter);
+        $this->assertSame((int) $unassignedId, (int) $unassignedAfter->first()->id);
+        $this->assertSame(200_000_000.0, (float) $unassignedAfter->first()->loan_os);
+        $this->assertSame(2, (int) $unassignedAfter->first()->realisasi_deb);
+        $this->assertSame(250_000_000.0, (float) $unassignedAfter->first()->realisasi_os);
+        $this->assertSame(0.0, (float) $unassignedAfter->first()->total_deposit);
+        $kur = $results['MICRO']->first(fn (array $row): bool => $row['rm'] === 'RM A' && in_array($row['produk'], ['KURMIKRO', 'KUR-MIKRO'], true));
+        $this->assertNotNull($kur);
+        $this->assertSame(210_000_000.0, (float) $kur['loan_os']);
+        $this->assertSame(3, (int) $kur['total_deb']);
+        foreach (['lancar' => 120_000_000.0, 'sml' => 60_000_000.0, 'npl' => 30_000_000.0] as $tier => $balance) {
+            $this->assertSame(1, (int) $kur[$tier.'_deb']);
+            $this->assertSame($balance, (float) $kur[$tier.'_os']);
+        }
+        $this->assertSame(3, (int) $kur['realisasi_deb']);
+        $this->assertSame(1_200_000_000.0, (float) $kur['realisasi_os']);
+        $raw = $results['MICRO']->firstWhere('rm', 'RM RAW');
+        $this->assertSame(80_000_000.0, (float) $raw['loan_os']);
+        $this->assertSame(1, (int) $raw['total_deb']);
+        $outside = $results['MICRO']->firstWhere('rm', 'RM OUT');
+        $this->assertSame(500_000_000.0, (float) $outside['loan_os']);
+        $this->assertSame(2, (int) $outside['total_deb']);
+        $otherMicro = $results['MICRO']->firstWhere('produk', 'KUPEDES');
+        $this->assertSame(0.0, (float) $otherMicro['loan_os']);
+        $this->assertSame(1, (int) $otherMicro['total_deb']);
+        $this->assertSame(0.0, (float) $results['SMALL']->first()['loan_os']);
+        $this->assertSame(1, (int) $results['SMALL']->first()['total_deb']);
+    }
+
     private function createTables(): void
     {
         Schema::create('daily_loan_dinamis', function (Blueprint $table): void {
@@ -1032,8 +1200,11 @@ class PerformanceRmIncrementalSnapshotTest extends TestCase
             $table->string('produk_kinerja')->nullable();
             $table->string('description')->nullable();
             $table->string('cabang_normalized')->nullable();
+            $table->string('cabang1')->nullable();
             $table->string('unit_normalized')->nullable();
+            $table->string('unit1')->nullable();
             $table->string('branch_normalized')->nullable();
+            $table->string('branch1')->nullable();
             $table->string('rm_normalized')->nullable();
             $table->decimal('plafon', 20, 2)->nullable();
             $table->decimal('baki_debet1', 20, 2)->nullable();
@@ -1140,8 +1311,11 @@ class PerformanceRmIncrementalSnapshotTest extends TestCase
             'produk_kinerja' => $product,
             'description' => '',
             'cabang_normalized' => 'KC MADIUN',
+            'cabang1' => 'KC MADIUN',
             'unit_normalized' => 'UNIT A',
+            'unit1' => 'UNIT A',
             'branch_normalized' => '123',
+            'branch1' => '123',
             'rm_normalized' => 'RM A',
             'plafon' => $plafon,
             'baki_debet1' => $bakiDebet,

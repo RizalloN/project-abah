@@ -551,7 +551,7 @@
                 <span>BRI Loan Monitoring</span>
             </div>
             <h1 class="loan-title-hero__title">TUNGGAKAN KECIL</h1>
-            <p class="loan-title-hero__desc">Monitoring jumlah rekening pinjaman dengan total tunggakan pokok, bunga, dan penalti di bawah Rp100.000 pada titik posisi 31 Desember tahun lalu, bulan lalu, dan hari sekarang.</p>
+            <p class="loan-title-hero__desc">Monitoring jumlah rekening pinjaman yang menunggak pokok/bunga dengan total tunggakan pokok, bunga, dan penalti maksimal Rp100.000 pada titik posisi 31 Desember tahun lalu, bulan lalu, dan hari sekarang.</p>
         </div>
     </div>
 

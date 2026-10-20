@@ -72,7 +72,7 @@ class Lw321DailyLoanSyncServiceTest extends TestCase
         });
     }
 
-    public function test_lw321_materialization_is_idempotent_and_cross_period_matrix_remains_readable(): void
+    public function test_lw321_materialization_is_idempotent_but_excluded_from_native_daily_loan_reports(): void
     {
         DB::table('daily_loan_dinamis')->insert([
             'uniqueid_namareport' => 'DAILY:BASELINE',
@@ -125,22 +125,19 @@ class Lw321DailyLoanSyncServiceTest extends TestCase
         $this->assertSame(['2026-08-31', '2026-09-08'], DB::table('daily_loan_dinamis')->orderBy('periode')->pluck('periode')->all());
         $effectivePeriodMethod = new ReflectionMethod($controller, 'resolveEffectivePeriod');
         $effectivePeriodMethod->setAccessible(true);
-        $this->assertSame('2026-09-08', $effectivePeriodMethod->invoke($controller, null));
+        $this->assertSame('2026-08-31', $effectivePeriodMethod->invoke($controller, null));
         $periodMethod = new ReflectionMethod($controller, 'fetchRecoveryReportPeriods');
         $periodMethod->setAccessible(true);
         $availablePeriods = $periodMethod->invoke($controller);
-        $this->assertContains('2026-09-08', $availablePeriods->all(), json_encode($availablePeriods->all()));
+        $this->assertNotContains('2026-09-08', $availablePeriods->all());
 
         $payload = $controller->data(Request::create(
             '/report/dashboard-pinjaman/data',
             'GET',
             ['periode' => '2026-09-08', 'refresh' => '1']
         ))->getData(true);
-        $rows = collect($payload['matrix_rows'])->keyBy('label');
-
-        $this->assertSame('ready', $payload['status'], json_encode($payload));
-        $this->assertEqualsWithDelta(100.0, $rows['L']['values'][2], 0.001);
-        $this->assertSame('balanced', $payload['reconciliation']['status']);
+        $this->assertSame('empty', $payload['status'], json_encode($payload));
+        $this->assertSame([], $payload['matrix_rows']);
     }
 
     public function test_latest_date_wins_across_sources_when_daily_is_newer_than_lw(): void

@@ -698,6 +698,14 @@ class ImportProgressService
         ?string $status = null,
         ?array $progressPayload = null
     ): void {
+        if ($status === 'completed' && $success <= 0) {
+            $status = 'failed';
+            $progressPayload = array_merge($progressPayload ?? [], [
+                'status' => $status,
+                'message' => 'Import tidak menghasilkan baris yang berhasil disimpan. Periksa data sumber dan filter import.',
+            ]);
+        }
+
         $attributes = [
             'total_success' => $success,
             'total_failed' => $failed,

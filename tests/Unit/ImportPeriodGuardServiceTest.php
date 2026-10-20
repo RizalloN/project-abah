@@ -56,6 +56,36 @@ class ImportPeriodGuardServiceTest extends TestCase
         ];
     }
 
+    #[DataProvider('dateReportProvider')]
+    public function test_period_guards_accept_valid_report_timestamps_for_every_date_report(string $tableName, string $periodColumn): void
+    {
+        $guard = new ImportPeriodGuardService();
+        $guard->assertRow($tableName, [$periodColumn => '10/18/2026 12:00:00 AM'], 2);
+        $guard->assertRow($tableName, [$periodColumn => '18/10/2026 1:30:00 PM'], 3);
+        $this->addToAssertionCount(2);
+    }
+
+    #[DataProvider('dateReportProvider')]
+    public function test_period_guards_reject_invalid_calendar_dates_even_with_valid_report_time(string $tableName, string $periodColumn): void
+    {
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('tidak valid pada baris 9');
+
+        (new ImportPeriodGuardService())->assertRow($tableName, [$periodColumn => '02/30/2026 12:00:00 AM'], 9);
+    }
+
+    public static function dateReportProvider(): array
+    {
+        $reports = [];
+        foreach (self::activePeriodicReportProvider() as $name => [$tableName, $column, $type]) {
+            if ($type === 'date') {
+                $reports[$name] = [$tableName, $column];
+            }
+        }
+
+        return $reports;
+    }
+
     #[DataProvider('activeExemptReportProvider')]
     public function test_active_non_daily_reports_are_explicitly_exempt(string $tableName): void
     {

@@ -7,13 +7,14 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Kind | Count |
 | --- | ---: |
 | command | 4 |
-| file | 157 |
-| function | 380 |
-| method | 189 |
-| unresolved_symbol | 10 |
+| file | 161 |
+| function | 384 |
+| method | 193 |
+| unresolved_symbol | 18 |
 | route | 2 |
-| class | 18 |
+| class | 19 |
 | table | 5 |
+| view | 1 |
 
 ## Main Hubs
 
@@ -30,8 +31,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `createChunkedBackup` | method | 20 | `app/Services/DailyDatabaseBackupService.php:277` |
 | `up` | function | 18 | `database/migrations/2026_04_01_000005_dashboard_snapshots_and_triggers.php:10` |
 | `CachedMySqlSchemaBuilder` | class | 17 | `app/Support/CachedMySqlSchemaBuilder.php:9` |
-| `SchemaMetadataCache` | class | 15 | `app/Support/SchemaMetadataCache.php:9` |
-| `invalidate` | method | 15 | `app/Support/SchemaMetadataCache.php:62` |
+| `SchemaMetadataCache` | class | 16 | `app/Support/SchemaMetadataCache.php:9` |
+| `invalidate` | method | 15 | `app/Support/SchemaMetadataCache.php:68` |
 | `extractTableSqlFromBackup` | method | 14 | `app/Services/ManagedReportBackupRecoveryService.php:316` |
 | `inspectManagedBackupDirectory` | method | 14 | `app/Services/DailyDatabaseBackupService.php:1089` |
 | `handle` | method | 13 | `app/Console/Commands/RestoreDatabaseBackupCommand.php:29` |
@@ -73,6 +74,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `ParallelPartRunner` - `app/Services/DatabaseBackup/ParallelPartRunner.php`
 - `ProgressiveBackupCommand` - `app/Console/Commands/ProgressiveBackupCommand.php`
 - `RestoreDatabaseBackupCommand` - `app/Console/Commands/RestoreDatabaseBackupCommand.php`
+- `SchemaDriftPreviewComposer` - `app/View/Composers/SchemaDriftPreviewComposer.php`
 - `SchemaMetadataCache` - `app/Support/SchemaMetadataCache.php`
 - `SuperAdminSeeder` - `database/seeders/SuperAdminSeeder.php`
 
@@ -82,6 +84,10 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `database:backup-part` - `app/Console/Commands/BackupDatabasePartCommand.php`
 - `database:restore-daily` - `app/Console/Commands/RestoreDatabaseBackupCommand.php`
 - `db:backup-progressive` - `app/Console/Commands/ProgressiveBackupCommand.php`
+
+## View Nodes
+
+- `layouts.partials.schema-drift-bell` - `resources/views/layouts/partials/schema-drift-bell.blade.php`
 
 ## Table Nodes
 
@@ -98,12 +104,12 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | database -> core (instantiates) | 79 |
 | database -> core (checks_table) | 62 |
 | database -> core (writes_table) | 60 |
-| database -> import (checks_table) | 43 |
-| database -> core (calls) | 34 |
+| database -> import (checks_table) | 46 |
+| database -> core (calls) | 36 |
+| database -> import (defines_table) | 27 |
 | database -> dashboard-pinjaman (checks_table) | 26 |
-| database -> import (defines_table) | 24 |
-| database -> core (accepts) | 21 |
-| database -> core (reads_table) | 17 |
+| database -> core (accepts) | 22 |
+| database -> core (reads_table) | 18 |
 | database -> dashboard-simpanan (checks_table) | 15 |
 | database -> dashboard-pinjaman (alters_table) | 15 |
 | database -> jobs-snapshots (checks_table) | 14 |
@@ -117,6 +123,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | database -> dashboard-simpanan (alters_table) | 8 |
 | database -> dashboard-simpanan (defines_table) | 7 |
 | database -> dashboard-harian (checks_table) | 7 |
+| import -> database (calls) | 7 |
 | database -> core (extends) | 7 |
 | database -> jobs-snapshots (alters_table) | 6 |
 | database -> core (uses_table) | 5 |
@@ -124,4 +131,3 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | database -> access-control (defines_table) | 5 |
 | database -> dashboard-harian (alters_table) | 5 |
 | database -> access-control (checks_table) | 4 |
-| database -> jobs-snapshots (uses_table) | 3 |

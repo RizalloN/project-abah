@@ -668,7 +668,7 @@
                             <tr>
                                 <th class="scope-daily">Plafon</th><th class="scope-daily">Nett Disb.</th>
                                 <th class="scope-cumulative">Plafon</th><th class="scope-cumulative">Ratas / HKE</th>
-                                <th class="scope-cumulative">Nett Disb.</th><th class="scope-cumulative">Ratas / HKE</th>
+                                <th class="scope-cumulative">Nett Disb.</th><th class="scope-cumulative">Ratas / Mantri / HKE</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -685,7 +685,7 @@
                                     <td class="strong">{{ $formatJuta(data_get($row, 'realization.amount', 0)) }}</td>
                                     <td>{{ $formatJuta(data_get($row, 'realization.average_per_hke', 0)) }}</td>
                                     <td class="strong">{{ $formatJuta(data_get($row, 'net_disbursement.amount', 0)) }}</td>
-                                    <td>{{ $formatJuta(data_get($row, 'net_disbursement.average_per_hke', 0)) }}</td>
+                                    <td>{{ $formatJuta(data_get($row, 'net_disbursement.average_per_mantri_hke', 0)) }}</td>
                                 </tr>
                             @endforeach
                         </tbody>
@@ -700,7 +700,7 @@
                                 <td>{{ $formatJuta(data_get($mantriPerformance, 'total.realization.amount', 0)) }}</td>
                                 <td>{{ $formatJuta(data_get($mantriPerformance, 'total.realization.average_per_hke', 0)) }}</td>
                                 <td>{{ $formatJuta(data_get($mantriPerformance, 'total.net_disbursement.amount', 0)) }}</td>
-                                <td>{{ $formatJuta(data_get($mantriPerformance, 'total.net_disbursement.average_per_hke', 0)) }}</td>
+                                <td>{{ $formatJuta(data_get($mantriPerformance, 'total.net_disbursement.average_per_mantri_hke', 0)) }}</td>
                             </tr>
                         </tfoot>
                     </table>

@@ -197,6 +197,39 @@ class ImportReportPhExcelHeaderMappingTest extends TestCase
         $this->assertSame('80.00', $mappedRow[66]);
     }
 
+    public function test_csv_preview_and_insert_keep_lw325_meridiem_period(): void
+    {
+        $path = storage_path('app/testing/report_ph_meridiem.csv');
+        if (!is_dir(dirname($path))) {
+            mkdir(dirname($path), 0777, true);
+        }
+        $row = ['1', '10/18/2026 12:00:00 AM', '004501001234567', 'KANWIL MALANG', 'KC Madiun', 'KC Madiun', 'DEBITUR UJI', 'CIF001', '16/10/2025', '11/09/2024', '100.25', '-20.50'];
+        $handle = fopen($path, 'w');
+        fputcsv($handle, ['Laporan Nominatif PH', 'Periode Data : 18/10/2026']);
+        fputcsv($handle, ['Textbox3', 'PERIODE', 'ACCTNO', 'KANWIL', 'KANCA', 'UNIT', 'NAMA_DEBITUR', 'CIF1', 'TGL_PH', 'TGL_REALISASI', 'POKOK', 'BUNGA']);
+        fputcsv($handle, $row);
+        fclose($handle);
+
+        try {
+            $controller = app(ImportReportPhController::class);
+            $context = (new ReflectionMethod($controller, 'buildCsvContext'))->invoke($controller, $path);
+            $mapped = (new ReflectionMethod($controller, 'mapCsvRow'))->invoke($controller, $context, $row);
+            $insert = (new ReflectionMethod($controller, 'buildInsertRow'))->invoke($controller, $context['headers'], $mapped, [0, 1, 11, 12, 21, 22]);
+
+            $this->assertSame('2026-10-18', $context['periode']);
+            $this->assertSame('2026-10-18', $mapped[0]);
+            $this->assertSame('2026-10-18', $insert['periode']);
+            $this->assertSame('004501001234567', $insert['acctno']);
+            $this->assertSame('2025-10-16', $insert['tgl_ph']);
+            $this->assertSame('2024-09-11', $insert['tgl_realisasi']);
+            $this->assertSame('100.25', $insert['pokok']);
+            $this->assertSame('-20.50', $insert['bunga']);
+            $this->assertStringStartsWith('2026-10-18_', $insert['uniqueid_namareport']);
+        } finally {
+            @unlink($path);
+        }
+    }
+
     public function test_preview_state_rejects_sparse_lw325_rows(): void
     {
         $controller = app(ImportReportPhController::class);

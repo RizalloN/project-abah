@@ -757,6 +757,20 @@ class ImportExecutionServiceTest extends TestCase
         $this->assertFalse($shouldFallback);
     }
 
+    public function test_simpanan_multipn_excel_does_not_fall_back_to_browser_execution(): void
+    {
+        $progress = Mockery::mock(ImportProgressService::class);
+        $progress->shouldReceive('getJobState')->with(205)->andReturn([
+            'params' => ['table_name' => 'simpanan_multipn', 'file_path' => 'excel_imports/source.xlsx'],
+        ]);
+        $service = new ImportExecutionService($progress);
+        $method = new \ReflectionMethod($service, 'shouldRunInlineFallback');
+
+        $this->assertFalse($method->invoke($service, [
+            'status' => 'queued', 'job_id' => 205, 'queue_present' => false,
+        ], time() - 600, false));
+    }
+
     public function test_simpanan_multipn_without_guarded_staging_is_not_recovered_by_generic_recovery(): void
     {
         $jobId = 196;

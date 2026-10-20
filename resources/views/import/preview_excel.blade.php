@@ -127,6 +127,8 @@
             </div>
         </div>
 
+        @include('import.partials.schema-drift-panel')
+
         <form id="importForm" method="POST" data-filter-options-url="{{ $filterOptionsRoute ?? route('import.preview.filter-options') }}" data-filtered-rows-url="{{ route('import.preview.filtered-rows') }}" data-no-route-loading>
             @csrf
             <input type="hidden" name="path"                id="file_path"           value="{{ $path }}">

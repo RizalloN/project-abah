@@ -722,6 +722,7 @@ class ImportExecutionService
 
         return (bool) ($params['disable_inline_fallback'] ?? false)
             || $tableName === 'daily_loan_dinamis'
+            || $tableName === 'simpanan_multipn'
             || $this->isSimpananMultiPnCsvStreamJob($jobId, null, $params);
     }
 

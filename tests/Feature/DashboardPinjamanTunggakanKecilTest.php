@@ -167,6 +167,83 @@ function seedSmallArrearsRows(): void
     ]);
 }
 
+it('uses native daily loan periods units balances and exports for small arrears only', function () {
+    $base = ['cabang1' => 'KC Madiun', 'unit1' => 'Native Unit', 'nomor_rekening1' => 'NATIVE', 'tunggakan_pokok' => 10000];
+    foreach ([
+        ['uniqueid_namareport' => 'DAILY:YTD', 'periode' => '2025-12-30'],
+        ['uniqueid_namareport' => 'DAILY:MTD', 'periode' => '2026-03-30'],
+        ['uniqueid_namareport' => 'DAILY:CURRENT', 'periode' => '2026-04-22'],
+        ['uniqueid_namareport' => 'LW321PN:YTD', 'periode' => '2025-12-31'],
+        ['uniqueid_namareport' => 'LW321PN:MTD', 'periode' => '2026-03-31'],
+        ['uniqueid_namareport' => 'LW321PN:MIXED', 'periode' => '2026-04-22', 'unit1' => 'LW Unit', 'nomor_rekening1' => 'LW-MIXED'],
+        ['uniqueid_namareport' => 'LW321PN:LATEST', 'periode' => '2026-04-23', 'unit1' => 'LW Unit'],
+    ] as $row) {
+        DB::table('daily_loan_dinamis')->insert(array_merge($base, $row));
+    }
+
+    $this->actingAs(User::factory()->create());
+    $this->get('/report/dashboard-pinjaman/tunggakan-kecil')
+        ->assertOk()
+        ->assertViewHas('selectedPeriod', '2026-04-22')
+        ->assertViewHas('availablePeriods', fn ($periods) => $periods->all() === ['2026-04-22', '2026-03-30', '2025-12-30']);
+    $this->getJson('/report/dashboard-pinjaman/tunggakan-kecil/data?'.http_build_query(['cabang1' => ['KC Madiun']]))
+        ->assertOk()
+        ->assertJsonPath('selected_period', '2026-04-22')
+        ->assertJsonPath('labels.ytd', '2025-12-30')
+        ->assertJsonPath('labels.mtd', '2026-03-30')
+        ->assertJsonPath('total.current', 1)
+        ->assertJsonPath('total.ytd', 1)
+        ->assertJsonPath('total.mtd', 1)
+        ->assertJsonPath('total.current_tunggakan', 10000);
+    $filters = $this->getJson('/report/dashboard-pinjaman/tunggakan-kecil/filters?'.http_build_query(['periode' => '2026-04-22', 'cabang1' => ['KC Madiun']]))->assertOk();
+    expect($filters->json('unit_options'))->toContain('Native Unit')->not->toContain('LW Unit');
+    $this->getJson('/report/dashboard-pinjaman/tunggakan-kecil/data?'.http_build_query(['periode' => '2026-04-23', 'cabang1' => ['KC Madiun']]))
+        ->assertOk()->assertJsonPath('selected_period', '2026-04-23')->assertJsonPath('total.current', 0);
+
+    $controller = new \App\Http\Controllers\DashboardPinjamanReportController();
+    $export = (new ReflectionMethod($controller, 'buildSmallArrearsExportQuery'))->invoke($controller, '2026-04-22', ['KC Madiun'], []);
+    expect($export->pluck('nomor_rekening1')->all())->toBe(['NATIVE']);
+
+    // UG/NPL and six-month reports retain their shared unrestricted source helpers.
+    $allPeriods = (new ReflectionMethod($controller, 'fetchPeriods'))->invoke($controller);
+    expect($allPeriods->first())->toBe('2026-04-23');
+    $allUnits = (new ReflectionMethod($controller, 'fetchSmallArrearsDistinctValues'))->invoke($controller, 'unit1', '2026-04-22', ['KC Madiun']);
+    expect($allUnits->all())->toContain('LW Unit', 'Native Unit');
+});
+
+it('excludes normalized lw321pn from mismatch periods filters summary and export', function () {
+    $base = ['cabang1' => 'KC Madiun', 'unit1' => 'Native Unit', 'status_rekening1' => '1', 'baki_debet1' => 100, 'kolek' => 3, 'umur_tunggakan' => 10];
+    foreach ([
+        ['uniqueid_namareport' => 'DAILY:MISMATCH', 'periode' => '2026-04-22', 'nomor_rekening1' => 'NATIVE'],
+        ['uniqueid_namareport' => 'LW321PN:MISMATCH', 'periode' => '2026-04-22', 'nomor_rekening1' => 'LW-MIXED'],
+        ['uniqueid_namareport' => 'LW321PN:BRANCH', 'periode' => '2026-04-22', 'nomor_rekening1' => 'LW-BRANCH', 'cabang1' => 'KC LW Only'],
+        ['uniqueid_namareport' => 'LW321PN:LATEST', 'periode' => '2026-04-23', 'nomor_rekening1' => 'LW-LATEST'],
+    ] as $row) {
+        DB::table('daily_loan_dinamis')->insert(array_merge($base, $row));
+    }
+    $this->actingAs(User::factory()->create());
+    $this->get('/report/dashboard-pinjaman/kolek-tidak-sesuai')
+        ->assertOk()
+        ->assertViewHas('selectedPeriod', '2026-04-22')
+        ->assertViewHas('periods', fn ($periods) => $periods->all() === ['2026-04-22']);
+    $filters = $this->getJson('/report/dashboard-pinjaman/kolek-tidak-sesuai/filters?periode=2026-04-22')->assertOk();
+    expect($filters->json('branches'))->toContain('KC Madiun')->not->toContain('KC LW Only');
+    $this->getJson('/report/dashboard-pinjaman/kolek-tidak-sesuai/data?'.http_build_query(['cabang1' => ['KC Madiun']]))
+        ->assertOk()->assertJsonPath('selected_period', '2026-04-22')
+        ->assertJsonPath('audit.scanned_rows', 1)->assertJsonPath('audit.mismatch_rows', 1);
+
+    $response = $this->get('/report/dashboard-pinjaman/kolek-tidak-sesuai/export?'.http_build_query(['periode' => '2026-04-22', 'cabang1' => ['KC Madiun']]))->assertOk();
+    $path = tempnam(sys_get_temp_dir(), 'native_mismatch_export_').'.xlsx';
+    file_put_contents($path, $response->streamedContent());
+    try {
+        $rows = IOFactory::load($path)->getActiveSheet()->toArray(null, true, true, true);
+    } finally {
+        @unlink($path);
+    }
+    $accountColumn = array_search('nomor_rekening1', $rows[1], true);
+    expect(collect($rows)->skip(1)->pluck($accountColumn)->all())->toBe(['NATIVE']);
+});
+
 it('aggregates current total and raw posisi counts by branch office', function () {
     seedSmallArrearsRows();
 
@@ -395,7 +472,7 @@ it('counts kolek mismatch only for status one or three with positive baki debet'
         ]));
 
     $response->assertOk();
-    $response->assertJsonPath('audit.rule', 'kolek_vs_umur_tunggakan_v3');
+    $response->assertJsonPath('audit.rule', 'kolek_vs_umur_tunggakan_v4');
     $response->assertJsonPath('audit.scanned_rows', 3);
     $response->assertJsonPath('audit.matched_rows', 1);
     $response->assertJsonPath('audit.mismatch_rows', 2);
@@ -837,5 +914,144 @@ it('detects positive arrears as mismatch even when umur tunggakan is zero, and c
     expect($accounts)->toContain('KTS-ARR-0');
     expect($accounts)->toContain('KTS-RESTRUK-30D');
     expect($accounts)->toContain('KTS-RESTRUK-120D');
+});
+
+it('treats arrears falling due on the period date as lancar, not kolek tidak sesuai', function () {
+    DB::table('daily_loan_dinamis')->insert([
+        [
+            'uniqueid_namareport' => 'kts-due-today',
+            'periode' => '2026-04-22',
+            'cabang1' => 'KC Magetan',
+            'unit1' => 'Unit M',
+            'nomor_rekening1' => 'KTS-DUE-TODAY',
+            'status_rekening1' => '1',
+            'baki_debet1' => 700000000,
+            'kolek' => '1',
+            'umur_tunggakan' => 0,
+            'tunggakan_pokok' => 698590572,
+            'tunggakan_bunga' => 0,
+            'tanggal_menunggak' => '2026-04-22',
+            'npl_method' => 'Y',
+            'flag_restruk' => 'N',
+        ],
+        [
+            'uniqueid_namareport' => 'kts-stale-umur-zero',
+            'periode' => '2026-04-22',
+            'cabang1' => 'KC Magetan',
+            'unit1' => 'Unit M',
+            'nomor_rekening1' => 'KTS-STALE-UMUR',
+            'status_rekening1' => '1',
+            'baki_debet1' => 10000000,
+            'kolek' => '1',
+            'umur_tunggakan' => 0,
+            'tunggakan_pokok' => 500000,
+            'tunggakan_bunga' => 0,
+            'tanggal_menunggak' => '2026-04-12',
+            'npl_method' => 'Y',
+            'flag_restruk' => 'N',
+        ],
+    ]);
+
+    $user = User::factory()->create();
+
+    $response = $this
+        ->actingAs($user)
+        ->getJson('/report/dashboard-pinjaman/kolek-tidak-sesuai/data?' . http_build_query([
+            'periode' => '2026-04-22',
+            'cabang1' => ['KC Magetan'],
+            'refresh' => true,
+        ]));
+
+    $response->assertOk();
+    $response->assertJsonPath('audit.scanned_rows', 2);
+    $response->assertJsonPath('audit.matched_rows', 1);
+    $response->assertJsonPath('audit.mismatch_rows', 1);
+    $response->assertJsonPath('summary_rows.0.memburuk_count', 1);
+    $response->assertJsonPath('summary_rows.0.outstanding_balance', 10000000);
+});
+
+it('keeps restruk within 90 days as belum waktunya penyesuaian when only penalty remains', function () {
+    DB::table('daily_loan_dinamis')->insert([
+        'uniqueid_namareport' => 'kts-restruk-penalty-only',
+        'periode' => '2026-04-22',
+        'cabang1' => 'KC Magetan',
+        'unit1' => 'Unit M',
+        'nomor_rekening1' => 'KTS-RESTRUK-PENALTY',
+        'status_rekening1' => '1',
+        'baki_debet1' => 168117828,
+        'kolek' => '2',
+        'umur_tunggakan' => -29,
+        'tunggakan_pokok' => 0,
+        'tunggakan_bunga' => 0,
+        'tunggakan_penalti' => 8,
+        'tgl_akad_restruk' => '2026-03-28',
+        'npl_method' => 'N',
+        'flag_restruk' => 'Y',
+    ]);
+
+    $user = User::factory()->create();
+
+    $response = $this
+        ->actingAs($user)
+        ->getJson('/report/dashboard-pinjaman/kolek-tidak-sesuai/data?' . http_build_query([
+            'periode' => '2026-04-22',
+            'cabang1' => ['KC Magetan'],
+            'refresh' => true,
+        ]));
+
+    $response->assertOk();
+    $response->assertJsonPath('audit.mismatch_rows', 1);
+    $response->assertJsonPath('summary_rows.0.belum_waktunya_penyesuaian_count', 1);
+    $response->assertJsonPath('summary_rows.0.kolek_membaik_count', 0);
+});
+
+it('excludes penalty-only residue from small arrears summary and export', function () {
+    seedSmallArrearsRows();
+
+    DB::table('daily_loan_dinamis')->insert([
+        'uniqueid_namareport' => 'curr-kc-mdn-penalty-only',
+        'periode' => '2026-04-22',
+        'cabang1' => 'KC Madiun',
+        'unit1' => 'Unit A',
+        'nomor_rekening1' => 'LN-PENALTY-ONLY',
+        'umur_tunggakan' => 0,
+        'kolek' => 1,
+        'tunggakan_pokok' => 0,
+        'tunggakan_bunga' => 0,
+        'tunggakan_penalti' => 2500,
+    ]);
+
+    $user = User::factory()->create();
+
+    $response = $this
+        ->actingAs($user)
+        ->getJson('/report/dashboard-pinjaman/tunggakan-kecil/data?' . http_build_query([
+            'periode' => '2026-04-22',
+            'cabang1' => ['KC Madiun'],
+            'unit1' => ['Unit A'],
+        ]));
+
+    $response->assertOk();
+    $response->assertJsonPath('rows.0.current', 1);
+    $response->assertJsonPath('rows.0.total_tunggakan', 80000);
+
+    $export = $this
+        ->actingAs($user)
+        ->get('/report/dashboard-pinjaman/tunggakan-kecil/export?' . http_build_query([
+            'periode' => '2026-04-22',
+            'cabang1' => ['KC Madiun'],
+            'unit1' => ['Unit A'],
+        ]));
+
+    $path = tempnam(sys_get_temp_dir(), 'small_arrears_penalty_') . '.xlsx';
+    file_put_contents($path, $export->streamedContent());
+
+    try {
+        $rows = IOFactory::load($path)->getActiveSheet()->toArray(null, true, true, true);
+    } finally {
+        @unlink($path);
+    }
+
+    expect(collect($rows)->skip(1)->pluck('D')->all())->not->toContain('LN-PENALTY-ONLY');
 });
 

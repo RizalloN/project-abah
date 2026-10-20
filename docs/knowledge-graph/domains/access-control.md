@@ -52,8 +52,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 ## Route Nodes
 
-- `generated::h7kJv1qqaz9eo3z8` - `login`
-- `generated::iYT9mcuAKJrllUqH` - `confirm-password`
+- `generated::ErmTNOUdzW8g5lkh` - `login`
+- `generated::zaoDjlUakAcHw07z` - `confirm-password`
 - `login` - `login`
 - `logout` - `logout`
 - `password.confirm` - `confirm-password`
@@ -116,7 +116,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Direction | Count |
 | --- | ---: |
-| import -> access-control (protected_by) | 973 |
+| import -> access-control (protected_by) | 1003 |
 | dashboard-simpanan -> access-control (protected_by) | 222 |
 | dashboard-pinjaman -> access-control (protected_by) | 222 |
 | bank-pipeline -> access-control (protected_by) | 136 |

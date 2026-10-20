@@ -2511,6 +2511,13 @@ class ReportSnapshotBuilder
         $periodStart = $periodDate->copy()->startOfMonth()->toDateString();
         $kurRitelDescriptionSql = $this->buildKinerjaRmNormalizedSql('d.description');
         $kurRitelDescriptionToken = $this->normalizeKinerjaRmToken('Kredit Mikro - KUR Ritel 2015');
+        $area6BranchValueSql = Schema::hasColumn('daily_loan_dinamis', 'cabang1')
+            ? "COALESCE(NULLIF(TRIM(d.cabang1), ''), d.cabang_normalized, '')"
+            : "COALESCE(d.cabang_normalized, '')";
+        $area6BranchSql = "UPPER(TRIM({$area6BranchValueSql})) IN ('KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO')";
+        $area6KurSql = "d.segmen_kinerja = 'MICRO' AND d.produk_kinerja IN ('KURMIKRO', 'KURKECIL') AND {$kurRitelDescriptionSql} = '{$kurRitelDescriptionToken}' AND {$area6BranchSql}";
+        $snapshotRmSql = "CASE WHEN ({$area6KurSql}) AND TRIM(COALESCE(d.pn_pengelola1, '')) = '' THEN 'RM LAIN' ELSE COALESCE(d.rm_normalized, '') END";
+        $positionAccountSql = "CASE WHEN d.segmen_kinerja = 'MICRO' AND d.produk_kinerja IN ('KURMIKRO', 'KURKECIL') AND {$kurRitelDescriptionSql} = '{$kurRitelDescriptionToken}' AND {$area6BranchSql} AND COALESCE(d.baki_debet1, 0) <= 0 THEN NULL ELSE d.nomor_rekening1 END";
         $rawRealisasiDateColumn = 'd.'.$this->resolvePerformanceRmRealisasiDateColumn();
         $rawCurrentCifRealisasiDateColumn = 'd2.'.$this->resolvePerformanceRmRealisasiDateColumn();
         $realisasiDateColumn = $this->performanceRmEffectiveRealisasiDateSql($rawRealisasiDateColumn, 'd.periode');
@@ -2651,7 +2658,7 @@ class ReportSnapshotBuilder
             "COALESCE(d.cabang_normalized, '')",
             "COALESCE(d.unit_normalized, '')",
             "COALESCE(d.branch_normalized, '')",
-            "COALESCE(d.rm_normalized, '')",
+            $snapshotRmSql,
             $canonicalProductSql,
         ];
         $groupBySql = implode(', ', $groupColumns);
@@ -2688,25 +2695,25 @@ class ReportSnapshotBuilder
         );
         array_push(
             $selects,
-            "COALESCE(d.rm_normalized, '') as rm",
+            "{$snapshotRmSql} as rm",
             '? as segmen',
             "{$canonicalProductSql} as produk",
             'SUM(COALESCE(d.plafon, 0)) as plafon',
-            "SUM(CASE WHEN d.segmen_kinerja = 'MICRO' AND d.produk_kinerja IN ('KURMIKRO', 'KURKECIL') AND {$kurRitelDescriptionSql} = ? THEN COALESCE(d.plafon, 0) ELSE COALESCE(d.baki_debet1, 0) END) as loan_os",
+            "SUM(CASE WHEN d.segmen_kinerja = 'MICRO' AND d.produk_kinerja IN ('KURMIKRO', 'KURKECIL') AND {$kurRitelDescriptionSql} = ? AND NOT ({$area6BranchSql}) THEN COALESCE(d.plafon, 0) ELSE COALESCE(d.baki_debet1, 0) END) as loan_os",
             'SUM(CASE WHEN d.kolek = 1 THEN COALESCE(d.baki_debet1, 0) ELSE 0 END) as lancar_os',
             'SUM(CASE WHEN d.kolek = 2 THEN COALESCE(d.baki_debet1, 0) ELSE 0 END) as sml_os',
             'SUM(CASE WHEN d.kolek > 2 THEN COALESCE(d.baki_debet1, 0) ELSE 0 END) as npl_os',
             "SUM(CASE WHEN d.kolek = 1 AND COALESCE(d.flag_restruk, '') = 'Y' THEN COALESCE(d.baki_debet1, 0) ELSE 0 END) as restruk_os",
-            'COUNT(DISTINCT d.nomor_rekening1) as total_deb'
+            "COUNT(DISTINCT {$positionAccountSql}) as total_deb"
         );
         array_push($bindings, $segment, $kurRitelDescriptionToken);
 
         $realisasiAmountSql = 'COALESCE(d.plafon, 0)';
 
         $metricSelects = [
-            'lancar_deb' => 'COUNT(DISTINCT CASE WHEN d.kolek = 1 THEN d.nomor_rekening1 END) as lancar_deb',
-            'sml_deb' => 'COUNT(DISTINCT CASE WHEN d.kolek = 2 THEN d.nomor_rekening1 END) as sml_deb',
-            'npl_deb' => 'COUNT(DISTINCT CASE WHEN d.kolek > 2 THEN d.nomor_rekening1 END) as npl_deb',
+            'lancar_deb' => "COUNT(DISTINCT CASE WHEN d.kolek = 1 THEN {$positionAccountSql} END) as lancar_deb",
+            'sml_deb' => "COUNT(DISTINCT CASE WHEN d.kolek = 2 THEN {$positionAccountSql} END) as sml_deb",
+            'npl_deb' => "COUNT(DISTINCT CASE WHEN d.kolek > 2 THEN {$positionAccountSql} END) as npl_deb",
             'realisasi_deb' => $segment === 'CONSUMER'
                 ? ($hasConsumerSurplusBase ? 'COALESCE(MAX(consumer_surplus.surplus_deb), 0) as realisasi_deb' : '0 as realisasi_deb')
                 : "COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN d.nomor_rekening1 END) as realisasi_deb",
@@ -2775,8 +2782,7 @@ class ReportSnapshotBuilder
             {$depositJoinSql}
             WHERE d.periode = ?
                 AND ({$ruleSql})
-                AND d.pn_pengelola1 IS NOT NULL
-                AND d.pn_pengelola1 <> ''
+                AND ((d.pn_pengelola1 IS NOT NULL AND d.pn_pengelola1 <> '') OR ({$area6KurSql}))
             GROUP BY {$groupBySql}
         ";
 
@@ -2987,9 +2993,8 @@ class ReportSnapshotBuilder
     }
 
     /**
-     * Replace the generic KUR-MIKRO realization with the canonical signed-nett
-     * calculation. Position metrics stay untouched, while monthly activity is
-     * retained even when the producer has no account left at the cutoff.
+     * Replace KUR-MIKRO realization with the Kanwil gross-plafond calculation
+     * attributed to the current SinglePN manager at this exact position.
      *
      * @param  array<string, int>  $snapshotColumns
      */
@@ -3015,6 +3020,7 @@ class ReportSnapshotBuilder
             ->where('periode', $period)
             ->where('segmen', 'MICRO')
             ->where('produk', 'KUR-MIKRO')
+            ->whereIn(DB::raw('UPPER(TRIM(cabang))'), ['KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO'])
             ->update($reset);
 
         foreach (app(MicroNettDisbursementCalculator::class)->kurRm($period) as $metric) {
@@ -3674,6 +3680,14 @@ class ReportSnapshotBuilder
         $periodDate = Carbon::parse($period);
         $kurRitelDescriptionSql = $this->buildKinerjaRmNormalizedSql('description');
         $kurRitelDescriptionToken = $this->normalizeKinerjaRmToken('Kredit Mikro - KUR Ritel 2015');
+        $area6BranchValueSql = Schema::hasColumn('daily_loan_dinamis', 'cabang1')
+            ? "COALESCE(NULLIF(TRIM(cabang1), ''), cabang_normalized, '')"
+            : "COALESCE(cabang_normalized, '')";
+        $area6BranchSql = "UPPER(TRIM({$area6BranchValueSql})) IN ('KC MADIUN', 'KC MAGETAN', 'KC NGAWI', 'KC PONOROGO')";
+        $area6KurSql = "segmen_kinerja = 'MICRO' AND produk_kinerja IN ('KURMIKRO', 'KURKECIL') AND {$kurRitelDescriptionSql} = '{$kurRitelDescriptionToken}' AND {$area6BranchSql}";
+        $snapshotRmSql = "CASE WHEN ({$area6KurSql}) AND TRIM(COALESCE(pn_pengelola1, '')) = '' THEN 'RM LAIN' ELSE COALESCE(rm_normalized, '') END";
+        $depositCifSql = "CASE WHEN ({$area6KurSql}) AND TRIM(COALESCE(pn_pengelola1, '')) = '' THEN NULL ELSE UPPER(TRIM(cifno)) END";
+        $positionAccountSql = "CASE WHEN segmen_kinerja = 'MICRO' AND produk_kinerja IN ('KURMIKRO', 'KURKECIL') AND {$kurRitelDescriptionSql} = '{$kurRitelDescriptionToken}' AND {$area6BranchSql} AND COALESCE(baki_debet1, 0) <= 0 THEN NULL ELSE nomor_rekening1 END";
         $realisasiDateColumn = $this->performanceRmEffectiveRealisasiDateSql(
             $this->resolvePerformanceRmRealisasiDateColumn(),
             'periode'
@@ -3709,29 +3723,32 @@ class ReportSnapshotBuilder
                     });
                 }
             })
-            ->whereNotNull('pn_pengelola1')
-            ->where('pn_pengelola1', '<>', '')
+            ->where(function ($ownerScope) use ($area6KurSql) {
+                $ownerScope->where(function ($assignedScope) {
+                    $assignedScope->whereNotNull('pn_pengelola1')->where('pn_pengelola1', '<>', '');
+                })->orWhereRaw($area6KurSql);
+            })
             // Use shadow columns in SELECT to avoid function overhead
             ->select([
                 'cabang_normalized as cabang',
                 'unit_normalized as unit',
                 'branch_normalized as branch_code',
-                'rm_normalized as rm',
                 'produk_kinerja as produk',
             ])
+            ->selectRaw("{$snapshotRmSql} as rm")
             ->selectRaw('SUM(COALESCE(plafon, 0)) as plafon')
             ->selectRaw(
-                "SUM(CASE WHEN segmen_kinerja = ? AND produk_kinerja IN (?, ?) AND {$kurRitelDescriptionSql} = ? THEN COALESCE(plafon, 0) ELSE COALESCE(baki_debet1, 0) END) as loan_os",
+                "SUM(CASE WHEN segmen_kinerja = ? AND produk_kinerja IN (?, ?) AND {$kurRitelDescriptionSql} = ? AND NOT ({$area6BranchSql}) THEN COALESCE(plafon, 0) ELSE COALESCE(baki_debet1, 0) END) as loan_os",
                 ['MICRO', 'KURMIKRO', 'KURKECIL', $kurRitelDescriptionToken]
             )
             ->selectRaw('SUM(CASE WHEN kolek = 1 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as lancar_os')
-            ->selectRaw('COUNT(DISTINCT CASE WHEN kolek = 1 THEN nomor_rekening1 END) as lancar_deb')
+            ->selectRaw("COUNT(DISTINCT CASE WHEN kolek = 1 THEN {$positionAccountSql} END) as lancar_deb")
             ->selectRaw('SUM(CASE WHEN kolek = 2 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as sml_os')
-            ->selectRaw('COUNT(DISTINCT CASE WHEN kolek = 2 THEN nomor_rekening1 END) as sml_deb')
+            ->selectRaw("COUNT(DISTINCT CASE WHEN kolek = 2 THEN {$positionAccountSql} END) as sml_deb")
             ->selectRaw('SUM(CASE WHEN kolek > 2 THEN COALESCE(baki_debet1, 0) ELSE 0 END) as npl_os')
-            ->selectRaw('COUNT(DISTINCT CASE WHEN kolek > 2 THEN nomor_rekening1 END) as npl_deb')
+            ->selectRaw("COUNT(DISTINCT CASE WHEN kolek > 2 THEN {$positionAccountSql} END) as npl_deb")
             ->selectRaw("SUM(CASE WHEN kolek = 1 AND COALESCE(flag_restruk, '') = 'Y' THEN COALESCE(baki_debet1, 0) ELSE 0 END) as restruk_os")
-            ->selectRaw('COUNT(DISTINCT nomor_rekening1) as total_deb')
+            ->selectRaw("COUNT(DISTINCT {$positionAccountSql}) as total_deb")
             ->selectRaw("COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN nomor_rekening1 END) as realisasi_deb", [$periodStart, $period])
             ->selectRaw("SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN {$realisasiAmountSql} ELSE 0 END) as realisasi_os", [$periodStart, $period])
             ->selectRaw("COUNT(DISTINCT CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? THEN nomor_rekening1 END) as w1_realisasi_deb", $weekRanges['w1'])
@@ -3748,10 +3765,11 @@ class ReportSnapshotBuilder
             ->selectRaw("SUM(CASE WHEN {$realisasiDateColumn} BETWEEN ? AND ? AND COALESCE(plafon, 0) > 250000000 THEN {$realisasiAmountSql} ELSE 0 END) as gt_250_realisasi_os", [$periodStart, $period])
             // Keep full alphanumeric CIF intact for downstream snapshot matching.
             ->selectRaw(DB::getDriverName() === 'sqlite'
-                ? 'GROUP_CONCAT(DISTINCT UPPER(TRIM(cifno))) as cifno_list'
-                : "GROUP_CONCAT(DISTINCT UPPER(TRIM(cifno)) SEPARATOR ',') as cifno_list")
+                ? "GROUP_CONCAT(DISTINCT {$depositCifSql}) as cifno_list"
+                : "GROUP_CONCAT(DISTINCT {$depositCifSql} SEPARATOR ',') as cifno_list")
             // Use shadow columns in GROUP BY to avoid function overhead
-            ->groupBy('cabang_normalized', 'unit_normalized', 'branch_normalized', 'rm_normalized', 'produk_kinerja')
+            ->groupBy('cabang_normalized', 'unit_normalized', 'branch_normalized', 'produk_kinerja')
+            ->groupByRaw($snapshotRmSql)
             ->get();
 
         $rows = $query->map(fn ($row) => (array) $row)->toArray();

@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class ImportProgressTerminalStateTest extends TestCase
@@ -113,5 +114,53 @@ class ImportProgressTerminalStateTest extends TestCase
         $this->assertSame(100, $payload['percent']);
         $this->assertSame('completed', $job->status);
         $this->assertNull($job->job_fingerprint);
+    }
+
+    #[DataProvider('emptyCompletionProvider')]
+    public function test_no_imported_rows_cannot_be_persisted_as_completed(int $failed, int $totalRows, bool $useMarkCompleted): void
+    {
+        DB::table('import_jobs')->insert([
+            'id' => 83,
+            'status' => 'processing',
+            'total_files' => 49616,
+            'job_fingerprint' => 'empty-import',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        Cache::store('array')->put('import_job_progress:83', [
+            'status' => 'processing',
+            'message' => 'Memuat data sumber...',
+        ], now()->addHour());
+        $service = app(ImportProgressService::class);
+
+        if ($useMarkCompleted) {
+            $service->markCompleted(83, 0, $failed, $totalRows, ['status' => 'completed', 'message' => 'Import selesai.']);
+        } else {
+            $service->updateTotals(83, 0, $failed, $totalRows, 'completed');
+        }
+
+        $job = DB::table('import_jobs')->where('id', 83)->first();
+        $progress = $service->getCachedProgress(83);
+        $this->assertSame('failed', $job->status);
+        $this->assertSame('failed', $progress['status']);
+        $this->assertSame(0, (int) $job->total_success);
+        $this->assertSame($failed, (int) $job->total_failed);
+        $this->assertSame($totalRows, (int) $job->total_files);
+        $this->assertSame(0, $progress['total_success']);
+        $this->assertSame($failed, $progress['total_failed']);
+        $this->assertSame($totalRows, $progress['total_rows']);
+        $this->assertSame($job->message, $progress['message']);
+        $this->assertStringContainsString('tidak menghasilkan baris', $job->message);
+        $this->assertNull($job->job_fingerprint);
+    }
+
+    public static function emptyCompletionProvider(): array
+    {
+        return [
+            'fallback returned empty counts' => [0, 0, false],
+            'completion helper returned empty counts' => [0, 0, true],
+            'known source total but nothing imported' => [0, 49616, false],
+            'all prepared rows failed' => [3, 3, true],
+        ];
     }
 }

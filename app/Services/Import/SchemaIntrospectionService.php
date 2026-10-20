@@ -54,7 +54,12 @@ class SchemaIntrospectionService
         }
 
         $safeTableName = str_replace('`', '``', $tableName);
-        $rows = DB::select("SHOW FULL COLUMNS FROM `{$safeTableName}`");
+        $rows = DB::connection()->getDriverName() === 'sqlite'
+            ? array_map(
+                static fn ($row) => (object) ['Field' => $row->name ?? '', 'Type' => $row->type ?? ''],
+                DB::select('PRAGMA table_info("' . str_replace('"', '""', $tableName) . '")')
+            )
+            : DB::select("SHOW FULL COLUMNS FROM `{$safeTableName}`");
         $metadata = [];
 
         foreach ($rows as $row) {

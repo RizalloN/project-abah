@@ -16,6 +16,12 @@ class SchemaMetadataCache
     /** @var array<string, string> */
     private array $persistentKeys = [];
 
+    private const STAMP_KEY = 'schema_metadata_inventory:stamp';
+    private const STAMP_CHECK_SECONDS = 5;
+
+    private ?string $loadedStamp = null;
+    private float $stampCheckedAt = 0.0;
+
     public function hasTable(Connection $connection, string $table): bool
     {
         [$database, $tableName] = $this->resolveTableReference($connection, $table);
@@ -86,8 +92,42 @@ class SchemaMetadataCache
         $defaultInventoryKey = $this->inventoryKey($connection, $connection->getDatabaseName());
         try {
             Cache::forget($this->persistentCacheKey($defaultInventoryKey));
+            // Tell other long-running processes (queue workers) to reload too.
+            $this->loadedStamp = (string) microtime(true);
+            Cache::forever(self::STAMP_KEY, $this->loadedStamp);
         } catch (Throwable) {
             // See note above: the database schema remains the source of truth.
+        }
+    }
+
+    /**
+     * Drops the in-memory inventory when another process changed the schema.
+     * Checked at most every few seconds so hot paths stay cheap.
+     */
+    private function refreshWhenSchemaChangedElsewhere(): void
+    {
+        $now = microtime(true);
+        if ($now - $this->stampCheckedAt < self::STAMP_CHECK_SECONDS) {
+            return;
+        }
+        $this->stampCheckedAt = $now;
+
+        try {
+            $stamp = Cache::get(self::STAMP_KEY);
+        } catch (Throwable) {
+            return;
+        }
+
+        $stamp = $stamp === null ? null : (string) $stamp;
+        if ($this->loadedStamp === null) {
+            $this->loadedStamp = $stamp ?? '';
+
+            return;
+        }
+
+        if ($stamp !== null && $stamp !== $this->loadedStamp) {
+            $this->inventories = [];
+            $this->loadedStamp = $stamp;
         }
     }
 
@@ -100,6 +140,7 @@ class SchemaMetadataCache
             return [];
         }
 
+        $this->refreshWhenSchemaChangedElsewhere();
         $inventoryKey = $this->inventoryKey($connection, $database);
         if (array_key_exists($inventoryKey, $this->inventories)) {
             return $this->inventories[$inventoryKey];

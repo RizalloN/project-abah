@@ -1638,17 +1638,17 @@
       $depKpiCard = collect($rootCards)->firstWhere('key', 'deposito') ?? [];
       $giroKpiCard = collect($rootCards)->firstWhere('key', 'giro') ?? [];
 
-      $totDeltaMtm = (string) data_get($totKpi, 'trend_mtm', '0%');
-      $totDeltaPos = !str_starts_with($totDeltaMtm, '-') && !str_starts_with($totDeltaMtm, '(');
+      $totDeltaMtm = (string) data_get($totKpi, 'trend_mtm_nominal', 'Rp0');
+      $totDeltaPos = (float) data_get($totKpi, 'trend_mtm_raw', 0) >= 0;
 
-      $tabDeltaMtm = (string) data_get($tabKpiCard, 'deltas.mom.value', '0%');
-      $tabDeltaPos = !str_starts_with($tabDeltaMtm, '-') && !str_starts_with($tabDeltaMtm, '(');
+      $tabDeltaMtm = (string) data_get($tabKpiCard, 'deltas.mom.nominal_value', 'Rp0');
+      $tabDeltaPos = (float) data_get($tabKpiCard, 'deltas.mom.raw', 0) >= 0;
 
-      $depDeltaMtm = (string) data_get($depKpiCard, 'deltas.mom.value', '0%');
-      $depDeltaPos = !str_starts_with($depDeltaMtm, '-') && !str_starts_with($depDeltaMtm, '(');
+      $depDeltaMtm = (string) data_get($depKpiCard, 'deltas.mom.nominal_value', 'Rp0');
+      $depDeltaPos = (float) data_get($depKpiCard, 'deltas.mom.raw', 0) >= 0;
 
-      $giroDeltaMtm = (string) data_get($giroKpiCard, 'deltas.mom.value', '0%');
-      $giroDeltaPos = !str_starts_with($giroDeltaMtm, '-') && !str_starts_with($giroDeltaMtm, '(');
+      $giroDeltaMtm = (string) data_get($giroKpiCard, 'deltas.mom.nominal_value', 'Rp0');
+      $giroDeltaPos = (float) data_get($giroKpiCard, 'deltas.mom.raw', 0) >= 0;
     @endphp
 
     {{-- CARD 1: TOTAL SIMPANAN --}}
@@ -1657,7 +1657,7 @@
       <div class="kc-label"><span class="kc-icon-box"><i class="fas fa-piggy-bank"></i></span>Total Simpanan</div>
       <div class="kc-val">{{ data_get($totKpi, 'value', '0') }} <small style="font-size:0.75rem;font-weight:700;color:#64748b;">Rp Jt</small></div>
       <div class="kc-sub">Target {{ data_get($totKpi, 'target', '-') }} Rp Jt ({{ data_get($totKpi, 'pct', '0%') }})</div>
-      <span class="kc-delta {{ $totDeltaPos ? 'pos' : 'neg' }}">
+      <span class="kc-delta {{ $totDeltaPos ? 'pos' : 'neg' }}" title="MtM dibanding {{ data_get($totKpi, 'trend_mtm_period', '-') }}">
         <i class="fas {{ $totDeltaPos ? 'fa-arrow-up' : 'fa-arrow-down' }}"></i>
         {{ $totDeltaMtm }} MtM
       </span>

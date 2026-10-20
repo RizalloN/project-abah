@@ -38,6 +38,25 @@ SSA_SIMPANAN_COLUMNS = [
 ]
 
 REQUIRED_HEADERS = set(SSA_SIMPANAN_COLUMNS)
+BASE_COLUMNS = SSA_SIMPANAN_COLUMNS
+
+# Columns added to the target table through an accepted schema drift decision.
+# They are carried through untouched (after the fixed layout) so LOAD DATA keeps
+# its positional contract for the original columns.
+EXTRA_COLUMNS: list[str] = []
+
+
+def configure_extra_columns(config: dict) -> None:
+    EXTRA_COLUMNS.clear()
+    for name in config.get("extra_columns") or []:
+        name = str(name).strip().lower()
+        if re.fullmatch(r"[a-z][a-z0-9_]{0,63}", name) and name not in BASE_COLUMNS and name not in EXTRA_COLUMNS:
+            EXTRA_COLUMNS.append(name)
+
+
+def output_columns(available) -> list[str]:
+    available = set(available)
+    return list(BASE_COLUMNS) + [column for column in EXTRA_COLUMNS if column in available]
 
 INDONESIAN_MONTHS = {
     "januari": "january",
@@ -647,7 +666,7 @@ def stage_ssa_simpanan(config: dict) -> None:
 
         # LOAD DATA relies on positional columns. Keep the target order stable
         # even when a source workbook reorders its columns or adds metadata.
-        df = df.select(SSA_SIMPANAN_COLUMNS)
+        df = df.select(output_columns(df.columns))
 
         df = df.with_columns([
             pl.col(column).cast(pl.Utf8).str.strip_chars().alias(column)
@@ -715,6 +734,7 @@ def main() -> int:
 
     try:
         config = load_config(args.config)
+        configure_extra_columns(config)
         # Allow CLI mode to override/configure behavior
         if "mode" not in config:
             config["_cli_mode"] = args.mode

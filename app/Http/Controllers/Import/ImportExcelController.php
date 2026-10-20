@@ -20,6 +20,8 @@ use App\Services\Import\ImportDuplicateGuardService;
 use App\Services\Import\DlyKapResegmentasiCsvImporter;
 use App\Services\Import\L1133CsvImporter;
 use App\Services\Import\MySqlBulkLoadService;
+use App\Services\Import\SchemaDrift\ColumnFormatMemory;
+use App\Services\Import\SchemaDrift\SchemaDriftRegistry;
 use App\Services\Import\SchemaIntrospectionService;
 use App\Services\Import\SmartContentHeaderGuardService;
 use App\Services\Import\Strategies\Lw321PnImportStrategy;
@@ -519,6 +521,14 @@ class ImportExcelController extends Controller
 
     private function detectHeaderIndex(array $rows, ?string $tableName = null): ?int
     {
+        if (strtolower(trim((string) $tableName)) === 'lw325_ph' && count($rows) === 1) {
+            $labels = array_map(static fn ($value): string => strtoupper(trim((string) $value)), (array) reset($rows));
+            // Streaming preview sees one row at a time; report metadata is not a header.
+            if (in_array('TEXTBOX1', $labels, true) || in_array('LAPORAN NOMINATIF PH', $labels, true)) {
+                return null;
+            }
+        }
+
         if (strtolower(trim((string) $tableName)) === 'rka') {
             return $this->detectRkaHeaderIndex($rows);
         }
@@ -3951,6 +3961,14 @@ class ImportExcelController extends Controller
         $sourceBackend = strtolower(trim((string) ($importOptions['source_backend'] ?? '')));
         $sourcePreNormalized = (bool) ($importOptions['source_pre_normalized'] ?? false);
         $fastSourcePreNormalized = $sourcePreNormalized && $sourceBackend === 'polars';
+        try {
+            $learnedDateOrders = app(ColumnFormatMemory::class)->dateOrders($normalizedTableName);
+            $evolvedColumnsLookup = array_fill_keys(app(SchemaDriftRegistry::class)->evolvedColumns($normalizedTableName), true);
+        } catch (\Throwable) {
+            // Format memory is an enhancement; an import must never fail because of it.
+            $learnedDateOrders = [];
+            $evolvedColumnsLookup = [];
+        }
 
         $filterLookups = [];
         foreach ($activeFilters as $filterIdx => $values) {
@@ -3983,16 +4001,40 @@ class ImportExcelController extends Controller
             ));
             $decimalScale = null;
             $hasTextualTarget = false;
+            $hasDateTarget = false;
+            $hasEvolvedTarget = false;
+            $evolvedNumericKind = null;
+            $dateOrder = null;
             foreach ($mappedDbCandidates as $candidateColumn) {
-                $candidateMeta = $tableColumnMetaByLower[strtolower((string) $candidateColumn)] ?? null;
+                $candidateLower = strtolower((string) $candidateColumn);
+                $candidateMeta = $tableColumnMetaByLower[$candidateLower] ?? null;
                 if (is_array($candidateMeta) && !empty($candidateMeta['is_textual'])) {
                     $hasTextualTarget = true;
                 }
+                $candidateBaseType = is_array($candidateMeta) ? strtolower((string) ($candidateMeta['base_type'] ?? '')) : '';
+                if (in_array($candidateBaseType, ['date', 'datetime', 'timestamp'], true)) {
+                    $hasDateTarget = true;
+                }
+                if (isset($evolvedColumnsLookup[$candidateLower])) {
+                    $hasEvolvedTarget = true;
+                }
+                if (isset($evolvedColumnsLookup[$candidateLower]) && is_array($candidateMeta)) {
+                    $evolvedNumericKind ??= !empty($candidateMeta['is_decimal'])
+                        ? 'decimal'
+                        : (in_array($candidateBaseType, ['tinyint', 'smallint', 'mediumint', 'int', 'integer', 'bigint'], true) ? 'integer' : null);
+                }
+                $dateOrder ??= $learnedDateOrders[$candidateLower] ?? null;
                 $candidateScale = is_array($candidateMeta) ? ($candidateMeta['scale'] ?? null) : null;
                 if (is_int($candidateScale) && $candidateScale >= 0) {
                     $decimalScale = $candidateScale;
                 }
             }
+
+            // The database column type is the source of truth when the static
+            // header lists do not know a column (for example a column that was
+            // just added by an accepted schema drift decision).
+            $isDateRule = isset($dateColumnsLookup[$normalizedHeader])
+                || ($hasDateTarget && !isset($decimalColumnsLookup[$normalizedHeader]) && !isset($integerColumnsLookup[$normalizedHeader]));
 
             $filterLookup = $filterLookups[$filterIdx] ?? null;
 
@@ -4007,14 +4049,17 @@ class ImportExcelController extends Controller
             $headerRules[$originalIndex] = [
                 'header_name' => $headerName,
                 'db_column' => $dbColumn,
-                'is_date' => isset($dateColumnsLookup[$normalizedHeader]),
-                'is_decimal' => isset($decimalColumnsLookup[$normalizedHeader]),
-                'is_integer' => isset($integerColumnsLookup[$normalizedHeader]),
+                'is_date' => $isDateRule,
+                'is_decimal' => isset($decimalColumnsLookup[$normalizedHeader]) || (!$isDateRule && $evolvedNumericKind === 'decimal'),
+                'is_integer' => isset($integerColumnsLookup[$normalizedHeader]) || (!$isDateRule && $evolvedNumericKind === 'integer'),
+                'date_order' => $isDateRule ? $dateOrder : null,
                 'decimal_scale' => $decimalScale,
                 'month_name_first_date' => $this->isSsaAlmafactsTable($tableName) && $normalizedHeader === 'MONTH_DAY_YEAR_OF_POSISI',
                 'filter_lookup' => $filterLookup,
                 'db_candidates' => $mappedDbCandidates,
-                'source_pre_normalized' => $fastSourcePreNormalized,
+                // Polars only normalizes the fixed report layout; evolved columns
+                // arrive as source text and must go through the full parsers.
+                'source_pre_normalized' => $fastSourcePreNormalized && !$hasEvolvedTarget,
                 'allow_locale_date_text' => $this->allowsLocaleDateTextForImport($tableName),
                 'preserve_source_text' => in_array($normalizedTableName, ['simpanan_multipn', 'lw321pn'], true)
                     && $hasTextualTarget
@@ -5868,6 +5913,26 @@ class ImportExcelController extends Controller
         }
     }
 
+    /**
+     * Columns added to a fixed-layout report table by an accepted schema drift
+     * decision; the Polars processors carry them after the original layout.
+     *
+     * @return array<int, string>
+     */
+    private function schemaDriftExtraColumns(string $tableName): array
+    {
+        try {
+            $existing = array_fill_keys(array_map('strtolower', $this->cachedSchemaColumnListing($tableName)), true);
+
+            return array_values(array_filter(
+                app(SchemaDriftRegistry::class)->evolvedColumns($tableName),
+                static fn (string $column): bool => isset($existing[$column])
+            ));
+        } catch (\Throwable) {
+            return [];
+        }
+    }
+
     private function stageSsaSimpananCsvWithPolars(?callable $send, string $csvPath, ?string $delimiter = null): ?array
     {
         $pythonExe = $this->findPython();
@@ -5892,6 +5957,7 @@ class ImportExcelController extends Controller
             'file_path' => $csvPath,
             'delimiter' => $delimiter,
             'output_csv_path' => $outputCsvPath,
+            'extra_columns' => $this->schemaDriftExtraColumns('ssa_simpanan'),
         ], JSON_UNESCAPED_UNICODE));
 
         $cmd = escapeshellarg($pythonExe)
@@ -6027,7 +6093,7 @@ class ImportExcelController extends Controller
             'duplicate_count' => (int) ($donePayload['duplicate_count'] ?? 0),
             'written_rows' => (int) ($donePayload['written_rows'] ?? 0),
             'total_rows' => (int) ($donePayload['total_rows'] ?? 0),
-            'headers' => [
+            'headers' => $this->readStagedCsvHeaders($outputCsvPath, $delimiter, [
                 'month_day_year_of_posisi',
                 'nama_cabang',
                 'nama_uker',
@@ -6035,9 +6101,42 @@ class ImportExcelController extends Controller
                 'segmentasi',
                 'segmen_kategorisasi_bisnis',
                 'saldo',
-            ],
+            ]),
             'periods' => array_values((array) ($donePayload['periods'] ?? $donePayload['dates'] ?? [])),
         ];
+    }
+
+    /**
+     * Header line written by a Polars stage. Columns carried after the fixed
+     * layout (accepted schema drift) are kept; anything unexpected falls back
+     * to the fixed layout so LOAD DATA stays positionally correct.
+     *
+     * @param array<int, string> $baseHeaders
+     * @return array<int, string>
+     */
+    private function readStagedCsvHeaders(string $csvPath, string $delimiter, array $baseHeaders): array
+    {
+        try {
+            $handle = @fopen($csvPath, 'rb');
+            if ($handle === false) {
+                return $baseHeaders;
+            }
+
+            try {
+                $line = fgetcsv($handle, 0, $delimiter !== '' ? $delimiter : ',', '"', '');
+            } finally {
+                fclose($handle);
+            }
+
+            $headers = array_values(array_map(static fn ($value): string => strtolower(trim((string) $value)), (array) ($line ?: [])));
+            if (array_slice($headers, 0, count($baseHeaders)) !== array_map('strtolower', $baseHeaders)) {
+                return $baseHeaders;
+            }
+
+            return $headers;
+        } catch (\Throwable) {
+            return $baseHeaders;
+        }
     }
 
     protected function createNormalizedSsaSimpananDirectLoadCsv(string $csvPath, ?string $delimiter = null, ?callable $send = null): array
@@ -6107,6 +6206,7 @@ class ImportExcelController extends Controller
             'output_csv_path' => $outputCsvPath,
             'trusted_staged_csv' => str_starts_with($normalizedCsvPath, $normalizedStageDir . '/')
                 || $normalizedCsvPath === $normalizedStageDir,
+            'extra_columns' => $this->schemaDriftExtraColumns('ssa_pinjaman'),
         ], JSON_UNESCAPED_UNICODE));
 
         $cmd = escapeshellarg($pythonExe)
@@ -7206,18 +7306,18 @@ class ImportExcelController extends Controller
         return "CASE WHEN {$clean} IS NULL THEN NULL ELSE CAST({$clean} AS SIGNED) END";
     }
 
-    private function buildDirectLoadDateExpression(string $columnExpression): string
+    private function buildDirectLoadDateExpression(string $columnExpression, ?string $dateOrder = null): string
     {
         $textExpression = $this->buildDirectLoadTextExpression($columnExpression);
 
-        return StrictDateParser::buildMySqlCaseExpression($textExpression);
+        return StrictDateParser::buildMySqlCaseExpression($textExpression, $dateOrder);
     }
 
-    private function buildDirectLoadLocaleDateExpression(string $columnExpression): string
+    private function buildDirectLoadLocaleDateExpression(string $columnExpression, ?string $dateOrder = null): string
     {
         $textExpression = $this->buildDirectLoadTextExpression($columnExpression);
 
-        return StrictDateParser::buildMySqlCaseExpression($this->buildLocaleDateTextExpression($textExpression));
+        return StrictDateParser::buildMySqlCaseExpression($this->buildLocaleDateTextExpression($textExpression), $dateOrder);
     }
 
     private function buildDirectLoadMonthNameFirstDateExpression(string $columnExpression): string
@@ -7302,8 +7402,8 @@ class ImportExcelController extends Controller
             return $sourcePreNormalized
                 ? $this->buildFastDirectLoadDateExpression($columnExpression)
                 : (!empty($rule['allow_locale_date_text'])
-                    ? $this->buildDirectLoadLocaleDateExpression($columnExpression)
-                    : $this->buildDirectLoadDateExpression($columnExpression));
+                    ? $this->buildDirectLoadLocaleDateExpression($columnExpression, $rule['date_order'] ?? null)
+                    : $this->buildDirectLoadDateExpression($columnExpression, $rule['date_order'] ?? null));
         }
 
         if (!empty($rule['is_decimal'])) {
@@ -11571,7 +11671,8 @@ class ImportExcelController extends Controller
         if (!empty($rule['is_date'])) {
             return $this->normalizeImportDateValue(
                 $value,
-                !empty($rule['allow_locale_date_text'])
+                !empty($rule['allow_locale_date_text']),
+                $rule['date_order'] ?? null
             );
         }
         
@@ -11597,7 +11698,7 @@ class ImportExcelController extends Controller
         return $this->normalizeExcelValue($headerName, $value);
     }
 
-    private function normalizeImportDateValue($value, bool $allowLocaleDateText): ?string
+    private function normalizeImportDateValue($value, bool $allowLocaleDateText, ?string $dateOrder = null): ?string
     {
         $value = ($value === null) ? '' : trim($this->normalizeQuotedCsvCellValue($value));
         if ($value === '') {
@@ -11605,7 +11706,7 @@ class ImportExcelController extends Controller
         }
 
         try {
-            return StrictDateParser::normalize($value, [], $allowLocaleDateText);
+            return StrictDateParser::normalizeWithOrder($value, $dateOrder, [], $allowLocaleDateText);
         } catch (\Throwable) {
             return null;
         }

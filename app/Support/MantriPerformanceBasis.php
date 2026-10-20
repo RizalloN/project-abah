@@ -2,7 +2,9 @@
 
 namespace App\Support;
 
+use App\Console\Commands\SyncMantriSpreadsheetCommand;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -29,7 +31,7 @@ final class MantriPerformanceBasis
     public function rosterState(?string $period = null): array
     {
         $reference = $period === null ? null : app(MantriProductivityReference::class)->dataForPeriod($period);
-        if ($reference !== null) {
+        if ($reference !== null && ! $this->hasAuthoritativeRoster()) {
             $people = [];
             foreach ($reference['people'] as $person) {
                 $person['roster_source'] = 'workbook_reference';
@@ -76,7 +78,7 @@ final class MantriPerformanceBasis
                 'bc' => trim((string) ($row->bc ?? '')),
                 'category' => match (true) {
                     $position === 'MANTRI BRIGUNA' => 'briguna',
-                    str_contains($status, 'KONTRAK') => 'contract',
+                    str_contains($status, 'KONTRAK') || str_contains($status, 'PROBATION') => 'contract',
                     str_contains($status, 'PT') => 'pt',
                     default => 'unknown',
                 },
@@ -84,6 +86,21 @@ final class MantriPerformanceBasis
         }
 
         return ['available' => $rows->isNotEmpty(), 'keys' => array_map('strval', array_keys($people)), 'people' => $people];
+    }
+
+    private function hasAuthoritativeRoster(): bool
+    {
+        if (Cache::has(SyncMantriSpreadsheetCommand::CACHE_KEY)) {
+            return true;
+        }
+
+        return Schema::hasTable('brihc_pemasar')
+            && Schema::hasColumn('brihc_pemasar', 'uniqueid_namareport')
+            && DB::table('brihc_pemasar')
+                ->where('uniqueid_namareport', 'like', 'reference_brihc_hc_%')
+                ->whereIn(DB::raw('UPPER(TRIM(positiondesc))'), ['MANTRI', 'MANTRI BRIGUNA', 'MANTRI RECOVERY'])
+                ->whereIn(DB::raw('UPPER(TRIM(psadesc))'), self::BRANCHES)
+                ->exists();
     }
 
     public function pnKey(mixed $value): string

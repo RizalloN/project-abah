@@ -58,6 +58,7 @@ class DashboardSimpananController extends Controller
     private const MARKET_SHARE_LINK_GROUP = 'market_share';
     private const MARKET_SHARE_MAPPING_LINK_KEY = 'mapping';
     private const LANDING_SOURCE_CACHE_VERSION = 'harian_snapshot_v28_casa_portfolio_card';
+    private const LANDING_MTM_BASIS = 'same_day_previous_month_rupiah_v1';
     private const CACHE_LOCK_SECONDS = 20;
     private const SNAPSHOT_SUMMARY_TABLE = 'dashboard_simpanan_snapshots';
     private const SNAPSHOT_BRANCH_TABLE = 'dashboard_simpanan_branch_snapshots';
@@ -541,7 +542,7 @@ class DashboardSimpananController extends Controller
         return [
             'period' => $period,
             'period_label' => $this->formatSourcePeriodLabel($period),
-            'meta' => ['refresh_pending' => $rows->isEmpty()],
+            'meta' => ['refresh_pending' => $rows->isEmpty(), 'landing_mtm_basis' => self::LANDING_MTM_BASIS],
             'area6_portfolio' => $area6Portfolio,
             'composition' => $analyticsByScope['area6']['composition'] ?? [],
             'trend' => $analyticsByScope['area6']['trend'] ?? [],
@@ -559,6 +560,9 @@ class DashboardSimpananController extends Controller
                     'pct' => number_format($totPct, 2, ',', '.') . '%',
                     'gap' => $this->formatArea6CardGap($totGap),
                     'trend_mtm' => $this->formatArea6CardDelta((float) data_get($totRow, 'deltas.mtm', 0), 'os')['value'] ?? '-',
+                    'trend_mtm_nominal' => $this->formatSignedCurrencyCompact((float) data_get($totRow, 'deltas.mtm', 0)),
+                    'trend_mtm_raw' => (float) data_get($totRow, 'deltas.mtm', 0),
+                    'trend_mtm_period' => data_get($periodPayload, 'comparison_periods.mtm.period'),
                     'trend_ytd' => $this->formatArea6CardDelta((float) data_get($totRow, 'deltas.ytd', 0), 'os')['value'] ?? '-',
                     'trend_mtm_delta' => $this->formatArea6CardDelta((float) data_get($totRow, 'deltas.mtm', 0), 'os'),
                     'trend_ytd_delta' => $this->formatArea6CardDelta((float) data_get($totRow, 'deltas.ytd', 0), 'os'),
@@ -632,7 +636,7 @@ class DashboardSimpananController extends Controller
                 'dtd' => $this->formatArea6CardDelta($dtd, 'os'),
                 'mtd' => $this->formatArea6CardDelta($mtd, 'os'),
                 'ytd' => $this->formatArea6CardDelta($ytd, 'os'),
-                'mom' => $this->formatArea6CardDelta($mtm, 'os'),
+                'mom' => $this->formatArea6CardDelta($mtm, 'os') + ['nominal_value' => $this->formatSignedCurrencyCompact($mtm)],
             ],
             'tone' => $tone,
             'icon' => $icon,
@@ -9413,6 +9417,14 @@ class DashboardSimpananController extends Controller
     private function readLandingPayloadCache(string $key, bool $durable = false): ?array
     {
         $payload = Cache::get($key);
+        if (is_array($payload)
+            && !empty($payload['period'])
+            && (isset($payload['live_reports']) || isset($payload['kpi_summary']))
+            && data_get($payload, 'meta.landing_mtm_basis') !== self::LANDING_MTM_BASIS) {
+            Cache::forget($key);
+
+            return null;
+        }
         if (is_array($payload) && !$this->landingLoanSnapshotMatches($payload)) {
             Cache::forget($key);
 
@@ -9662,6 +9674,11 @@ class DashboardSimpananController extends Controller
             return $this->emptyDashboard();
         }
 
+        // MtM uses the same calendar date in the previous month, as Dashboard Harian does.
+        // Keep the existing period resolvers for their other report consumers.
+        $previousPeriod = $this->resolveLandingCardMtmPeriod($currentPeriod);
+        $loanPreviousPeriod = $loanCurrentPeriod ? $this->resolveLandingCardMtmPeriod($loanCurrentPeriod) : null;
+
         $currentSummary = $this->buildPeriodSummary($currentPeriod, $forceFresh);
         $previousSummary = $previousPeriod ? $this->buildPeriodSummary($previousPeriod, $forceFresh) : $this->emptySummary();
         $yoySummary = $yoyPeriod ? $this->buildPeriodSummary($yoyPeriod, $forceFresh) : $this->emptySummary();
@@ -9679,6 +9696,8 @@ class DashboardSimpananController extends Controller
         $loanTopBranchDisplay = data_get($loanTopBranches->first(), 'display', '-');
         $savingsMoM = $this->percentChange($currentSummary['total_balance'], $previousSummary['total_balance']);
         $loanMoM = $this->percentChange($loanCurrentSummary['total_balance'], $loanPreviousSummary['total_balance']);
+        $savingsNominalMoM = (float) ($currentSummary['total_balance'] ?? 0) - (float) ($previousSummary['total_balance'] ?? 0);
+        $loanNominalMoM = (float) ($loanCurrentSummary['total_balance'] ?? 0) - (float) ($loanPreviousSummary['total_balance'] ?? 0);
         $coverageNow = $this->formatRatio($loanCurrentSummary['total_balance'], $currentSummary['total_balance']);
         $coveragePrev = $this->formatRatio($loanPreviousSummary['total_balance'], $previousSummary['total_balance']);
         $coverageChange = $this->percentChange(
@@ -9735,6 +9754,7 @@ class DashboardSimpananController extends Controller
             'period' => $currentPeriod,
             'previous_period' => $previousPeriod,
             'yoy_period' => $yoyPeriod,
+            'meta' => ['landing_mtm_basis' => self::LANDING_MTM_BASIS],
             'hero' => [
                 'title' => 'A-SIX',
                 'kicker' => 'DASHBOARD ' . strtoupper($scopeLabel),
@@ -9783,7 +9803,10 @@ class DashboardSimpananController extends Controller
                     'eyebrow' => 'Snapshot aktif',
                     'value' => $this->formatCurrencyCompact($currentSummary['total_balance']),
                     'trend' => $this->formatSignedPercent($savingsMoM),
-                    'trend_class' => $this->deltaClass($savingsMoM),
+                    'trend_nominal' => $this->formatSignedCurrencyCompact($savingsNominalMoM),
+                    'trend_raw' => $savingsNominalMoM,
+                    'trend_period' => $previousPeriod,
+                    'trend_class' => $this->deltaClass($savingsNominalMoM),
                     'meta' => $currentSummary['account_count'] . ' rekening | ' . $currentSummary['cif_count'] . ' CIF',
                     'detail' => 'Top cabang ' . $topBranchLabel . ' ' . $topBranchDisplay,
                     'updated' => $this->formatPeriodLabel($currentPeriod),
@@ -9802,7 +9825,10 @@ class DashboardSimpananController extends Controller
                     'eyebrow' => 'Outstanding aktif',
                     'value' => $this->formatCurrencyCompact($loanCurrentSummary['total_balance']),
                     'trend' => $this->formatSignedPercent($loanMoM),
-                    'trend_class' => $this->deltaClass($loanMoM),
+                    'trend_nominal' => $this->formatSignedCurrencyCompact($loanNominalMoM),
+                    'trend_raw' => $loanNominalMoM,
+                    'trend_period' => $loanPreviousPeriod,
+                    'trend_class' => $this->deltaClass($loanNominalMoM),
                     'meta' => $loanCurrentSummary['account_count'] . ' rekening | ' . $loanCurrentSummary['branch_count'] . ' cabang',
                     'detail' => 'Top cabang ' . $loanTopBranchLabel . ' ' . $loanTopBranchDisplay,
                     'updated' => $loanCurrentPeriod ? $this->formatPeriodLabel($loanCurrentPeriod) : 'Belum ada data',
@@ -9860,18 +9886,22 @@ class DashboardSimpananController extends Controller
                 ],
                 [
                     'label' => 'Growth Simpanan MtM',
-                    'value' => $this->formatSignedPercent($savingsMoM),
-                    'delta' => 'vs ' . ($previousPeriod ? $this->formatPeriodLabel($previousPeriod) : 'periode sebelumnya'),
+                    'value' => $this->formatSignedCurrencyCompact($savingsNominalMoM),
+                    'delta' => $this->formatSignedPercent($savingsMoM) . ' vs ' . ($previousPeriod ? $this->formatPeriodLabel($previousPeriod) : 'periode sebelumnya'),
                     'delta_class' => $this->deltaClass($savingsMoM),
+                    'percent_value' => $this->formatSignedPercent($savingsMoM),
+                    'nominal_value' => $this->formatSignedCurrencyCompact($savingsNominalMoM),
                     'icon' => 'fas fa-wallet',
                     'icon_class' => 'text-warning',
                     'icon_bg' => 'rgba(255, 193, 7, 0.16)',
                 ],
                 [
                     'label' => 'Growth Pinjaman MtM',
-                    'value' => $this->formatSignedPercent($loanMoM),
-                    'delta' => 'vs ' . ($loanPreviousPeriod ? $this->formatPeriodLabel($loanPreviousPeriod) : 'periode sebelumnya'),
+                    'value' => $this->formatSignedCurrencyCompact($loanNominalMoM),
+                    'delta' => $this->formatSignedPercent($loanMoM) . ' vs ' . ($loanPreviousPeriod ? $this->formatPeriodLabel($loanPreviousPeriod) : 'periode sebelumnya'),
                     'delta_class' => $this->deltaClass($loanMoM),
+                    'percent_value' => $this->formatSignedPercent($loanMoM),
+                    'nominal_value' => $this->formatSignedCurrencyCompact($loanNominalMoM),
                     'icon' => 'fas fa-database',
                     'icon_class' => 'text-success',
                     'icon_bg' => 'rgba(40, 167, 69, 0.14)',
@@ -12937,8 +12967,8 @@ class DashboardSimpananController extends Controller
             'metrics' => [
                 ['label' => 'Total Simpanan', 'value' => 'Rp0', 'delta' => '0 rekening aktif', 'delta_class' => 'text-muted', 'icon' => 'fas fa-building', 'icon_class' => 'text-primary', 'icon_bg' => 'rgba(13, 110, 253, 0.12)'],
                 ['label' => 'Total Pinjaman', 'value' => 'Rp0', 'delta' => '0 rekening aktif', 'delta_class' => 'text-muted', 'icon' => 'fas fa-chart-line', 'icon_class' => 'text-info', 'icon_bg' => 'rgba(23, 162, 184, 0.13)'],
-                ['label' => 'Growth Simpanan MtM', 'value' => '0,0%', 'delta' => 'vs periode sebelumnya', 'delta_class' => 'text-muted', 'icon' => 'fas fa-wallet', 'icon_class' => 'text-warning', 'icon_bg' => 'rgba(255, 193, 7, 0.16)'],
-                ['label' => 'Growth Pinjaman MtM', 'value' => '0,0%', 'delta' => 'vs periode sebelumnya', 'delta_class' => 'text-muted', 'icon' => 'fas fa-database', 'icon_class' => 'text-success', 'icon_bg' => 'rgba(40, 167, 69, 0.14)'],
+                ['label' => 'Growth Simpanan MtM', 'value' => 'Rp0', 'delta' => '0,0% vs periode sebelumnya', 'delta_class' => 'text-muted', 'percent_value' => '0,0%', 'nominal_value' => 'Rp0', 'icon' => 'fas fa-wallet', 'icon_class' => 'text-warning', 'icon_bg' => 'rgba(255, 193, 7, 0.16)'],
+                ['label' => 'Growth Pinjaman MtM', 'value' => 'Rp0', 'delta' => '0,0% vs periode sebelumnya', 'delta_class' => 'text-muted', 'percent_value' => '0,0%', 'nominal_value' => 'Rp0', 'icon' => 'fas fa-database', 'icon_class' => 'text-success', 'icon_bg' => 'rgba(40, 167, 69, 0.14)'],
             ],
             'performance' => [
                 'title' => 'Performa Simpanan',
@@ -12973,9 +13003,9 @@ class DashboardSimpananController extends Controller
             'area6_portfolio' => $this->emptyArea6PortfolioLanding(),
             'landing_summary' => $this->emptyLandingExecutiveSummary(),
             'live_reports' => [
-                ['key' => 'simpanan', 'title' => 'Simpanan Realtime', 'eyebrow' => 'Snapshot aktif', 'value' => 'Rp0', 'trend' => '0,0%', 'trend_class' => 'text-muted', 'meta' => '0 rekening | 0 CIF', 'detail' => 'Top cabang belum tersedia', 'updated' => 'Belum ada data', 'badge' => 'Simpanan', 'badge_class' => 'badge-primary', 'icon' => 'fas fa-piggy-bank', 'icon_bg' => 'rgba(13, 110, 253, 0.12)', 'tone' => 'primary', 'link' => route('dashboard'), 'link_label' => 'Buka report simpanan', 'detail_payload' => $this->buildLandingSourceDetail('Simpanan Realtime', null, 'simpanan_multipn', [['label' => 'Status', 'value' => 'Belum ada data', 'source' => 'simpanan_multipn']], 'Tabel sumber belum memiliki posisi yang bisa ditampilkan.')],
-                ['key' => 'pinjaman', 'title' => 'Pinjaman Realtime', 'eyebrow' => 'Outstanding aktif', 'value' => 'Rp0', 'trend' => '0,0%', 'trend_class' => 'text-muted', 'meta' => '0 rekening | 0 cabang', 'detail' => 'Top cabang belum tersedia', 'updated' => 'Belum ada data', 'badge' => 'Pinjaman', 'badge_class' => 'badge-info', 'icon' => 'fas fa-hand-holding-usd', 'icon_bg' => 'rgba(23, 162, 184, 0.12)', 'tone' => 'info', 'link' => route('report.dashboard-pinjaman'), 'link_label' => 'Buka report pinjaman', 'detail_payload' => $this->buildLandingSourceDetail('Pinjaman Realtime', null, 'daily_loan_dinamis', [['label' => 'Status', 'value' => 'Belum ada data', 'source' => 'daily_loan_dinamis']], 'Tabel sumber belum memiliki periode yang bisa ditampilkan.')],
-                ['key' => 'portfolio', 'title' => 'LDR (Loan to Deposit Ratio)', 'eyebrow' => 'Cross report', 'value' => '0,00x', 'trend' => '0,0%', 'trend_class' => 'text-muted', 'meta' => 'Gap pinjaman vs simpanan Rp0', 'detail' => 'LDR periode saat ini 0,00x vs 0,00x', 'updated' => 'Belum ada data', 'badge' => 'LDR', 'badge_class' => 'badge-success', 'icon' => 'fas fa-layer-group', 'icon_bg' => 'rgba(40, 167, 69, 0.12)', 'tone' => 'success', 'link' => route('dashboard.harian'), 'link_label' => 'Lihat portfolio harian', 'detail_payload' => $this->buildLandingSourceDetail('LDR (Loan to Deposit Ratio)', null, 'daily_loan_dinamis + simpanan_multipn', [['label' => 'Status', 'value' => 'Belum ada data', 'source' => 'Sumber pinjaman dan simpanan']], 'LDR kosong karena salah satu sumber belum tersedia.')],
+                ['key' => 'simpanan', 'title' => 'Simpanan Realtime', 'eyebrow' => 'Snapshot aktif', 'value' => 'Rp0', 'trend' => '0,0%', 'trend_nominal' => 'Rp0', 'trend_class' => 'text-muted', 'meta' => '0 rekening | 0 CIF', 'detail' => 'Top cabang belum tersedia', 'updated' => 'Belum ada data', 'badge' => 'Simpanan', 'badge_class' => 'badge-primary', 'icon' => 'fas fa-piggy-bank', 'icon_bg' => 'rgba(13, 110, 253, 0.12)', 'tone' => 'primary', 'link' => route('dashboard'), 'link_label' => 'Buka report simpanan', 'detail_payload' => $this->buildLandingSourceDetail('Simpanan Realtime', null, 'simpanan_multipn', [['label' => 'Status', 'value' => 'Belum ada data', 'source' => 'simpanan_multipn']], 'Tabel sumber belum memiliki posisi yang bisa ditampilkan.')],
+                ['key' => 'pinjaman', 'title' => 'Pinjaman Realtime', 'eyebrow' => 'Outstanding aktif', 'value' => 'Rp0', 'trend' => '0,0%', 'trend_nominal' => 'Rp0', 'trend_class' => 'text-muted', 'meta' => '0 rekening | 0 cabang', 'detail' => 'Top cabang belum tersedia', 'updated' => 'Belum ada data', 'badge' => 'Pinjaman', 'badge_class' => 'badge-info', 'icon' => 'fas fa-hand-holding-usd', 'icon_bg' => 'rgba(23, 162, 184, 0.12)', 'tone' => 'info', 'link' => route('report.dashboard-pinjaman'), 'link_label' => 'Buka report pinjaman', 'detail_payload' => $this->buildLandingSourceDetail('Pinjaman Realtime', null, 'daily_loan_dinamis', [['label' => 'Status', 'value' => 'Belum ada data', 'source' => 'daily_loan_dinamis']], 'Tabel sumber belum memiliki periode yang bisa ditampilkan.')],
+                ['key' => 'portfolio', 'title' => 'LDR (Loan to Deposit Ratio)', 'eyebrow' => 'Cross report', 'value' => '0,00x', 'trend' => '0,0%', 'trend_nominal' => '0,00x', 'trend_class' => 'text-muted', 'meta' => 'Gap pinjaman vs simpanan Rp0', 'detail' => 'LDR periode saat ini 0,00x vs 0,00x', 'updated' => 'Belum ada data', 'badge' => 'LDR', 'badge_class' => 'badge-success', 'icon' => 'fas fa-layer-group', 'icon_bg' => 'rgba(40, 167, 69, 0.12)', 'tone' => 'success', 'link' => route('dashboard.harian'), 'link_label' => 'Lihat portfolio harian', 'detail_payload' => $this->buildLandingSourceDetail('LDR (Loan to Deposit Ratio)', null, 'daily_loan_dinamis + simpanan_multipn', [['label' => 'Status', 'value' => 'Belum ada data', 'source' => 'Sumber pinjaman dan simpanan']], 'LDR kosong karena salah satu sumber belum tersedia.')],
             ],
         ];
     }
@@ -13011,6 +13041,13 @@ class DashboardSimpananController extends Controller
             'branch_source_table' => 'daily_loan_dinamis',
             'source_note' => 'Belum ada data pinjaman untuk periode ini.',
         ];
+    }
+
+    private function resolveLandingCardMtmPeriod(string $period): ?string
+    {
+        return app(DashboardHarianSnapshotService::class)->resolveEffectivePeriod(
+            Carbon::parse($period)->subMonthNoOverflow()->toDateString()
+        );
     }
 
     private function resolveLoanDashboardPeriods(?string $selectedPeriod = null): array
@@ -14918,6 +14955,30 @@ class DashboardSimpananController extends Controller
         }
 
         return 'Rp' . number_format($value, 0, ',', '.');
+    }
+
+    private function formatSignedCurrencyCompact(float $value): string
+    {
+        $prefix = $value > 0 ? '+' : ($value < 0 ? '-' : '');
+        $abs = abs($value);
+
+        if ($abs >= 1000000000000) {
+            return $prefix . 'Rp' . number_format($abs / 1000000000000, 2, ',', '.') . ' T';
+        }
+
+        if ($abs >= 1000000000) {
+            return $prefix . 'Rp' . number_format($abs / 1000000000, 2, ',', '.') . ' M';
+        }
+
+        if ($abs >= 1000000) {
+            return $prefix . 'Rp' . number_format($abs / 1000000, 2, ',', '.') . ' Jt';
+        }
+
+        if ($abs > 0) {
+            return $prefix . 'Rp' . number_format($abs, 0, ',', '.');
+        }
+
+        return 'Rp0';
     }
 
     private function formatCurrencyFull(float $value): string

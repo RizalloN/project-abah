@@ -2,7 +2,9 @@
 
 namespace App\Services\Reports;
 
+use App\Console\Commands\SyncMantriSpreadsheetCommand;
 use App\Support\ReportCacheVersion;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -443,11 +445,15 @@ class KpiPersonnelReferenceSyncService
 
     private function hasAuthoritativePersonnelReference(string $sheetKey): bool
     {
+        if ($sheetKey === 'mantri' && Cache::has(SyncMantriSpreadsheetCommand::CACHE_KEY)) {
+            return true;
+        }
+
         $roles = match ($sheetKey) {
             'rm-sme' => ['RM BISNIS KECIL'],
             'rm-mikro' => ['RM MIKRO'],
             'consumer' => ['RM BISNIS KONSUMER - BRIGUNA', 'RM BISNIS KONSUMER - KPR'],
-            'mantri' => ['MANTRI', 'MANTRI BRIGUNA'],
+            'mantri' => ['MANTRI', 'MANTRI BRIGUNA', 'MANTRI RECOVERY'],
             default => [],
         };
         if ($roles === []) {

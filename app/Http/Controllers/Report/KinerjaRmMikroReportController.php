@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Report;
 
 use App\Http\Controllers\Controller;
 use App\Jobs\SyncImportedReportJob;
+use App\Support\MantriSourceInputStore;
 use App\Support\MicroNettDisbursementCalculator;
 use App\Support\ReportCacheVersion;
 use App\Support\UserBranchScope;
@@ -206,14 +207,15 @@ class KinerjaRmMikroReportController extends Controller
     private function nettWorkbookPayload(string $period, bool $mantri): array
     {
         $reference = app(\App\Support\MicroRmRosterReference::class);
-        $referenceVersion = $mantri ? app(\App\Support\MantriProductivityReference::class)->fingerprint($period) : $reference->fingerprint();
-        $cachePrefix = $mantri ? 'nett_workbook_v9-mantri-source-signed-nett' : 'nett_workbook_v5-drilldown';
+        $referenceVersion = $mantri ? app(MantriSourceInputStore::class)->fingerprint($period) : $reference->fingerprint();
+        $cachePrefix = $mantri ? 'nett_workbook_v13-mantri-per-booking-floor' : 'nett_workbook_v6-kanwil-gross';
 
         return Cache::remember($this->cacheKey($cachePrefix, $period, [$referenceVersion, $mantri ? 'mantri' : 'rm']), 600, function () use ($period, $mantri, $reference): array {
             if (! $mantri) {
                 $scope = UserBranchScope::current();
-                $roster = collect($reference->people($period, $this->landingKurRmRoster()))->filter(fn (array $person): bool => $scope === null
-                    || $this->normalizeKey($person['branch']) === $this->normalizeKey($scope['upper_label']))->values()->all();
+                $people = $reference->people($period, $this->landingKurRmRoster());
+                $roster = collect($people)->filter(fn (array $person): bool => in_array($this->normalizeKey($person['branch']), self::AREA_BRANCH_ORDER, true)
+                    && ($scope === null || $this->normalizeKey($person['branch']) === $this->normalizeKey($scope['upper_label'])))->values()->all();
                 $rows = $this->snapshotAggregates($period, ['rm'])->values()->map(function (array $row): array {
                     $identity = trim((string) ($row['rm'] ?? ''));
                     [$pn, $name] = preg_match('/^\d+$/', $identity)
@@ -223,7 +225,7 @@ class KinerjaRmMikroReportController extends Controller
                 })->all();
                 $rm = app(\App\Support\MicroRmNettWorkbook::class)->build($rows, $roster, $scope['label'] ?? 'Area 6', $period);
                 $rm['reference_sources'] = collect($reference->data()['sources'])->filter(fn (array $source): bool => $scope === null
-                    || $source['branch'] === $scope['upper_label'])->values()->all();
+                        || $source['branch'] === $scope['upper_label'])->values()->all();
 
                 return ['rows' => [], 'total' => [], 'nett_workbook' => ['rmKurProductivity' => $rm]];
             }
@@ -247,7 +249,7 @@ class KinerjaRmMikroReportController extends Controller
                 $status = $this->normalizeKey((string) ($reference->esgdesc ?? ''));
                 $person['category'] = match (true) {
                     $position === 'MANTRI BRIGUNA' => 'briguna',
-                    str_contains($status, 'KONTRAK') => 'contract',
+                    str_contains($status, 'KONTRAK') || str_contains($status, 'PROBATION') => 'contract',
                     str_contains($status, 'PT') => 'pt',
                     default => 'unknown',
                 };
@@ -673,11 +675,22 @@ class KinerjaRmMikroReportController extends Controller
 
     private function snapshotAggregates(string $period, array $group): Collection
     {
-        return Cache::remember($this->cacheKey('snapshot_nett_v2-account-dedup', $period, $group), 300, function () use ($period, $group) {
+        return Cache::remember($this->cacheKey('snapshot_v3-kanwil', $period, $group), 300, function () use ($period, $group) {
+            // Workbook figures are benchmarks. Each report position is read
+            // from its own Daily Loan snapshot, including historical months.
+            $sourceRows = $this->sourceKurMikroAggregates($period, $group);
+            if ($sourceRows->isNotEmpty()) {
+                return $this->applyKurNettRealization($sourceRows, $period, $group);
+            }
+            if (! Schema::hasTable(self::SNAPSHOT_TABLE)
+                || ! DB::table(self::SNAPSHOT_TABLE)->where('periode', $period)->exists()) {
+                return collect();
+            }
             $query = DB::table(self::SNAPSHOT_TABLE)
                 ->where('periode', $period)
                 ->where('segmen', 'MICRO')
                 ->where('produk', 'KUR-MIKRO')
+                ->whereIn(DB::raw('UPPER(TRIM(cabang))'), self::AREA_BRANCH_ORDER)
                 ->selectRaw('cabang')
                 ->selectRaw('unit')
                 ->selectRaw($this->snapshotSelectColumn('branch_code', "''").' as branch_code');
@@ -714,11 +727,7 @@ class KinerjaRmMikroReportController extends Controller
                 ->get()
                 ->mapWithKeys(fn ($row) => [$this->rowKey((array) $row, $group) => (array) $row]);
 
-            $positionRows = $snapshotRows->isNotEmpty()
-                ? $snapshotRows
-                : $this->sourceKurMikroAggregates($period, $group);
-
-            return $this->applyKurNettRealization($positionRows, $period, $group);
+            return $this->applyKurNettRealization($snapshotRows, $period, $group);
         });
     }
 
@@ -827,8 +836,7 @@ class KinerjaRmMikroReportController extends Controller
                 "{$this->normalizedSql('d.description')} = ?",
                 [$this->normalizeToken(self::KUR_RITEL_DESCRIPTION)]
             )
-            ->whereNotNull('d.pn_pengelola1')
-            ->where('d.pn_pengelola1', '<>', '');
+            ->whereIn(DB::raw('UPPER(TRIM(d.cabang1))'), self::AREA_BRANCH_ORDER);
         $this->scopeQueryToCurrentBranch($baseQuery, 'd.cabang1');
 
         foreach ($expressions as $alias => $expression) {
@@ -838,7 +846,7 @@ class KinerjaRmMikroReportController extends Controller
         $baseQuery
             ->selectRaw('d.nomor_rekening1 as rekening')
             ->selectRaw("{$kolExpr} as kolek")
-            ->selectRaw("{$loanOsExpr} as loan_os", [$this->normalizeToken(self::KUR_RITEL_DESCRIPTION)])
+            ->selectRaw("{$loanOsExpr} as loan_os")
             ->selectRaw('COALESCE(d.plafon, 0) as plafon')
             ->selectRaw('d.tgl_realisasi');
 
@@ -849,25 +857,25 @@ class KinerjaRmMikroReportController extends Controller
         }
 
         $query
-            ->selectRaw('COUNT(DISTINCT CASE WHEN x.kolek = 1 THEN x.rekening END) as lancar_deb')
+            ->selectRaw('COUNT(DISTINCT CASE WHEN x.kolek = 1 AND x.loan_os > 0 THEN x.rekening END) as lancar_deb')
             ->selectRaw('SUM(CASE WHEN x.kolek = 1 THEN x.loan_os ELSE 0 END) as lancar_os')
-            ->selectRaw('COUNT(DISTINCT CASE WHEN x.kolek = 2 THEN x.rekening END) as sml_deb')
+            ->selectRaw('COUNT(DISTINCT CASE WHEN x.kolek = 2 AND x.loan_os > 0 THEN x.rekening END) as sml_deb')
             ->selectRaw('SUM(CASE WHEN x.kolek = 2 THEN x.loan_os ELSE 0 END) as sml_os')
-            ->selectRaw('COUNT(DISTINCT CASE WHEN x.kolek > 2 THEN x.rekening END) as npl_deb')
+            ->selectRaw('COUNT(DISTINCT CASE WHEN x.kolek > 2 AND x.loan_os > 0 THEN x.rekening END) as npl_deb')
             ->selectRaw('SUM(CASE WHEN x.kolek > 2 THEN x.loan_os ELSE 0 END) as npl_os')
-            ->selectRaw('COUNT(DISTINCT x.rekening) as total_deb')
+            ->selectRaw('COUNT(DISTINCT CASE WHEN x.loan_os > 0 THEN x.rekening END) as total_deb')
             ->selectRaw('SUM(x.loan_os) as total_os')
-            ->selectRaw('COUNT(DISTINCT CASE WHEN x.tgl_realisasi BETWEEN ? AND ? THEN x.rekening END) as realisasi_deb', [$periodStart, $period])
+            ->selectRaw('COUNT(DISTINCT CASE WHEN x.tgl_realisasi BETWEEN ? AND ? AND x.plafon > 0 THEN x.rekening END) as realisasi_deb', [$periodStart, $period])
             ->selectRaw('SUM(CASE WHEN x.tgl_realisasi BETWEEN ? AND ? THEN x.plafon ELSE 0 END) as realisasi_os', [$periodStart, $period])
-            ->selectRaw('COUNT(DISTINCT CASE WHEN x.tgl_realisasi BETWEEN ? AND ? THEN x.rekening END) as w1_realisasi_deb', $weekRanges['w1'])
+            ->selectRaw('COUNT(DISTINCT CASE WHEN x.tgl_realisasi BETWEEN ? AND ? AND x.plafon > 0 THEN x.rekening END) as w1_realisasi_deb', $weekRanges['w1'])
             ->selectRaw('SUM(CASE WHEN x.tgl_realisasi BETWEEN ? AND ? THEN x.plafon ELSE 0 END) as w1_realisasi_os', $weekRanges['w1'])
-            ->selectRaw('COUNT(DISTINCT CASE WHEN x.tgl_realisasi BETWEEN ? AND ? THEN x.rekening END) as w2_realisasi_deb', $weekRanges['w2'])
+            ->selectRaw('COUNT(DISTINCT CASE WHEN x.tgl_realisasi BETWEEN ? AND ? AND x.plafon > 0 THEN x.rekening END) as w2_realisasi_deb', $weekRanges['w2'])
             ->selectRaw('SUM(CASE WHEN x.tgl_realisasi BETWEEN ? AND ? THEN x.plafon ELSE 0 END) as w2_realisasi_os', $weekRanges['w2'])
-            ->selectRaw('COUNT(DISTINCT CASE WHEN x.tgl_realisasi BETWEEN ? AND ? THEN x.rekening END) as w3_realisasi_deb', $weekRanges['w3'])
+            ->selectRaw('COUNT(DISTINCT CASE WHEN x.tgl_realisasi BETWEEN ? AND ? AND x.plafon > 0 THEN x.rekening END) as w3_realisasi_deb', $weekRanges['w3'])
             ->selectRaw('SUM(CASE WHEN x.tgl_realisasi BETWEEN ? AND ? THEN x.plafon ELSE 0 END) as w3_realisasi_os', $weekRanges['w3'])
-            ->selectRaw('COUNT(DISTINCT CASE WHEN x.tgl_realisasi BETWEEN ? AND ? THEN x.rekening END) as w4_realisasi_deb', $weekRanges['w4'])
+            ->selectRaw('COUNT(DISTINCT CASE WHEN x.tgl_realisasi BETWEEN ? AND ? AND x.plafon > 0 THEN x.rekening END) as w4_realisasi_deb', $weekRanges['w4'])
             ->selectRaw('SUM(CASE WHEN x.tgl_realisasi BETWEEN ? AND ? THEN x.plafon ELSE 0 END) as w4_realisasi_os', $weekRanges['w4'])
-            ->selectRaw('COUNT(DISTINCT CASE WHEN x.tgl_realisasi BETWEEN ? AND ? AND x.plafon < 250000000 THEN x.rekening END) as lt_250_realisasi_deb', [$periodStart, $period])
+            ->selectRaw('COUNT(DISTINCT CASE WHEN x.tgl_realisasi BETWEEN ? AND ? AND x.plafon > 0 AND x.plafon < 250000000 THEN x.rekening END) as lt_250_realisasi_deb', [$periodStart, $period])
             ->selectRaw('SUM(CASE WHEN x.tgl_realisasi BETWEEN ? AND ? AND x.plafon < 250000000 THEN x.plafon ELSE 0 END) as lt_250_realisasi_os', [$periodStart, $period])
             ->selectRaw('COUNT(DISTINCT CASE WHEN x.tgl_realisasi BETWEEN ? AND ? AND x.plafon > 250000000 THEN x.rekening END) as gt_250_realisasi_deb', [$periodStart, $period])
             ->selectRaw('SUM(CASE WHEN x.tgl_realisasi BETWEEN ? AND ? AND x.plafon > 250000000 THEN x.plafon ELSE 0 END) as gt_250_realisasi_os', [$periodStart, $period])
@@ -911,7 +919,7 @@ class KinerjaRmMikroReportController extends Controller
 
     private function sourceKurMikroLoanOsExpression(): string
     {
-        return "CASE WHEN {$this->normalizedSql('d.description')} = ? THEN COALESCE(d.plafon, 0) ELSE COALESCE(d.baki_debet1, 0) END";
+        return 'COALESCE(d.baki_debet1, 0)';
     }
 
     private function weeklyRanges(Carbon $periodDate): array
@@ -934,11 +942,19 @@ class KinerjaRmMikroReportController extends Controller
 
     private function fetchAvailablePeriods(bool $includeMantriSourcePeriods = false): Collection
     {
-        $cacheKey = 'kinerja_rm_mikro_periods_v4_daily:'.$this->reportCacheVersion().':'.($includeMantriSourcePeriods ? 'mantri' : 'rm');
+        $cacheKey = ($includeMantriSourcePeriods ? 'kinerja_rm_mikro_periods_v8-mantri-ledger:' : 'kinerja_rm_mikro_periods_v7-indexed-source:')
+            .$this->reportCacheVersion().':'.($includeMantriSourcePeriods ? 'mantri' : 'rm');
 
-        return Cache::remember($cacheKey, 600, function () use ($includeMantriSourcePeriods) {
-            $periods = $this->fetchPeriodList(self::SNAPSHOT_TABLE, 'periode', function ($query): void {
+        $cached = Cache::get($cacheKey);
+        if ($cached instanceof Collection) {
+            return $cached;
+        }
+
+        // Concurrent requests share one rebuild when a data version changes.
+        return Cache::lock($cacheKey.':build-lock', 120)->block(60, fn () => Cache::remember($cacheKey, 600, function () use ($includeMantriSourcePeriods) {
+            $periods = $includeMantriSourcePeriods ? collect() : $this->fetchPeriodList(self::SNAPSHOT_TABLE, 'periode', function ($query): void {
                 $query->where('segmen', 'MICRO')->where('produk', 'KUR-MIKRO');
+                $query->whereIn(DB::raw('UPPER(TRIM(cabang))'), self::AREA_BRANCH_ORDER);
             })
                 ->unique()
                 ->values();
@@ -948,22 +964,37 @@ class KinerjaRmMikroReportController extends Controller
                     ->merge($this->fetchPeriodList(self::SOURCE_TABLE, 'periode', function ($query): void {
                         $query
                             ->where('segmen_kinerja', 'MICRO')
-                            ->whereIn('produk_kinerja', self::MANTRI_PRODUCTS);
+                            ->whereIn('produk_kinerja', self::MANTRI_PRODUCTS)
+                            ->whereIn(DB::raw('UPPER(TRIM(cabang1))'), self::AREA_BRANCH_ORDER);
                     }))
+                    ->merge(app(MantriSourceInputStore::class)->periods())
                     ->unique()
                     ->values();
             }
 
-            return $periods
+            if (! $includeMantriSourcePeriods) {
+                $periods = $periods->merge($this->fetchPeriodList(self::SOURCE_TABLE, 'periode', function ($query): void {
+                    $query->where('segmen_kinerja', 'MICRO')
+                        ->whereIn('produk_kinerja', ['KURMIKRO', 'KURKECIL'])
+                        ->whereIn(DB::raw('UPPER(TRIM(cabang1))'), self::AREA_BRANCH_ORDER)
+                        ->whereRaw($this->normalizedSql('description').' = ?', [$this->normalizeToken(self::KUR_RITEL_DESCRIPTION)]);
+                }));
+            }
+
+            return $periods->unique()
                 ->sortDesc()
                 ->values();
-        });
+        }));
     }
 
     private function fetchPeriodList(string $table, string $column, ?callable $scope = null): Collection
     {
         if (! Schema::hasTable($table) || ! Schema::hasColumn($table, $column)) {
             return collect();
+        }
+
+        if ($table === self::SOURCE_TABLE && $scope !== null) {
+            return $this->fetchScopedSourcePeriods($column, $scope);
         }
 
         $query = DB::table($table)
@@ -987,6 +1018,35 @@ class KinerjaRmMikroReportController extends Controller
             })
             ->filter()
             ->values();
+    }
+
+    private function fetchScopedSourcePeriods(string $column, callable $scope): Collection
+    {
+        // Discover dates through the existing period index. Applying text
+        // normalization to DISTINCT over the entire nominative scans all rows.
+        $candidates = $this->fetchPeriodList(self::SOURCE_TABLE, $column);
+        $periods = collect();
+
+        foreach ($candidates->chunk(100) as $chunk) {
+            $union = null;
+            foreach ($chunk as $period) {
+                $match = DB::table(self::SOURCE_TABLE)->select($column)->where($column, $period);
+                $scope($match);
+                // Each dated lookup stops at the first eligible row. UNION
+                // batches the lookups instead of issuing a query per date.
+                $entry = DB::query()->fromSub($match->limit(1), 'eligible_period')->select($column);
+                if ($union === null) {
+                    $union = $entry;
+                } else {
+                    $union->unionAll($entry);
+                }
+            }
+            if ($union !== null) {
+                $periods = $periods->merge($union->pluck($column));
+            }
+        }
+
+        return $periods->unique()->sortDesc()->values();
     }
 
     private function fetchMonthEndPeriods(Carbon $selectedPeriod): Collection
@@ -1118,9 +1178,9 @@ class KinerjaRmMikroReportController extends Controller
         $cacheFingerprint = $category === 'extreme_low_mantri'
             ? ':'.$this->dailyLoanPeriodCacheFingerprint($period)
             : '';
-        $cacheFingerprint .= ':'.app(\App\Support\MantriProductivityReference::class)->fingerprint($period);
+        $cacheFingerprint .= ':'.app(MantriSourceInputStore::class)->fingerprint($period);
 
-        return Cache::remember('kinerja_rm_mikro_mantri_v22_source_signed_nett:'.$this->reportCacheVersion().':'.$period.':'.$category.':'.$extremeLowView.$cacheFingerprint, 600, function () use ($category, $period, $extremeLowView): array {
+        return Cache::remember('kinerja_rm_mikro_mantri_v26_per_booking_floor:'.$this->reportCacheVersion().':'.$period.':'.$category.':'.$extremeLowView.$cacheFingerprint, 600, function () use ($category, $period, $extremeLowView): array {
             return match ($category) {
                 'kuadran' => $this->mantriKuadranPayload($period),
                 'produktivitas_mantri' => $this->mantriProductivityPayload($period),
@@ -1514,7 +1574,7 @@ class KinerjaRmMikroReportController extends Controller
     private function cachedExtremeLowMantriRosterRows(string $period): Collection
     {
         return Cache::remember(
-            'kinerja_rm_mikro_extreme_low_roster_v8_signed:'.$this->reportCacheVersion().':'.$period.':'.$this->dailyLoanPeriodCacheFingerprint($period).':'.app(\App\Support\MantriProductivityReference::class)->fingerprint($period),
+            'kinerja_rm_mikro_extreme_low_roster_v12_floor:'.$this->reportCacheVersion().':'.$period.':'.$this->dailyLoanPeriodCacheFingerprint($period).':'.app(MantriSourceInputStore::class)->fingerprint($period),
             600,
             fn (): Collection => $this->extremeLowMantriRosterRows($period)
         );
@@ -1986,20 +2046,7 @@ class KinerjaRmMikroReportController extends Controller
 
     private function networkDays(string $startDate, string $endDate): int
     {
-        $start = Carbon::parse($startDate);
-        $end = Carbon::parse($endDate);
-        $holidays = [];
-        $days = 0;
-
-        while ($start->lte($end)) {
-            if ($start->isWeekday() && ! in_array($start->toDateString(), $holidays, true)) {
-                $days++;
-            }
-
-            $start->addDay();
-        }
-
-        return $days;
+        return app(\App\Support\MantriPerformanceBasis::class)->workingDays($startDate, $endDate);
     }
 
     private function sumSnapshotColumn(string $column): string
@@ -2100,7 +2147,7 @@ class KinerjaRmMikroReportController extends Controller
 
     private function cacheKey(string $prefix, string $period, array $group): string
     {
-        return 'kinerja_rm_mikro_'.$prefix.'_v1:'.$this->reportCacheVersion().':'.$period.':'.implode(',', $group);
+        return 'kinerja_rm_mikro_'.$prefix.'_v3-kanwil:'.$this->reportCacheVersion().':'.$period.':'.implode(',', $group);
     }
 
     private function queueDailyLoanSnapshotSyncIfNeeded(?string $period, string $source): bool
@@ -2159,26 +2206,29 @@ class KinerjaRmMikroReportController extends Controller
 
     private function resolveEmbeddedReadyPeriod(string $requestedPeriod, bool $mantri): ?string
     {
-        $cacheKey = 'kinerja_rm_mikro:embedded_ready_period:v2:'
+        $cacheKey = 'kinerja_rm_mikro:embedded_ready_period:'.($mantri ? 'v5-mantri-ledger:' : 'v4-mantri-source:')
             .($mantri ? 'mantri' : 'rm').':'
-            .$requestedPeriod.':v'.$this->reportCacheVersion();
+            .$requestedPeriod.':v'.$this->reportCacheVersion()
+            .($mantri ? ':'.app(MantriSourceInputStore::class)->fingerprint($requestedPeriod) : '');
 
         return Cache::remember($cacheKey, now()->addMinutes(10), function () use ($requestedPeriod, $mantri): ?string {
             $snapshotPeriod = null;
-            if (Schema::hasTable(self::SNAPSHOT_TABLE)) {
+            $inputPeriod = $mantri
+                ? collect(app(MantriSourceInputStore::class)->periods())->filter(fn (string $period): bool => $period <= $requestedPeriod)->max()
+                : null;
+            if (! $mantri && Schema::hasTable(self::SNAPSHOT_TABLE)) {
                 $snapshotQuery = DB::table(self::SNAPSHOT_TABLE)
                     ->where('periode', '<=', $requestedPeriod);
 
-                if (! $mantri) {
-                    $snapshotQuery
-                        ->where('segmen', 'MICRO')
-                        ->where('produk', 'KUR-MIKRO');
-                }
+                $snapshotQuery
+                    ->where('segmen', 'MICRO')
+                    ->where('produk', 'KUR-MIKRO')
+                    ->whereIn(DB::raw('UPPER(TRIM(cabang))'), self::AREA_BRANCH_ORDER);
 
                 $this->scopeQueryToCurrentBranch($snapshotQuery, 'cabang');
-                $snapshotPeriod = $snapshotQuery
+                $snapshotPeriod = max($snapshotPeriod ?? '', (string) $snapshotQuery
                     ->orderByDesc('periode')
-                    ->value('periode');
+                    ->value('periode')) ?: null;
 
                 if ($snapshotPeriod === $requestedPeriod) {
                     return Carbon::parse($snapshotPeriod)->toDateString();
@@ -2188,7 +2238,9 @@ class KinerjaRmMikroReportController extends Controller
             if (! Schema::hasTable(self::SOURCE_TABLE)
                 || ! Schema::hasColumn(self::SOURCE_TABLE, 'segmen_kinerja')
                 || ! Schema::hasColumn(self::SOURCE_TABLE, 'produk_kinerja')) {
-                return $snapshotPeriod ? Carbon::parse($snapshotPeriod)->toDateString() : null;
+                $readyPeriod = max($snapshotPeriod ?? '', $inputPeriod ?? '');
+
+                return $readyPeriod !== '' ? Carbon::parse($readyPeriod)->toDateString() : null;
             }
 
             $sourceQuery = DB::table(self::SOURCE_TABLE)
@@ -2196,10 +2248,12 @@ class KinerjaRmMikroReportController extends Controller
                 ->where('segmen_kinerja', 'MICRO');
 
             if ($mantri) {
-                $sourceQuery->whereIn('produk_kinerja', self::MANTRI_PRODUCTS);
+                $sourceQuery->whereIn('produk_kinerja', self::MANTRI_PRODUCTS)
+                    ->whereIn(DB::raw('UPPER(TRIM(cabang1))'), self::AREA_BRANCH_ORDER);
             } else {
                 $sourceQuery
-                    ->where('produk_kinerja', 'KURMIKRO')
+                    ->whereIn('produk_kinerja', ['KURMIKRO', 'KURKECIL'])
+                    ->whereIn(DB::raw('UPPER(TRIM(cabang1))'), self::AREA_BRANCH_ORDER)
                     ->whereRaw(
                         $this->normalizedSql('description').' = ?',
                         [$this->normalizeToken(self::KUR_RITEL_DESCRIPTION)]
@@ -2221,7 +2275,7 @@ class KinerjaRmMikroReportController extends Controller
 
             // An older snapshot must not mask a newer, normalized source
             // position that the embedded report can already aggregate.
-            $readyPeriod = max($snapshotPeriod ?? '', $sourcePeriod ?? '');
+            $readyPeriod = max($snapshotPeriod ?? '', $sourcePeriod ?? '', $inputPeriod ?? '');
 
             return $readyPeriod !== ''
                 ? Carbon::parse($readyPeriod)->toDateString()
@@ -2287,6 +2341,6 @@ class KinerjaRmMikroReportController extends Controller
     private function reportCacheVersion(): string
     {
         return ReportCacheVersion::composite(['pinjaman', 'simpanan'])
-            .':scope:'.UserBranchScope::cacheKey();
+            .':kanwil-v3:scope:'.UserBranchScope::cacheKey();
     }
 }

@@ -49,7 +49,7 @@ class ImportReportPhQueueTest extends TestCase
         $relativePath = 'report_ph_imports/report_ph_queue.csv';
         Storage::disk('local')->put($relativePath, implode("\n", [
             'Textbox3,PERIODE,ACCTNO,KANWIL,KANCA,UNIT,NAMA_DEBITUR,CIF1,FKSEGMEN,SEGMEN_DASHBOARD,DESCRIPTION,PRODUK_DASHBOARD,TGL_PH,TGL_REALISASI,CURTYP,POKOK,BUNGA',
-            '1,4/4/2026 12:00:00 AM,814601007586100,KANWIL MALANG,KC Ponorogo,UNIT PASAR CONDONG PONOROGO,SUMIHAR PANJAITAN,SIWZ507,11100,Micro,Kupedes,Kupedes,16/10/2025,11/09/2024,IDR,"219,000.00","1,267,362.25"',
+            '1,10/18/2026 12:00:00 AM,814601007586100,KANWIL MALANG,KC Ponorogo,UNIT PASAR CONDONG PONOROGO,SUMIHAR PANJAITAN,SIWZ507,11100,Micro,Kupedes,Kupedes,16/10/2025,11/09/2024,IDR,"219,000.00","1,267,362.25"',
         ]));
 
         $capturedState = null;
@@ -97,6 +97,7 @@ class ImportReportPhQueueTest extends TestCase
         $this->assertSame(901, $payload['job_id']);
         $this->assertNotNull($capturedState);
         $this->assertSame('lw325_ph', $capturedState['params']['table_name']);
+        $this->assertSame('2026-10-18', $capturedState['params']['periode']);
         $this->assertTrue($capturedState['params']['disable_inline_fallback']);
         $this->assertSame($relativePath, $capturedState['params']['file_path']);
         $this->assertArrayHasKey('headers', $capturedState);

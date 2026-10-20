@@ -178,6 +178,8 @@
         </div>
         @endif
 
+        @include('import.partials.schema-drift-panel')
+
         <form id="importForm" action="{{ $processRoute ?? route('import.process') }}" method="POST" data-no-route-loading data-init-url="{{ $initRoute ?? '' }}" data-stream-url="{{ $streamRoute ?? '' }}" data-filter-options-url="{{ $filterOptionsRoute ?? route('import.preview.filter-options') }}" data-filtered-rows-url="{{ $filteredRowsRoute ?? route('import.preview.filtered-rows') }}" data-warm-index-url="{{ $warmIndexRoute ?? route('import.preview.warm-index') }}">
             @csrf
             <input type="hidden" id="import_preview_filter_build" value="merchant-filter-direct-v1">

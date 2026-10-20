@@ -47,7 +47,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `ProcessShadowBackfillJob` | class | 16 | `app/Jobs/ProcessShadowBackfillJob.php:19` |
 | `RebuildSnapshotPerformanceRmBatch` | class | 16 | `app/Jobs/RebuildSnapshotPerformanceRmBatch.php:20` |
 | `RebuildSnapshotSimpleBatch` | class | 16 | `app/Jobs/RebuildSnapshotSimpleBatch.php:19` |
-| `capture` | method | 16 | `app/Support/SnapshotSourceSignatureService.php:61` |
+| `capture` | method | 16 | `app/Support/SnapshotSourceSignatureService.php:64` |
 | `dispatchDailyLoanParallelRebuild` | method | 16 | `app/Support/ParallelSnapshotBatchCoordinator.php:101` |
 | `dispatchParallelRebuild` | method | 16 | `app/Support/ParallelSnapshotBatchCoordinator.php:48` |
 

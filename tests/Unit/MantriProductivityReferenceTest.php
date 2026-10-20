@@ -73,6 +73,98 @@ class MantriProductivityReferenceTest extends TestCase
         $this->assertSame(['CIF-SOURCE' => 150_000_000.0], $replacement->closedPreviousOsByCif('2026-10-12', ['CIF-SOURCE']));
     }
 
+    public function test_version_two_uses_explicit_cif_exposure_including_zero_and_preserves_unknown_cifs_for_database(): void
+    {
+        file_put_contents($this->referencePath, json_encode($this->versionTwoFixture(), JSON_THROW_ON_ERROR));
+        $reference = new MantriProductivityReference($this->referencePath);
+
+        foreach (['2026-10-01', '2026-10-11', '2026-10-12', '2026-10-17', '2026-10-31'] as $period) {
+            $this->assertSame([
+                'CIF-SOURCE' => 160_000_000.25, 'CIF-ZERO' => 0.0,
+            ], $reference->previousMicroOsByCif($period, [' cif-source ', 'CIF-ZERO', 'CIF-UNKNOWN']));
+        }
+        $this->assertSame([], $reference->previousMicroOsByCif('2026-10-12', ['CIF-UNKNOWN']));
+        $this->assertNull($reference->previousMicroOsByCif('2026-09-30', ['CIF-SOURCE']));
+        $this->assertNull($reference->previousMicroOsByCif('2026-11-01', ['CIF-SOURCE']));
+    }
+
+    public function test_version_two_baseline_and_fingerprint_remain_valid_after_owner_snapshot_until_month_end(): void
+    {
+        file_put_contents($this->referencePath, json_encode($this->versionTwoFixture(), JSON_THROW_ON_ERROR));
+        $reference = new MantriProductivityReference($this->referencePath);
+
+        foreach (['2026-10-17', '2026-10-31'] as $period) {
+            $this->assertNull($reference->dataForPeriod($period));
+            $this->assertNull($reference->accountReference($period, '1001', 'CIF-SOURCE', '2026-10-05'));
+            $this->assertSame(['CIF-SOURCE' => 160_000_000.25], $reference->previousMicroOsByCif($period, ['CIF-SOURCE']));
+            $this->assertSame(hash_file('sha256', $this->referencePath), $reference->fingerprint($period));
+        }
+        $this->assertNull($reference->previousMicroOsByCif('2026-11-01', ['CIF-SOURCE']));
+        $this->assertSame('brihc', $reference->fingerprint('2026-11-01'));
+    }
+
+    public function test_version_two_requires_an_explicit_cif_baseline_array(): void
+    {
+        $data = $this->versionTwoFixture();
+        unset($data['baseline_cif_os']);
+        file_put_contents($this->referencePath, json_encode($data, JSON_THROW_ON_ERROR));
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Referensi produktivitas Mantri tidak lengkap.');
+        (new MantriProductivityReference($this->referencePath))->dataForPeriod('2026-10-12');
+    }
+
+    public function test_version_two_rejects_a_scalar_cif_baseline(): void
+    {
+        $data = $this->versionTwoFixture();
+        $data['baseline_cif_os'] = '160000000.25';
+        file_put_contents($this->referencePath, json_encode($data, JSON_THROW_ON_ERROR));
+
+        $this->expectException(\RuntimeException::class);
+        (new MantriProductivityReference($this->referencePath))->dataForPeriod('2026-10-12');
+    }
+
+    public function test_version_two_owner_requires_exact_source_position_and_account_cif_booking_date(): void
+    {
+        file_put_contents($this->referencePath, json_encode($this->versionTwoFixture(), JSON_THROW_ON_ERROR));
+        $reference = new MantriProductivityReference($this->referencePath);
+
+        $this->assertSame('555', $reference->accountReference('2026-10-12', '0001001', ' cif-source ', '2026-10-05 00:00:00')['pn']);
+        $this->assertNull($reference->accountReference('2026-10-11', '1001', 'CIF-SOURCE', '2026-10-05'));
+        $this->assertNull($reference->accountReference('2026-10-13', '1001', 'CIF-SOURCE', '2026-10-05'));
+        $this->assertNull($reference->accountReference('2026-10-12', '1001', 'CIF-OTHER', '2026-10-05'));
+        $this->assertNull($reference->accountReference('2026-10-12', '1001', 'CIF-SOURCE', '2026-10-06'));
+        $this->assertNull($reference->accountReference('2026-10-12', 'OTHER', 'CIF-SOURCE', '2026-10-05'));
+    }
+
+    public function test_cif_baseline_from_wrong_previous_month_is_not_applied(): void
+    {
+        $data = $this->versionTwoFixture();
+        $data['baseline_period'] = '2026-08-31';
+        file_put_contents($this->referencePath, json_encode($data, JSON_THROW_ON_ERROR));
+
+        $this->assertNull((new MantriProductivityReference($this->referencePath))->previousMicroOsByCif('2026-10-12', ['CIF-SOURCE']));
+        $this->assertNull((new MantriProductivityReference($this->referencePath))->previousMicroOsByCif('2026-10-01', ['CIF-SOURCE']));
+    }
+
+    public function test_legacy_closed_exposure_is_never_silently_reused_as_version_two_micro_exposure(): void
+    {
+        $reference = new MantriProductivityReference($this->referencePath);
+        $this->assertNull($reference->previousMicroOsByCif('2026-10-12', ['CIF-SOURCE']));
+        $this->assertSame(['CIF-SOURCE' => 120_000_000.0], $reference->closedPreviousOsByCif('2026-10-12', ['CIF-SOURCE']));
+    }
+
+    private function versionTwoFixture(): array
+    {
+        $data = $this->fixture();
+        $data['version'] = 2;
+        $data['baseline_accounts'] = [];
+        $data['current_accounts'] = [];
+        $data['baseline_cif_os'] = ['CIF-SOURCE' => 160_000_000.25, 'CIF-ZERO' => 0, 'CIF-UNREQUESTED' => 999_000_000];
+
+        return $data;
+    }
+
     private function fixture(): array
     {
         return [

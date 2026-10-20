@@ -100,6 +100,7 @@ INT_COLS = ['jw', 'at', 'jumlah_pn', 'jumlah_pn_all']
 
 DATE_FMTS_MONTH_FIRST = [
     "%Y-%m-%d %H:%M:%S",
+    "%Y-%m-%d %H:%M:%S%.f",
     "%Y-%m-%d %H:%M",
     "%m/%d/%Y %I:%M:%S %p",
     "%m/%d/%Y %I:%M %p",
@@ -111,6 +112,9 @@ DATE_FMTS_MONTH_FIRST = [
     "%d/%m/%Y %H:%M",
     "%d/%m/%Y",
     "%d-%m-%Y",
+    "%d.%m.%Y",
+    "%d %b %Y",
+    "%d-%b-%Y",
 ]
 DATE_FMTS_DAY_FIRST = [
     "%Y-%m-%d %H:%M:%S",
@@ -126,7 +130,17 @@ DATE_FMTS_DAY_FIRST = [
     "%m/%d/%Y",
     "%m/%d/%Y %H:%M:%S",
     "%m/%d/%Y %H:%M",
+    "%d-%m-%Y",
+    "%d.%m.%Y",
+    "%d %b %Y",
+    "%d-%b-%Y",
 ]
+
+# Export variants that must be canonicalized before strptime: ISO 8601 "T",
+# fractional seconds and a trailing time zone (2026-10-16T08:30:00.000+07:00).
+REGEX_ISO_T = r"^(\d{4}-\d{1,2}-\d{1,2})T"
+REGEX_FRACTION = r"(\d{1,2}:\d{2}:\d{2})[.,]\d+"
+REGEX_TIMEZONE = r"\s*(?:Z|UTC|GMT|[+-]\d{2}:?\d{2})$"
 
 # OPTIMIZATION: Cache for header detection (file hash -> header info)
 _HEADER_CACHE = {}
@@ -691,12 +705,28 @@ def build_integer_exprs(columns: list) -> list:
     ]
 
 
+def canonical_date_text(value: str) -> str:
+    text = re.sub(r"\s+", " ", str(value).strip())
+    text = re.sub(REGEX_ISO_T, r" ", text)
+    text = re.sub(REGEX_FRACTION, r"", text)
+    return re.sub(REGEX_TIMEZONE, "", text, flags=re.IGNORECASE)
+
+
+def canonical_date_expr(col: str):
+    return (
+        pl.col(col).cast(pl.Utf8).str.strip_chars()
+        .str.replace(REGEX_ISO_T, "${1} ")
+        .str.replace(REGEX_FRACTION, "${1}")
+        .str.replace(r"(?i)\s*(?:Z|UTC|GMT|[+-]\d{2}:?\d{2})$", "")
+    )
+
+
 def detect_date_format_fast(df: pl.DataFrame, col: str, prefer_month_first: bool) -> str:
     """OPTIMIZED: Faster date format detection with reduced sample size."""
     fmts = DATE_FMTS_MONTH_FIRST if prefer_month_first else DATE_FMTS_DAY_FIRST
     
     # OPTIMIZATION: Sample only first 300 unique values (reduced from 1000)
-    sample_data = df.select(pl.col(col).cast(pl.Utf8).str.strip_chars()).to_series().drop_nulls().unique().head(300).to_list()
+    sample_data = [canonical_date_text(v) for v in df.select(pl.col(col).cast(pl.Utf8).str.strip_chars()).to_series().drop_nulls().unique().head(300).to_list()]
     
     if not sample_data:
         return fmts[0]
@@ -707,7 +737,7 @@ def detect_date_format_fast(df: pl.DataFrame, col: str, prefer_month_first: bool
             continue
         for fmt in fmts:
             try:
-                datetime.strptime(value, fmt)
+                datetime.strptime(value, fmt.replace("%.f", ".%f"))
                 format_scores[fmt] += 1
                 break
             except ValueError:
@@ -717,20 +747,21 @@ def detect_date_format_fast(df: pl.DataFrame, col: str, prefer_month_first: bool
     return best_fmt[0] if best_fmt[1] > 0 else fmts[0]
 
 
-def build_date_exprs_fast(columns: list, format_map: dict) -> list:
-    """Date expressions with pre-detected formats."""
+def build_date_exprs_fast(columns: list, format_map: dict, family_map: dict = None) -> list:
+    """Date expressions: the detected format first, then every other format of
+    the same day/month family so a column with mixed variants still parses."""
     exprs = []
+    family_map = family_map or {}
     for col in columns:
         fmt = format_map.get(col, DATE_FMTS_MONTH_FIRST[0])
-        base = pl.col(col).cast(pl.Utf8).str.strip_chars()
+        family = family_map.get(col) or (DATE_FMTS_MONTH_FIRST if fmt in DATE_FMTS_MONTH_FIRST[:6] else DATE_FMTS_DAY_FIRST)
+        ordered = [fmt] + [f for f in family if f != fmt]
+        base = canonical_date_expr(col)
+        parsed = pl.coalesce([base.str.strptime(pl.Date, f, strict=False, exact=True) for f in ordered])
         expr = (
             pl.when(base.is_null() | (base == "") | (base.str.to_lowercase() == "nan"))
             .then(pl.lit(None))
-            .otherwise(
-                pl.when(base.str.strptime(pl.Date, fmt, strict=False).is_not_null())
-                .then(base.str.strptime(pl.Date, fmt, strict=False).dt.strftime("%Y-%m-%d"))
-                .otherwise(pl.lit(None))
-            )
+            .otherwise(parsed.dt.strftime("%Y-%m-%d"))
             .alias(col)
         )
         exprs.append(expr)
@@ -758,6 +789,22 @@ def main():
     load_columns  = [str(c).strip() for c in (config.get("load_columns") or []) if str(c).strip()]
     timestamp     = str(config.get("timestamp") or datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
     unique_suffix = str(config.get("unique_suffix") or "_RPH")
+    date_orders   = {str(k).strip().lower(): str(v).strip().lower() for k, v in (config.get("date_orders") or {}).items()}
+
+    # Columns added through an accepted schema drift decision join the fixed
+    # LW325 layout with the normalization that matches their database type.
+    for spec in (config.get("extra_columns") or []):
+        name = str((spec or {}).get("name") or "").strip().lower()
+        kind = str((spec or {}).get("kind") or "text").strip().lower()
+        if not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", name) or name in TARGET_COLS:
+            continue
+        TARGET_COLS.append(name)
+        if kind == "date":
+            DATE_COLS.append(name)
+        elif kind == "decimal":
+            DECIMAL_COLS.append(name)
+        elif kind == "integer":
+            INT_COLS.append(name)
     
     # OPTIMIZATION: Limit rows for preview mode
     preview_max_rows = 500 if output_mode == "preview" else None
@@ -880,14 +927,17 @@ def main():
         if date_cols_active:
             send_progress(45, "Deteksi format tanggal...")
             sample_df = lf.head(500).collect()  # OPTIMIZED: smaller sample
+            family_map = {}
             for col in date_cols_active:
-                prefer_month = col in PREFER_MONTH_FIRST_COLS
+                hint = date_orders.get(col)
+                prefer_month = (hint == "mdy") if hint in ("mdy", "dmy") else (col in PREFER_MONTH_FIRST_COLS)
                 format_map[col] = detect_date_format_fast(sample_df, col, prefer_month)
+                family_map[col] = DATE_FMTS_MONTH_FIRST if prefer_month else DATE_FMTS_DAY_FIRST
         
         norm_exprs = []
         
         if date_cols_active:
-            norm_exprs.extend(build_date_exprs_fast(date_cols_active, format_map))
+            norm_exprs.extend(build_date_exprs_fast(date_cols_active, format_map, family_map))
         
         schema_names = set(lf.collect_schema().names())
         dec_active = [c for c in DECIMAL_COLS if c in schema_names and lf.collect_schema()[c] == pl.Utf8]
