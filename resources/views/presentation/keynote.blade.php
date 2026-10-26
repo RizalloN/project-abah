@@ -102,7 +102,7 @@
         </nav>
         <div class="kn-nav__end">
           <p class="kn-nav__period"><span class="kn-sr">Posisi data </span>{{ $presentationPeriodLabel }}</p>
-          <button type="button" class="kn-button kn-button--primary kn-nav__ppt" onclick="document.getElementById('ppt-export-dialog').showModal()">
+          <button type="button" class="kn-button kn-button--primary kn-nav__ppt" data-sc-magnet="0.25" onclick="document.getElementById('ppt-export-dialog').showModal()">
             Unduh PPT
           </button>
           <div class="kn-menu" data-kn-menu>
@@ -326,7 +326,7 @@
             <span class="kn-close__period">Posisi {{ $presentationPeriodLong }}.</span>
           </h2>
           <p class="kn-close__actions">
-            <button type="button" class="kn-button kn-button--primary kn-button--large" onclick="document.getElementById('ppt-export-dialog').showModal()">Unduh PPT</button>
+            <button type="button" class="kn-button kn-button--primary kn-button--large" data-sc-magnet="0.35" onclick="document.getElementById('ppt-export-dialog').showModal()">Unduh PPT</button>
             <a class="kn-link" href="{{ route('dashboard', ['periode' => $selectedPeriod]) }}">Kembali ke dashboard<i class="fas fa-chevron-right" aria-hidden="true"></i></a>
             <a class="kn-link" href="#pres-slide-0" data-spine-target="0">Baca dari awal<i class="fas fa-chevron-right" aria-hidden="true"></i></a>
           </p>

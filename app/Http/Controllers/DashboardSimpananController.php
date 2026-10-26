@@ -8,6 +8,8 @@ use App\Services\Presentation\PresentationExportManager;
 use App\Services\Presentation\PresentationFundingStrategyService;
 use App\Services\Presentation\PresentationNarrativeService;
 use App\Services\Presentation\PresentationScopeDataService;
+use App\Services\Presentation\PresentationSegmentDataService;
+use App\Services\Presentation\PresentationWilayahDataService;
 use Carbon\Carbon;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Collection;
@@ -35,6 +37,7 @@ use App\Support\LandingPnMismatchService;
 use App\Support\LoanQualityBucketMapper;
 use App\Support\MarketShareArea6Report;
 use App\Support\MarketShareSektoralReport;
+use App\Support\SectorPotentialService;
 use App\Support\ReportCacheVersion;
 use App\Support\DashboardHarianSnapshotService;
 use App\Support\UserBranchScope;
@@ -2723,6 +2726,7 @@ class DashboardSimpananController extends Controller
         $userBranchScope = UserBranchScope::current();
         $selectedScope = $userBranchScope['key'] ?? (string) $request->query('cabang', UserBranchScope::AREA_SCOPE);
         $payload = MarketShareSektoralReport::payload($selectedScope);
+        $payload['customer_penetration'] = app(SectorPotentialService::class)->payload($selectedScope);
 
         if ($userBranchScope !== null) {
             $payload['scopes'] = [$userBranchScope['key'] => $userBranchScope['label']];
@@ -6142,17 +6146,82 @@ class DashboardSimpananController extends Controller
             $this->deferPresentationPayloadRefresh($period);
         }
 
-        // The keynote is the default reading view; ?layout=slides keeps the 16:9 deck and ?layout=classic the previous scroll report.
+        // The segmented presentation is the default; ?layout=keynote keeps the single-relief keynote,
+        // ?layout=slides the 16:9 deck and ?layout=classic the previous scroll report.
         $layout = (string) $request->query('layout', '');
-        $view = in_array($layout, ['slides', 'classic'], true) ? 'presentation' : 'presentation.keynote';
+        $view = match (true) {
+            in_array($layout, ['slides', 'classic'], true) => 'presentation',
+            $layout === 'keynote' => 'presentation.keynote',
+            default => 'presentation.segments',
+        };
+
+        $segments = app(PresentationSegmentDataService::class);
 
         return view($view, [
             'selectedPeriod' => $period,
             'periods' => $periods,
+            'segmentScopes' => $segments->allowedScopes(),
+            'segmentScope' => $segments->resolveScope($request->query('scope')),
             'presentationPayload' => is_array($payload)
                 ? $this->scopePresentationMarketShareInPayload($payload)
                 : null,
         ]);
+    }
+
+    /** Kinerja segments (Simpanan, Pinjaman, Kualitas, Recovery DH) for one scope: Area per branch, a branch per outlet. */
+    public function presentationSegmentData(Request $request, PresentationSegmentDataService $segments)
+    {
+        $periods = app(DashboardHarianSnapshotService::class)->fetchPeriods();
+        $period = $this->resolvePresentationPeriod($request->query('periode'), $periods);
+        $scope = $segments->resolveScope($request->query('scope'));
+
+        $payload = Cache::remember(
+            'presentation_segments:v2:' . ($period ?: 'latest') . ':' . $scope,
+            now()->addMinutes(15),
+            fn (): array => $segments->build($period ?: null, $scope)
+        );
+        $payload['scopes'] = $segments->allowedScopes();
+
+        return response()->json($payload)->header('Cache-Control', 'private, max-age=60');
+    }
+
+    /** Wilayah segments: market share per branch and the unit mapping with its CRAS sectors (GeoJSON fetched separately). */
+    public function presentationWilayahData(PresentationWilayahDataService $wilayah)
+    {
+        $workbookPath = $this->freshMarketShareMappingWorkbookPath();
+        $version = $workbookPath !== null && is_file($workbookPath)
+            ? filemtime($workbookPath) . ':' . filesize($workbookPath)
+            : 'none';
+
+        $payload = Cache::remember('presentation_wilayah:v1:' . md5($version), now()->addMinutes(30), function () use ($wilayah, $workbookPath): array {
+            $index = MarketShareArea6Report::payload();
+            $segments = [];
+            foreach (array_keys((array) ($index['segments'] ?? [])) as $segmentKey) {
+                $segment = MarketShareArea6Report::payload((string) $segmentKey);
+                $segments[$segmentKey] = array_merge((array) ($segment['selected'] ?? []), [
+                    'headers' => (array) ($segment['headers'] ?? []),
+                    'rows' => array_values((array) ($segment['rows'] ?? [])),
+                ]);
+            }
+
+            return [
+                'market' => ['segments' => $segments, 'meta' => [
+                    'period' => (string) ($index['period'] ?? ''),
+                    'unit' => (string) ($index['unit'] ?? ''),
+                    'source' => (string) ($index['source'] ?? ''),
+                ]],
+                'geography' => $this->marketShareMappingGeographyPayload($workbookPath),
+            ];
+        });
+
+        // Cached for the Area; a branch user only ever receives their own branch.
+        $branch = UserBranchScope::current();
+
+        return response()->json([
+            'marketshare' => $wilayah->marketShare($payload['market']['segments'], $payload['market']['meta'], $branch['key'] ?? null),
+            'mapping' => $wilayah->mapping($this->scopeMarketShareGeographyPayload($payload['geography'])),
+            'sektoral' => app(SectorPotentialService::class)->payload($branch['key'] ?? null),
+        ])->header('Cache-Control', 'private, max-age=60');
     }
 
     public function exportPowerPoint(Request $request, PowerPointExportService $exporter)

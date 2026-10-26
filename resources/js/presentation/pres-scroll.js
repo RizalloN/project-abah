@@ -9,7 +9,22 @@ const reduceMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)')
 const finePointer = () => window.matchMedia('(hover: hover) and (pointer: fine)').matches;
 const escapeText = (value) => String(value).replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
 // Surfaces that catch light under the pointer.
-const LIT_SURFACES = '.rp-paper, .rp-fig, .rp-insights > li, .rp-agenda-board > li, .rp-signals li, .rp-timeline__item';
+const LIT_SURFACES = '.rp-paper, .rp-fig, .rp-lever, .rp-kpi, .rp-insights > li, .rp-agenda-board > li, .rp-signals li, .rp-timeline__item';
+// Report surfaces that rise out of depth as they scroll in (nested papers ride their parent).
+const DEPTH_SURFACES = '.pres-report-section .rp-paper, .pres-report-section .rp-figures, .pres-report-section .rp-lever, .pres-report-section .rp-kpi';
+// Pointer tilt in degrees: small tiles lean further than wide tables, which stay readable.
+const tiltFor = (width) => Math.max(1.2, Math.min(7, 2600 / Math.max(1, width)));
+
+/** Document position from the offset chain, which ignores transforms (the surfaces measured here are the ones being transformed). */
+const layoutBox = (element) => {
+    let top = 0;
+    let left = 0;
+    for (let node = element; node; node = node.offsetParent) {
+        top += node.offsetTop;
+        left += node.offsetLeft;
+    }
+    return { top, left, width: element.offsetWidth, height: element.offsetHeight };
+};
 
 /** Split "Rp14,41 T" into prefix, signed number and suffix, keeping id-ID decimals. */
 const parseFigure = (text) => {
@@ -117,6 +132,14 @@ export class PresentationScrollDeck {
         ['wheel', 'touchstart'].forEach((type) => window.addEventListener(type, () => this.stopAutoplay(), { passive: true }));
         window.addEventListener('scroll', () => this.schedule(), { passive: true });
         window.addEventListener('resize', () => this.refresh(), { passive: true });
+        // Surfaces are measured once per layout; opening a disclosure or a late chart moves everything below it.
+        if ('ResizeObserver' in window) {
+            let layoutTimer = null;
+            new ResizeObserver(() => {
+                window.clearTimeout(layoutTimer);
+                layoutTimer = window.setTimeout(() => this.refresh(), 120);
+            }).observe(this.root.querySelector('.pres-slides-container') || this.root);
+        }
         if ('IntersectionObserver' in window) {
             this.revealObserver = new IntersectionObserver((entries) => {
                 entries.forEach((entry) => {
@@ -134,7 +157,10 @@ export class PresentationScrollDeck {
             this.root.addEventListener('pointermove', (event) => this.light(event), { passive: true });
             this.root.addEventListener('pointerout', (event) => {
                 const surface = event.target.closest?.(LIT_SURFACES);
-                if (surface && !surface.contains(event.relatedTarget)) surface.classList.remove('is-lit');
+                if (!surface || surface.contains(event.relatedTarget)) return;
+                surface.classList.remove('is-lit');
+                surface.style.removeProperty('--tx');
+                surface.style.removeProperty('--ty');
             });
         }
         this.scan(this.root);
@@ -260,6 +286,22 @@ export class PresentationScrollDeck {
         this.statements.forEach((statement) => {
             const rect = statement.getBoundingClientRect();
             if (rect.bottom < -viewportHeight || rect.top > viewportHeight * 2) return;
+            // The sheet that follows rises like a page tipping up, and the statement under it recedes.
+            const sheet = statement.nextElementSibling;
+            if (sheet && !reduceMotion()) {
+                const top = sheet.getBoundingClientRect().top;
+                const cover = Math.min(1, Math.max(0, (viewportHeight - top) / viewportHeight));
+                const rise = Math.min(1, Math.max(0, (viewportHeight - top) / (viewportHeight * 0.85)));
+                if (Math.abs((statement._cover ?? -1) - cover) > 0.002) {
+                    statement._cover = cover;
+                    statement.style.setProperty('--cover', cover.toFixed(4));
+                }
+                if (Math.abs((sheet._rise ?? -1) - rise) > 0.002) {
+                    sheet._rise = rise;
+                    sheet.style.setProperty('--rise', rise.toFixed(4));
+                    sheet.classList.toggle('is-rising', rise > 0 && rise < 1);
+                }
+            }
             const progress = reduceMotion() ? 0.5 : Math.min(1, Math.max(0, -rect.top / Math.max(1, rect.height - viewportHeight)));
             if (Math.abs((statement._sp ?? -1) - progress) > 0.001) {
                 statement._sp = progress;
@@ -337,8 +379,15 @@ export class PresentationScrollDeck {
         const surface = event.target.closest?.(LIT_SURFACES);
         if (!surface) return;
         const rect = surface.getBoundingClientRect();
-        surface.style.setProperty('--mx', ((event.clientX - rect.left) / Math.max(1, rect.width)).toFixed(3));
-        surface.style.setProperty('--my', ((event.clientY - rect.top) / Math.max(1, rect.height)).toFixed(3));
+        const x = (event.clientX - rect.left) / Math.max(1, rect.width);
+        const y = (event.clientY - rect.top) / Math.max(1, rect.height);
+        surface.style.setProperty('--mx', x.toFixed(3));
+        surface.style.setProperty('--my', y.toFixed(3));
+        if (this.keynote && !reduceMotion()) {
+            const tilt = tiltFor(rect.width);
+            surface.style.setProperty('--tx', `${((0.5 - y) * tilt).toFixed(2)}deg`);
+            surface.style.setProperty('--ty', `${((x - 0.5) * tilt).toFixed(2)}deg`);
+        }
         surface.classList.add('is-lit');
     }
 
@@ -351,7 +400,12 @@ export class PresentationScrollDeck {
             title.setAttribute('aria-label', text);
             title.innerHTML = text.split(' ').map((word, index) => `<span class="rp-w" aria-hidden="true"><span style="--w:${index}">${escapeText(word)}</span></span>`).join(' ');
         });
-        this.depthElements = Array.from(this.root.querySelectorAll('.pres-report-section .rp-paper, .pres-report-section .rp-figures'));
+        this.depthElements = Array.from(this.root.querySelectorAll(DEPTH_SURFACES));
+        // Table rows turn up one after another once their card is in, like a departure board.
+        scope.querySelectorAll('.rp-table-card tbody').forEach((body) => {
+            Array.from(body.rows).forEach((row, index) => row.style.setProperty('--r', String(Math.min(index, 18))));
+        });
+        this.measureSides();
         scope.querySelectorAll('[data-rv]:not(.is-in)').forEach((element) => {
             if (this.revealObserver && !reduceMotion()) {
                 this.revealObserver.observe(element);
@@ -379,6 +433,18 @@ export class PresentationScrollDeck {
                 return { path, start, length };
             });
             return { element, probe, paths, length: distance, points: JSON.parse(probe?.dataset.points || '[]'), readings: Array.from(element.querySelectorAll('[data-trend-reading]')) };
+        });
+    }
+
+    /** Which side of the page each surface sits on, so side-by-side tiles swing in from their own edge. */
+    measureSides() {
+        const middle = window.innerWidth / 2;
+        this.depthElements.forEach((element) => {
+            const box = layoutBox(element);
+            element._box = box;
+            if (!this.keynote) return;
+            const offset = (box.left + box.width / 2 - middle) / Math.max(1, window.innerWidth);
+            element.style.setProperty('--side', Math.abs(offset) < 0.08 || box.width > window.innerWidth * 0.62 ? '0' : String(Math.sign(offset)));
         });
     }
 
@@ -411,6 +477,7 @@ export class PresentationScrollDeck {
 
     refresh() {
         this.engine?.layout();
+        this.measureSides();
         this.schedule();
     }
 
@@ -477,9 +544,11 @@ export class PresentationScrollDeck {
 
         // Surfaces rise out of depth as they enter: --e runs 0 to 1 over the lower half of the viewport.
         this.depthElements.forEach((element) => {
-            const rect = element.getBoundingClientRect();
-            if (rect.top > viewportHeight + 40 || rect.bottom < -40) return;
-            const entry = reduceMotion() ? 1 : Math.min(Math.max((viewportHeight - rect.top) / (viewportHeight * 0.58), 0), 1);
+            // Layout position, not the transformed one: the transform is what this value drives.
+            const box = element._box || layoutBox(element);
+            const top = box.top - window.scrollY;
+            if (top > viewportHeight + 40 || top + box.height < -40) return;
+            const entry = reduceMotion() ? 1 : Math.min(Math.max((viewportHeight - top) / (viewportHeight * 0.62), 0), 1);
             if (Math.abs((element._e ?? -1) - entry) > 0.003) {
                 element._e = entry;
                 element.style.setProperty('--e', entry.toFixed(3));

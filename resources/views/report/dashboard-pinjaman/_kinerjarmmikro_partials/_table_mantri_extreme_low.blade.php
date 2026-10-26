@@ -163,7 +163,7 @@
 
 <script type="application/json" id="extremeLowMantriDetails">@json(['details' => $extremeLowDetails, 'labels' => $bucketLabels])</script>
 
-<div class="modal fade" id="extremeLowMantriModal" tabindex="-1" role="dialog" aria-labelledby="extremeLowMantriModalTitle" aria-hidden="true">
+<div class="modal" id="extremeLowMantriModal" tabindex="-1" role="dialog" aria-labelledby="extremeLowMantriModalTitle" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-scrollable" role="document">
         <div class="modal-content">
             <div class="modal-header">
@@ -207,6 +207,9 @@
         const modal = document.getElementById('extremeLowMantriModal');
         if (!source || !modal) {
             return;
+        }
+        if (modal.parentElement !== document.body) {
+            document.body.appendChild(modal);
         }
 
         let data = { details: [], labels: {} };

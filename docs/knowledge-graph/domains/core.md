@@ -7,13 +7,13 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Kind | Count |
 | --- | ---: |
 | command | 16 |
-| file | 127 |
-| method | 854 |
-| unresolved_symbol | 379 |
+| file | 130 |
+| method | 889 |
+| unresolved_symbol | 387 |
 | route | 16 |
-| class | 84 |
+| class | 86 |
 | table | 15 |
-| view | 47 |
+| view | 48 |
 
 ## Main Hubs
 
@@ -35,6 +35,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `rka` | table | 32 | - |
 | `syncImportedTable` | method | 31 | `app/Support/ReportDataSyncService.php:137` |
 | `FileManagementController` | class | 30 | `app/Http/Controllers/Admin/FileManagementController.php:24` |
+| `SectorPotentialService` | class | 29 | `app/Support/SectorPotentialService.php:16` |
 | `index` | method | 29 | `app/Http/Controllers/Report/DataPhReportController.php:31` |
 | `analyzeTable` | method | 24 | `app/Support/ReportDataSyncService.php:23` |
 | `buildPayload` | method | 23 | `app/Support/LandingMicroPerformanceService.php:538` |
@@ -48,7 +49,6 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `PhpMyAdminGateway` | class | 20 | `app/Services/ControlCenter/PhpMyAdminGateway.php:21` |
 | `quadrantPayload` | method | 20 | `app/Support/LandingConsumerOperationalService.php:629` |
 | `PruneReportDailyHistoryCommand` | class | 19 | `app/Console/Commands/PruneReportDailyHistoryCommand.php:19` |
-| `branchLabel` | method | 19 | `app/Support/LandingMicroPerformanceService.php:3633` |
 
 ## Route Nodes
 
@@ -56,7 +56,6 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `file-management.destroy` - `file-management/delete`
 - `file-management.download` - `file-management/download`
 - `file-management.index` - `file-management`
-- `generated::rJu5tYBEK34EmFph` - `up`
 - `home` - `/`
 - `link-management.index` - `link-management`
 - `link-management.update` - `link-management`
@@ -68,6 +67,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `report.qris.ukers` - `report/data/qris/ukers`
 - `sheet`
 - `token`
+- `up` - `up`
 
 ## Class Nodes
 
@@ -140,6 +140,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `ScheduledRebuildPerformanceRmCommand` - `app/Console/Commands/ScheduledRebuildPerformanceRmCommand.php`
 - `SchedulerControlService` - `app/Services/SchedulerControlService.php`
 - `SchedulerHeartbeatCommand` - `app/Console/Commands/SchedulerHeartbeatCommand.php`
+- `SectorPotentialService` - `app/Support/SectorPotentialService.php`
 - `ServerRuntimeController` - `app/Http/Controllers/Admin/ServerRuntimeController.php`
 - `ServerRuntimeService` - `app/Services/ServerRuntimeService.php`
 - `ShadowColumnHealthService` - `app/Services/ControlCenter/ShadowColumnHealthService.php`
@@ -150,7 +151,6 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `SppgReportService` - `app/Services/Reports/SppgReportService.php`
 - `SpreadsheetFileFormatDetector` - `app/Support/SpreadsheetFileFormatDetector.php`
 - `StreamedFileLineCounter` - `app/Support/StreamedFileLineCounter.php`
-- `StrictDateParser` - `app/Support/StrictDateParser.php`
 
 ## Command Nodes
 
@@ -213,6 +213,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `report.ekosistem` - `resources/views/report/ekosistem.blade.php`
 - `report.partials.floating-scrollbar` - `resources/views/report/partials/floating-scrollbar.blade.php`
 - `report.partials.productivity-source-quality` - `resources/views/report/partials/productivity-source-quality.blade.php`
+- `report.partials.sector-customer-penetration` - `resources/views/report/partials/sector-customer-penetration.blade.php`
 - `report.partials.sticky-table-viewport-script` - `resources/views/report/partials/sticky-table-viewport-script.blade.php`
 - `report.partials.sticky-table-viewport-style` - `resources/views/report/partials/sticky-table-viewport-style.blade.php`
 - `report.performance-edc` - `resources/views/report/performance-edc.blade.php`
@@ -247,29 +248,29 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | import -> core (instantiates) | 301 |
 | dashboard-pinjaman -> core (calls) | 283 |
 | import -> core (accepts) | 226 |
-| dashboard-simpanan -> core (calls) | 201 |
+| dashboard-simpanan -> core (calls) | 202 |
 | bank-pipeline -> core (calls) | 167 |
 | jobs-snapshots -> core (calls) | 114 |
 | dashboard-pinjaman -> core (accepts) | 103 |
 | dashboard-harian -> core (calls) | 82 |
 | database -> core (instantiates) | 79 |
+| prognosa -> core (calls) | 79 |
 | core -> access-control (protected_by) | 75 |
 | access-control -> core (calls) | 66 |
+| presentation -> core (calls) | 66 |
 | bank-pipeline -> core (accepts) | 63 |
 | database -> core (writes_table) | 62 |
 | database -> core (checks_table) | 62 |
-| prognosa -> core (calls) | 61 |
 | dashboard-pinjaman -> core (instantiates) | 60 |
-| presentation -> core (calls) | 60 |
-| dashboard-simpanan -> core (accepts) | 59 |
+| dashboard-simpanan -> core (accepts) | 60 |
 | platform -> core (calls) | 37 |
 | bank-pipeline -> core (instantiates) | 37 |
 | database -> core (calls) | 36 |
 | jobs-snapshots -> core (uses_trait) | 35 |
+| prognosa -> core (accepts) | 34 |
 | almafacts -> core (calls) | 31 |
 | access-control -> core (accepts) | 29 |
 | import -> core (reads_table) | 29 |
-| prognosa -> core (accepts) | 28 |
+| presentation -> core (accepts) | 29 |
+| prognosa -> core (instantiates) | 28 |
 | core -> bank-pipeline (references_route) | 28 |
-| core -> platform (calls) | 27 |
-| import -> core (extends) | 26 |

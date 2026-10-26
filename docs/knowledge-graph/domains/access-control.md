@@ -19,7 +19,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Node | Kind | Degree | Source |
 | --- | --- | ---: | --- |
-| `current` | method | 62 | `app/Support/UserBranchScope.php:116` |
+| `current` | method | 65 | `app/Support/UserBranchScope.php:116` |
 | `User` | class | 27 | `app/Models/User.php:10` |
 | `update` | method | 23 | `app/Http/Controllers/Admin/UserManagementController.php:188` |
 | `LoginRequest` | class | 20 | `app/Http/Requests/Auth/LoginRequest.php:15` |
@@ -52,8 +52,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 ## Route Nodes
 
-- `generated::68qFgQUmBnkC5VWK` - `confirm-password`
-- `generated::xkxDBfGd3sTQDzxV` - `login`
+- `confirm-password` - `confirm-password`
+- `login` - `login`
 - `login` - `login`
 - `logout` - `logout`
 - `password.confirm` - `confirm-password`
@@ -117,8 +117,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Direction | Count |
 | --- | ---: |
 | import -> access-control (protected_by) | 1065 |
+| dashboard-simpanan -> access-control (protected_by) | 234 |
 | dashboard-pinjaman -> access-control (protected_by) | 228 |
-| dashboard-simpanan -> access-control (protected_by) | 222 |
 | bank-pipeline -> access-control (protected_by) | 136 |
 | core -> access-control (protected_by) | 75 |
 | access-control -> core (calls) | 66 |
@@ -126,17 +126,17 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | input-management -> access-control (protected_by) | 42 |
 | almafacts -> access-control (protected_by) | 30 |
 | access-control -> core (accepts) | 29 |
-| dashboard-simpanan -> access-control (calls) | 28 |
+| dashboard-simpanan -> access-control (calls) | 29 |
 | dashboard-pinjaman -> access-control (calls) | 23 |
 | jobs-snapshots -> access-control (protected_by) | 20 |
 | database -> access-control (protected_by) | 13 |
 | access-control -> core (uses_component) | 13 |
+| prognosa -> access-control (protected_by) | 12 |
 | access-control -> core (extends) | 11 |
-| core -> access-control (calls) | 9 |
+| core -> access-control (calls) | 10 |
 | bank-pipeline -> access-control (calls) | 8 |
 | marketshare -> access-control (protected_by) | 8 |
 | dashboard-harian -> access-control (calls) | 6 |
-| prognosa -> access-control (protected_by) | 6 |
 | database -> access-control (defines_table) | 5 |
 | access-control -> dashboard-simpanan (references_route) | 5 |
 | import -> access-control (calls) | 5 |

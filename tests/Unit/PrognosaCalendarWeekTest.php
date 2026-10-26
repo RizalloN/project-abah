@@ -22,6 +22,8 @@ class PrognosaCalendarWeekTest extends TestCase
             'Sabtu kelima W5' => ['2026-10-31', 5],
             'September 6 masuk W2' => ['2026-09-06', 2],
             'September 27 masuk W5' => ['2026-09-27', 5],
+            'Sabtu tanggal 1 tidak membentuk week sendiri (19 Agu)' => ['2026-08-19', 3],
+            'Sabtu tanggal 1 tidak membentuk week sendiri (27 Agu)' => ['2026-08-27', 4],
             'melewati Sabtu kelima tetap dibatasi W5' => ['2026-08-31', 5],
         ];
     }

@@ -30,6 +30,13 @@
         'dpk' => 'DPK',
         'recovery' => 'Recovery',
     ];
+    $periodQuery = $periodQuery ?? [];
+    $periodOptions = $periodOptions ?? [];
+    $customPeriods = $customPeriods ?? [];
+    $periodHiddenInputs = static fn (array $except = []): array => array_diff_key($periodQuery, array_flip($except));
+    $positionMin = $periodOptions !== [] ? (string) end($periodOptions)['value'] : '';
+    $positionMax = $periodOptions !== [] ? (string) reset($periodOptions)['value'] : '';
+    $exportQuery = array_merge(['sheet' => $selectedSheetKey, 'week' => $selectedWeek], $periodQuery);
     $groupStartColumns = array_values(array_filter(array_map(
         static fn (array $group): int => (int) ($group['start'] ?? 0),
         $headerGroups ?? []
@@ -1113,6 +1120,244 @@
             min-height: 390px;
         }
     }
+
+    /* Tanggal posisi, sembunyikan baris/kolom, menu klik kanan, dan modal tanggal */
+    .prognosa-field--date {
+        width: 188px;
+    }
+
+    .prognosa-selector input[type="date"] {
+        width: 100%;
+        height: 38px;
+        padding: 0.4rem 0.55rem 0.4rem 1.9rem;
+        border: 1px solid var(--prognosa-border-strong);
+        border-radius: 6px;
+        background: #ffffff;
+        color: var(--prognosa-ink);
+        font-size: 0.8rem;
+        font-weight: 700;
+        line-height: 1.2;
+        box-shadow: none;
+    }
+
+    .prognosa-selector input[type="date"]:focus {
+        border-color: var(--prognosa-primary);
+        outline: 0;
+        box-shadow: 0 0 0 3px rgba(11, 92, 171, 0.12);
+    }
+
+    .prognosa-actions {
+        flex-wrap: wrap;
+    }
+
+    .prognosa-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.38rem;
+        min-height: 34px;
+        padding: 0.3rem 0.7rem;
+        border: 1px solid #f2d7a8;
+        border-radius: 999px;
+        background: #fff9ed;
+        color: #8a5300;
+        cursor: pointer;
+        font-size: 0.72rem;
+        font-weight: 800;
+        line-height: 1.2;
+        white-space: nowrap;
+    }
+
+    .prognosa-pill[hidden] {
+        display: none;
+    }
+
+    .prognosa-pill:hover,
+    .prognosa-pill:focus-visible {
+        border-color: #d59a3a;
+        background: #fff1d6;
+        outline: 0;
+    }
+
+    .prognosa-button[disabled] {
+        cursor: progress;
+        opacity: 0.7;
+    }
+
+    .prognosa-table thead tr:nth-child(2) th,
+    .prognosa-table tbody td {
+        -webkit-touch-callout: none;
+    }
+
+    .prognosa-table thead tr:nth-child(2) th.prognosa-period-col[data-custom-period="1"] {
+        box-shadow: inset 0 -3px 0 #d59a3a;
+    }
+
+    .prognosa-table thead tr:nth-child(2) th.is-menu-target,
+    .prognosa-table tbody tr.is-menu-target td {
+        outline: 2px solid rgba(11, 92, 171, 0.45);
+        outline-offset: -2px;
+    }
+
+    .prognosa-menu {
+        position: fixed;
+        z-index: 1200;
+        min-width: 236px;
+        max-width: calc(100vw - 16px);
+        padding: 0.3rem;
+        border: 1px solid var(--prognosa-border);
+        border-radius: 8px;
+        background: #ffffff;
+        box-shadow: 0 18px 44px rgba(15, 23, 42, 0.26);
+    }
+
+    .prognosa-menu[hidden] {
+        display: none;
+    }
+
+    .prognosa-menu__title {
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+        margin: 0 0 0.25rem;
+        padding: 0.4rem 0.55rem;
+        border-bottom: 1px solid var(--prognosa-border);
+        color: var(--prognosa-muted);
+        font-size: 0.68rem;
+        font-weight: 800;
+        text-transform: uppercase;
+    }
+
+    .prognosa-menu__title span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .prognosa-menu__item {
+        display: flex;
+        align-items: center;
+        gap: 0.55rem;
+        width: 100%;
+        min-height: 38px;
+        padding: 0.4rem 0.6rem;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        color: #334155;
+        cursor: pointer;
+        font-size: 0.78rem;
+        font-weight: 700;
+        text-align: left;
+    }
+
+    .prognosa-menu__item[hidden] {
+        display: none;
+    }
+
+    .prognosa-menu__item:hover,
+    .prognosa-menu__item:focus-visible {
+        background: #eff6fc;
+        color: var(--prognosa-primary);
+        outline: 0;
+    }
+
+    .prognosa-menu__item i {
+        width: 1rem;
+        text-align: center;
+    }
+
+    .prognosa-menu__item--success {
+        color: #15803d;
+    }
+
+    .prognosa-date-body {
+        display: grid;
+        gap: 0.7rem;
+        padding: 0.95rem;
+    }
+
+    .prognosa-date-body p {
+        margin: 0;
+        color: var(--prognosa-muted);
+        font-size: 0.76rem;
+        line-height: 1.45;
+    }
+
+    .prognosa-date-body label {
+        display: block;
+        margin: 0 0 0.3rem;
+        color: #475569;
+        font-size: 0.7rem;
+        font-weight: 800;
+    }
+
+    .prognosa-date-body select,
+    .prognosa-date-body input[type="date"] {
+        width: 100%;
+        height: 38px;
+        padding: 0.4rem 0.6rem;
+        border: 1px solid var(--prognosa-border-strong);
+        border-radius: 6px;
+        background: #ffffff;
+        color: var(--prognosa-ink);
+        font-size: 0.82rem;
+        font-weight: 700;
+    }
+
+    .prognosa-date-body select:focus,
+    .prognosa-date-body input[type="date"]:focus {
+        border-color: var(--prognosa-primary);
+        outline: 0;
+        box-shadow: 0 0 0 3px rgba(11, 92, 171, 0.12);
+    }
+
+    .prognosa-date-info {
+        padding: 0.45rem 0.6rem;
+        border-radius: 6px;
+        background: #f4f7fa;
+    }
+
+    .prognosa-date-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+        padding: 0.7rem 0.95rem;
+        border-top: 1px solid var(--prognosa-border);
+        background: #f8fafc;
+    }
+
+    .prognosa-date-footer > div {
+        display: flex;
+        gap: 0.45rem;
+    }
+
+    .prognosa-a4-stage {
+        position: absolute;
+        top: 0;
+        left: -99999px;
+        width: auto;
+        padding: 0 !important;
+        background: #ffffff;
+    }
+
+    .prognosa-a4-stage .prognosa-table,
+    .prognosa-a4-stage .prognosa-table th,
+    .prognosa-a4-stage .prognosa-table td {
+        position: static !important;
+        box-shadow: none !important;
+    }
+
+    .prognosa-a4-stage .prognosa-table {
+        width: auto;
+        min-width: 0;
+        table-layout: fixed;
+    }
+
+    .prognosa-a4-stage .prognosa-table th:not(.prognosa-col-no):not(.prognosa-col-indicator),
+    .prognosa-a4-stage .prognosa-table td:not(.prognosa-col-no):not(.prognosa-col-indicator) {
+        min-width: 0;
+    }
 </style>
 @endsection
 
@@ -1138,6 +1383,9 @@
         <div class="prognosa-toolbar">
             <form class="prognosa-selector" method="GET" action="{{ route('prognosa.weekly') }}">
                 <input type="hidden" name="week" value="{{ $selectedWeek }}">
+                @foreach($periodHiddenInputs(['posisi_terakhir']) as $periodName => $periodValue)
+                    <input type="hidden" name="{{ $periodName }}" value="{{ $periodValue }}">
+                @endforeach
                 <div class="prognosa-field">
                     <label for="prognosa-sheet">Wilayah Laporan</label>
                     <div class="prognosa-select-shell">
@@ -1155,6 +1403,21 @@
                     </div>
                 </div>
 
+                <div class="prognosa-field prognosa-field--date">
+                    <label for="prognosa-posisi">Posisi Terakhir</label>
+                    <div class="prognosa-select-shell">
+                        <i class="fas fa-calendar-day prognosa-select-icon" aria-hidden="true"></i>
+                        <input type="date"
+                               id="prognosa-posisi"
+                               name="posisi_terakhir"
+                               value="{{ $selectedPeriod }}"
+                               @if($positionMin !== '') min="{{ $positionMin }}" @endif
+                               @if($positionMax !== '') max="{{ $positionMax }}" @endif
+                               aria-label="Pilih tanggal posisi terakhir"
+                               onchange="this.form.submit()">
+                    </div>
+                </div>
+
                 @if($isLocked)
                     <input type="hidden" name="sheet" value="{{ $selectedSheetKey }}">
                     <span class="prognosa-lock">
@@ -1165,8 +1428,39 @@
             </form>
 
             <div class="prognosa-actions">
+                @if(!$error && $rows !== [] && $headerColumns !== [])
+                    <button type="button" id="prognosa-unhide-columns" class="prognosa-pill" hidden
+                            title="Tampilkan kembali semua kolom yang disembunyikan">
+                        <i class="fas fa-eye" aria-hidden="true"></i>
+                        <span id="prognosa-hidden-columns-count">0</span> Kolom Tersembunyi
+                    </button>
+                    <button type="button" id="prognosa-unhide-rows" class="prognosa-pill" hidden
+                            title="Tampilkan kembali semua baris yang disembunyikan">
+                        <i class="fas fa-eye" aria-hidden="true"></i>
+                        <span id="prognosa-hidden-rows-count">0</span> Baris Tersembunyi
+                    </button>
+                    @if($periodQuery !== [])
+                        <a class="prognosa-button"
+                           href="{{ route('prognosa.weekly', ['sheet' => $selectedSheetKey, 'week' => $selectedWeek]) }}"
+                           title="Kembalikan semua tanggal ke default">
+                            <i class="fas fa-undo-alt" aria-hidden="true"></i>
+                            Tanggal Default
+                        </a>
+                    @endif
+                    <a id="prognosa-export-excel"
+                       class="prognosa-button"
+                       href="{{ route('prognosa.weekly.export', $exportQuery) }}"
+                       data-export-url="{{ route('prognosa.weekly.export') }}">
+                        <i class="fas fa-file-excel" aria-hidden="true"></i>
+                        Export Excel
+                    </a>
+                    <button type="button" id="prognosa-export-a4" class="prognosa-button">
+                        <i class="fas fa-file-image" aria-hidden="true"></i>
+                        Export A4
+                    </button>
+                @endif
                 <a class="prognosa-button prognosa-button--primary"
-                   href="{{ route('prognosa.weekly', ['sheet' => $selectedSheetKey, 'week' => $selectedWeek, 'refresh' => 1]) }}">
+                   href="{{ route('prognosa.weekly', ['sheet' => $selectedSheetKey, 'week' => $selectedWeek, 'refresh' => 1] + $periodQuery) }}">
                     <i class="fas fa-sync-alt" aria-hidden="true"></i>
                     Perbarui Data
                 </a>
@@ -1247,6 +1541,11 @@
             <div class="prognosa-table-wrap"
                  data-view-mode="all"
                  data-report-section="all"
+                 data-sheet="{{ $selectedSheetKey }}"
+                 data-sheet-label="{{ $selectedSheetLabel }}"
+                 data-week="{{ $selectedWeek }}"
+                 data-week-label="{{ $latestForecastLabel }}"
+                 data-latest-date="{{ $latestDate }}"
                  tabindex="0"
                  aria-label="Tabel Weekly Prognosa {{ $selectedSheetLabel }}">
                 <table class="prognosa-table">
@@ -1299,9 +1598,16 @@
                                     data-summary="{{ $column['summary'] ? '1' : '0' }}"
                                     @if($column['group'] === 'forecast')
                                         data-week-selector-surface
-                                        title="Klik dua kali untuk mengganti week"
+                                        title="Klik dua kali untuk mengganti week. Klik kanan untuk menyembunyikan kolom."
+                                    @elseif(!empty($column['period_key']))
+                                        data-period-key="{{ $column['period_key'] }}"
+                                        data-period="{{ $column['period'] }}"
+                                        data-custom-period="{{ isset($customPeriods[$column['period_key']]) || ($column['period_key'] === 'current' && isset($periodQuery['posisi_terakhir'])) ? '1' : '0' }}"
+                                        title="Klik kanan untuk menyembunyikan kolom atau mengubah tanggal"
+                                    @elseif($columnIndex > 1)
+                                        title="Klik kanan untuk menyembunyikan kolom"
                                     @endif
-                                    class="{{ implode(' ', array_filter([...$classes, $column['group'] === 'forecast' ? 'prognosa-week-surface' : ''])) }}">
+                                    class="{{ implode(' ', array_filter([...$classes, $column['group'] === 'forecast' ? 'prognosa-week-surface' : '', !empty($column['period_key']) ? 'prognosa-period-col' : ''])) }}">
                                     <span class="prognosa-column-label">{{ $column['label'] }}</span>
                                     @if(!empty($column['detail']))
                                         <small class="prognosa-column-detail">{{ $column['detail'] }}</small>
@@ -1312,7 +1618,7 @@
                     </thead>
                     <tbody>
                         @foreach($rows as $row)
-                            <tr class="prognosa-row--{{ $row['type'] }}" data-row-section="{{ $row['section'] }}">
+                            <tr class="prognosa-row--{{ $row['type'] }}" data-row-section="{{ $row['section'] }}" data-row-key="{{ $row['key'] ?? '' }}">
                                 @foreach($headerColumns as $column)
                                     @php
                                         $columnIndex = (int) $column['index'];
@@ -1368,6 +1674,9 @@
                 </div>
                 <form class="prognosa-week-options" method="GET" action="{{ route('prognosa.weekly') }}">
                     <input type="hidden" name="sheet" value="{{ $selectedSheetKey }}">
+                    @foreach($periodQuery as $periodName => $periodValue)
+                        <input type="hidden" name="{{ $periodName }}" value="{{ $periodValue }}">
+                    @endforeach
                     @foreach($availableWeeks as $week)
                         <button type="submit"
                                 name="week"
@@ -1380,11 +1689,92 @@
                 </form>
             </div>
         </div>
+
+        <div id="prognosa-column-menu" class="prognosa-menu" role="menu" hidden>
+            <div class="prognosa-menu__title">
+                <i class="fas fa-columns" aria-hidden="true"></i>
+                <span id="prognosa-column-menu-title">Kolom</span>
+            </div>
+            <button type="button" class="prognosa-menu__item" role="menuitem" data-menu-action="hide-column">
+                <i class="fas fa-eye-slash text-danger" aria-hidden="true"></i>
+                <span>Sembunyikan Kolom</span>
+            </button>
+            <button type="button" class="prognosa-menu__item" role="menuitem" data-menu-action="change-date">
+                <i class="fas fa-calendar-alt text-primary" aria-hidden="true"></i>
+                <span>Ubah Tanggal Kolom...</span>
+            </button>
+            <button type="button" class="prognosa-menu__item" role="menuitem" data-menu-action="reset-date">
+                <i class="fas fa-undo-alt text-warning" aria-hidden="true"></i>
+                <span>Kembalikan Tanggal Default</span>
+            </button>
+            <button type="button" class="prognosa-menu__item prognosa-menu__item--success" role="menuitem" data-menu-action="unhide-columns">
+                <i class="fas fa-eye" aria-hidden="true"></i>
+                <span>Tampilkan Semua Kolom (<span data-menu-count="columns">0</span>)</span>
+            </button>
+        </div>
+
+        <div id="prognosa-row-menu" class="prognosa-menu" role="menu" hidden>
+            <div class="prognosa-menu__title">
+                <i class="fas fa-bars" aria-hidden="true"></i>
+                <span id="prognosa-row-menu-title">Baris</span>
+            </div>
+            <button type="button" class="prognosa-menu__item" role="menuitem" data-menu-action="hide-row">
+                <i class="fas fa-eye-slash text-danger" aria-hidden="true"></i>
+                <span>Sembunyikan Baris</span>
+            </button>
+            <button type="button" class="prognosa-menu__item prognosa-menu__item--success" role="menuitem" data-menu-action="unhide-rows">
+                <i class="fas fa-eye" aria-hidden="true"></i>
+                <span>Tampilkan Semua Baris (<span data-menu-count="rows">0</span>)</span>
+            </button>
+        </div>
+
+        <div id="prognosa-date-modal"
+             class="prognosa-week-modal"
+             role="dialog"
+             aria-modal="true"
+             aria-labelledby="prognosa-date-title"
+             hidden>
+            <div class="prognosa-week-dialog">
+                <div class="prognosa-week-dialog__header">
+                    <h2 id="prognosa-date-title">Ubah Tanggal Kolom</h2>
+                    <button type="button"
+                            class="prognosa-week-dialog__close"
+                            data-date-close
+                            aria-label="Tutup pengaturan tanggal">
+                        <i class="fas fa-times" aria-hidden="true"></i>
+                    </button>
+                </div>
+                <div class="prognosa-date-body">
+                    <p>Pilih tanggal pembanding untuk kolom <strong id="prognosa-date-badge">-</strong>.</p>
+                    <div>
+                        <label for="prognosa-date-preset">Pilih dari tanggal snapshot</label>
+                        <select id="prognosa-date-preset"></select>
+                    </div>
+                    <div>
+                        <label for="prognosa-date-custom">Atau masukkan tanggal tertentu</label>
+                        <input type="date" id="prognosa-date-custom">
+                    </div>
+                    <p class="prognosa-date-info" id="prognosa-date-info"></p>
+                </div>
+                <div class="prognosa-date-footer">
+                    <button type="button" class="prognosa-button" id="prognosa-date-reset">
+                        <i class="fas fa-undo-alt" aria-hidden="true"></i> Default
+                    </button>
+                    <div>
+                        <button type="button" class="prognosa-button" data-date-close>Batal</button>
+                        <button type="button" class="prognosa-button prognosa-button--primary" id="prognosa-date-apply">
+                            <i class="fas fa-check" aria-hidden="true"></i> Terapkan
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
     @endif
 </div>
 @endsection
 
 @section('scripts')
+<script src="{{ asset('vendor/html2canvas/html2canvas.min.js') }}"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function () {
         const tableWrap = document.querySelector('.prognosa-table-wrap');
@@ -1405,6 +1795,45 @@
         const weekSurfaces = Array.from(document.querySelectorAll('[data-week-selector-surface]'));
         const weekClose = weekModal ? weekModal.querySelector('[data-week-selector-close]') : null;
         let weekTriggerSource = null;
+
+        // Baris/kolom yang disembunyikan pengguna (klik kanan), diingat per wilayah selama sesi.
+        const hiddenColumns = new Set();
+        const hiddenRows = new Set();
+        const hiddenStorageKey = 'weekly-prognosa-hidden:' + (tableWrap.dataset.sheet || 'area');
+        try {
+            const stored = JSON.parse(sessionStorage.getItem(hiddenStorageKey) || 'null');
+            if (stored) {
+                (stored.cols || []).forEach(function (value) { hiddenColumns.add(String(value)); });
+                (stored.rows || []).forEach(function (value) { hiddenRows.add(String(value)); });
+            }
+        } catch (error) {
+        }
+
+        const unhideColumnsButton = document.getElementById('prognosa-unhide-columns');
+        const unhideRowsButton = document.getElementById('prognosa-unhide-rows');
+        const hiddenColumnsCount = document.getElementById('prognosa-hidden-columns-count');
+        const hiddenRowsCount = document.getElementById('prognosa-hidden-rows-count');
+
+        function persistHidden() {
+            try {
+                sessionStorage.setItem(hiddenStorageKey, JSON.stringify({
+                    cols: Array.from(hiddenColumns),
+                    rows: Array.from(hiddenRows),
+                }));
+            } catch (error) {
+            }
+        }
+
+        function updateHiddenBadges() {
+            if (unhideColumnsButton) {
+                unhideColumnsButton.hidden = hiddenColumns.size === 0;
+                hiddenColumnsCount.textContent = String(hiddenColumns.size);
+            }
+            if (unhideRowsButton) {
+                unhideRowsButton.hidden = hiddenRows.size === 0;
+                hiddenRowsCount.textContent = String(hiddenRows.size);
+            }
+        }
 
         function openWeekModal(source) {
             if (!weekModal) {
@@ -1518,7 +1947,7 @@
             const visibleColumns = new Set();
             columnHeaders.forEach(function (column) {
                 const index = column.dataset.columnIndex;
-                const visible = columnIsVisible(column, mode);
+                const visible = columnIsVisible(column, mode) && !hiddenColumns.has(index);
                 column.hidden = !visible;
                 if (visible) {
                     visibleColumns.add(index);
@@ -1552,6 +1981,7 @@
             const scrollViewportWidth = Math.max(0, tableWrap.clientWidth - 16);
             table.style.minWidth = Math.max(scrollViewportWidth, stickyWidth + (numericColumns * numericColumnWidth)) + 'px';
             tableWrap.dataset.viewMode = mode;
+            updateHiddenBadges();
 
             modeButtons.forEach(function (button) {
                 const active = button.dataset.columnMode === mode;
@@ -1565,11 +1995,18 @@
             }
         }
 
-        function applyReportSection(section) {
+        function applyRowVisibility() {
+            const section = tableWrap.dataset.reportSection || 'all';
             reportRows.forEach(function (row) {
-                row.hidden = section !== 'all' && row.dataset.rowSection !== section;
+                row.hidden = (section !== 'all' && row.dataset.rowSection !== section)
+                    || hiddenRows.has(row.dataset.rowKey || '');
             });
+            updateHiddenBadges();
+        }
+
+        function applyReportSection(section) {
             tableWrap.dataset.reportSection = section;
+            applyRowVisibility();
 
             sectionButtons.forEach(function (button) {
                 const active = button.dataset.reportSection === section;
@@ -1601,6 +2038,551 @@
 
         applyColumnMode(initialMode);
         applyReportSection('all');
+
+
+        // ---------- Sembunyikan baris/kolom, menu klik kanan ----------
+        const columnMenu = document.getElementById('prognosa-column-menu');
+        const rowMenu = document.getElementById('prognosa-row-menu');
+        const columnHeaderRow = table.querySelector('thead tr:nth-child(2)');
+        let menuColumnIndex = null;
+        let menuRowKey = null;
+        let menuTarget = null;
+
+        function hideMenus() {
+            [columnMenu, rowMenu].forEach(function (menu) {
+                if (menu) {
+                    menu.hidden = true;
+                }
+            });
+            if (menuTarget) {
+                menuTarget.classList.remove('is-menu-target');
+                menuTarget = null;
+            }
+        }
+
+        function placeMenu(menu, x, y) {
+            menu.hidden = false;
+            const rect = menu.getBoundingClientRect();
+            const left = Math.max(8, Math.min(x, window.innerWidth - rect.width - 8));
+            const top = Math.max(8, Math.min(y, window.innerHeight - rect.height - 8));
+            menu.style.left = left + 'px';
+            menu.style.top = top + 'px';
+        }
+
+        function openColumnMenu(header, x, y) {
+            if (!columnMenu) {
+                return;
+            }
+            hideMenus();
+            menuColumnIndex = header.dataset.columnIndex;
+            menuTarget = header;
+            header.classList.add('is-menu-target');
+            const label = header.querySelector('.prognosa-column-label');
+            const detail = header.querySelector('.prognosa-column-detail');
+            document.getElementById('prognosa-column-menu-title').textContent =
+                (label ? label.textContent.trim() : 'Kolom') + (detail && header.dataset.periodKey ? ' - ' + detail.textContent.trim() : '');
+
+            const isIdentity = menuColumnIndex === '0' || menuColumnIndex === '1';
+            const hasPeriod = Boolean(header.dataset.periodKey);
+            columnMenu.querySelector('[data-menu-action="hide-column"]').hidden = isIdentity;
+            columnMenu.querySelector('[data-menu-action="change-date"]').hidden = !hasPeriod;
+            columnMenu.querySelector('[data-menu-action="reset-date"]').hidden = !(hasPeriod && header.dataset.customPeriod === '1');
+            columnMenu.querySelector('[data-menu-action="unhide-columns"]').hidden = hiddenColumns.size === 0;
+            columnMenu.querySelector('[data-menu-count="columns"]').textContent = String(hiddenColumns.size);
+            placeMenu(columnMenu, x, y);
+        }
+
+        function openRowMenu(row, x, y) {
+            if (!rowMenu) {
+                return;
+            }
+            hideMenus();
+            menuRowKey = row.dataset.rowKey || '';
+            menuTarget = row;
+            row.classList.add('is-menu-target');
+            const indicator = row.querySelector('[data-column-index="1"]');
+            document.getElementById('prognosa-row-menu-title').textContent =
+                indicator ? indicator.textContent.trim() : 'Baris';
+            rowMenu.querySelector('[data-menu-action="hide-row"]').hidden = menuRowKey === '';
+            rowMenu.querySelector('[data-menu-action="unhide-rows"]').hidden = hiddenRows.size === 0;
+            rowMenu.querySelector('[data-menu-count="rows"]').textContent = String(hiddenRows.size);
+            placeMenu(rowMenu, x, y);
+        }
+
+        function hideColumn(index) {
+            if (!index || index === '0' || index === '1') {
+                return;
+            }
+            hiddenColumns.add(index);
+            persistHidden();
+            applyColumnMode(tableWrap.dataset.viewMode || 'all');
+        }
+
+        function unhideAllColumns() {
+            hiddenColumns.clear();
+            persistHidden();
+            applyColumnMode(tableWrap.dataset.viewMode || 'all');
+        }
+
+        function hideRow(key) {
+            if (!key) {
+                return;
+            }
+            hiddenRows.add(key);
+            persistHidden();
+            applyRowVisibility();
+        }
+
+        function unhideAllRows() {
+            hiddenRows.clear();
+            persistHidden();
+            applyRowVisibility();
+        }
+
+        if (columnHeaderRow) {
+            columnHeaderRow.addEventListener('contextmenu', function (event) {
+                const header = event.target.closest('th[data-column-index]');
+                if (!header) {
+                    return;
+                }
+                event.preventDefault();
+                openColumnMenu(header, event.clientX, event.clientY);
+            });
+        }
+
+        table.querySelector('tbody').addEventListener('contextmenu', function (event) {
+            const row = event.target.closest('tr[data-row-key]');
+            if (!row) {
+                return;
+            }
+            event.preventDefault();
+            openRowMenu(row, event.clientX, event.clientY);
+        });
+
+        // Sentuh lama (layar sentuh tidak punya klik kanan).
+        let pressTimer = null;
+        function cancelPress() {
+            if (pressTimer !== null) {
+                window.clearTimeout(pressTimer);
+                pressTimer = null;
+            }
+        }
+        table.addEventListener('touchstart', function (event) {
+            if (event.touches.length !== 1) {
+                return;
+            }
+            const touch = event.touches[0];
+            const header = event.target.closest('thead tr:nth-child(2) th[data-column-index]');
+            const row = header ? null : event.target.closest('tbody tr[data-row-key]');
+            if (!header && !row) {
+                return;
+            }
+            cancelPress();
+            pressTimer = window.setTimeout(function () {
+                pressTimer = null;
+                if (header) {
+                    openColumnMenu(header, touch.clientX, touch.clientY);
+                } else {
+                    openRowMenu(row, touch.clientX, touch.clientY);
+                }
+            }, 550);
+        }, { passive: true });
+        ['touchmove', 'touchend', 'touchcancel'].forEach(function (name) {
+            table.addEventListener(name, cancelPress, { passive: true });
+        });
+
+        [columnMenu, rowMenu].forEach(function (menu) {
+            if (!menu) {
+                return;
+            }
+            menu.addEventListener('click', function (event) {
+                const button = event.target.closest('[data-menu-action]');
+                if (!button) {
+                    return;
+                }
+                const action = button.dataset.menuAction;
+                const columnIndex = menuColumnIndex;
+                const rowKey = menuRowKey;
+                hideMenus();
+                if (action === 'hide-column') {
+                    hideColumn(columnIndex);
+                } else if (action === 'unhide-columns') {
+                    unhideAllColumns();
+                } else if (action === 'hide-row') {
+                    hideRow(rowKey);
+                } else if (action === 'unhide-rows') {
+                    unhideAllRows();
+                } else if (action === 'change-date') {
+                    const header = columnHeaderRow.querySelector('[data-column-index="' + columnIndex + '"]');
+                    if (header) {
+                        openDateModal(header);
+                    }
+                } else if (action === 'reset-date') {
+                    const header = columnHeaderRow.querySelector('[data-column-index="' + columnIndex + '"]');
+                    if (header) {
+                        applyPeriod(header.dataset.periodKey, '');
+                    }
+                }
+            });
+        });
+
+        document.addEventListener('click', function (event) {
+            if (!event.target.closest('.prognosa-menu')) {
+                hideMenus();
+            }
+        });
+        document.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape') {
+                hideMenus();
+            }
+        });
+        window.addEventListener('scroll', hideMenus, { passive: true, capture: true });
+        window.addEventListener('blur', hideMenus);
+
+        if (unhideColumnsButton) {
+            unhideColumnsButton.addEventListener('click', unhideAllColumns);
+        }
+        if (unhideRowsButton) {
+            unhideRowsButton.addEventListener('click', unhideAllRows);
+        }
+
+        // ---------- Ubah tanggal ----------
+        const periodOptions = @json($periodOptions);
+        const dateModal = document.getElementById('prognosa-date-modal');
+        const datePreset = document.getElementById('prognosa-date-preset');
+        const dateCustom = document.getElementById('prognosa-date-custom');
+        const dateInfo = document.getElementById('prognosa-date-info');
+        const dateBadge = document.getElementById('prognosa-date-badge');
+        let dateModalHeader = null;
+        let dateModalSource = null;
+
+        function periodParam(key) {
+            return key === 'current' ? 'posisi_terakhir' : key + '_period';
+        }
+
+        function applyPeriod(key, value) {
+            const url = new URL(window.location.href);
+            url.searchParams.delete('refresh');
+            if (value) {
+                url.searchParams.set(periodParam(key), value);
+            } else {
+                url.searchParams.delete(periodParam(key));
+            }
+            window.location.href = url.toString();
+        }
+
+        function formatDateLabel(value) {
+            const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value || '');
+            if (!match) {
+                return '-';
+            }
+            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+
+            return match[3] + ' ' + months[parseInt(match[2], 10) - 1] + ' ' + match[1].slice(2);
+        }
+
+        function openDateModal(header) {
+            if (!dateModal || !header.dataset.periodKey) {
+                return;
+            }
+            dateModalHeader = header;
+            dateModalSource = document.activeElement;
+            const current = header.dataset.period || '';
+            const label = header.querySelector('.prognosa-column-label');
+            dateBadge.textContent = (label ? label.textContent.trim() : header.dataset.periodKey)
+                + (header.dataset.periodKey === 'current' ? ' (Posisi Terakhir)' : '');
+
+            datePreset.innerHTML = '';
+            const defaultOption = document.createElement('option');
+            defaultOption.value = '';
+            defaultOption.textContent = '-- Pilih tanggal snapshot --';
+            datePreset.appendChild(defaultOption);
+            periodOptions.forEach(function (option) {
+                const element = document.createElement('option');
+                element.value = option.value;
+                element.textContent = option.label;
+                datePreset.appendChild(element);
+            });
+            datePreset.value = periodOptions.some(function (option) { return option.value === current; }) ? current : '';
+            dateCustom.value = current;
+            dateInfo.textContent = 'Tanggal aktif: ' + formatDateLabel(current)
+                + (header.dataset.customPeriod === '1' ? ' (custom)' : ' (default)');
+
+            dateModal.hidden = false;
+            document.body.classList.add('prognosa-modal-open');
+            window.requestAnimationFrame(function () {
+                datePreset.focus();
+            });
+        }
+
+        function closeDateModal() {
+            if (!dateModal || dateModal.hidden) {
+                return;
+            }
+            dateModal.hidden = true;
+            document.body.classList.remove('prognosa-modal-open');
+            if (dateModalSource && typeof dateModalSource.focus === 'function') {
+                dateModalSource.focus();
+            }
+        }
+
+        if (dateModal) {
+            datePreset.addEventListener('change', function () {
+                if (datePreset.value) {
+                    dateCustom.value = datePreset.value;
+                }
+            });
+            dateCustom.addEventListener('input', function () {
+                datePreset.value = periodOptions.some(function (option) { return option.value === dateCustom.value; })
+                    ? dateCustom.value
+                    : '';
+            });
+            dateModal.querySelectorAll('[data-date-close]').forEach(function (button) {
+                button.addEventListener('click', closeDateModal);
+            });
+            dateModal.addEventListener('click', function (event) {
+                if (event.target === dateModal) {
+                    closeDateModal();
+                }
+            });
+            document.getElementById('prognosa-date-apply').addEventListener('click', function () {
+                const chosen = dateCustom.value || datePreset.value;
+                if (!chosen || !dateModalHeader) {
+                    dateCustom.focus();
+
+                    return;
+                }
+                applyPeriod(dateModalHeader.dataset.periodKey, chosen);
+            });
+            document.getElementById('prognosa-date-reset').addEventListener('click', function () {
+                if (dateModalHeader) {
+                    applyPeriod(dateModalHeader.dataset.periodKey, '');
+                }
+            });
+            document.addEventListener('keydown', function (event) {
+                if (!dateModal.hidden && event.key === 'Escape') {
+                    event.preventDefault();
+                    closeDateModal();
+                }
+            });
+        }
+
+        // ---------- Export Excel ----------
+        const exportExcelLink = document.getElementById('prognosa-export-excel');
+        if (exportExcelLink) {
+            exportExcelLink.addEventListener('click', function (event) {
+                event.preventDefault();
+                const url = new URL(exportExcelLink.dataset.exportUrl, window.location.origin);
+                const current = new URLSearchParams(window.location.search);
+                ['posisi_terakhir', 'yoy_period', 'ytd_period', 'm2_period', 'mtm_period', 'mtd_period', 'h1_period']
+                    .forEach(function (name) {
+                        if (current.get(name)) {
+                            url.searchParams.set(name, current.get(name));
+                        }
+                    });
+                url.searchParams.set('sheet', tableWrap.dataset.sheet || 'area');
+                url.searchParams.set('week', tableWrap.dataset.week || '');
+                if (hiddenColumns.size > 0) {
+                    url.searchParams.set('hidden_columns', Array.from(hiddenColumns).join(','));
+                }
+                if (hiddenRows.size > 0) {
+                    url.searchParams.set('hidden_rows', Array.from(hiddenRows).join(','));
+                }
+                window.location.href = url.toString();
+            });
+        }
+
+        // ---------- Export A4 (PNG, portrait) ----------
+        const exportA4Button = document.getElementById('prognosa-export-a4');
+        const A4_EXPORT = { width: 4960, height: 7016, marginX: 150, marginTop: 118, headerHeight: 290, footerHeight: 130 };
+
+        function waitFrame() {
+            return new Promise(function (resolve) { window.requestAnimationFrame(function () { resolve(); }); });
+        }
+
+        function drawEllipsis(ctx, text, x, y, maxWidth) {
+            let value = String(text || '');
+            if (ctx.measureText(value).width <= maxWidth) {
+                ctx.fillText(value, x, y);
+
+                return;
+            }
+            while (value.length > 0 && ctx.measureText(value + '...').width > maxWidth) {
+                value = value.slice(0, -1);
+            }
+            ctx.fillText(value + '...', x, y);
+        }
+
+        function drawA4Frame(ctx, meta, page, pages) {
+            const width = A4_EXPORT.width;
+            const marginX = A4_EXPORT.marginX;
+            const marginTop = A4_EXPORT.marginTop;
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, width, A4_EXPORT.height);
+            ctx.fillStyle = '#0b5cab';
+            ctx.fillRect(0, 0, width, 36);
+
+            ctx.fillStyle = '#0f172a';
+            ctx.font = 'bold 88px "Inter", "Segoe UI", Arial, sans-serif';
+            ctx.fillText('Weekly Prognosa', marginX, marginTop + 60);
+
+            ctx.fillStyle = '#475569';
+            ctx.font = '600 42px "Inter", "Segoe UI", Arial, sans-serif';
+            drawEllipsis(ctx, 'Wilayah: ' + meta.sheet + '   |   Posisi: ' + meta.latestDate + '   |   ' + meta.week, marginX, marginTop + 135, width - marginX * 2);
+
+            ctx.strokeStyle = '#e2e8f0';
+            ctx.lineWidth = 5;
+            ctx.beginPath();
+            ctx.moveTo(marginX, marginTop + 190);
+            ctx.lineTo(width - marginX, marginTop + 190);
+            ctx.stroke();
+
+            ctx.strokeStyle = '#e2e8f0';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(marginX, A4_EXPORT.height - 120);
+            ctx.lineTo(width - marginX, A4_EXPORT.height - 120);
+            ctx.stroke();
+
+            ctx.fillStyle = '#94a3b8';
+            ctx.font = '600 32px "Inter", "Segoe UI", Arial, sans-serif';
+            const stamp = new Date().toLocaleString('id-ID', {
+                day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit',
+            }).replace(/\//g, '-');
+            ctx.fillText('Weekly Prognosa A-Six Generated: ' + stamp, marginX, A4_EXPORT.height - 60);
+            ctx.textAlign = 'right';
+            ctx.font = 'bold 36px "Inter", "Segoe UI", Arial, sans-serif';
+            ctx.fillStyle = '#64748b';
+            ctx.fillText('Halaman ' + page + ' dari ' + pages, width - marginX, A4_EXPORT.height - 60);
+            ctx.textAlign = 'left';
+        }
+
+        async function exportA4() {
+            if (typeof window.html2canvas !== 'function') {
+                window.alert('Pustaka export belum termuat. Muat ulang halaman lalu coba lagi.');
+
+                return;
+            }
+
+            const original = exportA4Button.innerHTML;
+            exportA4Button.disabled = true;
+            exportA4Button.innerHTML = '<i class="fas fa-spinner fa-spin" aria-hidden="true"></i> Menyusun A4...';
+            const stage = document.createElement('div');
+            stage.className = 'prognosa-page prognosa-a4-stage';
+
+            try {
+                // Salin tabel apa adanya (kolom/baris tersembunyi dibuang), lepas sticky agar utuh.
+                const shownHeaders = columnHeaders.filter(function (column) { return !column.hidden; });
+                const widths = shownHeaders.map(function (column) { return Math.round(column.getBoundingClientRect().width); });
+                const tableWidth = widths.reduce(function (sum, value) { return sum + value; }, 0);
+                if (shownHeaders.length === 0 || tableWidth <= 0) {
+                    throw new Error('Tidak ada kolom yang ditampilkan.');
+                }
+
+                const clone = table.cloneNode(true);
+                clone.querySelectorAll('[hidden]').forEach(function (element) { element.remove(); });
+                clone.querySelectorAll('caption').forEach(function (element) { element.remove(); });
+                clone.querySelectorAll('[title]').forEach(function (element) { element.removeAttribute('title'); });
+                clone.querySelectorAll('.prognosa-week-trigger').forEach(function (element) { element.remove(); });
+                clone.style.width = tableWidth + 'px';
+                clone.style.minWidth = tableWidth + 'px';
+                const colgroup = clone.querySelector('colgroup');
+                colgroup.innerHTML = widths.map(function (width) { return '<col style="width:' + width + 'px">'; }).join('');
+                stage.appendChild(clone);
+                document.body.appendChild(stage);
+                await waitFrame();
+
+                const bodyRows = Array.from(clone.querySelectorAll('tbody tr'));
+                if (bodyRows.length === 0) {
+                    throw new Error('Tidak ada baris yang ditampilkan.');
+                }
+                const headHeight = clone.querySelector('thead').getBoundingClientRect().height;
+                const rowHeights = bodyRows.map(function (row) { return row.getBoundingClientRect().height; });
+
+                const drawWidthMax = A4_EXPORT.width - A4_EXPORT.marginX * 2;
+                const scale = Math.min(4, drawWidthMax / tableWidth);
+                const availableHeight = (A4_EXPORT.height - A4_EXPORT.marginTop - A4_EXPORT.headerHeight - A4_EXPORT.footerHeight) / scale;
+
+                // Bagi baris ke beberapa halaman tanpa meninggalkan judul seksi di dasar halaman.
+                const pages = [];
+                let current = { rows: [], height: headHeight };
+                bodyRows.forEach(function (row, index) {
+                    if (current.rows.length > 0 && current.height + rowHeights[index] > availableHeight) {
+                        const carry = [];
+                        while (current.rows.length > 1 && /prognosa-row--(section|category)/.test(current.rows[current.rows.length - 1].className)) {
+                            carry.unshift(current.rows.pop());
+                        }
+                        pages.push(current);
+                        current = { rows: carry, height: headHeight + carry.reduce(function (sum, item) { return sum + item.getBoundingClientRect().height; }, 0) };
+                    }
+                    current.rows.push(row);
+                    current.height += rowHeights[index];
+                });
+                if (current.rows.length > 0) {
+                    pages.push(current);
+                }
+
+                const meta = {
+                    sheet: tableWrap.dataset.sheetLabel || 'Area 6',
+                    latestDate: tableWrap.dataset.latestDate || '-',
+                    week: tableWrap.dataset.weekLabel || '',
+                };
+                const stamp = new Date().toISOString().slice(0, 10);
+                const slug = (tableWrap.dataset.sheet || 'area');
+
+                for (let index = 0; index < pages.length; index += 1) {
+                    const pageTable = clone.cloneNode(false);
+                    pageTable.appendChild(clone.querySelector('colgroup').cloneNode(true));
+                    pageTable.appendChild(clone.querySelector('thead').cloneNode(true));
+                    const tbody = document.createElement('tbody');
+                    pages[index].rows.forEach(function (row) { tbody.appendChild(row.cloneNode(true)); });
+                    pageTable.appendChild(tbody);
+
+                    const holder = document.createElement('div');
+                    holder.style.cssText = 'display:inline-block;background:#ffffff;width:' + tableWidth + 'px;';
+                    holder.appendChild(pageTable);
+                    stage.appendChild(holder);
+                    await waitFrame();
+
+                    const captured = await window.html2canvas(holder, {
+                        scale: scale,
+                        useCORS: true,
+                        backgroundColor: '#ffffff',
+                        logging: false,
+                    });
+                    stage.removeChild(holder);
+
+                    const canvas = document.createElement('canvas');
+                    canvas.width = A4_EXPORT.width;
+                    canvas.height = A4_EXPORT.height;
+                    const ctx = canvas.getContext('2d');
+                    drawA4Frame(ctx, meta, index + 1, pages.length);
+                    const drawWidth = captured.width;
+                    const x = A4_EXPORT.marginX + Math.max(0, (drawWidthMax - drawWidth) / 2);
+                    ctx.drawImage(captured, x, A4_EXPORT.marginTop + A4_EXPORT.headerHeight);
+
+                    const link = document.createElement('a');
+                    link.download = 'Weekly-Prognosa_' + slug + '_' + (meta.week || 'W').replace(/\s+/g, '') + '_' + stamp
+                        + (pages.length > 1 ? '_Hal-' + (index + 1) : '') + '.png';
+                    link.href = canvas.toDataURL('image/png');
+                    link.click();
+                    await waitFrame();
+                }
+            } catch (error) {
+                console.error('Export A4 Weekly Prognosa gagal.', error);
+                window.alert('Gagal menyusun export A4. Silakan coba lagi.');
+            } finally {
+                if (stage.parentNode) {
+                    stage.parentNode.removeChild(stage);
+                }
+                exportA4Button.disabled = false;
+                exportA4Button.innerHTML = original;
+            }
+        }
+
+        if (exportA4Button) {
+            exportA4Button.addEventListener('click', exportA4);
+        }
 
         let resizeFrame = null;
         window.addEventListener('resize', function () {

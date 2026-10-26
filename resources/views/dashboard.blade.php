@@ -16249,6 +16249,8 @@ document.addEventListener('DOMContentLoaded', function() {
       
       const selectedPeriod = document.getElementById('periode-selector') ? document.getElementById('periode-selector').value : '';
       const url = new URL("{{ route('dashboard.presentation') }}", window.location.origin);
+      const selectedScope = document.getElementById('landing-branch-selector')?.value;
+      if (selectedScope) url.searchParams.set('scope', selectedScope);
       if (selectedPeriod) {
         url.searchParams.set('periode', selectedPeriod);
       }

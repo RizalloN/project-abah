@@ -1,0 +1,932 @@
+/*
+ * Atlas: the Wilayah segments' data objects (see segments/atlas.js).
+ *
+ * One material language on both grounds: clear glass for the whole, a lit
+ * liquid or solid for our part, a soft contact shadow on a floor. Motion is
+ * entrance only, keyed to the tile's .is-in (a staggered rise and fill); hover
+ * and focus change colour and readouts in place and never move anything.
+ */
+
+.sg {
+    --sg-glass-edge: rgba(12, 34, 78, 0.16);
+    --sg-glass-hi: rgba(255, 255, 255, 0.72);
+    --sg-glass-tint: rgba(0, 54, 140, 0.035);
+    --sg-floor: rgba(10, 30, 70, 0.16);
+}
+
+.sg .sg-ground--dark {
+    --sg-glass-edge: rgba(190, 214, 255, 0.22);
+    --sg-glass-hi: rgba(255, 255, 255, 0.24);
+    --sg-glass-tint: rgba(150, 190, 255, 0.04);
+    --sg-floor: rgba(0, 0, 0, 0.6);
+}
+
+/* Atlas tiles carry their own depth; the shared pointer specular stays off them. */
+.sg .sg-tile--atlas::after { display: none; }
+.sg .sg-tile--atlas { overflow: visible; }
+
+/* ------------------------------------------------------------------ vessels -- */
+
+.sg .sg-vessels {
+    --vh: clamp(170px, 22vw, 290px);
+    --vw: clamp(40px, 5.2vw, 70px);
+    --cap: calc(var(--vw) * 0.17);
+    position: relative;
+    margin: 0;
+    padding-top: 6px;
+}
+
+.sg .sg-vessels__row {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: repeat(var(--n), minmax(0, 1fr));
+    align-items: end;
+    gap: clamp(6px, 1.4vw, 22px);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.sg .sg-vessel {
+    display: grid;
+    justify-items: center;
+    align-content: end;
+    gap: 12px;
+    min-width: 0;
+    border-radius: 16px;
+    outline: none;
+}
+
+.sg .sg-vessel:focus-visible { box-shadow: 0 0 0 2px var(--kn-accent); }
+
+.sg .sg-vessel__value {
+    margin: 0;
+    font-size: clamp(1.02rem, 1.55vw, 1.42rem);
+    font-weight: 600;
+    letter-spacing: -0.035em;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.sg .sg-vessel__body {
+    position: relative;
+    width: var(--vw);
+    height: calc(var(--vh) * var(--h));
+    margin-top: var(--cap);
+}
+
+/* Contact shadow on the floor. */
+.sg .sg-vessel__body::after {
+    content: "";
+    position: absolute;
+    left: -30%;
+    right: -30%;
+    bottom: calc(var(--cap) * -1.4);
+    height: calc(var(--cap) * 2.6);
+    border-radius: 50%;
+    background: radial-gradient(closest-side, var(--sg-floor), transparent);
+    z-index: -1;
+}
+
+.sg .sg-vessel__tank,
+.sg .sg-vessel__glass {
+    position: absolute;
+    inset: 0;
+    border-radius: 0 0 50% 50% / 0 0 var(--cap) var(--cap);
+}
+
+.sg .sg-vessel__tank { overflow: hidden; background: var(--sg-glass-tint); }
+
+.sg .sg-vessel__liquid {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: calc(var(--f) * 100%);
+    background: linear-gradient(90deg,
+        color-mix(in srgb, var(--c) 62%, #000) 0%,
+        var(--c) 26%,
+        color-mix(in srgb, var(--c) 58%, #fff) 44%,
+        var(--c) 62%,
+        color-mix(in srgb, var(--c) 70%, #000) 100%);
+}
+
+/* The liquid's surface: a lit ellipse at the fill line. */
+.sg .sg-vessel__liquid i {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(var(--cap) * -1);
+    height: calc(var(--cap) * 2);
+    border-radius: 50%;
+    background: radial-gradient(ellipse at 42% 40%, color-mix(in srgb, var(--c) 36%, #fff), color-mix(in srgb, var(--c) 86%, #fff) 64%, var(--c));
+}
+
+.sg .sg-vessel__glass {
+    background: linear-gradient(90deg,
+        rgba(255, 255, 255, 0.05) 0%,
+        var(--sg-glass-hi) 14%,
+        rgba(255, 255, 255, 0.06) 30%,
+        rgba(255, 255, 255, 0) 58%,
+        rgba(255, 255, 255, 0.18) 84%,
+        rgba(255, 255, 255, 0.04) 100%);
+    box-shadow: inset 0 0 0 1px var(--sg-glass-edge);
+    pointer-events: none;
+}
+
+/* The open rim at the top of the glass. */
+.sg .sg-vessel__glass::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(var(--cap) * -1);
+    height: calc(var(--cap) * 2);
+    border-radius: 50%;
+    border: 1px solid var(--sg-glass-edge);
+    background: radial-gradient(ellipse at 50% 45%, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.2));
+}
+
+/* Above 100%: the vessel is full and the overflow is marked on the rim. */
+.sg .sg-vessel.is-over .sg-vessel__glass::before {
+    border-color: color-mix(in srgb, var(--c) 70%, #fff);
+    background: radial-gradient(ellipse at 50% 45%, color-mix(in srgb, var(--c) 40%, #fff), var(--c));
+}
+
+.sg .sg-vessel__label {
+    display: grid;
+    gap: 2px;
+    margin: 0;
+    padding-top: 6px;
+    color: var(--kn-ink);
+    font-size: clamp(0.78rem, 0.95vw, 0.9rem);
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    line-height: 1.25;
+    text-align: center;
+    overflow-wrap: anywhere;
+}
+
+.sg .sg-vessel__label small {
+    color: var(--kn-ink-soft);
+    font-size: 0.72rem;
+    font-weight: 400;
+    font-variant-numeric: tabular-nums;
+}
+
+.sg .sg-vessel.is-selected .sg-vessel__value { color: var(--kn-accent); }
+.sg .sg-vessel.is-selected .sg-vessel__label::after {
+    content: "";
+    justify-self: center;
+    width: 28px;
+    height: 2px;
+    margin-top: 6px;
+    border-radius: 2px;
+    background: var(--kn-accent);
+}
+
+.sg .sg-vessel.is-dim { opacity: 0.42; }
+.sg .sg-vessel.is-dim .sg-vessel__liquid { filter: saturate(0.25); }
+
+@media (hover: hover) and (pointer: fine) {
+    .sg .sg-vessel:hover { opacity: 1; }
+    .sg .sg-vessel:hover .sg-vessel__liquid { filter: none; }
+    .sg .sg-vessel:hover .sg-vessel__value { color: var(--kn-accent); }
+}
+
+.sg .sg-vessels__floor {
+    position: absolute;
+    z-index: 0;
+    left: 2%;
+    right: 2%;
+    bottom: 54px;
+    height: 34px;
+    border-radius: 50%;
+    background: radial-gradient(closest-side, color-mix(in srgb, var(--kn-accent) 10%, transparent), transparent);
+    pointer-events: none;
+}
+
+.sg .sg-vessels__readout {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 14px;
+    min-height: 48px;
+    margin-top: 26px;
+    padding-top: 16px;
+    border-top: 1px solid var(--kn-line);
+}
+
+.sg .sg-vessels__readout strong { font-size: 1.02rem; font-weight: 600; letter-spacing: -0.02em; }
+.sg .sg-vessels__readout span { color: var(--kn-accent); font-weight: 600; font-variant-numeric: tabular-nums; }
+.sg .sg-vessels__readout small { flex-basis: 100%; color: var(--kn-ink-soft); font-size: var(--kn-t-small); font-variant-numeric: tabular-nums; }
+
+/* -------------------------------------------------------------------- slope -- */
+
+.sg .sg-slope { margin: 0; }
+.sg .sg-slope svg { display: block; width: 100%; height: auto; overflow: visible; }
+.sg .sg-slope__period { fill: var(--kn-ink-soft); font: 500 12px var(--kn-font); }
+.sg .sg-slope__axis { stroke: var(--kn-line-strong); stroke-width: 1; }
+.sg .sg-slope__line { fill: none; stroke: var(--c); stroke-width: 1.8; stroke-linecap: round; opacity: 0.62; }
+.sg .sg-slope__row.is-total .sg-slope__line { stroke-width: 3.6; opacity: 1; }
+.sg .sg-slope__name { fill: var(--kn-ink-soft); font-weight: 500; }
+.sg .sg-slope__row.is-total .sg-slope__name { fill: var(--kn-ink); font-weight: 600; }
+.sg .sg-slope__row.is-down .sg-slope__line { stroke: color-mix(in srgb, var(--kn-down) 80%, var(--c)); }
+.sg .sg-slope__dot { fill: var(--kn-paper); stroke: var(--c); stroke-width: 2; }
+.sg .sg-slope__dot.is-now { fill: var(--c); stroke: var(--kn-paper); stroke-width: 2.5; }
+.sg .sg-slope__row.is-down .sg-slope__dot.is-now { fill: var(--kn-down); }
+.sg .sg-slope__label { fill: var(--kn-ink-2); font: 500 12.5px var(--kn-font); font-variant-numeric: tabular-nums; }
+.sg .sg-slope__label tspan { fill: var(--kn-ink-soft); }
+.sg .sg-slope__label.is-now { fill: var(--kn-ink); font-weight: 600; }
+.sg .sg-slope__delta { font-weight: 600; }
+.sg .sg-slope__row.is-up .sg-slope__delta { fill: var(--kn-up); }
+.sg .sg-slope__row.is-down .sg-slope__delta { fill: var(--kn-down); }
+.sg .sg-slope__row { outline: none; }
+.sg .sg-slope__row:focus-visible .sg-slope__line { stroke-width: 4; }
+
+/* ----------------------------------------------------------------- coverage -- */
+
+.sg .sg-coverage { margin: 0; }
+
+.sg .sg-coverage__slab {
+    position: relative;
+    height: clamp(64px, 8vw, 96px);
+    margin: 28px 0 40px;
+    transform: perspective(1400px) rotateX(26deg);
+    transform-origin: 50% 100%;
+}
+
+.sg .sg-coverage__front {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    border-radius: 14px;
+    background: repeating-linear-gradient(-45deg, var(--kn-fill) 0 8px, transparent 8px 16px);
+    box-shadow: inset 0 0 0 1px var(--sg-glass-edge), 0 14px 0 -4px color-mix(in srgb, var(--kn-ink) 10%, transparent), 0 34px 44px -18px var(--sg-floor);
+}
+
+.sg .sg-coverage__fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: calc(var(--f) * 100%);
+    border-radius: 14px 0 0 14px;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--c) 62%, #fff) 0%, var(--c) 42%, color-mix(in srgb, var(--c) 70%, #000) 100%);
+    box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.5);
+}
+
+.sg .sg-coverage.is-over .sg-coverage__fill { border-radius: 14px; }
+
+.sg .sg-coverage__key {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px clamp(16px, 3vw, 40px);
+}
+
+.sg .sg-coverage__key span {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    column-gap: 10px;
+    color: var(--kn-ink-soft);
+    font-size: var(--kn-t-small);
+}
+
+.sg .sg-coverage__key i { width: 12px; height: 12px; border-radius: 4px; }
+.sg .sg-coverage__key .is-part i { background: var(--c); }
+.sg .sg-coverage__key .is-gap i { background: repeating-linear-gradient(-45deg, var(--kn-ink-soft) 0 2px, transparent 2px 4px); }
+
+.sg .sg-coverage__key strong {
+    grid-column: 1 / -1;
+    margin-top: 6px;
+    color: var(--kn-ink);
+    font-size: clamp(1.5rem, 2.6vw, 2.3rem);
+    font-weight: 600;
+    letter-spacing: -0.04em;
+    font-variant-numeric: tabular-nums;
+}
+
+.sg .sg-coverage__key .is-gap strong { color: var(--kn-down); }
+.sg .sg-coverage__key .is-whole { grid-template-columns: 1fr; }
+
+/* -------------------------------------------------------------- opportunity -- */
+
+.sg .sg-opportunity {
+    display: grid;
+    grid-template-columns: minmax(0, 1.75fr) minmax(250px, 0.85fr);
+    gap: clamp(20px, 3vw, 44px);
+    align-items: start;
+}
+
+.sg .sg-opportunity__plot { margin: 0; }
+.sg .sg-opportunity__chart { position: relative; padding: 48px 12px 96px 88px; }
+
+.sg .sg-opportunity__field {
+    position: relative;
+    height: clamp(340px, 40vw, 520px);
+    border-left: 1px solid var(--kn-line-strong);
+    border-bottom: 1px solid var(--kn-line-strong);
+    background:
+        linear-gradient(var(--kn-line) 1px, transparent 1px) 0 0 / 100% var(--grid-y, 25%),
+        linear-gradient(90deg, var(--kn-line) 1px, transparent 1px) 0 0 / 10% 100%;
+    transform: none;
+    transform-origin: 50% 100%;
+}
+
+.sg .sg-opportunity__zone {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: var(--avg);
+    height: var(--median);
+    border-right: 1px dashed color-mix(in srgb, var(--kn-down) 60%, transparent);
+    border-bottom: 1px dashed color-mix(in srgb, var(--kn-down) 60%, transparent);
+    border-radius: 0 0 14px 0;
+    background: linear-gradient(135deg, color-mix(in srgb, var(--kn-down) 18%, transparent), color-mix(in srgb, var(--kn-down) 4%, transparent));
+}
+
+.sg .sg-opportunity__zone small {
+    position: absolute;
+    left: 12px;
+    top: 10px;
+    color: var(--kn-down);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+}
+
+.sg .sg-opportunity__avg {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: var(--avg);
+    border-left: 1px dashed var(--kn-line-strong);
+}
+
+.sg .sg-opportunity__avg small {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 0;
+    color: var(--kn-ink-soft);
+    font-size: 0.72rem;
+    white-space: nowrap;
+    transform: translateX(-50%);
+}
+
+.sg .sg-opportunity__median {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: var(--median);
+    border-top: 1px dashed var(--kn-line-strong);
+}
+
+/* A unit is a lit sphere sitting on its own soft shadow. */
+.sg .sg-orb {
+    position: absolute;
+    left: var(--x);
+    top: var(--y);
+    width: var(--s);
+    height: var(--s);
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    transform: translate(-50%, -50%);
+    cursor: pointer;
+    z-index: 1;
+}
+
+.sg .sg-orb span {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: radial-gradient(circle at 34% 28%, rgba(255, 255, 255, 0.95) 0, color-mix(in srgb, var(--c) 45%, #fff) 14%, var(--c) 48%, color-mix(in srgb, var(--c) 52%, #000) 100%);
+    box-shadow: 0 calc(var(--s) * 0.3) calc(var(--s) * 0.45) calc(var(--s) * -0.18) rgba(0, 0, 0, 0.55);
+    opacity: 0.72;
+}
+
+.sg .sg-orb.is-priority span { opacity: 0.96; }
+.sg .sg-orb.is-focus { z-index: 4; }
+.sg .sg-orb.is-focus span { opacity: 1; box-shadow: 0 0 0 2px var(--kn-ink), 0 calc(var(--s) * 0.3) calc(var(--s) * 0.45) calc(var(--s) * -0.18) rgba(0, 0, 0, 0.55); }
+.sg .sg-orb:focus-visible { outline: none; }
+.sg .sg-orb:focus-visible span { box-shadow: 0 0 0 3px var(--kn-accent); }
+
+.sg .sg-opportunity__x {
+    position: absolute;
+    left: 88px;
+    right: 12px;
+    bottom: 70px;
+    height: 18px;
+}
+
+.sg .sg-opportunity__x span {
+    position: absolute;
+    left: var(--x);
+    color: var(--kn-ink-soft);
+    font-size: 0.72rem;
+    font-variant-numeric: tabular-nums;
+    transform: translateX(-50%);
+}
+
+.sg .sg-opportunity__axis-x,
+.sg .sg-opportunity__axis-y {
+    position: absolute;
+    margin: 0;
+    color: var(--kn-ink-soft);
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.sg .sg-opportunity__axis-x { left: 88px; right: 0; bottom: 0; display: block; color: var(--kn-ink-2); }
+.sg .sg-opportunity__axis-y { left: 0; right: 0; top: 0; display: flex; flex-wrap: wrap; gap: 4px 10px; color: var(--kn-ink-2); }
+.sg .sg-opportunity__axis-x strong,
+.sg .sg-opportunity__axis-y strong { color: var(--kn-ink); font-size: .875rem; font-weight: 600; }
+.sg .sg-opportunity__axis-x strong { margin-left: 8px; }
+.sg .sg-opportunity__axis-x small { display: block; margin-top: 4px; color: var(--kn-ink-soft); font-size: .6875rem; }
+.sg .sg-opportunity__y { position: absolute; inset: 0 auto 0 -82px; width: 70px; pointer-events: none; }
+.sg .sg-opportunity__y span { position: absolute; top: var(--y); right: 0; color: var(--kn-ink-2); font-size: .75rem; font-variant-numeric: tabular-nums; transform: translateY(-50%); }
+.sg .sg-opportunity__guide { display: grid; gap: 8px; margin: 14px 0 18px; color: var(--kn-ink-soft); font-size: .75rem; line-height: 1.5; }
+.sg .sg-opportunity__guide > span { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.sg .sg-opportunity__guide strong { color: var(--kn-ink-2); font-weight: 600; }
+.sg .sg-opportunity__guide i { width: 14px; height: 14px; border-radius: 50%; background: radial-gradient(circle at 30% 25%, #fff, #eaaa51 35%, #a95a28 90%); }
+
+.sg .sg-opportunity__readout {
+    display: grid;
+    gap: 3px;
+    min-height: 74px;
+    margin-top: 18px;
+    padding: 14px 18px;
+    border-radius: 16px;
+    background: var(--kn-fill);
+}
+
+.sg .sg-opportunity__readout small { color: var(--kn-ink-soft); font-size: 0.75rem; }
+.sg .sg-opportunity__readout strong { font-size: 1.06rem; font-weight: 600; letter-spacing: -0.02em; }
+.sg .sg-opportunity__readout span { color: var(--kn-ink-2); font-size: var(--kn-t-small); font-variant-numeric: tabular-nums; }
+
+.sg .sg-opportunity__list {
+    display: grid;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    counter-reset: none;
+}
+
+.sg .sg-opportunity__list li {
+    display: grid;
+    grid-template-columns: 30px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 10px;
+    border-top: 1px solid var(--kn-line);
+    border-radius: 12px;
+    outline: none;
+    cursor: default;
+}
+
+.sg .sg-opportunity__list li.is-focus,
+.sg .sg-opportunity__list li:focus-visible { background: var(--kn-fill); }
+
+.sg .sg-opportunity__rank {
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 34% 28%, #fff 0, color-mix(in srgb, var(--c) 45%, #fff) 16%, var(--c) 60%);
+    color: #fff;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.35);
+}
+
+.sg .sg-opportunity__name { display: grid; min-width: 0; font-weight: 600; font-size: 0.92rem; letter-spacing: -0.015em; }
+.sg .sg-opportunity__name small { color: var(--kn-ink-soft); font-size: 0.72rem; font-weight: 400; }
+.sg .sg-opportunity__gap { display: grid; justify-items: end; font-variant-numeric: tabular-nums; }
+.sg .sg-opportunity__gap strong { font-size: 1.05rem; font-weight: 600; color: var(--kn-down); }
+.sg .sg-opportunity__gap small { color: var(--kn-ink-soft); font-size: 0.72rem; white-space: nowrap; }
+
+/* ------------------------------------------------------------------ skyline -- */
+
+.sg .sg-skyline { --skh: clamp(190px, 26vw, 330px); margin: 0; }
+
+.sg .sg-skyline__row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(78px, 1fr));
+    align-items: end;
+    gap: clamp(6px, 1.1vw, 14px);
+    padding-top: 26px;
+}
+
+.sg .sg-prism {
+    --d: clamp(8px, 1vw, 14px);
+    display: grid;
+    justify-items: center;
+    align-content: end;
+    gap: 10px;
+    min-width: 0;
+    margin: 0;
+    padding: 8px 4px 10px;
+    border: 0;
+    border-radius: 14px;
+    background: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+
+.sg .sg-prism__value {
+    font-size: clamp(0.92rem, 1.25vw, 1.15rem);
+    font-weight: 600;
+    letter-spacing: -0.03em;
+    font-variant-numeric: tabular-nums;
+}
+
+.sg .sg-prism__solid {
+    position: relative;
+    display: block;
+    width: calc(70% - var(--d));
+    height: calc(var(--skh) * var(--h));
+    min-height: 6px;
+    margin: var(--d) var(--d) 0 0;
+}
+
+.sg .sg-prism__solid > i { position: absolute; display: block; overflow: hidden; }
+
+.sg .sg-prism__front {
+    inset: 0;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02));
+    box-shadow: inset 0 0 0 1px var(--sg-glass-edge);
+}
+
+.sg .sg-prism__side {
+    top: 0;
+    bottom: 0;
+    left: 100%;
+    width: var(--d);
+    background: rgba(255, 255, 255, 0.04);
+    box-shadow: inset 0 0 0 1px var(--sg-glass-edge);
+    transform: skewY(-45deg);
+    transform-origin: 0 0;
+}
+
+.sg .sg-prism__top {
+    left: 0;
+    right: 0;
+    bottom: 100%;
+    height: var(--d);
+    background: rgba(255, 255, 255, 0.12);
+    box-shadow: inset 0 0 0 1px var(--sg-glass-edge);
+    transform: skewX(-45deg);
+    transform-origin: 0 100%;
+}
+
+.sg .sg-prism__front b,
+.sg .sg-prism__side b {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: calc(var(--f) * 100%);
+}
+
+.sg .sg-prism__front b { background: linear-gradient(180deg, color-mix(in srgb, var(--c) 60%, #fff), var(--c) 38%, color-mix(in srgb, var(--c) 76%, #000)); }
+.sg .sg-prism__side b { background: color-mix(in srgb, var(--c) 55%, #000); }
+.sg .sg-prism.is-over .sg-prism__top { background: color-mix(in srgb, var(--c) 55%, #fff); }
+
+/* Contact shadow. */
+.sg .sg-prism__solid::after {
+    content: "";
+    position: absolute;
+    left: -14%;
+    right: -40%;
+    bottom: -10px;
+    height: 20px;
+    border-radius: 50%;
+    background: radial-gradient(closest-side, var(--sg-floor), transparent);
+    z-index: -1;
+}
+
+.sg .sg-prism__label {
+    display: grid;
+    gap: 2px;
+    color: var(--kn-ink-2);
+    font-size: 0.78rem;
+    font-weight: 500;
+    line-height: 1.25;
+    text-align: center;
+    overflow-wrap: anywhere;
+}
+
+.sg .sg-prism__label small { color: var(--kn-ink-soft); font-size: 0.7rem; font-variant-numeric: tabular-nums; }
+
+.sg .sg-prism[aria-selected="true"] { background: var(--kn-fill); }
+.sg .sg-prism[aria-selected="true"] .sg-prism__value { color: var(--c); }
+.sg .sg-prism[aria-selected="true"] .sg-prism__label { color: var(--kn-ink); font-weight: 600; }
+.sg .sg-prism[aria-selected="true"] .sg-prism__front { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--c) 60%, #fff); }
+.sg .sg-prism:focus-visible { outline: 2px solid var(--kn-accent); outline-offset: 2px; }
+
+@media (hover: hover) and (pointer: fine) {
+    .sg .sg-prism:hover .sg-prism__label { color: var(--kn-ink); }
+    .sg .sg-prism:hover .sg-prism__front { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 50%, transparent); }
+}
+
+.sg .sg-skyline__key,
+.sg .sg-ledger__ramp {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 22px;
+    margin: 20px 0 0;
+    color: var(--kn-ink-soft);
+    font-size: 0.78rem;
+}
+
+.sg .sg-skyline__key span::before {
+    content: "";
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    margin-right: 8px;
+    border-radius: 3px;
+    vertical-align: -2px;
+}
+
+.sg .sg-skyline__key .is-whole::before { box-shadow: inset 0 0 0 1px var(--kn-ink-soft); }
+.sg .sg-skyline__key .is-part::before { background: var(--kn-accent); }
+
+.sg #sg-sektoral .sg-skyline__row { grid-template-columns: repeat(7, minmax(0, 1fr)); row-gap: 32px; }
+.sg #sg-sektoral .sg-prism__label { min-height: 66px; overflow-wrap: anywhere; }
+.sg .sg-sector-context { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; margin-top: 20px; }
+.sg .sg-sector-context > p { flex-basis: 100%; margin: 0; color: var(--kn-ink-2); font-size: .9375rem; }
+
+/* ------------------------------------------------------------------- ledger -- */
+
+.sg .sg-ledger-wrap {
+    max-height: min(72vh, 760px);
+    overflow: auto;
+    overscroll-behavior: contain;
+    border-radius: 14px;
+}
+
+.sg .sg-ledger {
+    width: 100%;
+    min-width: 860px;
+    border-collapse: separate;
+    border-spacing: 3px;
+    font-variant-numeric: tabular-nums;
+}
+
+.sg .sg-ledger thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    padding: 0 0 6px;
+    background: var(--kn-paper);
+    vertical-align: bottom;
+}
+
+.sg .sg-ledger thead th:first-child {
+    left: 0;
+    z-index: 3;
+    color: var(--kn-ink-soft);
+    font-size: 0.75rem;
+    font-weight: 500;
+    text-align: left;
+}
+
+.sg .sg-ledger thead button {
+    display: block;
+    width: 100%;
+    min-height: 44px;
+    padding: 6px 4px;
+    border: 0;
+    border-bottom: 2px solid var(--c);
+    border-radius: 8px 8px 0 0;
+    background: transparent;
+    color: var(--kn-ink-soft);
+    font: inherit;
+    font-size: 0.72rem;
+    font-weight: 500;
+    line-height: 1.2;
+    cursor: pointer;
+}
+
+.sg .sg-ledger thead th.is-current button { background: var(--kn-fill); color: var(--kn-ink); font-weight: 600; }
+
+.sg .sg-ledger tbody th {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    min-width: 150px;
+    padding: 0 14px 0 2px;
+    background: var(--kn-paper);
+    font-size: 0.82rem;
+    font-weight: 500;
+    text-align: left;
+    white-space: nowrap;
+}
+
+.sg .sg-ledger tbody th small { display: block; color: var(--kn-ink-soft); font-size: 0.7rem; font-weight: 400; }
+
+.sg .sg-ledger td {
+    height: 36px;
+    padding: 0 4px;
+    border-radius: 7px;
+    background: color-mix(in srgb, var(--tone) 70%, transparent);
+    color: #fff;
+    font-size: 0.78rem;
+    font-weight: 600;
+    text-align: center;
+    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.35);
+}
+
+.sg .sg-ledger td.is-empty { background: var(--kn-fill); color: var(--kn-ink-soft); text-shadow: none; font-weight: 400; }
+.sg .sg-ledger td.is-current { box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.85); }
+
+.sg .sg-ledger__ramp i {
+    width: 160px;
+    height: 8px;
+    border-radius: 4px;
+    background: linear-gradient(90deg, #d2453b, #f2a93b 50%, #2c6fe0);
+}
+
+/* --------------------------------------------------------------- disclosure -- */
+
+.sg details.sg-disclosure {
+    border-top: 1px solid var(--kn-line-strong);
+    border-bottom: 1px solid var(--kn-line-strong);
+}
+
+.sg details.sg-disclosure > summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    min-height: 60px;
+    color: var(--kn-ink-2);
+    font-size: 0.95rem;
+    font-weight: 500;
+    list-style: none;
+    cursor: pointer;
+}
+
+.sg details.sg-disclosure > summary::-webkit-details-marker { display: none; }
+.sg details.sg-disclosure > summary svg { width: 20px; height: 20px; color: var(--kn-accent); transition: transform 200ms var(--kn-ease); }
+.sg details.sg-disclosure[open] > summary svg { transform: rotate(180deg); }
+.sg details.sg-disclosure > summary:focus-visible { outline: 2px solid var(--kn-accent); outline-offset: 4px; }
+.sg .sg-disclosure__body { padding: 8px 0 28px; }
+.sg .sg-disclosure__title { margin: 0 0 12px; font-size: 1rem; font-weight: 600; letter-spacing: -0.02em; }
+
+/* ---------------------------------------------------- opener controls, quiet -- */
+
+.sg .sg-chips--quiet { margin-bottom: 18px; }
+
+.sg .sg-sector-dial {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2px 18px;
+    max-width: 440px;
+    margin: 22px 0 0;
+}
+
+.sg .sg-sector-dial button {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    min-height: 40px;
+    padding: 8px 10px 10px;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--kn-ink-2);
+    font: inherit;
+    font-size: 0.8rem;
+    text-align: left;
+    cursor: pointer;
+}
+
+.sg .sg-sector-dial button span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sg .sg-sector-dial button strong { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.sg .sg-sector-dial button i {
+    position: absolute;
+    left: 10px;
+    right: 10px;
+    bottom: 5px;
+    height: 2px;
+    border-radius: 2px;
+    background: linear-gradient(90deg, var(--c) var(--p), var(--kn-line) var(--p));
+}
+
+.sg .sg-sector-dial button[aria-selected="true"] { background: var(--kn-fill); color: var(--kn-ink); }
+.sg .sg-sector-dial button[aria-selected="true"] strong { color: var(--c); }
+.sg .sg-sector-dial button:focus-visible { outline: 2px solid var(--kn-accent); outline-offset: 1px; }
+
+@media (hover: hover) and (pointer: fine) {
+    .sg .sg-sector-dial button:hover { color: var(--kn-ink); }
+}
+
+/* The invitation to click the map: a static pointer glyph, nothing circles. */
+.sg .sg-polygon-cue {
+    display: grid;
+    flex: 0 0 44px;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 14px;
+    background: var(--kn-accent-soft, rgba(0, 88, 208, 0.08));
+    color: var(--kn-accent);
+}
+
+.sg .sg-ground--dark .sg-polygon-cue { background: rgba(76, 157, 255, 0.14); }
+.sg .sg-polygon-cue svg { width: 20px; height: 20px; }
+
+/* The selected KC: a slim plaque in the lower corner of the stage, clear of the rail and the map. */
+.sg .sg-branch-overlay {
+    left: 16px;
+    top: auto;
+    bottom: 64px;
+    gap: 2px;
+    width: auto;
+    max-width: min(320px, calc(100% - 32px));
+    padding: 10px 16px 11px;
+    border: 1px solid rgba(161, 199, 255, 0.24);
+    border-left: 3px solid #58a6ff;
+    border-radius: 4px 14px 14px 4px;
+}
+
+.sg .sg-branch-overlay::before { display: none; }
+.sg .sg-branch-overlay__name { font-size: clamp(1.05rem, 1.5vw, 1.35rem); letter-spacing: -0.03em; }
+.sg .sg-branch-overlay__detail { margin: 0; font-size: 0.75rem; }
+
+/* ----------------------------------------------------------------- entrance -- */
+
+@media (prefers-reduced-motion: no-preference) {
+    /* Vessels: the glass grows out of the floor, then the liquid pours in. */
+    html.sg-motion .sg .sg-vessel__body { transform-origin: 50% 100%; transition: transform 1100ms var(--kn-ease); transition-delay: calc(var(--i, 0) * 90ms); }
+    html.sg-motion .sg .sg-vessel__liquid { transition: transform 1500ms cubic-bezier(0.2, 0.75, 0.2, 1); transition-delay: calc(420ms + var(--i, 0) * 110ms); }
+    html.sg-motion .sg .sg-vessel__value { transition: opacity 700ms var(--kn-ease), transform 900ms var(--kn-ease); transition-delay: calc(900ms + var(--i, 0) * 110ms); }
+    html.sg-motion .sg .sg-tile:not(.is-in) .sg-vessel__body { transform: scaleY(0.04); }
+    html.sg-motion .sg .sg-tile:not(.is-in) .sg-vessel__liquid { transform: translateY(102%); }
+    html.sg-motion .sg .sg-tile:not(.is-in) .sg-vessel__value { opacity: 0; transform: translateY(10px); }
+
+    /* Slope lines draw from December to now. */
+    html.sg-motion .sg .sg-slope__line { stroke-dasharray: 1; stroke-dashoffset: 0; transition: stroke-dashoffset 1200ms var(--kn-ease); transition-delay: calc(200ms + var(--i, 0) * 90ms); }
+    html.sg-motion .sg .sg-slope__dot.is-now,
+    html.sg-motion .sg .sg-slope__label.is-now { transition: opacity 500ms var(--kn-ease); transition-delay: calc(1100ms + var(--i, 0) * 90ms); }
+    html.sg-motion .sg .sg-tile:not(.is-in) .sg-slope__line { stroke-dashoffset: 1; }
+    html.sg-motion .sg .sg-tile:not(.is-in) .sg-slope__dot.is-now,
+    html.sg-motion .sg .sg-tile:not(.is-in) .sg-slope__label.is-now { opacity: 0; }
+
+    /* Coverage: the customers fill the slab from the left. */
+    html.sg-motion .sg .sg-coverage__fill { transform-origin: 0 50%; transition: transform 1700ms cubic-bezier(0.2, 0.75, 0.2, 1) 250ms; }
+    html.sg-motion .sg .sg-tile:not(.is-in) .sg-coverage__fill { transform: scaleX(0); }
+
+    /* Opportunity: spheres drop onto the field, the largest gaps first. */
+    html.sg-motion .sg .sg-orb span { transition: transform 900ms cubic-bezier(0.34, 1.4, 0.64, 1), opacity 500ms var(--kn-ease); transition-delay: calc(240ms + var(--i, 0) * 26ms); }
+    html.sg-motion .sg .sg-tile:not(.is-in) .sg-orb span { transform: translateY(-60px) scale(0.2); opacity: 0; }
+    html.sg-motion .sg .sg-opportunity__list li { transition: opacity 600ms var(--kn-ease), transform 700ms var(--kn-ease); transition-delay: calc(700ms + var(--i, 0) * 80ms); }
+    html.sg-motion .sg .sg-tile:not(.is-in) .sg-opportunity__list li { opacity: 0; transform: translateX(16px); }
+
+    /* Skyline: prisms rise one after another, then fill with debtors. */
+    html.sg-motion .sg .sg-prism__solid { transform-origin: 50% 100%; transition: transform 1100ms var(--kn-ease); transition-delay: calc(var(--i, 0) * 70ms); }
+    html.sg-motion .sg .sg-prism__front b,
+    html.sg-motion .sg .sg-prism__side b { transition: transform 1300ms cubic-bezier(0.2, 0.75, 0.2, 1); transition-delay: calc(520ms + var(--i, 0) * 70ms); }
+    html.sg-motion .sg .sg-tile:not(.is-in) .sg-prism__solid { transform: scaleY(0.02); }
+    html.sg-motion .sg .sg-tile:not(.is-in) .sg-prism__front b,
+    html.sg-motion .sg .sg-tile:not(.is-in) .sg-prism__side b { transform: translateY(102%); }
+
+    /* Ledger: cells flip down in a diagonal wave. */
+    html.sg-motion .sg .sg-ledger td { transform-origin: 50% 0; transition: transform 700ms var(--kn-ease), opacity 420ms var(--kn-ease); transition-delay: calc(140ms + (var(--r, 0) + var(--col, 0)) * 22ms); }
+    html.sg-motion .sg .sg-tile:not(.is-in) .sg-ledger td { transform: perspective(500px) rotateX(-88deg); opacity: 0; }
+}
+
+/* ------------------------------------------------------------- responsive -- */
+
+@media (max-width: 960px) {
+    .sg #sg-sektoral .sg-skyline__row { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .sg .sg-opportunity { grid-template-columns: minmax(0, 1fr); }
+    .sg .sg-coverage__key { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .sg .sg-coverage__key .is-whole { grid-column: 1 / -1; }
+}
+
+@media (max-width: 640px) {
+    .sg .sg-opportunity__chart { padding-bottom: 120px; }
+    .sg .sg-opportunity__x { bottom: 94px; }
+    .sg .sg-opportunity__axis-x { left: 0; }
+    .sg #sg-sektoral .sg-skyline__row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .sg .sg-vessels { --vw: clamp(30px, 11vw, 46px); --vh: 170px; }
+    .sg .sg-vessels__row { gap: 4px; }
+    .sg .sg-vessel__value { font-size: 0.9rem; }
+    .sg .sg-vessel__label { font-size: 0.7rem; }
+    .sg .sg-vessel__label small { display: none; }
+    .sg .sg-skyline__row { grid-template-columns: repeat(5, minmax(0, 1fr)); row-gap: 22px; }
+    .sg .sg-skyline { --skh: 160px; }
+    .sg .sg-sector-dial { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); max-width: none; }
+    .sg .sg-opportunity__field { height: 320px; }
+}

@@ -99,6 +99,8 @@ Route::middleware(['auth', 'auth.session', 'user.branch.scope', 'release.session
         ->name('dashboard.harian.data');
     Route::get('/dashboard-harian/export', [DashboardHarianController::class, 'exportExcel'])
         ->name('dashboard.harian.export');
+    Route::get('/prognosa/weekly-export', [PrognosaWeeklyController::class, 'exportExcel'])
+        ->name('prognosa.weekly.export');
     Route::get('/prognosa/weekly/{sheet?}', [PrognosaWeeklyController::class, 'index'])
         ->name('prognosa.weekly');
     Route::get('/ekosistem', [EkosistemController::class, 'index'])
@@ -163,6 +165,10 @@ Route::middleware(['auth', 'auth.session', 'user.branch.scope', 'release.session
     Route::get('/dashboard/presentation-data/detail/{section}', [DashboardSimpananController::class, 'presentationDetailData'])
         ->whereIn('section', ['performance', 'micro', 'productivity', 'timeseries', 'digital', 'marketshare', 'all'])
         ->name('dashboard.presentation-data.detail');
+    Route::get('/dashboard/presentation-data/segments', [DashboardSimpananController::class, 'presentationSegmentData'])
+        ->name('dashboard.presentation-data.segments');
+    Route::get('/dashboard/presentation-data/wilayah', [DashboardSimpananController::class, 'presentationWilayahData'])
+        ->name('dashboard.presentation-data.wilayah');
     Route::get('/dashboard/presentation-kts-data', [DashboardSimpananController::class, 'presentationKtsData'])
         ->name('dashboard.presentation-kts-data');
     Route::get('/dashboard/presentation', [DashboardSimpananController::class, 'presentation'])

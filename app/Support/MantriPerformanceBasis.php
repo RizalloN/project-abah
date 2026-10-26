@@ -33,7 +33,11 @@ final class MantriPerformanceBasis
         $reference = $period === null ? null : app(MantriProductivityReference::class)->dataForPeriod($period);
         if ($reference !== null && ! $this->hasAuthoritativeRoster()) {
             $people = [];
+            $inactivePns = array_fill_keys($this->inactivePns(), true);
             foreach ($reference['people'] as $person) {
+                if (isset($inactivePns[$this->pnKey($person['pn'])])) {
+                    continue;
+                }
                 $person['roster_source'] = 'workbook_reference';
                 $people[$person['pn']] = $person;
             }
@@ -46,7 +50,7 @@ final class MantriPerformanceBasis
         }
         $columns = array_values(array_intersect([
             'uniqueid_namareport', 'nip', 'pernr', 'completename', 'positiondesc',
-            'psadesc', 'orgdesc', 'bc', 'pn_mantri', 'esgdesc',
+            'psadesc', 'orgdesc', 'bc', 'pn_mantri', 'esgdesc', 'keterangan',
         ], Schema::getColumnListing('brihc_pemasar')));
         if (! in_array('positiondesc', $columns, true) || ! in_array('psadesc', $columns, true)
             || (! in_array('pernr', $columns, true) && ! in_array('pn_mantri', $columns, true))) {
@@ -58,7 +62,8 @@ final class MantriPerformanceBasis
         foreach ($rows as $row) {
             $position = $this->normalize($row->positiondesc ?? '');
             $branch = $this->normalize($row->psadesc ?? '');
-            if ($position !== 'MANTRI' || ! in_array($branch, self::BRANCHES, true)) {
+            if ($position !== 'MANTRI' || ! in_array($branch, self::BRANCHES, true)
+                || $this->isInactiveForProductivity($row->keterangan ?? null)) {
                 continue;
             }
             $pn = '';
@@ -86,6 +91,41 @@ final class MantriPerformanceBasis
         }
 
         return ['available' => $rows->isNotEmpty(), 'keys' => array_map('strval', array_keys($people)), 'people' => $people];
+    }
+
+    public function isInactiveForProductivity(mixed $note): bool
+    {
+        $note = is_scalar($note) ? str_replace("\xC2\xA0", ' ', (string) $note) : '';
+
+        return preg_match('/\b(?:sakit|cuti)\b/iu', $note) === 1;
+    }
+
+    /** @return array<int, string> */
+    public function inactivePns(): array
+    {
+        if (! Schema::hasTable('brihc_pemasar') || ! Schema::hasColumn('brihc_pemasar', 'keterangan')) {
+            return [];
+        }
+        $columns = array_values(array_intersect(
+            ['pernr', 'pn_mantri', 'nip', 'positiondesc', 'keterangan'],
+            Schema::getColumnListing('brihc_pemasar')
+        ));
+        $inactive = [];
+        foreach (DB::table('brihc_pemasar')->select($columns)->get() as $row) {
+            if ($this->normalize($row->positiondesc ?? '') !== 'MANTRI'
+                || ! $this->isInactiveForProductivity($row->keterangan ?? null)) {
+                continue;
+            }
+            foreach (['pn_mantri', 'pernr', 'nip'] as $column) {
+                $pn = $this->pnKey($row->{$column} ?? '');
+                if ($pn !== '') {
+                    $inactive[$pn] = $pn;
+                    break;
+                }
+            }
+        }
+
+        return array_values($inactive);
     }
 
     private function hasAuthoritativeRoster(): bool

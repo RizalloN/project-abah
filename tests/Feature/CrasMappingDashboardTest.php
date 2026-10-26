@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\User;
+use App\Support\SectorPotentialService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -17,6 +18,13 @@ beforeEach(function (): void {
     DB::purge('sqlite');
     DB::setDefaultConnection('sqlite');
     Cache::flush();
+    $this->app->instance(SectorPotentialService::class, new class extends SectorPotentialService
+    {
+        public function payload(?string $branchKey = null): array
+        {
+            return ['ready' => false, 'period' => null, 'units' => [], 'totals' => []];
+        }
+    });
 
     Schema::dropIfExists('users');
     Schema::dropIfExists('cras');
@@ -182,6 +190,153 @@ afterEach(function (): void {
     Schema::dropIfExists('users');
     DB::purge('sqlite');
     @unlink(database_path('testing-cras-mapping.sqlite'));
+});
+
+it('uses the parent sector population of each UKER for filtered subsector coverage', function (): void {
+    DB::table('cras')->where('cras_uuid', 'madiun-pertanian')->update([
+        'cras_periode' => '2026-09-30', 'sektor_ekonomi' => 'PERDAGANGAN BESAR DAN ECERAN',
+        'sub_sektor_ekonomi' => 'SUBSEKTOR SUMBER', 'jumlah_debitur' => '120',
+    ]);
+    $this->app->instance(SectorPotentialService::class, new class extends SectorPotentialService
+    {
+        public function payload(?string $branchKey = null): array
+        {
+            return ['ready' => true, 'period' => '2026-09-30', 'units' => [
+                ['code' => '03883', 'branch' => 'madiun', 'values' => ['trade' => ['potential' => 100.0]]],
+            ], 'totals' => ['trade' => ['potential' => 1000.0]]];
+        }
+    });
+    $user = User::factory()->create();
+    $response = $this->actingAs($user)->getJson(route('report.dashboard-dana.market-share.mapping-cras.data', [
+        'periode' => '2026-09-30', 'wilayah' => 'madiun', 'sektor' => 'PERDAGANGAN BESAR DAN ECERAN', 'sub_sektor' => 'SUBSEKTOR SUMBER',
+    ]));
+    $response->assertOk()
+        ->assertJsonPath('units.0.values.jumlah_debitur', 120)
+        ->assertJsonPath('units.0.sector_parent_potential', 100)
+        ->assertJsonPath('units.0.sector_parent_coverage.existing', 120)
+        ->assertJsonPath('units.0.sector_parent_coverage.penetration_raw', 120)
+        ->assertJsonPath('units.0.sector_parent_coverage.penetration', 100)
+        ->assertJsonPath('units.0.sector_parent_coverage.normalization_applied', true)
+        ->assertJsonPath('units.0.sector_parent_coverage.penetration_excess', 20)
+        ->assertJsonPath('units.0.denominator_basis', 'potensi_kategori_sektor_induk_desa_milik_uker')
+        ->assertJsonPath('sector_reference_ready', true)
+        ->assertJsonPath('sector_reference_units.0.values.intra', 120)
+        ->assertJsonPath('sector_reference_units.0.values.extra', 0)
+        ->assertJsonPath('sector_reference_units.0.sector_parent_coverage.penetration', 100)
+        ->assertJsonPath('sector_potential.selected_context.parent_group.key', 'trade')
+        ->assertJsonPath('sector_potential.selected_context.subsector_parent_coverage.potential', 1000)
+        ->assertJsonPath('sector_potential.selected_context.subsector_parent_coverage.penetration', 12)
+        ->assertJsonPath('sector_potential.selected_context.subsector_potential', null);
+});
+
+it('adds the owned-village AKTIF plus PH cohort while preserving generic CRAS metrics and filters', function (): void {
+    DB::table('cras')->where('cras_uuid', 'madiun-pertanian')->update([
+        'cras_periode' => '2026-09-30', 'jumlah_debitur' => '10', 'sektor_ekonomi' => 'PERDAGANGAN BESAR DAN ECERAN',
+    ]);
+    $row = (array) DB::table('cras')->where('cras_uuid', 'madiun-pertanian')->first();
+    DB::table('cras')->insert([
+        array_replace($row, ['cras_uuid' => 'owned-ph-positive', 'status_rekening' => 'PH', 'sektor_ekonomi' => '', 'jumlah_debitur' => '4', 'jumlah_rekening' => '4', 'baki_debet' => '90', 'saldo_ph' => '60.25']),
+        array_replace($row, ['cras_uuid' => 'owned-ph-fallback', 'status_rekening' => 'PH', 'sektor_ekonomi' => '', 'jumlah_debitur' => '3', 'jumlah_rekening' => '3', 'baki_debet' => '40.5', 'saldo_ph' => '0']),
+        array_replace($row, ['cras_uuid' => 'owned-consumer', 'segmen' => 'Consumer', 'jumlah_debitur' => '200', 'jumlah_rekening' => '200', 'baki_debet' => '1']),
+        array_replace($row, ['cras_uuid' => 'unowned-kc', 'br_number' => '00045', 'ket_unit_kerja' => 'KC MADIUN', 'jumlah_debitur' => '7', 'jumlah_rekening' => '7', 'baki_debet' => '0']),
+    ]);
+    $this->app->instance(SectorPotentialService::class, new class extends SectorPotentialService
+    {
+        public function payload(?string $branchKey = null): array
+        {
+            return ['ready' => true, 'period' => '2026-09-30', 'units' => [
+                ['code' => '03883', 'branch' => 'madiun', 'village_keys' => ['KABUPATEN MADIUN|CARUBAN|DESA'], 'district_codes' => ['35.19.01'], 'potential_partial' => true, 'missing_population_village_count' => 1, 'values' => ['trade' => ['potential' => 100.0]]],
+            ], 'totals' => ['trade' => ['potential' => 100.0]]];
+        }
+    });
+    $user = User::factory()->create();
+    $parameters = ['periode' => '2026-09-30', 'wilayah' => 'madiun'];
+    $this->actingAs($user)->getJson(route('report.dashboard-dana.market-share.mapping-cras.data', $parameters))
+        ->assertOk()
+        ->assertJsonPath('metrics.jumlah_debitur', 224)
+        ->assertJsonCount(2, 'units')
+        ->assertJsonPath('sector_reference_ready', true)
+        ->assertJsonCount(1, 'sector_reference_units')
+        ->assertJsonPath('sector_reference_units.0.code', '03883')
+        ->assertJsonPath('sector_reference_units.0.values.jumlah_debitur', 17)
+        ->assertJsonPath('sector_reference_units.0.values.intra', 10)
+        ->assertJsonPath('sector_reference_units.0.values.extra', 7)
+        ->assertJsonPath('sector_reference_units.0.values.jumlah_rekening', 10)
+        ->assertJsonPath('sector_reference_units.0.values.baki_debet', 1250000)
+        ->assertJsonPath('sector_reference_units.0.values.credit_extra', 100.75)
+        ->assertJsonPath('sector_reference_units.0.potential_partial', true)
+        ->assertJsonPath('sector_reference_units.0.missing_population_village_count', 1)
+        ->assertJsonPath('sector_reference_metrics.jumlah_debitur', 17)
+        ->assertJsonPath('sector_reference_metrics.intra', 10)
+        ->assertJsonPath('sector_reference_metrics.extra', 7);
+
+    $this->actingAs($user)->getJson(route('report.dashboard-dana.market-share.mapping-cras.data', $parameters + ['segmen' => 'Consumer']))
+        ->assertOk()
+        ->assertJsonPath('metrics.jumlah_debitur', 200)
+        ->assertJsonCount(1, 'units')
+        ->assertJsonCount(0, 'sector_reference_units')
+        ->assertJsonPath('sector_reference_metrics.jumlah_debitur', 0);
+});
+
+it('never compares a different report month against the pinned September village denominator', function (): void {
+    $this->app->instance(SectorPotentialService::class, new class extends SectorPotentialService
+    {
+        public function payload(?string $branchKey = null): array
+        {
+            return ['ready' => true, 'period' => '2026-09-30', 'units' => [
+                ['code' => '03883', 'branch' => 'madiun', 'values' => ['trade' => ['potential' => 100.0]]],
+            ], 'totals' => ['trade' => ['potential' => 100.0]]];
+        }
+    });
+    $user = User::factory()->create();
+    $this->actingAs($user)->getJson(route('report.dashboard-dana.market-share.mapping-cras.data', ['periode' => '2026-06-30', 'wilayah' => 'madiun']))
+        ->assertOk()
+        ->assertJsonPath('metrics.jumlah_debitur', 2)
+        ->assertJsonPath('sector_reference_ready', false)
+        ->assertJsonCount(0, 'sector_reference_units')
+        ->assertJsonPath('sector_reference_metrics.jumlah_debitur', null)
+        ->assertJsonPath('units.0.sector_parent_potential', null)
+        ->assertJsonPath('sector_potential.selected_context.reference_ready', false)
+        ->assertJsonPath('sector_potential.selected_context.subsector_parent_coverage.penetration', null);
+});
+
+it('resolves an unambiguous parent from actual filtered SSA rows and does not guess across parents', function (): void {
+    DB::table('cras')->where('cras_uuid', 'madiun-pertanian')->update([
+        'cras_periode' => '2026-09-30', 'sektor_ekonomi' => 'PERDAGANGAN BESAR DAN ECERAN', 'sub_sektor_ekonomi' => 'NAMA SAMA',
+    ]);
+    DB::table('cras')->where('cras_uuid', 'ngawi-npl')->update([
+        'cras_periode' => '2026-09-30', 'sektor_ekonomi' => 'INDUSTRI PENGOLAHAN', 'sub_sektor_ekonomi' => 'NAMA SAMA',
+    ]);
+    $this->app->instance(SectorPotentialService::class, new class extends SectorPotentialService
+    {
+        public function payload(?string $branchKey = null): array
+        {
+            return ['ready' => true, 'period' => '2026-09-30', 'units' => [
+                ['code' => '03883', 'branch' => 'madiun', 'values' => ['trade' => ['potential' => 100.0]]],
+                ['code' => '06429', 'branch' => 'ngawi', 'values' => ['industry' => ['potential' => 200.0]]],
+            ], 'totals' => ['trade' => ['potential' => 1000.0], 'industry' => ['potential' => 2000.0]]];
+        }
+    });
+    $areaUser = User::factory()->create();
+    $parameters = ['periode' => '2026-09-30', 'sektor' => 'all', 'sub_sektor' => 'NAMA SAMA'];
+    $this->actingAs($areaUser)->getJson(route('report.dashboard-dana.market-share.mapping-cras.data', $parameters + ['wilayah' => 'madiun']))
+        ->assertOk()
+        ->assertJsonPath('sector_potential.selected_context.parent_group.key', 'trade')
+        ->assertJsonPath('units.0.sector_parent_potential', 100)
+        ->assertJsonPath('units.0.sector_parent_coverage.penetration', 2);
+    $this->actingAs($areaUser)->getJson(route('report.dashboard-dana.market-share.mapping-cras.data', $parameters + ['wilayah' => 'all']))
+        ->assertOk()
+        ->assertJsonPath('sector_potential.selected_context.parent_group', null)
+        ->assertJsonPath('units.0.sector_parent_potential', null)
+        ->assertJsonPath('units.1.sector_parent_potential', null);
+
+    $branchUser = User::factory()->create(['pn' => '0045']);
+    $this->actingAs($branchUser)->getJson(route('report.dashboard-dana.market-share.mapping-cras.data', $parameters + ['wilayah' => 'ngawi']))
+        ->assertOk()
+        ->assertJsonPath('filters.selected.wilayah', 'madiun')
+        ->assertJsonCount(1, 'units')
+        ->assertJsonPath('sector_potential.selected_context.parent_group.key', 'trade')
+        ->assertJsonPath('units.0.sector_parent_potential', 100);
 });
 
 it('renders the CRAS mapping workspace and navigation entry', function (): void {

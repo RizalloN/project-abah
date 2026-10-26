@@ -21,7 +21,7 @@ final class LandingMicroPerformanceService
 
     private const PERFORMANCE_RM_SNAPSHOT_TABLE = 'performance_rm_snapshots';
 
-    private const CACHE_VERSION = 'v46-mantri-zero-productivity';
+    private const CACHE_VERSION = 'v47-mantri-active-notes';
 
     private const PERIOD_LOOKUP_INDEXES = [
         'idx_snapshot_filter_optimized',
@@ -2722,6 +2722,7 @@ final class LandingMicroPerformanceService
             isset($available['psadesc']) ? 'psadesc' : null,
             isset($available['tmt_jabatan']) ? 'tmt_jabatan' : null,
             isset($available['tmt_masuk']) ? 'tmt_masuk' : null,
+            isset($available['keterangan']) ? 'keterangan' : null,
         ]));
         if (! in_array('positiondesc', $columns, true) || ! in_array('psadesc', $columns, true)) {
             return collect();
@@ -2740,7 +2741,8 @@ final class LandingMicroPerformanceService
                     $rawPn = trim((string) ($row->pn_mantri ?? ''));
                 }
                 $pn = $this->normalisePn($rawPn);
-                if ($position !== 'MANTRI' || $pn === '' || ! in_array($branch, array_map(fn (string $item): string => 'KC '.$item, self::AREA_BRANCHES), true)) {
+                if ($position !== 'MANTRI' || $pn === '' || ! in_array($branch, array_map(fn (string $item): string => 'KC '.$item, self::AREA_BRANCHES), true)
+                    || app(MantriPerformanceBasis::class)->isInactiveForProductivity($row->keterangan ?? null)) {
                     return null;
                 }
 

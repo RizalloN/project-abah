@@ -836,6 +836,8 @@ export class ScrollReportRenderer extends StructuredDeckRenderer {
                     <h2 data-rv>Yang kita bahas hari ini.</h2>
                     <p data-rv style="--i:1">Dari posisi kita di pasar, sampai langkah yang perlu diambil.</p>
                     <small data-rv style="--i:2">Cakupan ${h(this.scopeLabel())}, posisi ${h(this.keynotePeriod())}.</small>
+                    <div class="kn-agenda__stage" data-relief-slot="agenda" aria-hidden="true"><div class="kn-relief-poster" data-relief-poster="agenda"></div></div>
+                    <p class="kn-agenda__hint" data-rv style="--i:3">Tunjuk sebuah bab, peta Area 6 berubah menjadi bab itu.</p>
                 </div>
                 <ol class="kn-agenda__list">
                     ${groups.map((group, index) => `

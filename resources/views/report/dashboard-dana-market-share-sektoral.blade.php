@@ -56,6 +56,8 @@
         </form>
     </section>
 
+    @include('report.partials.sector-customer-penetration')
+
     <section class="mss-kpi-grid" aria-label="Ringkasan posisi sektoral">
         <article class="mss-kpi-card">
             <span class="mss-kpi-icon"><i class="fas fa-landmark"></i></span>

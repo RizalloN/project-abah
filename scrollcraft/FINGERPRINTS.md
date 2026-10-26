@@ -65,3 +65,5 @@ If you want to see what a filled-in table looks like, and which shapes tend to
 collide, read `EXAMPLES.md` in the scroll-craft repository. Treat it as
 illustration only: those rows are somebody else's builds and they do **not**
 constrain yours.
+
+| presentasi-pinjaman (v3) | chaptered editorial | fixed top bar, chapter tabs, one tools menu | exploded relief assembled by scroll | hero, agenda remote, 6 chapter statements each followed by data sheets | reassembled relief on a turntable, held with one action | agenda rows morph the 3D map into each chapter | WebGL relief from real kecamatan polygons | offline 4610 |

@@ -22,6 +22,14 @@ class PrognosaWeeklySpreadsheetTest extends TestCase
     {
         parent::setUp();
         Cache::flush();
+        // Week mengikuti hari ini, jadi fixture Agustus dibekukan pada tanggal posisinya.
+        Carbon::setTestNow('2026-08-19 12:00:00');
+    }
+
+    protected function tearDown(): void
+    {
+        Carbon::setTestNow();
+        parent::tearDown();
     }
 
     public function test_weekly_prognosa_reads_the_official_area_sheet(): void
@@ -105,6 +113,7 @@ class PrognosaWeeklySpreadsheetTest extends TestCase
 
     public function test_weekly_prognosa_locks_sheet_to_authenticated_branch(): void
     {
+        Carbon::setTestNow('2026-08-06 12:00:00');
         Http::fake([
             'docs.google.com/*' => Http::response($this->weeklyPrognosaCsvFixture(125), 200),
         ]);
@@ -271,6 +280,7 @@ class PrognosaWeeklySpreadsheetTest extends TestCase
 
     public function test_weekly_prognosa_uses_scoped_workbook_fallback_with_real_report_coordinates(): void
     {
+        Carbon::setTestNow('2026-08-31 12:00:00');
         $path = $this->weeklyPrognosaWorkbookFixture();
         $contents = file_get_contents($path);
 
@@ -464,6 +474,7 @@ class PrognosaWeeklySpreadsheetTest extends TestCase
             ],
         ];
 
+        Carbon::setTestNow('2026-08-23 12:00:00');
         foreach ($snapshots as $branchKey => $snapshot) {
             $this->actingAs(new User([
                 'pn' => 'test-prognosa-runoff-'.$branchKey,
@@ -636,6 +647,74 @@ class PrognosaWeeklySpreadsheetTest extends TestCase
             $this->assertSame([$keys[$metricIndex]], $rows[$sourceIndex]['metric_keys']);
             $this->assertSame((string) ($metricIndex + 1), $rows[$sourceIndex]['cells'][8]['value']);
         }
+    }
+
+    public function test_weekly_prognosa_exports_excel_without_hidden_rows_and_columns(): void
+    {
+        Http::fake(['docs.google.com/*' => Http::response($this->weeklyPrognosaCsvFixture(1_000), 200)]);
+        $this->actingAs(new User(['pn' => 'test-prognosa-export', 'name' => 'Prognosa Export']));
+
+        $controller = $this->weeklyController(
+            '2026-08-19',
+            $this->weeklyDailyPayload('2026-08-19'),
+            ['KC Madiun', 'KC Magetan', 'KC Ngawi', 'KC Ponorogo']
+        );
+        $response = $controller->exportExcel(Request::create('/prognosa/weekly-export', 'GET', [
+            'sheet' => 'area',
+            'hidden_columns' => '3,4',
+            'hidden_rows' => 'r1',
+        ]));
+
+        ob_start();
+        $response->sendContent();
+        $binary = (string) ob_get_clean();
+        $path = tempnam(sys_get_temp_dir(), 'prognosa_export_');
+        file_put_contents($path, $binary);
+        $sheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($path)->getActiveSheet();
+        @unlink($path);
+
+        $header = $sheet->rangeToArray('A5:Z5', null, true, false)[0];
+        $labels = array_map(static fn ($value): string => strtok((string) $value, "\n"), array_filter($header, static fn ($value): bool => $value !== null));
+
+        $this->assertStringContainsString('weekly-prognosa_20260819_w3_area-6.xlsx', (string) $response->headers->get('content-disposition'));
+        $this->assertSame('Posisi data: 19 Agu 26   |   Week 3', $sheet->getCell('A2')->getValue());
+        $this->assertContains('YOY', $labels);
+        $this->assertNotContains('YTD', $labels);
+        $this->assertNotContains('M-2', $labels);
+        $this->assertContains('MTM', $labels);
+        $this->assertNotSame('A. Ritel', (string) $sheet->getCell('B7')->getValue());
+        $this->assertIsFloat($sheet->getCell('C6')->getValue() + 0.0);
+        $this->assertSame('Indikator', $sheet->getCell('A4')->getValue());
+    }
+
+    public function test_weekly_prognosa_applies_chosen_position_and_column_dates(): void
+    {
+        Http::fake(['docs.google.com/*' => Http::response($this->weeklyPrognosaCsvFixture(1_000), 200)]);
+        $this->actingAs(new User(['pn' => 'test-prognosa-dates', 'name' => 'Prognosa Dates']));
+
+        $service = Mockery::mock(DashboardHarianSnapshotService::class);
+        $service->shouldReceive('resolveEffectivePeriod')->with('2026-08-12')->once()->andReturn('2026-08-12');
+        $service->shouldReceive('resolveEffectivePeriod')->with('2025-12-30')->once()->andReturn('2025-12-30');
+        $service->shouldReceive('fetchPeriods')->andReturn(collect(['2026-08-12', '2025-12-30']));
+        $service->shouldReceive('buildDashboardPayloadWithCustomPeriods')
+            ->once()
+            ->with('2026-08-12', null, ['KC Madiun', 'KC Magetan', 'KC Ngawi', 'KC Ponorogo'], null, null, ['ytd' => '2025-12-30'])
+            ->andReturn($this->weeklyDailyPayload('2026-08-12'));
+
+        $data = (new PrognosaWeeklyController($service))->index(Request::create('/prognosa/weekly', 'GET', [
+            'sheet' => 'area',
+            'posisi_terakhir' => '2026-08-12',
+            'ytd_period' => '2025-12-30',
+        ]))->getData();
+
+        $this->assertSame('12 Agu 26', $data['latestDate']);
+        $this->assertSame('2026-08-12', $data['selectedPeriod']);
+        $this->assertSame(['ytd' => '2025-12-30'], $data['customPeriods']);
+        $this->assertSame(['posisi_terakhir' => '2026-08-12', 'ytd_period' => '2025-12-30'], $data['periodQuery']);
+        $this->assertSame('2025-12-30', $data['periodOptions'][1]['value']);
+        $ytd = collect($data['headerColumns'])->firstWhere('period_key', 'ytd');
+        $this->assertSame(3, $ytd['index']);
+        $this->assertSame('r0', $data['rows'][0]['key']);
     }
 
     private function weeklyController(

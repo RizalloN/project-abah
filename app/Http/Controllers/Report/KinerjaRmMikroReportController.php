@@ -249,7 +249,7 @@ class KinerjaRmMikroReportController extends Controller
                 || $this->normalizeKey($person['branch']) === $this->normalizeKey($scope['upper_label']));
             $employment = collect();
             if (Schema::hasTable('brihc_pemasar')) {
-                $columns = array_values(array_intersect(['pernr', 'pn_mantri', 'positiondesc', 'esgdesc'], Schema::getColumnListing('brihc_pemasar')));
+                $columns = array_values(array_intersect(['pernr', 'pn_mantri', 'positiondesc', 'esgdesc', 'keterangan'], Schema::getColumnListing('brihc_pemasar')));
                 $employment = DB::table('brihc_pemasar')->select($columns)->get()
                     ->filter(fn ($row): bool => $this->isActiveMantriReference($row))
                     ->keyBy(fn ($row): string => $this->brihcPemasarMantriKey($row));
@@ -1683,6 +1683,7 @@ class KinerjaRmMikroReportController extends Controller
             'psadesc',
             'orgdesc',
             'pn_mantri',
+            'keterangan',
         ], Schema::getColumnListing('brihc_pemasar')));
         if ($columns === []
             || ! in_array('esgdesc', $columns, true)
@@ -1994,7 +1995,8 @@ class KinerjaRmMikroReportController extends Controller
 
     private function isActiveMantriReference(object $row): bool
     {
-        return $this->normalizeKey($this->brihcPemasarValue($row, 'positiondesc')) === 'MANTRI';
+        return $this->normalizeKey($this->brihcPemasarValue($row, 'positiondesc')) === 'MANTRI'
+            && ! app(\App\Support\MantriPerformanceBasis::class)->isInactiveForProductivity($row->keterangan ?? null);
     }
 
     private function mantriOwnerPnSql(): string

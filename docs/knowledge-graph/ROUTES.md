@@ -2,8 +2,8 @@
 
 | Methods | URI | Name | Domain | Handler |
 | --- | --- | --- | --- | --- |
-| POST | `confirm-password` | `generated::68qFgQUmBnkC5VWK` | access-control | `App\Http\Controllers\Auth\ConfirmablePasswordController::store` |
-| POST | `login` | `generated::xkxDBfGd3sTQDzxV` | access-control | `App\Http\Controllers\Auth\AuthenticatedSessionController::store` |
+| POST | `confirm-password` | `-` | access-control | `App\Http\Controllers\Auth\ConfirmablePasswordController::store` |
+| POST | `login` | `-` | access-control | `App\Http\Controllers\Auth\AuthenticatedSessionController::store` |
 | GET | `login` | `login` | access-control | `App\Http\Controllers\Auth\AuthenticatedSessionController::create` |
 | POST | `logout` | `logout` | access-control | `App\Http\Controllers\Auth\AuthenticatedSessionController::destroy` |
 | GET | `confirm-password` | `password.confirm` | access-control | `App\Http\Controllers\Auth\ConfirmablePasswordController::show` |
@@ -49,11 +49,11 @@
 | GET | `drive/office/files/{file}/{documentKey}/source` | `drive.office.source` | bank-pipeline | `App\Http\Controllers\DriveAsixOfficeController::source` |
 | GET | `drive/pipeline-summary` | `drive.pipeline-summary` | bank-pipeline | `App\Http\Controllers\DriveAsixController::pipelineSummary` |
 | POST | `drive/upload` | `drive.upload` | bank-pipeline | `App\Http\Controllers\DriveAsixController::upload` |
+| GET | `up` | `-` | core | Closure |
 | GET | `ekosistem` | `ekosistem.index` | core | `App\Http\Controllers\EkosistemController::index` |
 | POST | `file-management/delete` | `file-management.destroy` | core | `App\Http\Controllers\Admin\FileManagementController::destroy` |
 | GET | `file-management/download` | `file-management.download` | core | `App\Http\Controllers\Admin\FileManagementDownloadController::__invoke` |
 | GET | `file-management` | `file-management.index` | core | `App\Http\Controllers\Admin\FileManagementController::index` |
-| GET | `up` | `generated::rJu5tYBEK34EmFph` | core | Closure |
 | GET | `/` | `home` | core | Closure |
 | GET | `link-management` | `link-management.index` | core | `App\Http\Controllers\Admin\LinkManagementController::index` |
 | POST | `link-management` | `link-management.update` | core | `App\Http\Controllers\Admin\LinkManagementController::update` |
@@ -122,7 +122,9 @@
 | GET | `dashboard/presentation` | `dashboard.presentation` | dashboard-simpanan | `App\Http\Controllers\DashboardSimpananController::presentation` |
 | GET | `dashboard/presentation-data` | `dashboard.presentation-data` | dashboard-simpanan | `App\Http\Controllers\DashboardSimpananController::presentationData` |
 | GET | `dashboard/presentation-data/detail/{section}` | `dashboard.presentation-data.detail` | dashboard-simpanan | `App\Http\Controllers\DashboardSimpananController::presentationDetailData` |
+| GET | `dashboard/presentation-data/segments` | `dashboard.presentation-data.segments` | dashboard-simpanan | `App\Http\Controllers\DashboardSimpananController::presentationSegmentData` |
 | GET | `dashboard/presentation-data/summary` | `dashboard.presentation-data.summary` | dashboard-simpanan | `App\Http\Controllers\DashboardSimpananController::presentationSummaryData` |
+| GET | `dashboard/presentation-data/wilayah` | `dashboard.presentation-data.wilayah` | dashboard-simpanan | `App\Http\Controllers\DashboardSimpananController::presentationWilayahData` |
 | GET | `dashboard/presentation-kts-data` | `dashboard.presentation-kts-data` | dashboard-simpanan | `App\Http\Controllers\DashboardSimpananController::presentationKtsData` |
 | POST | `dashboard/presentation/export-pptx` | `dashboard.presentation.export-pptx` | dashboard-simpanan | `App\Http\Controllers\DashboardSimpananController::exportPowerPoint` |
 | GET | `dashboard/presentation/export-pptx/{token}/download` | `dashboard.presentation.export-pptx.download` | dashboard-simpanan | `App\Http\Controllers\DashboardSimpananController::downloadPowerPointExport` |
@@ -338,3 +340,4 @@
 | GET | `workbooks/market-share-mapping/{token}/market-share-mapping.xlsx` | `public-workbooks.market-share-mapping.token` | marketshare | `App\Http\Controllers\PublicWorkbookController::marketShareMapping` |
 | GET | `workbooks/market-share/{token}/market-share.xlsx` | `public-workbooks.market-share.token` | marketshare | `App\Http\Controllers\PublicWorkbookController::marketShare` |
 | GET | `prognosa/weekly/{sheet?}` | `prognosa.weekly` | prognosa | `App\Http\Controllers\PrognosaWeeklyController::index` |
+| GET | `prognosa/weekly-export` | `prognosa.weekly.export` | prognosa | `App\Http\Controllers\PrognosaWeeklyController::exportExcel` |

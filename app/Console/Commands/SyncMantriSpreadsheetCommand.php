@@ -17,9 +17,9 @@ class SyncMantriSpreadsheetCommand extends Command
 
     public const SOURCE_URL = 'https://docs.google.com/spreadsheets/d/'.self::SPREADSHEET_ID.'/export?format=xlsx';
 
-    public const CACHE_KEY = 'reference:mantri-spreadsheet:'.self::SPREADSHEET_ID.':v1';
+    public const CACHE_KEY = 'reference:mantri-spreadsheet:'.self::SPREADSHEET_ID.':v2-keterangan';
 
-    public const LOCK_KEY = self::CACHE_KEY.':lock';
+    public const LOCK_KEY = 'reference:mantri-spreadsheet:'.self::SPREADSHEET_ID.':v1:lock';
 
     private const SHEETS = ['MANTRITUMBUH', 'MANTRIBRIGUNA', 'MANTRIRECOVERY'];
 

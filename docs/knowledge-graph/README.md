@@ -25,9 +25,9 @@ If stale, rebuild with `php artisan knowledge:graph --build`.
 
 | Metric | Count |
 | --- | ---: |
-| Source files | 737 |
-| Graph nodes | 9,240 |
-| Graph edges | 36,998 |
+| Source files | 745 |
+| Graph nodes | 9,351 |
+| Graph edges | 37,442 |
 | Domains | 18 |
 
 ## Read The Right Artifact
@@ -46,8 +46,8 @@ If stale, rebuild with `php artisan knowledge:graph --build`.
 | Node | Kind | Domain | Degree |
 | --- | --- | --- | ---: |
 | `ImportExcelController` | class | import | 390 |
-| `DashboardSimpananController` | class | dashboard-simpanan | 347 |
-| `DashboardHarianSnapshotService` | class | dashboard-harian | 209 |
+| `DashboardSimpananController` | class | dashboard-simpanan | 349 |
+| `DashboardHarianSnapshotService` | class | dashboard-harian | 210 |
 | `DashboardPinjamanReportController` | class | dashboard-pinjaman | 167 |
 | `nama_report` | table | core | 160 |
 | `ImportIndexController` | class | import | 159 |
@@ -64,7 +64,7 @@ If stale, rebuild with `php artisan knowledge:graph --build`.
 | `normalize` | method | core | 84 |
 | `ImportPerformancePisPerProdukController` | class | import | 83 |
 | `DriveAsixFile` | class | bank-pipeline | 80 |
-| `ReportDataSyncService` | class | core | 72 |
+| `PrognosaWeeklyController` | class | prognosa | 72 |
 
 ## Edge Semantics
 

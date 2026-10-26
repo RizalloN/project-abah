@@ -97,3 +97,56 @@ Daftar isi has no 3D object and no motion beyond reveal. That is deliberate rest
 Peak check: the descent owns the largest span (3.4vh against 2.2vh for the next largest act) and is the largest visual change on the page. The act before it is the flat market-share table.
 
 Not verified: a real phone (iOS Safari and Android Chrome GPU behaviour), and a logged-in session on the live server. Verification ran on an offline preview rendered from the same Blade view and the same captured payload.
+
+---
+
+# v3 (2026-10-26): depth everywhere
+
+**Self-authored under explicit creative delegation.** Permintaan user, verbatim:
+
+> sebagai profesional ui ux designer... aku ingin kamu benahi mode presentasi di landing page pinjaman dengan semua skill desainmu .. utamanya scrollcraft... memang sudah style apple tapi animasinya 3d premiumnya sangat sedikit.. buat agar lebih melimpah dan lebih interaktif.. untuk yang sekarang kuberi nilai 2/10 buat aku bangga
+
+Target is the keynote layout (`resources/views/presentation/keynote.blade.php`), the default since the persistent-relief rebuild. Grammar (chaptered editorial) and journey are kept; the score changes.
+
+## Diagnosis of the 2/10 (offline tour, 1440x900, 61 viewport-heights)
+
+- 3D lives only in 7 statement screens, about 12 of 61 viewport-heights. The other ~49 are flat sheets whose only motion is "fade plus a 14px rise, once" (sheets.css header).
+- The one 3D object never changes form: every chapter is the same relief, recoloured and re-lifted. Abundance of colour, not of 3D.
+- Interaction is hidden: hover, drag and click on the relief only, nowhere else. Nothing on the page answers the pointer.
+- Statement to sheet hand-off is a flat slide; the object just disappears under a page.
+
+## Decisions
+
+1. **The relief changes form, not only colour.** Pieces become independently movable. Hero: the map floats exploded in layers and the reader assembles it with the wheel. Dana and Pinjaman: the four branches pull apart into islands (exploded view by branch). Kualitas: the riskiest branch levitates out of the glass. Close: turntable.
+2. **The agenda is a remote control.** The relief follows into the agenda; pointing at a chapter row morphs the map into that chapter's state, with its real labels.
+3. **Every sheet tile is a 3D surface.** Scroll-scrubbed entry from depth (rotateX, translateZ, alternating yaw by column), pointer tilt with a specular glare, table rows flip in like a departure board, the statement recedes into depth as the sheet rises over it like a page.
+4. Reduced motion: everything resolves to the flat final state. No WebGL: posters and flat tiles, same content.
+
+## Feeling curve (v3)
+
+| Act | Feeling | Cause |
+|---|---|---|
+| Hero | wonder, agency | exploded map assembles under the reader's own scroll |
+| Agenda | play, orientation | pointing at a chapter previews it on the map |
+| Pasar | curiosity | penetration heights per kecamatan |
+| Pasar sheets | focus with depth | tiles rise from depth, rows flip in |
+| Dana | solidity | branches separate into four islands, each its own height |
+| Pinjaman | momentum | islands + data arcs from Madiun |
+| **Kualitas (peak)** | **tension** | **dark theatre, glass, lit cores, the riskiest branch lifts out** |
+| Tren | perspective | signed lift, up and down |
+| Aksi, close | resolve | reassembled map on a turntable |
+
+Peak stays Kualitas: largest span and the largest visual change (ground goes dark, material turns to glass).
+
+## Feel check v3 (2026-10-26, offline preview, GPU headless 1440x900, 390x844, reduced motion)
+
+| Act | Intended | Felt | Change made |
+|---|---|---|---|
+| Hero | wonder, agency | first cut too flat, pieces barely lifted | float offsets roughly doubled; now a layered cloud that docks by 62% of the hero |
+| Agenda | play | labels collided with the scope line | stage moved down, headroom for labels; risk preview kept metal on the light ground |
+| Dana / Pinjaman | solidity, momentum | islands read only on drag | heights now grow with the scroll first, islands separate after (0.3 to 0.6) with larger drift |
+| Kualitas | tension | lifted branch read as a hole | lifted island also steps outward and its cores burn brighter |
+| Sheets | focus with depth | tiles, rows and headings read as physical | none |
+| Close | resolve | resolve | none |
+
+Not verified: a real phone GPU, and a logged-in session on the live server.

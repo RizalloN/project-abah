@@ -1,0 +1,11 @@
+/*
+ * Entry for the segmented presentation (default presentation layout).
+ * Tokens, navigation, buttons and the loader come from the keynote base;
+ * everything else is the segments layer.
+ */
+@import "./keynote/base.css";
+@import "./segments/segments.css";
+@import "./segments/polygon-journey.css";
+@import "./segments/branch-journey.css";
+@import "./segments/atlas.css";
+@import "./segments/scroll-luxury.css";

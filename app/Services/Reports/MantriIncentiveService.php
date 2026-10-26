@@ -157,6 +157,7 @@ final class MantriIncentiveService
      */
     public function nominatif(string $position, string $type): array
     {
+        $inactivePns = array_fill_keys($this->basis->inactivePns(), true);
         $positions = $this->availablePeriods();
         $window = $this->window(Carbon::parse($position)->toDateString(), $positions);
         $rows = [];
@@ -168,6 +169,9 @@ final class MantriIncentiveService
                     continue;
                 }
                 foreach ($bookingsByMonth[$mobMonth['key']] as $account) {
+                    if (isset($inactivePns[$this->basis->pnKey($account['pn'] ?? '')])) {
+                        continue;
+                    }
                     $rows[] = $account + [
                         'bulan_booking' => $mobMonth['key'],
                         'posisi_mob' => $mobMonth['measure_position'],
@@ -184,6 +188,9 @@ final class MantriIncentiveService
                 continue;
             }
             foreach ($this->monthNetDisbursement($month['start'], $month['end'], $month['position'], $positions) as $booking) {
+                if (isset($inactivePns[$this->basis->pnKey($booking['pn'] ?? '')])) {
+                    continue;
+                }
                 $rows[] = $booking + ['bulan' => $month['key'], 'posisi' => $month['position']];
             }
         }
@@ -675,6 +682,7 @@ final class MantriIncentiveService
     private function assemble(string $position, array $window, array $monthly, array $mob): array
     {
         $roster = $this->roster($position);
+        $inactivePns = array_fill_keys($this->basis->inactivePns(), true);
         $branches = $this->scopedBranches();
         $monthKeys = array_column($window['months'], 'key');
         $mobKeys = array_column($window['mob_months'], 'key');
@@ -691,6 +699,9 @@ final class MantriIncentiveService
         foreach ($monthly as $monthKey => $bookings) {
             foreach ($bookings as $booking) {
                 $pn = (string) $booking['pn'];
+                if (isset($inactivePns[$this->basis->pnKey($pn)])) {
+                    continue;
+                }
                 if ($pn === '' || ! isset($roster[$pn])) {
                     if (in_array($booking['cabang'], $branches, true)) {
                         if ($pn === '') {
@@ -833,7 +844,7 @@ final class MantriIncentiveService
         }
 
         $columns = array_values(array_intersect(
-            ['pn_mantri', 'pernr', 'nip', 'completename', 'positiondesc', 'psadesc', 'orgdesc', 'bc', 'esgdesc', 'tmt_jabatan'],
+            ['pn_mantri', 'pernr', 'nip', 'completename', 'positiondesc', 'psadesc', 'orgdesc', 'bc', 'esgdesc', 'tmt_jabatan', 'keterangan'],
             Schema::getColumnListing('brihc_pemasar')
         ));
         if (! in_array('positiondesc', $columns, true) || ! in_array('psadesc', $columns, true)) {
@@ -843,7 +854,8 @@ final class MantriIncentiveService
         $people = [];
         $branches = $this->scopedBranches();
         foreach (DB::table('brihc_pemasar')->select($columns)->get() as $row) {
-            if ($this->normalize($row->positiondesc ?? '') !== 'MANTRI') {
+            if ($this->normalize($row->positiondesc ?? '') !== 'MANTRI'
+                || $this->basis->isInactiveForProductivity($row->keterangan ?? null)) {
                 continue;
             }
             $branch = $this->normalize($row->psadesc ?? '');

@@ -1,0 +1,85 @@
+/* Geography is the entrance: choose on the relief, then let the report unfold. */
+.sg .sg-polygon-chapter { overflow-anchor: none; }
+.sg .sg-polygon-chapter .sg-opener { height: auto; min-height: 100svh; }
+.sg .sg-polygon-chapter .sg-opener__sticky { position: relative; height: auto; min-height: 100svh; }
+.sg .sg-polygon-chapter .sg-opener__copy { padding-block: clamp(28px, 5vh, 56px); }
+.sg .sg-polygon-chapter .sg-opener__note,
+.sg .sg-polygon-chapter .sg-caption { display: none; }
+.sg .sg-polygon-chapter .sg-opener__lede { max-width: 39ch; font-size: 1.0625rem; }
+.sg .sg-polygon-chapter .sg-sheet[hidden] { display: none !important; }
+.sg .sg-polygon-chapter .sg-opener__stage { pointer-events: auto; min-height: 300px; }
+.sg .sg-polygon-chapter .sg-opener__stage::after {
+    content: "";
+    position: absolute;
+    inset: 18% 4%;
+    border-radius: 50%;
+    background: radial-gradient(ellipse, rgba(68, 134, 255, 0.15), transparent 68%);
+    pointer-events: none;
+    opacity: 0;
+}
+.sg .sg-polygon-map-hint { position: absolute; z-index: 5; bottom: 22px; left: 50%; width: max-content; max-width: calc(100% - 24px); margin: 0; padding: 7px 13px; border: 1px solid var(--kn-line-strong); border-radius: 999px; color: var(--kn-ink-2); background: color-mix(in srgb, var(--kn-paper) 82%, transparent); font-size: .78rem; text-align: center; transform: translateX(-50%); pointer-events: none; }
+.sg .sg-polygon-hud { margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--kn-line-strong); max-width: 39ch; }
+.sg .sg-polygon-hud__invitation { display: flex; align-items: center; gap: 18px; }
+.sg .sg-polygon-hud__invitation p { margin: 0; font-size: 1.2rem; font-weight: 600; line-height: 1.25; letter-spacing: -0.025em; }
+.sg .sg-polygon-hud__invitation small { display: block; margin-top: 7px; max-width: 34ch; font-size: .875rem; font-weight: 400; line-height: 1.45; color: var(--kn-ink-soft); letter-spacing: 0; }
+.sg .sg-polygon-beacon { display: block; flex: 0 0 48px; width: 48px; height: 48px; position: relative; color: var(--kn-accent); }
+.sg .sg-polygon-beacon i { position: absolute; border: 1px solid currentColor; border-radius: 50%; }
+.sg .sg-polygon-beacon i:nth-child(1) { inset: 0; opacity: .25; }
+.sg .sg-polygon-beacon i:nth-child(2) { inset: 8px; opacity: .55; }
+.sg .sg-polygon-beacon i:nth-child(3) { inset: 19px; background: currentColor; box-shadow: 0 0 22px currentColor; }
+.sg .sg-polygon-hud__state { margin: 14px 0 0; color: var(--kn-ink-soft); font-size: .8rem; }
+.sg .sg-polygon-hud__breadcrumb { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 0; font-size: 1rem; font-weight: 600; letter-spacing: -.02em; }
+.sg .sg-polygon-hud__breadcrumb span + span::before { content: "/"; margin-right: 12px; opacity: .4; }
+.sg .sg-polygon-hud__hint { margin: 10px 0 0; color: var(--kn-ink-soft); font-size: .875rem; line-height: 1.4; }
+.sg .sg-polygon-hud__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; margin-top: 16px; }
+.sg .sg-polygon-hud__actions button {
+    min-height: 44px; padding: 8px 0; border: 0; background: transparent; color: var(--kn-accent); font: inherit; font-size: .9rem; font-weight: 500; cursor: pointer;
+}
+.sg .sg-polygon-hud__actions [data-polygon-continue] { display: inline-flex; align-items: center; gap: 14px; }
+.sg .sg-polygon-hud__actions [data-polygon-continue] span { display: grid; place-items: center; width: 34px; height: 34px; border: 1px solid var(--kn-line-strong); border-radius: 50%; font-size: 1.2rem; }
+.sg .sg-polygon-hud__actions button:disabled { cursor: progress; opacity: .45; }
+.sg .sg-polygon-hud__actions button:focus-visible,
+.sg-relief__target:focus-visible { outline: 2px solid var(--kn-accent, #4c9dff); outline-offset: 5px; }
+/* Hover only changes colour in place: no ring, no glow, no motion. */
+.sg-relief__target { border: 0; text-align: left; pointer-events: auto; cursor: pointer; font: inherit; transition: opacity 260ms ease; }
+.sg-relief__target:hover { background: #0058d0; color: #fff; }
+.sg-relief__target:hover small { color: rgba(255, 255, 255, .78); }
+.sg-relief__target small { pointer-events: none; }
+.sg-relief__target strong { pointer-events: none; }
+.sg .sg-polygon-chapter .sg-poster { z-index: 4; padding: 3%; overflow: clip; }
+.sg .sg-polygon-chapter .sg-poster svg { overflow: hidden; filter: drop-shadow(0 22px 24px rgba(0, 35, 85, .18)); }
+.sg .sg-polygon-chapter .sg-poster path { fill: #adc6ed; stroke: #f3f7ff; stroke-width: 1.3; cursor: pointer; }
+.sg .sg-polygon-chapter.sg-ground--dark .sg-poster path { fill: #285496; stroke: #75a5ec; }
+.sg .sg-polygon-chapter .sg-poster path:focus,
+.sg .sg-polygon-chapter .sg-poster path:hover,
+.sg .sg-polygon-chapter .sg-poster path[aria-pressed="true"] { fill: #4c9dff; stroke: #fff; stroke-width: 3; outline: none; }
+.sg .sg-polygon-unit rect { fill: #f5f8ff; stroke: #0058d0; stroke-width: 1.5; }
+.sg .sg-polygon-unit text { fill: #003e8c; font: 500 14px "Geist", system-ui, sans-serif; pointer-events: none; }
+.sg .sg-polygon-unit:focus rect,
+.sg .sg-polygon-unit:hover rect { fill: #d4e5ff; stroke-width: 3; }
+html.sg-relief-live .sg .sg-polygon-chapter .sg-poster { pointer-events: none; }
+html.sg-relief-live .sg .sg-polygon-chapter .is-keyboard-map .sg-poster { pointer-events: auto; opacity: 1; background: var(--kn-ground, #f5f5f7); }
+.sg .sg-polygon-chapter .sg-sheet { scroll-margin-top: calc(var(--kn-nav-h) + 12px); }
+.sg .sg-polygon-chapter.is-focusing-choice .sg-figure__value { color: var(--kn-accent); }
+
+@media (prefers-reduced-motion: no-preference) {
+    .sg .sg-polygon-chapter.is-focusing-choice .sg-polygon-hud__breadcrumb { animation: sg-polygon-caption 650ms var(--kn-ease) both; }
+    .sg .sg-polygon-chapter.sg-nudge .sg-polygon-hud__invitation { animation: sg-polygon-caption 500ms var(--kn-ease) both; }
+    @keyframes sg-polygon-unfold { from { opacity: 0; transform: perspective(1500px) translate3d(0, 42px, -45px) rotateX(3deg); } to { opacity: 1; transform: none; } }
+    @keyframes sg-polygon-caption { from { opacity: .25; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+}
+@media (max-width: 960px) {
+    .sg .sg-polygon-chapter .sg-opener__sticky,
+    .sg .sg-polygon-chapter .sg-opener--trail .sg-opener__sticky { grid-template-rows: minmax(300px, 42svh) auto; }
+    .sg .sg-polygon-chapter .sg-opener__stage { min-height: 300px; }
+    .sg .sg-polygon-chapter .sg-opener__copy,
+    .sg .sg-polygon-chapter .sg-opener--trail .sg-opener__copy { padding-block: 16px 30px; }
+    .sg .sg-polygon-hud { margin-top: 22px; padding-top: 16px; }
+    .sg .sg-polygon-chapter .sg-opener__lede { display: none; }
+}
+@media (min-width: 961px) and (max-height: 800px) {
+    .sg .sg-polygon-chapter .sg-opener__title { font-size: clamp(2rem, 3.6vw, 3.1rem); }
+    .sg .sg-polygon-chapter .sg-opener__copy { padding-block: 20px; }
+    .sg .sg-polygon-chapter .sg-figure__value { font-size: 4.2rem; }
+    .sg .sg-polygon-hud { margin-top: 18px; padding-top: 14px; }
+}

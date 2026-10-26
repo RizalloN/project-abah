@@ -84,7 +84,7 @@ class InsentifMantriReportController extends Controller
 
         $type = $request->input('jenis') === 'mob6' ? 'mob6' : 'nd';
         $filters = $this->resolveFilters($request);
-        $roster = $this->service->roster();
+        $roster = $this->service->roster($selectedPeriod);
         $records = collect($this->service->nominatif($selectedPeriod, $type))
             ->map(function (array $record) use ($roster): array {
                 $person = $roster[$record['pn']] ?? null;

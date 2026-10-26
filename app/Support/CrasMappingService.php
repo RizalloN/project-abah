@@ -128,6 +128,39 @@ class CrasMappingService
 
         $lpg = app(CrasLpgPortfolioService::class)->payload($input, $period, $selected['wilayah']);
         $movementSeries = $this->movementSeries($selected['wilayah']);
+        $potentialService = app(SectorPotentialService::class);
+        $sectorPotential = $potentialService->payload($selected['wilayah'] === 'all' ? null : $selected['wilayah']);
+        $referenceReady = !empty($sectorPotential['ready']) && ($sectorPotential['period'] ?? null) === $period;
+        $referenceRows = [];
+        if ($referenceReady) {
+            $referenceRows = Cache::remember('cras_mapping:reference_cohort_rows:v1:'.md5(json_encode($selected)), now()->addMinutes(5), function () use ($selected, $potentialService): array {
+                $query = DB::table(self::TABLE)->where('cras_periode', $selected['periode']);
+                $this->applyFilters($query, $selected);
+                return $potentialService->referenceRows($query);
+            });
+        }
+        $sectorReferenceUnits = $potentialService->referenceUnitsForRows($referenceRows, $sectorPotential);
+        $parentGroup = $this->parentComparisonGroup($selected, $potentialService, $referenceRows, $sectorPotential);
+        $referenceUnits = [];
+        foreach ($sectorPotential['units'] as $unit) {
+            $referenceUnits[$unit['branch'].'|'.$unit['code']] = $unit;
+        }
+        $withParent = function (array $unit) use ($parentGroup, $referenceUnits, $potentialService, $referenceReady): array {
+            $reference = $referenceUnits[$unit['branch_key'].'|'.$unit['code']] ?? null;
+            $potential = !$referenceReady || $parentGroup === null ? null : ($reference['values'][$parentGroup['key']]['potential'] ?? null);
+
+            return [...$unit,
+                'sector_parent_potential' => $potential,
+                'sector_parent_coverage' => $potentialService->coverage((float) $unit['values']['jumlah_debitur'], $potential),
+                'denominator_basis' => 'potensi_kategori_sektor_induk_desa_milik_uker',
+            ];
+        };
+        $units = array_map($withParent, $computed['units']);
+        $sectorReferenceUnits = array_map($withParent, $sectorReferenceUnits);
+        $referenceMetrics = array_fill_keys(['jumlah_debitur', 'intra', 'extra', 'jumlah_rekening', 'baki_debet', 'credit_extra', 'credit_total'], $referenceReady ? 0.0 : null);
+        foreach ($sectorReferenceUnits as $unit) foreach (array_keys($referenceMetrics) as $metric) $referenceMetrics[$metric] += $unit['values'][$metric] ?? 0;
+        foreach (['baki_debet', 'credit_extra', 'credit_total'] as $metric) if ($referenceMetrics[$metric] !== null) $referenceMetrics[$metric] = round($referenceMetrics[$metric], 2);
+        $parentPotential = !$referenceReady || $parentGroup === null ? null : ($sectorPotential['totals'][$parentGroup['key']]['potential'] ?? null);
 
         return [
             'ready' => true,
@@ -146,17 +179,63 @@ class CrasMappingService
                     : 'baki_debet',
                 'options' => $this->heatmapMetricDefinitions(),
             ],
-            'units' => $computed['units'],
+            'units' => $units,
+            'sector_reference_ready' => $referenceReady,
+            'sector_reference_units' => $sectorReferenceUnits,
+            'sector_reference_metrics' => $referenceMetrics,
             'metrics' => $computed['metrics'],
             'coverage' => $computed['coverage'],
             'lpg' => $lpg,
             'movement_series' => $movementSeries,
+            'sector_potential' => [
+                ...$sectorPotential,
+                'selected_context' => [
+                    'period' => $period,
+                    'sector' => $selected['sektor'],
+                    'subsector' => $selected['sub_sektor'],
+                    'subsector_potential' => null,
+                    'subsector_penetration' => null,
+                    'parent_group' => $parentGroup,
+                    'reference_scope' => $selected['wilayah'],
+                    'subsector_parent_coverage' => $potentialService->coverage($referenceMetrics['jumlah_debitur'], $parentPotential),
+                    'reference_ready' => $referenceReady,
+                    'numerator_basis' => 'uker_berdesa_aktif_dan_ph_tanpa_consumer',
+                    'denominator_basis' => 'potensi_kategori_sektor_induk_di_wilayah_terpilih',
+                    'unit_potential_basis' => 'Jumlah pelaku usaha kategori sektor induk hanya pada desa milik UKER menurut mapping desa.',
+                    'note' => $referenceReady ? 'Cakupan subsektor memakai debitur Intra/AKTIF dan Ekstra/PH tanpa Consumer pada UKER pemilik desa, dibagi potensi kategori sektor induk desa milik UKER. Ekstra tetap merupakan BRI PH.' : 'Referensi sektor mengikuti SSA September 2026. Periode report pilihan berbeda atau data referensi belum tersedia; cakupan referensi tidak dihitung.',
+                ],
+            ],
             'source' => [
                 'label' => 'SSA CRAS',
                 'geojson_label' => (string) config('marketshare-geography.source.label', 'Batas Administrasi Kecamatan'),
                 'geojson_url' => asset((string) config('marketshare-geography.source.geojson_path', 'data/marketshare-area6-kecamatan.geojson')),
             ],
         ];
+    }
+
+    private function parentComparisonGroup(array $selected, SectorPotentialService $service, array $rows, array $reference): ?array
+    {
+        if ($selected['sektor'] !== 'all') {
+            return $service->comparisonGroupForSsaSector($selected['sektor']);
+        }
+        if ($selected['sub_sektor'] === 'all') {
+            return null;
+        }
+
+        $owned = [];
+        foreach ($reference['units'] ?? [] as $unit) $owned[$unit['branch'].'|'.$unit['code']] = true;
+        $groups = [];
+        foreach ($rows as $row) {
+            $branch = $this->branchKey((string) $row['ket_kanca']);
+            $code = $this->normalizeUnitCode((string) $row['br_number']);
+            if (!isset($owned[$branch.'|'.$code]) || in_array(strtoupper(trim((string) $row['segmen'])), ['CONSUMER', 'KONSUMER'], true) || !in_array(strtoupper(trim((string) $row['status_rekening'])), ['AKTIF', 'PH'], true)) continue;
+                $group = $service->comparisonGroupForSsaSector((string) $row['sektor_ekonomi']);
+                if ($group === null) {
+                    return null;
+                }
+                $groups[$group['key']] = $group;
+        }
+        return count($groups) === 1 ? reset($groups) : null;
     }
 
     private function emptyPayload(string $message): array

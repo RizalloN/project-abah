@@ -1,0 +1,4 @@
+interface:
+  display_name: "ASIX Presentation"
+  short_description: "Mode Presentasi finansial dengan peta dan grafik 3D"
+  default_prompt: "Gunakan $asix-presentation untuk menyempurnakan Mode Presentasi dengan filter wilayah, data akurat, dan animasi premium."

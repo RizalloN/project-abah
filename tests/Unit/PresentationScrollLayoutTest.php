@@ -195,13 +195,16 @@ it('keeps the depth layer readable without motion', function (): void {
         ->not->toContain('—');
 });
 
-it('serves the keynote by default while the deck and the classic scroll stay reachable', function (): void {
+it('serves the segmented presentation by default while the keynote, deck and classic scroll stay reachable', function (): void {
     $controller = file_get_contents(app_path('Http/Controllers/DashboardSimpananController.php'));
 
     expect($controller)
-        ->toContain("in_array(\$layout, ['slides', 'classic'], true) ? 'presentation' : 'presentation.keynote'")
+        ->toContain("in_array(\$layout, ['slides', 'classic'], true) => 'presentation'")
+        ->toContain("\$layout === 'keynote' => 'presentation.keynote'")
+        ->toContain("default => 'presentation.segments'")
         ->and(file_get_contents(base_path('vite.config.js')))
-        ->toContain('resources/css/presentation/presentation-keynote.css');
+        ->toContain('resources/css/presentation/presentation-keynote.css')
+        ->toContain('resources/js/presentation/segments/main.js');
 
     $html = view('presentation.keynote', [
         'selectedPeriod' => '2026-10-24',
@@ -222,4 +225,55 @@ it('serves the keynote by default while the deck and the classic scroll stay rea
         expect($html)->toContain('id="pres-chapter-'.$chapter.'"')
             ->toContain('data-kn-chapter-link="'.$chapter.'"');
     }
+});
+
+it('lets the keynote relief change form and the report surfaces rise out of depth, flat under reduced motion', function (): void {
+    $studio = file_get_contents(resource_path('js/presentation/worlds/keynote-studio.js'));
+    $relief = file_get_contents(resource_path('js/presentation/worlds/relief.js'));
+    $report = file_get_contents(resource_path('js/presentation/pres-scroll-report.js'));
+    $depth = file_get_contents(resource_path('css/presentation/keynote/depth.css'));
+
+    expect(file_get_contents(resource_path('css/presentation/presentation-keynote.css')))
+        ->toContain('@import "./keynote/depth.css";')
+        ->and($relief)
+        ->toContain('setArrangement(next = {})')
+        ->toContain("['explode', goal.explode], ['spread', goal.spread], ['levitate', levitateGoal]")
+        ->and($studio)
+        ->toContain('arrangementFor(slotKey, stateKey, progress, still)')
+        ->toContain('if (still) return arrangement;')
+        ->toContain("agenda: 'agenda'")
+        ->and($report)
+        ->toContain('data-relief-slot="agenda"')
+        ->and($depth)
+        ->toContain('@media (prefers-reduced-motion: no-preference)')
+        ->toContain('.kn .pres-report-section[data-story-key="agenda"]')
+        ->not->toContain('—');
+
+    // Every scroll-driven transform in the depth layer sits behind the motion guard.
+    $unguarded = preg_replace('/@media \(prefers-reduced-motion: no-preference\) \{.*?\n\}/s', '', $depth);
+    expect($unguarded)->not->toContain('var(--e')
+        ->not->toContain('var(--rise')
+        ->not->toContain('var(--cover');
+});
+
+it('renders the segment launcher with every segment and only the scopes it is given', function (): void {
+    $html = view('presentation.segments', [
+        'selectedPeriod' => '2026-10-24',
+        'periods' => ['2026-10-24'],
+        'presentationPayload' => null,
+        'segmentScopes' => [['key' => 'ngawi', 'label' => 'KC Ngawi']],
+        'segmentScope' => 'ngawi',
+    ])->render();
+
+    preg_match_all('/name="segmen" value="([a-z]+)"/', $html, $segments);
+    preg_match_all('/name="scope" value="([a-z0-9]+)"/', $html, $scopes);
+
+    expect($segments[1])->toBe(['marketshare', 'mapping', 'sektoral', 'simpanan', 'pinjaman', 'kualitas', 'recovery'])
+        ->and($scopes[1])->toBe(['ngawi'])
+        ->and($html)->toContain('data-territory="cover"')
+        ->toContain('presentation-data\/segments')
+        ->toContain('presentation-data\/wilayah')
+        ->toContain('id="sg-deck" data-sg-deck aria-live="polite" hidden aria-hidden="true"')
+        ->not->toContain('name="segmen" value="marketshare" checked')
+        ->not->toContain('—');
 });

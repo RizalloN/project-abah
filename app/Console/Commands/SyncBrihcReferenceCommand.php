@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Support\MantriPerformanceBasis;
 use App\Support\ReportCacheVersion;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -91,6 +92,10 @@ class SyncBrihcReferenceCommand extends Command
 
             $source = $this->preserveMantriReferenceFields($source);
             $source = $this->resolveIncompleteReferenceFields($source);
+            if (! $dryRun && ! Schema::hasColumn('brihc_pemasar', 'keterangan')
+                && collect($source['rows'])->contains(fn (array $record): bool => ! empty($record['keterangan']))) {
+                throw new RuntimeException('Kolom brihc_pemasar.keterangan belum tersedia. Jalankan migration keterangan Mantri terlebih dahulu.');
+            }
             $source['stale_brihc_pairs'] = $source['format'] === 'update_hc'
                 ? $this->scopedReferencePairs($source['role_tokens'], $source['branch_labels'])
                 : [];
@@ -141,6 +146,11 @@ class SyncBrihcReferenceCommand extends Command
                         : $this->countReferenceRows('brihc_pemasar', 'positiondesc', $source['role_tokens']))
                     : 0,
                 'dry_run' => $dryRun,
+                'inactive_mantri' => collect($source['rows'])
+                    ->filter(fn (array $record): bool => $record['jabatan'] === 'MANTRI'
+                        && app(MantriPerformanceBasis::class)->isInactiveForProductivity($record['keterangan'] ?? null))
+                    ->map(fn (array $record): array => array_intersect_key($record, array_flip(['pn', 'nama', 'psadesc', 'keterangan'])))
+                    ->values()->all(),
                 'outside_area6_mantri' => ($source['layout'] ?? null) === 'update_hc_mantri_roles'
                     ? $this->outsideArea6MantriQuery()->count() : 0,
             ];
@@ -402,7 +412,7 @@ class SyncBrihcReferenceCommand extends Command
             $seenHeaders = [];
             for ($column = 1; $column <= self::HEADER_SCAN_COLUMN_LIMIT; $column++) {
                 $header = $this->normalizeHeader($sheet->getCell(Coordinate::stringFromColumnIndex($column).'1')->getFormattedValue());
-                if (in_array($header, self::UPDATE_HC_REQUIRED_HEADERS, true) && isset($seenHeaders[$header])) {
+                if (in_array($header, [...self::UPDATE_HC_REQUIRED_HEADERS, 'KETERANGAN'], true) && isset($seenHeaders[$header])) {
                     throw new RuntimeException('Header ganda pada sheet '.$sheet->getTitle().': '.$header);
                 }
                 $seenHeaders[$header] = true;
@@ -466,6 +476,7 @@ class SyncBrihcReferenceCommand extends Command
                     'pg' => $values['PG'],
                     'reference_prefix' => 'reference_brihc_hc_',
                     'source_jobdesc' => $this->normalizeRole($values['JOBDESC']),
+                    'keterangan' => $this->sourceValue($sheet, $rowNumber, $headers, 'KETERANGAN'),
                 ];
                 $key = $this->referenceRecordKey($pn, $role);
                 if (isset($pnLocations[$pn])) {
@@ -507,7 +518,7 @@ class SyncBrihcReferenceCommand extends Command
         $availableColumns = Schema::getColumnListing('brihc_pemasar');
         $preservedColumns = array_values(array_diff($availableColumns, [
             'id', 'uniqueid_namareport', 'completename', 'nip', 'pernr', 'esgdesc', 'psadesc',
-            'orgdesc', 'positiondesc', 'jobgrade', 'pg', 'bc', 'pn_mantri', 'jg', 'created_at', 'updated_at',
+            'orgdesc', 'positiondesc', 'jobgrade', 'pg', 'bc', 'pn_mantri', 'jg', 'keterangan', 'created_at', 'updated_at',
         ]));
         $existing = DB::table('brihc_pemasar')
             ->select(array_merge(['pernr', 'positiondesc', 'psadesc'], $preservedColumns))
@@ -1135,7 +1146,7 @@ class SyncBrihcReferenceCommand extends Command
                 'updated_at' => $timestamp,
             ];
 
-            foreach (['nip', 'pg'] as $column) {
+            foreach (['nip', 'pg', 'keterangan'] as $column) {
                 if (array_key_exists($column, $record)) {
                     $row[$column] = $record[$column];
                 }

@@ -7,7 +7,8 @@ use Carbon\CarbonInterface;
 /**
  * Week Prognosa mengikuti cutoff Sabtu: W1 berakhir di Sabtu pertama bulan itu,
  * W2 di Sabtu kedua, dan seterusnya. Hari Minggu dan Senin setelah cutoff sudah
- * masuk week berikutnya. Dipakai hanya bila header sumber tidak memuat tanggal target.
+ * masuk week berikutnya. Sabtu yang jatuh pada tanggal 1 tidak membentuk week
+ * sendiri (hanya satu hari). Dipakai hanya bila header sumber tidak memuat tanggal target.
  */
 final class PrognosaCalendarWeek
 {
@@ -18,7 +19,7 @@ final class PrognosaCalendarWeek
         $day = $date->copy()->startOfDay();
         $saturdaysPassed = 0;
         for ($cursor = $day->copy()->startOfMonth(); $cursor->lessThan($day); $cursor->addDay()) {
-            if ($cursor->isSaturday()) {
+            if ($cursor->isSaturday() && $cursor->day > 1) {
                 $saturdaysPassed++;
             }
         }

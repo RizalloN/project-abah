@@ -11,17 +11,32 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Illuminate\View\View;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\Reader\Xlsx;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Style\Alignment;
+use PhpOffice\PhpSpreadsheet\Style\Border;
+use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx as XlsxWriter;
 
 class PrognosaWeeklyController extends Controller
 {
     private const SPREADSHEET_ID = '1DQSxk8-9U2pXwOQGiLQK4PW2Ao3ROhCYtvTy7yo12DM';
 
     private const SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/'.self::SPREADSHEET_ID.'/edit?usp=sharing';
+
+    /** Parameter query untuk tanggal pembanding tiap kolom posisi. */
+    private const COLUMN_PERIOD_PARAMS = [
+        'yoy' => 'yoy_period',
+        'ytd' => 'ytd_period',
+        'm2' => 'm2_period',
+        'mtm' => 'mtm_period',
+        'mtd' => 'mtd_period',
+        'h1' => 'h1_period',
+    ];
 
     private const REPORT_FIRST_COLUMN = 2; // B
 
@@ -140,38 +155,7 @@ class PrognosaWeeklyController extends Controller
             $sheet ?: $request->input('sheet')
         );
 
-        $refresh = $request->boolean('refresh');
-        if ($refresh) {
-            Cache::forget($this->cacheKey($selectedSheetKey));
-        }
-
-        $forecastPayload = Cache::get($this->cacheKey($selectedSheetKey));
-        if (! is_array($forecastPayload)) {
-            $forecastPayload = $this->fetchSheet($selectedSheetKey);
-            if (empty($forecastPayload['error'])) {
-                Cache::put($this->cacheKey($selectedSheetKey), $forecastPayload, now()->addMinutes(10));
-            }
-        }
-
-        $payload = $forecastPayload;
-        if (empty($forecastPayload['error'])) {
-            try {
-                $payload = $this->buildDashboardAlignedPayload(
-                    $selectedSheetKey,
-                    $forecastPayload,
-                    $request->input('week')
-                );
-            } catch (\Throwable $exception) {
-                Log::error('Weekly Prognosa could not align Dashboard Harian positions.', [
-                    'sheet' => $selectedSheetKey,
-                    'message' => $exception->getMessage(),
-                ]);
-
-                $payload = $this->emptyPayload(
-                    'Posisi Keragaan Harian belum dapat dimuat. Silakan perbarui data beberapa saat lagi.'
-                );
-            }
-        }
+        $payload = $this->resolveAlignedPayload($request, $selectedSheetKey, $request->boolean('refresh'));
 
         return view('report.prognosa-weekly', [
             'sheetOptions' => $sheetOptions,
@@ -189,9 +173,143 @@ class PrognosaWeeklyController extends Controller
             'availableForecastWeeks' => $payload['available_forecast_weeks'] ?? [],
             'title' => $payload['title'] ?? 'Weekly Prognosa',
             'latestDate' => $payload['latest_date'] ?? null,
+            'selectedPeriod' => $payload['selected_period'] ?? null,
+            'periodOptions' => $payload['period_options'] ?? [],
+            'customPeriods' => $payload['custom_periods'] ?? [],
+            'periodQuery' => $this->periodQuery($request),
             'fetchedAt' => $payload['fetched_at'] ?? null,
             'error' => $payload['error'] ?? null,
         ]);
+    }
+
+    /**
+     * Unduh Excel dengan tanggal, week, serta baris/kolom tersembunyi yang sama dengan tampilan.
+     */
+    public function exportExcel(Request $request)
+    {
+        @set_time_limit(0);
+        [, $selectedSheetKey] = $this->resolveSheetSelection($request->input('sheet'));
+
+        $payload = $this->resolveAlignedPayload($request, $selectedSheetKey, false);
+        if (! empty($payload['error']) || empty($payload['rows'])) {
+            return redirect()->route('prognosa.weekly', ['sheet' => $selectedSheetKey])
+                ->with('error', $payload['error'] ?? 'Data Weekly Prognosa belum tersedia untuk diexport.');
+        }
+
+        $hiddenColumns = $this->hiddenList($request->input('hidden_columns'));
+        $hiddenRows = $this->hiddenList($request->input('hidden_rows'));
+        $filename = sprintf(
+            'weekly-prognosa_%s_w%s_%s.xlsx',
+            str_replace('-', '', (string) ($payload['selected_period'] ?? now()->toDateString())),
+            (string) ($payload['active_forecast_week'] ?? ''),
+            Str::slug(self::SHEETS[$selectedSheetKey]['label'])
+        );
+
+        return response()->streamDownload(function () use ($payload, $hiddenColumns, $hiddenRows, $selectedSheetKey): void {
+            $spreadsheet = new Spreadsheet;
+            $sheet = $spreadsheet->getActiveSheet();
+            $sheet->setTitle('Weekly Prognosa');
+            $this->fillExportSheet($sheet, $payload, self::SHEETS[$selectedSheetKey]['label'], $hiddenColumns, $hiddenRows);
+            (new XlsxWriter($spreadsheet))->save('php://output');
+            $spreadsheet->disconnectWorksheets();
+        }, $filename, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Cache-Control' => 'no-store, no-cache',
+        ]);
+    }
+
+    /** @return array<string, mixed> */
+    private function resolveAlignedPayload(Request $request, string $selectedSheetKey, bool $refresh): array
+    {
+        if ($refresh) {
+            Cache::forget($this->cacheKey($selectedSheetKey));
+        }
+
+        $forecastPayload = Cache::get($this->cacheKey($selectedSheetKey));
+        if (! is_array($forecastPayload)) {
+            $forecastPayload = $this->fetchSheet($selectedSheetKey);
+            if (empty($forecastPayload['error'])) {
+                Cache::put($this->cacheKey($selectedSheetKey), $forecastPayload, now()->addMinutes(10));
+            }
+        }
+
+        if (! empty($forecastPayload['error'])) {
+            return $forecastPayload;
+        }
+
+        try {
+            return $this->buildDashboardAlignedPayload(
+                $selectedSheetKey,
+                $forecastPayload,
+                $request->input('week'),
+                $this->periodRequest($request)
+            );
+        } catch (\Throwable $exception) {
+            Log::error('Weekly Prognosa could not align Dashboard Harian positions.', [
+                'sheet' => $selectedSheetKey,
+                'message' => $exception->getMessage(),
+            ]);
+
+            return $this->emptyPayload(
+                'Posisi Keragaan Harian belum dapat dimuat. Silakan perbarui data beberapa saat lagi.'
+            );
+        }
+    }
+
+    /**
+     * Tanggal pilihan pengguna: posisi terakhir dan tanggal pembanding per kolom.
+     *
+     * @return array{position: ?string, columns: array<string, string>}
+     */
+    private function periodRequest(Request $request): array
+    {
+        $normalize = static function (mixed $value): ?string {
+            $raw = trim((string) $value);
+            if (preg_match('/^\d{4}-\d{2}-\d{2}/', $raw) !== 1) {
+                return null;
+            }
+            try {
+                return Carbon::parse(substr($raw, 0, 10))->toDateString();
+            } catch (\Throwable) {
+                return null;
+            }
+        };
+
+        $columns = [];
+        foreach (self::COLUMN_PERIOD_PARAMS as $key => $param) {
+            $date = $normalize($request->input($param));
+            if ($date !== null) {
+                $columns[$key] = $date;
+            }
+        }
+
+        return ['position' => $normalize($request->input('posisi_terakhir')), 'columns' => $columns];
+    }
+
+    /** @return array<string, string> */
+    private function periodQuery(Request $request): array
+    {
+        $period = $this->periodRequest($request);
+        $query = [];
+        if ($period['position'] !== null) {
+            $query['posisi_terakhir'] = $period['position'];
+        }
+        foreach ($period['columns'] as $key => $date) {
+            $query[self::COLUMN_PERIOD_PARAMS[$key]] = $date;
+        }
+
+        return $query;
+    }
+
+    /** @return list<string> */
+    private function hiddenList(mixed $input): array
+    {
+        $items = is_array($input) ? $input : (is_string($input) ? explode(',', $input) : []);
+
+        return array_values(array_unique(array_filter(array_map(
+            static fn (mixed $item): string => trim((string) $item),
+            $items
+        ), static fn (string $item): bool => $item !== '')));
     }
 
     /**
@@ -686,20 +804,56 @@ class PrognosaWeeklyController extends Controller
     private function buildDashboardAlignedPayload(
         string $sheetKey,
         array $forecastPayload,
-        mixed $requestedWeek = null
+        mixed $requestedWeek = null,
+        array $periodRequest = []
     ): array {
         $service = $this->dashboardHarianSnapshotService ??= app(DashboardHarianSnapshotService::class);
-        $selectedPeriod = $service->resolveEffectivePeriod(null);
+        $selectedPeriod = $service->resolveEffectivePeriod($periodRequest['position'] ?? null);
         if ($selectedPeriod === null) {
             throw new \RuntimeException('Periode Keragaan Harian belum tersedia.');
         }
 
-        $dailyPayload = $service->buildDashboardPayload(
-            $selectedPeriod,
-            null,
-            $this->dashboardScopeForSheet($sheetKey),
-            null
-        );
+        // Tanggal pembanding pilihan pengguna: dipetakan ke snapshot terdekat dan diabaikan
+        // bila sama dengan posisi aktif (artinya tidak ada yang perlu diganti).
+        $customPeriods = [];
+        $mtmPeriod = null;
+        foreach ((array) ($periodRequest['columns'] ?? []) as $key => $requestedDate) {
+            $resolved = $service->resolveEffectivePeriod($requestedDate);
+            if ($resolved === null || $resolved === $selectedPeriod) {
+                continue;
+            }
+            if ($key === 'mtm') {
+                $mtmPeriod = $resolved;
+            } else {
+                $customPeriods[$key] = $resolved;
+            }
+        }
+
+        if ($customPeriods !== []) {
+            $dailyPayload = $service->buildDashboardPayloadWithCustomPeriods(
+                $selectedPeriod,
+                null,
+                $this->dashboardScopeForSheet($sheetKey),
+                null,
+                $mtmPeriod,
+                $customPeriods
+            );
+        } elseif ($mtmPeriod !== null) {
+            $dailyPayload = $service->buildDashboardPayload(
+                $selectedPeriod,
+                null,
+                $this->dashboardScopeForSheet($sheetKey),
+                null,
+                $mtmPeriod
+            );
+        } else {
+            $dailyPayload = $service->buildDashboardPayload(
+                $selectedPeriod,
+                null,
+                $this->dashboardScopeForSheet($sheetKey),
+                null
+            );
+        }
         if (empty($dailyPayload['rows'])) {
             throw new \RuntimeException('Baris Keragaan Harian belum tersedia.');
         }
@@ -725,6 +879,9 @@ class PrognosaWeeklyController extends Controller
         return [
             'title' => $forecastPayload['title'] ?? 'Weekly Prognosa',
             'latest_date' => $latestDate,
+            'selected_period' => $selectedPeriod,
+            'period_options' => $this->periodOptions($service),
+            'custom_periods' => $customPeriods + ($mtmPeriod !== null ? ['mtm' => $mtmPeriod] : []),
             'latest_forecast_label' => $latestForecastLabel,
             'active_forecast_week' => $activeWeek,
             'available_forecast_weeks' => $availableWeeks,
@@ -736,6 +893,174 @@ class PrognosaWeeklyController extends Controller
             'fetched_at' => $forecastPayload['fetched_at'] ?? now()->toDateTimeString(),
             'error' => null,
         ];
+    }
+
+    /**
+     * Tanggal snapshot harian yang dapat dipilih (terbaru lebih dulu).
+     *
+     * @return list<array{value: string, label: string}>
+     */
+    private function periodOptions(DashboardHarianSnapshotService $service): array
+    {
+        try {
+            return $service->fetchPeriods()
+                ->take(400)
+                ->map(static fn ($period): string => Carbon::parse((string) $period)->toDateString())
+                ->unique()
+                ->values()
+                ->map(fn (string $date): array => [
+                    'value' => $date,
+                    'label' => $this->formatIndonesianDate(Carbon::parse($date)),
+                ])
+                ->all();
+        } catch (\Throwable) {
+            return [];
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @param  list<string>  $hiddenColumns  indeks kolom (data-column-index) yang disembunyikan
+     * @param  list<string>  $hiddenRows  kunci baris (r0, r1, ...) yang disembunyikan
+     */
+    private function fillExportSheet(
+        Worksheet $sheet,
+        array $payload,
+        string $scopeLabel,
+        array $hiddenColumns,
+        array $hiddenRows
+    ): void {
+        $groupColors = [
+            'identity' => ['bg' => '12385F', 'fg' => 'FFFFFF'],
+            'position' => ['bg' => '1A5A9E', 'fg' => 'FFFFFF'],
+            'forecast' => ['bg' => 'FDF0D3', 'fg' => '8A5300'],
+            'delta' => ['bg' => '0F766E', 'fg' => 'FFFFFF'],
+            'rka_current' => ['bg' => '2F6B4F', 'fg' => 'FFFFFF'],
+            'rka_december' => ['bg' => '2F6B4F', 'fg' => 'FFFFFF'],
+            'runoff' => ['bg' => '475569', 'fg' => 'FFFFFF'],
+        ];
+        $rowStyles = [
+            'section' => ['bg' => 'DCE9F7', 'bold' => true],
+            'category' => ['bg' => 'EEF4FB', 'bold' => true],
+            'subtotal' => ['bg' => 'F5F8FC', 'bold' => true],
+            'metric' => ['bg' => 'FFFFFF', 'bold' => true],
+            'detail' => ['bg' => 'FFFFFF', 'bold' => false],
+        ];
+
+        $hiddenColumnLookup = array_flip($hiddenColumns);
+        $hiddenRowLookup = array_flip($hiddenRows);
+        $columns = array_values(array_filter(
+            (array) ($payload['header_columns'] ?? []),
+            static fn (array $column): bool => ! isset($hiddenColumnLookup[(string) $column['index']])
+        ));
+        $lastColumn = max(1, count($columns));
+        $lastLetter = Coordinate::stringFromColumnIndex($lastColumn);
+
+        $sheet->setCellValue('A1', 'Weekly Prognosa - '.$scopeLabel);
+        $sheet->mergeCells("A1:{$lastLetter}1");
+        $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(14)->getColor()->setRGB('172033');
+        $sheet->setCellValue('A2', 'Posisi data: '.($payload['latest_date'] ?? '-').'   |   '.($payload['latest_forecast_label'] ?? ''));
+        $sheet->mergeCells("A2:{$lastLetter}2");
+        $sheet->getStyle('A2')->getFont()->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color('64748B'));
+
+        // Baris grup: digabung hanya untuk kolom grup yang masih tampil.
+        $groupRow = 4;
+        $headRow = 5;
+        $position = 1;
+        $groupSpans = [];
+        foreach ($columns as $column) {
+            $groupSpans[$column['group']][] = $position++;
+        }
+        foreach ((array) ($payload['header_groups'] ?? []) as $group) {
+            $positions = $groupSpans[$group['key']] ?? [];
+            if ($positions === []) {
+                continue;
+            }
+            $first = Coordinate::stringFromColumnIndex(min($positions)).$groupRow;
+            $last = Coordinate::stringFromColumnIndex(max($positions)).$groupRow;
+            $sheet->setCellValue($first, (string) $group['label']);
+            if ($first !== $last) {
+                $sheet->mergeCells("{$first}:{$last}");
+            }
+            $colors = $groupColors[$group['key']] ?? $groupColors['identity'];
+            $style = $sheet->getStyle("{$first}:{$last}");
+            $style->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB($colors['bg']);
+            $style->getFont()->setBold(true)->getColor()->setRGB($colors['fg']);
+            $style->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER)->setVertical(Alignment::VERTICAL_CENTER);
+        }
+
+        foreach ($columns as $offset => $column) {
+            $letter = Coordinate::stringFromColumnIndex($offset + 1);
+            $detail = trim((string) ($column['detail'] ?? ''));
+            $sheet->setCellValue($letter.$headRow, trim((string) $column['label']).($detail !== '' ? "\n".$detail : ''));
+            $colors = $groupColors[$column['group']] ?? $groupColors['identity'];
+            $style = $sheet->getStyle($letter.$headRow);
+            $style->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB($column['group'] === 'forecast' ? 'FFF7E1' : 'EAF1F8');
+            $style->getFont()->setBold(true)->getColor()->setRGB($column['group'] === 'forecast' ? '8A5300' : '1E3A5F');
+            $style->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER)->setVertical(Alignment::VERTICAL_CENTER)->setWrapText(true);
+            unset($colors);
+        }
+        $sheet->getRowDimension($headRow)->setRowHeight(32);
+
+        $rowNumber = $headRow + 1;
+        foreach ((array) ($payload['rows'] ?? []) as $row) {
+            if (isset($hiddenRowLookup[(string) ($row['key'] ?? '')])) {
+                continue;
+            }
+            $rowStyle = $rowStyles[$row['type'] ?? 'detail'] ?? $rowStyles['detail'];
+            foreach ($columns as $offset => $column) {
+                $cell = $row['cells'][(int) $column['index']] ?? [];
+                $coordinate = Coordinate::stringFromColumnIndex($offset + 1).$rowNumber;
+                $raw = $cell['raw'] ?? null;
+                $text = trim((string) ($cell['value'] ?? ''));
+                $isLabel = (int) $column['index'] <= 1;
+
+                if (! $isLabel && is_numeric($raw)) {
+                    if (! empty($cell['percent'])) {
+                        $sheet->setCellValue($coordinate, ((float) $raw) / 100);
+                        $sheet->getStyle($coordinate)->getNumberFormat()->setFormatCode('0.00%;[Red]-0.00%');
+                    } else {
+                        $sheet->setCellValue($coordinate, (float) $raw);
+                        $sheet->getStyle($coordinate)->getNumberFormat()->setFormatCode('#,##0;[Red](#,##0)');
+                    }
+                } else {
+                    $sheet->setCellValueExplicit($coordinate, $text, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+                }
+
+                $cellStyle = $sheet->getStyle($coordinate);
+                $cellStyle->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB($rowStyle['bg']);
+                $cellStyle->getFont()->setBold($rowStyle['bold'] || ! empty($cell['tone']));
+                if (! $isLabel) {
+                    $cellStyle->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+                }
+                $tone = (string) ($cell['tone'] ?? '');
+                if (in_array($tone, ['good', 'positive'], true)) {
+                    $cellStyle->getFont()->getColor()->setRGB('15803D');
+                } elseif (in_array($tone, ['bad', 'negative'], true)) {
+                    $cellStyle->getFont()->getColor()->setRGB('B91C1C');
+                }
+            }
+            $rowNumber++;
+        }
+
+        $lastRow = max($headRow, $rowNumber - 1);
+        $sheet->getStyle("A{$groupRow}:{$lastLetter}{$lastRow}")->getBorders()->getAllBorders()
+            ->setBorderStyle(Border::BORDER_THIN)->getColor()->setRGB('D5DEE8');
+        foreach ($columns as $offset => $column) {
+            $letter = Coordinate::stringFromColumnIndex($offset + 1);
+            $sheet->getColumnDimension($letter)->setWidth(match ((int) $column['index']) {
+                0 => 6,
+                1 => 34,
+                default => 15,
+            });
+        }
+        $sheet->freezePane('C'.($headRow + 1));
+        $sheet->setShowGridlines(false);
+        $sheet->getPageSetup()
+            ->setOrientation(\PhpOffice\PhpSpreadsheet\Worksheet\PageSetup::ORIENTATION_LANDSCAPE)
+            ->setPaperSize(\PhpOffice\PhpSpreadsheet\Worksheet\PageSetup::PAPERSIZE_A4)
+            ->setFitToWidth(1)->setFitToHeight(0);
+        $sheet->getSheetView()->setZoomScale(90);
     }
 
     private function dashboardScopeForSheet(string $sheetKey): array|string
@@ -995,6 +1320,7 @@ class PrognosaWeeklyController extends Controller
             );
 
             $result[] = [
+                'key' => 'r'.count($result),
                 'cells' => $cells,
                 'type' => $this->forecastRowType($number, $normalizedLabel),
                 'section' => $context['section'],
@@ -1249,6 +1575,7 @@ class PrognosaWeeklyController extends Controller
             'positive' => $numericValue !== null && $numericValue > 0.000001,
             'percent' => $percent,
             'tone' => $tone,
+            'raw' => $numericValue,
         ];
     }
 
@@ -1504,13 +1831,13 @@ class PrognosaWeeklyController extends Controller
         return [
             ['index' => 0, 'label' => 'No', 'detail' => '', 'group' => 'identity', 'summary' => true],
             ['index' => 1, 'label' => 'Keterangan', 'detail' => '', 'group' => 'identity', 'summary' => true],
-            ['index' => 2, 'label' => 'YOY', 'detail' => $this->periodHeaderLabel(data_get($periods, 'yoy.period')), 'group' => 'position', 'summary' => false],
-            ['index' => 3, 'label' => 'YTD', 'detail' => $this->periodHeaderLabel(data_get($periods, 'ytd.period')), 'group' => 'position', 'summary' => false],
-            ['index' => 4, 'label' => 'M-2', 'detail' => $this->periodHeaderLabel(data_get($periods, 'm2.period')), 'group' => 'position', 'summary' => false],
-            ['index' => 5, 'label' => 'MTM', 'detail' => $this->periodHeaderLabel(data_get($periods, 'mtm.period')), 'group' => 'position', 'summary' => false],
-            ['index' => 6, 'label' => 'MTD', 'detail' => $this->periodHeaderLabel(data_get($periods, 'mtd.period')), 'group' => 'position', 'summary' => false],
-            ['index' => 7, 'label' => 'H-1', 'detail' => $this->periodHeaderLabel(data_get($periods, 'h1.period')), 'group' => 'position', 'summary' => false],
-            ['index' => 8, 'label' => 'Posisi', 'detail' => $this->periodHeaderLabel($selectedPeriod), 'group' => 'position', 'summary' => true],
+            ['index' => 2, 'label' => 'YOY', 'detail' => $this->periodHeaderLabel(data_get($periods, 'yoy.period')), 'group' => 'position', 'period_key' => 'yoy', 'period' => data_get($periods, 'yoy.period'), 'summary' => false],
+            ['index' => 3, 'label' => 'YTD', 'detail' => $this->periodHeaderLabel(data_get($periods, 'ytd.period')), 'group' => 'position', 'period_key' => 'ytd', 'period' => data_get($periods, 'ytd.period'), 'summary' => false],
+            ['index' => 4, 'label' => 'M-2', 'detail' => $this->periodHeaderLabel(data_get($periods, 'm2.period')), 'group' => 'position', 'period_key' => 'm2', 'period' => data_get($periods, 'm2.period'), 'summary' => false],
+            ['index' => 5, 'label' => 'MTM', 'detail' => $this->periodHeaderLabel(data_get($periods, 'mtm.period')), 'group' => 'position', 'period_key' => 'mtm', 'period' => data_get($periods, 'mtm.period'), 'summary' => false],
+            ['index' => 6, 'label' => 'MTD', 'detail' => $this->periodHeaderLabel(data_get($periods, 'mtd.period')), 'group' => 'position', 'period_key' => 'mtd', 'period' => data_get($periods, 'mtd.period'), 'summary' => false],
+            ['index' => 7, 'label' => 'H-1', 'detail' => $this->periodHeaderLabel(data_get($periods, 'h1.period')), 'group' => 'position', 'period_key' => 'h1', 'period' => data_get($periods, 'h1.period'), 'summary' => false],
+            ['index' => 8, 'label' => 'Posisi', 'detail' => $this->periodHeaderLabel($selectedPeriod), 'group' => 'position', 'period_key' => 'current', 'period' => $selectedPeriod, 'summary' => true],
             ['index' => 9, 'label' => 'Week '.$activeWeek, 'detail' => 'Target aktif', 'group' => 'forecast', 'summary' => true],
             ['index' => 10, 'label' => 'Vs W'.$activeWeek, 'detail' => 'Posisi - target', 'group' => 'delta', 'summary' => true],
             ['index' => 11, 'label' => 'Rp', 'detail' => 'Target', 'group' => 'rka_current', 'summary' => true],
