@@ -676,6 +676,8 @@
         </div>
     </div>
 
+    @include('report.partials.productivity-source-quality', ['sourceQuality' => $sourceQuality ?? null])
+
     <div class="card loan-table-shell animate-reveal">
         <div class="card-body p-4">
             @if($selectedReportCategory !== 'nett_disbursement')

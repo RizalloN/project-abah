@@ -200,6 +200,37 @@ class SnapshotDirtyPeriodService
     }
 
     /**
+     * A claim is superseded once mark() reset it or another drain re-claimed
+     * the row; the job holding the current token does the rebuild instead.
+     * Unknown state counts as current so work is never dropped on doubt.
+     *
+     * @param  array<string, mixed>  $claim
+     */
+    public function isClaimCurrent(array $claim): bool
+    {
+        $token = trim((string) ($claim['claim_token'] ?? ''));
+        if ($token === '') {
+            return true;
+        }
+
+        try {
+            if (! Schema::hasTable(self::TABLE)) {
+                return true;
+            }
+
+            return DB::table(self::TABLE)
+                ->where('source_table', (string) ($claim['source_table'] ?? ''))
+                ->where('period_key', (string) ($claim['period_key'] ?? ''))
+                ->where('shard_type', (string) ($claim['shard_type'] ?? self::DEFAULT_SHARD_TYPE))
+                ->where('shard_key', (string) ($claim['shard_key'] ?? self::DEFAULT_SHARD_KEY))
+                ->where('claim_token', $token)
+                ->exists();
+        } catch (Throwable) {
+            return true;
+        }
+    }
+
+    /**
      * @param  array<string, mixed>  $claim
      */
     public function releaseClaim(array $claim, Throwable|string $error): void

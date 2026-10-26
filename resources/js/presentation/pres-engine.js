@@ -78,7 +78,13 @@ document.addEventListener('DOMContentLoaded', async function() {
         onSectionRendered: (section) => scrollDeck?.sectionRendered(section),
       });
       const scrollDeck = scrollLayout
-        ? new PresentationScrollDeck({ root: presMode, onActivate: (index) => activateSlide(index), worldSource: () => structuredDeck.worldData?.() })
+        ? new PresentationScrollDeck({
+            root: presMode,
+            onActivate: (index) => activateSlide(index),
+            worldSource: () => structuredDeck.worldData?.(),
+            reliefSource: () => structuredDeck.reliefData?.(),
+            figureSource: () => structuredDeck.statementFigures?.(),
+          })
         : null;
       const requestedSlideIndex = Math.min(
         Math.max(Number.parseInt(presentationHash.get('slide') || presentationQuery.get('slide') || '0', 10) || 0, 0),

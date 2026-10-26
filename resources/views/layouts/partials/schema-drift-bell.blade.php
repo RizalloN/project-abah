@@ -86,8 +86,10 @@
     function el(tag, className, text) { var n = document.createElement(tag); if (className) { n.className = className; } if (text != null) { n.textContent = String(text); } return n; }
     function url(key, id) { return root.dataset[key].replace('__ID__', encodeURIComponent(id)); }
 
-    function post(target) {
-        return fetch(target, { method: 'POST', credentials: 'same-origin', headers: { 'Accept': 'application/json', 'X-CSRF-TOKEN': root.dataset.csrf, 'X-Requested-With': 'XMLHttpRequest' } })
+    function post(target, body) {
+        var headers = { 'Accept': 'application/json', 'X-CSRF-TOKEN': root.dataset.csrf, 'X-Requested-With': 'XMLHttpRequest' };
+        if (body) { headers['Content-Type'] = 'application/json'; }
+        return fetch(target, { method: 'POST', credentials: 'same-origin', headers: headers, body: body ? JSON.stringify(body) : undefined })
             .then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) { if (!r.ok || d.status !== 'ok') { throw new Error(d.message || 'Permintaan gagal.'); } return d; }); });
     }
 
@@ -119,9 +121,19 @@
             li.appendChild(el('p', 'sdb__summary', item.error || item.summary));
 
             var pendingColumns = (item.new_columns || []).filter(function (c) { return c.decision === 'pending'; });
-            if (item.status === 'pending' && pendingColumns.length) {
+            var pendingAdjustments = (item.adjustments || []).filter(function (a) { return a.decision === 'pending'; });
+            var monitor = item.evolution_mode === 'monitor';
+            if (item.status === 'pending' && (pendingColumns.length || pendingAdjustments.length)) {
                 var cols = el('div', 'sdb__cols');
-                pendingColumns.slice(0, 8).forEach(function (c) { cols.appendChild(el('span', 'sdb__col', c.proposed_column + ' · ' + c.proposed_type)); });
+                pendingColumns.slice(0, 8).forEach(function (c) {
+                    var map = c.suggestion && c.suggestion.action === 'map' && !monitor;
+                    cols.appendChild(el('span', 'sdb__col', map
+                        ? c.header + ' → ' + c.suggestion.column + ' (ganti nama)'
+                        : c.proposed_column + ' · ' + c.proposed_type));
+                });
+                pendingAdjustments.slice(0, 6).forEach(function (a) {
+                    cols.appendChild(el('span', 'sdb__col', a.column + ' · ' + a.from_type + ' → ' + a.to_type));
+                });
                 li.appendChild(cols);
             }
 
@@ -129,12 +141,18 @@
             li.appendChild(el('div', 'sdb__meta', 'Tabel ' + item.table + seen));
 
             var actions = el('div', 'sdb__actions');
-            if (item.status === 'pending' && item.evolution_mode === 'monitor') {
-                li.appendChild(el('div', 'sdb__meta', 'Layout import tetap — kolom dicatat, tidak ditambahkan ke tabel.'));
+            if (item.status === 'pending' && monitor) {
+                li.appendChild(el('div', 'sdb__meta', 'Layout import tetap — kolom baru dicatat, tidak ditambahkan ke tabel.'));
+                if (pendingAdjustments.length) {
+                    var skipAll = pendingColumns.map(function (c) { return { proposed_column: c.proposed_column, action: 'skip' }; });
+                    actions.appendChild(button('Perlebar kolom', 'sdb__btn sdb__btn--primary', function (b) { act(b, url('acceptUrl', item.id), 'Kolom diperlebar.', { columns: skipAll }); }));
+                }
                 actions.appendChild(button('Tandai sudah ditinjau', 'sdb__btn', function (b) { act(b, url('rejectUrl', item.id), 'Ditandai sudah ditinjau.'); }));
             } else if (item.status === 'pending') {
-                actions.appendChild(button('Terima semua', 'sdb__btn sdb__btn--primary', function (b) { act(b, url('acceptUrl', item.id), 'Kolom berhasil ditambahkan.'); }));
-                actions.appendChild(button('Tolak', 'sdb__btn', function (b) { act(b, url('rejectUrl', item.id), 'Kolom baru ditolak.'); }));
+                // The default of each column is its suggestion: a rename is mapped
+                // onto the existing column, anything else is added.
+                actions.appendChild(button('Terima semua', 'sdb__btn sdb__btn--primary', function (b) { act(b, url('acceptUrl', item.id), 'Struktur diperbarui.'); }));
+                actions.appendChild(button('Tolak', 'sdb__btn', function (b) { act(b, url('rejectUrl', item.id), 'Perubahan ditolak.'); }));
             } else {
                 actions.appendChild(button('Tandai dibaca', 'sdb__btn', function (b) { act(b, url('ackUrl', item.id)); }));
             }
@@ -150,9 +168,9 @@
         return b;
     }
 
-    function act(btn, target, successText) {
+    function act(btn, target, successText, body) {
         btn.disabled = true;
-        post(target).then(function (data) {
+        post(target, body).then(function (data) {
             render(data.feed || {});
             document.dispatchEvent(new CustomEvent('schema-drift:feed-decided', { detail: data }));
             if (successText && window.Swal) { window.Swal.fire({ icon: 'success', title: successText, text: data.message, timer: 2600, showConfirmButton: false }); }

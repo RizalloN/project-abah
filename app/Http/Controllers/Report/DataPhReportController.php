@@ -45,9 +45,9 @@ class DataPhReportController extends Controller
             ->distinct()
             ->pluck('periode');
 
-        $gi405Periods = $this->gi405Recovery()->availablePeriods();
+        // Recovery, segments and TUPOK/LUNAS come from LW325 PH (Cognos fallback),
+        // so periods follow those sources; GI405 is only a GL control beside them.
         $availablePeriods = ($phPeriods->isNotEmpty() ? $phPeriods : $cognosPeriods)
-            ->merge($gi405Periods)
             ->unique()
             ->map(fn($p) => Carbon::parse($p)->toDateString())
             ->sortDesc()
@@ -55,7 +55,6 @@ class DataPhReportController extends Controller
 
         $comparisonPeriods = $phPeriods
             ->merge($cognosPeriods)
-            ->merge($gi405Periods)
             ->unique()
             ->map(fn($p) => Carbon::parse($p)->toDateString())
             ->sortDesc()
@@ -742,10 +741,6 @@ class DataPhReportController extends Controller
 
     private function getDataPhRecoveryMetrics(string $period, array $kancas = [], string $unit = 'all'): array
     {
-        $gi405 = $this->gi405Recovery()->unitRows($period, $kancas, $unit);
-        if ($gi405 !== []) {
-            return $this->gi405RecoveryMetrics($gi405, false);
-        }
         $metrics = $this->getRecoveryMetricsFromPh($period, $kancas, $unit);
 
         if ($this->hasAnyDataPhMetric($metrics)) {
@@ -757,10 +752,6 @@ class DataPhReportController extends Controller
 
     private function getBranchOfficeDataPhRecoveryMetrics(string $period, array $branchOffices = []): array
     {
-        $gi405 = $this->gi405Recovery()->unitRows($period, $branchOffices);
-        if ($gi405 !== []) {
-            return $this->gi405RecoveryMetrics($gi405, true);
-        }
         $metrics = $this->getBranchOfficeRecoveryMetricsFromPh($period, $branchOffices);
 
         if ($this->hasAnyDataPhMetric($metrics)) {
@@ -768,6 +759,127 @@ class DataPhReportController extends Controller
         }
 
         return $this->getBranchOfficeRecoveryMetricsFromCognos($period, $branchOffices);
+    }
+
+    /**
+     * Share of a claimed PH account's principal movement booked as Recovery DH.
+     * GI405 Single Row (418020000010) books the full movement, including the
+     * insurer's claim payment: with the full share, 111/111 units reconcile to
+     * the rupiah on 15 Oct 2026 and 108/111 on 20 Oct, against 9-11 units with
+     * the former 30% assumption.
+     */
+    private const CLAIMED_RECOVERY_SHARE = 1.0;
+
+    public const GI405_RECONCILE_OK_PCT = 5.0;
+    public const GI405_RECONCILE_WARN_PCT = 10.0;
+
+    /**
+     * Backend check, not shown on the page: the LW325 recovery of a period
+     * (this month's movement, as displayed) against GI405 income booked since
+     * the last GI405 position of the previous month. Differences of a few
+     * percent are expected (LW325 estimates claims); a large gap means the two
+     * sources disagree and the import or the claim data deserves a look.
+     *
+     * @return array{period: string|null, gi405_m1_period: string|null, status: string, branches: array<string, array<string, mixed>>, total: array<string, mixed>|null}
+     */
+    public function gi405Reconciliation(?string $period = null): array
+    {
+        $branches = ['KC Madiun', 'KC Magetan', 'KC Ngawi', 'KC Ponorogo'];
+        $period ??= Schema::hasTable('lw325_ph') ? DB::table('lw325_ph')->max('periode') : null;
+        $result = ['period' => $period ? Carbon::parse($period)->toDateString() : null, 'gi405_m1_period' => null, 'status' => 'unknown', 'branches' => [], 'total' => null];
+        if ($result['period'] === null) {
+            return $result;
+        }
+        $period = $result['period'];
+
+        $giPeriods = $this->gi405Recovery()->availablePeriods()->map(fn ($p): string => Carbon::parse($p)->toDateString());
+        $previousMonth = Carbon::parse($period)->subMonthNoOverflow();
+        $m1Period = $giPeriods
+            ->filter(fn (string $p): bool => substr($p, 0, 7) === $previousMonth->format('Y-m'))
+            ->sortDesc()
+            ->first();
+        $result['gi405_m1_period'] = $m1Period;
+
+        $lw325 = $this->getBranchOfficeDataPhRecoveryMetrics($period, $branches);
+        $gi405 = $giPeriods->contains($period) ? $this->gi405Control($period, $m1Period, $branches, 'all', true) : [];
+
+        $sumLw = 0.0;
+        $sumGi = 0.0;
+        $complete = true;
+        foreach ($branches as $branch) {
+            $lw = (float) ($lw325[$branch]['total'] ?? 0.0);
+            $gl = $gi405[$branch]['delta_m1'] ?? null;
+            $sumLw += $lw;
+            $complete = $complete && $gl !== null;
+            $sumGi += (float) $gl;
+            $result['branches'][$branch] = $this->reconcileAmounts($lw, $gl);
+        }
+        $result['total'] = $this->reconcileAmounts($sumLw, $complete ? $sumGi : null);
+
+        $rank = ['unknown' => 0, 'ok' => 1, 'warn' => 2, 'fail' => 3];
+        foreach ($result['branches'] as $branch) {
+            if ($rank[$branch['status']] > $rank[$result['status']]) {
+                $result['status'] = $branch['status'];
+            }
+        }
+
+        return $result;
+    }
+
+    /** @return array{lw325: float, gi405: float|null, diff: float|null, diff_pct: float|null, status: string} */
+    private function reconcileAmounts(float $lw325, ?float $gi405): array
+    {
+        if ($gi405 === null) {
+            return ['lw325' => $lw325, 'gi405' => null, 'diff' => null, 'diff_pct' => null, 'status' => 'unknown'];
+        }
+
+        $diff = $lw325 - $gi405;
+        $pct = abs($gi405) > 0.005 ? 100 * $diff / abs($gi405) : (abs($diff) > 0.005 ? 100.0 : 0.0);
+        $status = match (true) {
+            abs($pct) <= self::GI405_RECONCILE_OK_PCT => 'ok',
+            abs($pct) <= self::GI405_RECONCILE_WARN_PCT => 'warn',
+            default => 'fail',
+        };
+
+        return ['lw325' => $lw325, 'gi405' => $gi405, 'diff' => $diff, 'diff_pct' => round($pct, 2), 'status' => $status];
+    }
+
+    /**
+     * Cumulative Recovery DH income this year from GI405, its M-1 position and
+     * the difference (this month's GL income, comparable to the LW325 total).
+     * Income GLs restart in January, so a December M-1 is not subtracted.
+     *
+     * @return array<string, array{total: float, m1: float|null, delta_m1: float|null}>
+     */
+    private function gi405Control(string $period, ?string $m1Period, array $kancas, string $unit, bool $byBranch): array
+    {
+        try {
+            $current = $this->gi405RecoveryMetrics($this->gi405Recovery()->unitRows($period, $kancas, $unit), $byBranch);
+            if ($current === []) {
+                return [];
+            }
+            $previous = $m1Period !== null
+                ? $this->gi405RecoveryMetrics($this->gi405Recovery()->unitRows($m1Period, $kancas, $unit), $byBranch)
+                : [];
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Kontrol GI405 Data PH gagal dibaca.', ['period' => $period, 'error' => $e->getMessage()]);
+
+            return [];
+        }
+
+        $yearReset = $m1Period !== null && substr($period, 0, 4) !== substr($m1Period, 0, 4);
+        $control = [];
+        foreach ($current as $key => $metrics) {
+            $total = (float) $metrics['total'];
+            $m1 = isset($previous[$key]) ? (float) $previous[$key]['total'] : null;
+            $control[$key] = [
+                'total' => $total,
+                'm1' => $m1,
+                'delta_m1' => $yearReset ? $total : ($m1 !== null ? $total - $m1 : null),
+            ];
+        }
+
+        return $control;
     }
 
     /** GL income proves the total; neither product segment nor TUPOK/LUNAS is encoded. */
@@ -1175,7 +1287,7 @@ class DataPhReportController extends Controller
             $lunas = (float) $row->lunas;
 
             if ($row->flag_klaim === 'Y') {
-                $klaimPortion = 0.30 * ($tupok + $lunas);
+                $klaimPortion = self::CLAIMED_RECOVERY_SHARE * ($tupok + $lunas);
                 $this->addDataPhRecoveryMetric(
                     $metrics,
                     $key,
@@ -1368,7 +1480,7 @@ class DataPhReportController extends Controller
             $lunas = (float) $row->lunas;
 
             if ($row->flag_klaim === 'Y') {
-                $klaimPortion = 0.30 * ($tupok + $lunas);
+                $klaimPortion = self::CLAIMED_RECOVERY_SHARE * ($tupok + $lunas);
                 $this->addDataPhRecoveryMetric(
                     $metrics,
                     $key,

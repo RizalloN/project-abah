@@ -21,6 +21,7 @@ use App\Services\Import\DlyKapResegmentasiCsvImporter;
 use App\Services\Import\L1133CsvImporter;
 use App\Services\Import\MySqlBulkLoadService;
 use App\Services\Import\SchemaDrift\ColumnFormatMemory;
+use App\Support\Import\ImportHeaderAliases;
 use App\Services\Import\SchemaDrift\SchemaDriftRegistry;
 use App\Services\Import\SchemaIntrospectionService;
 use App\Services\Import\SmartContentHeaderGuardService;
@@ -717,6 +718,10 @@ class ImportExcelController extends Controller
 
     private function resolveImportStrategy(?string $tableName = null): object
     {
+        if (($tableName ?? $this->resolveActiveTableName()) === \App\Services\Import\MauBrimoImportPolicy::TABLE) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['id_report' => 'Gunakan jalur import MAU BRIMO agar filter MBDESC Area 6 tetap berlaku.']);
+        }
+
         return $this->strategyFactory()->resolve($this->resolveActiveReport(), $tableName ?? $this->resolveActiveTableName());
     }
 
@@ -1003,29 +1008,8 @@ class ImportExcelController extends Controller
 
     private function normalizeImportColumnName(string $headerName): string
     {
-        $normalizedHeader = preg_replace('/[^A-Z0-9]+/', '_', strtoupper(trim($headerName)));
-        $normalizedHeader = trim((string) $normalizedHeader, '_');
-
-        $aliases = [
-            'TEXTBOX20' => 'total_kewajiban',
-            'TOTAL_KEWAJIBAN' => 'total_kewajiban',
-            'TEXTBOX21' => 'os_idr',
-            'OS_IDR' => 'os_idr',
-            'MONTH_DAY_YEAR_OF_POSISI' => 'posisi',
-            'MONTH_DAY_YEAR_OF_PERIODE' => 'month_day_year_of_periode',
-            'NOREKENING' => 'no_rekening',
-            'NOMORREKENING' => 'no_rekening',
-            'NOMOR_REKENING' => 'no_rekening',
-            'NO_REKENING' => 'no_rekening',
-            'CIF_NO' => 'cifno',
-            'CIF_NUMBER' => 'cifno',
-        ];
-
-        if (isset($aliases[$normalizedHeader])) {
-            return $aliases[$normalizedHeader];
-        }
-
-        return strtolower($normalizedHeader);
+        // Shared with the schema drift detector so its preview matches the import.
+        return ImportHeaderAliases::importColumnName($headerName);
     }
 
     /**
@@ -1144,6 +1128,8 @@ class ImportExcelController extends Controller
         $aliasMap = $this->dailyLoanSourceHeaderAliasMap();
         $canonicalHeaders = [];
         $matched = 0;
+        $normalize = static fn (string $value): string => trim((string) preg_replace('/[^A-Z0-9]+/', '_', strtoupper(trim($value))), '_');
+        $presentHeaders = array_fill_keys(array_map(static fn ($header): string => $normalize((string) $header), $headers), true);
 
         foreach (array_values($headers) as $index => $header) {
             $header = trim((string) $header);
@@ -1152,8 +1138,17 @@ class ImportExcelController extends Controller
                 continue;
             }
 
-            $normalizedHeader = preg_replace('/[^A-Z0-9]+/', '_', strtoupper($header));
-            $normalizedHeader = trim((string) $normalizedHeader, '_');
+            $normalizedHeader = $normalize($header);
+
+            // A legacy name (PN_PEMUTUS) only stands in for a column the file
+            // lacks. When the file carries both, they are different fields and
+            // aliasing would let the legacy column overwrite the real one.
+            if (isset($aliasMap[$normalizedHeader])
+                && $normalize($aliasMap[$normalizedHeader]) !== $normalizedHeader
+                && isset($presentHeaders[$normalize($aliasMap[$normalizedHeader])])) {
+                $canonicalHeaders[$index] = $header;
+                continue;
+            }
 
             if (isset($aliasMap[$normalizedHeader])) {
                 $canonicalHeaders[$index] = $aliasMap[$normalizedHeader];
@@ -3052,7 +3047,8 @@ class ImportExcelController extends Controller
         }
 
         $previewRedirect = route('import.excel.preview', ['ck' => $cacheKey]);
-        $prepareRedirect = route('import.excel.prepare-preview');
+        // ck membawa konteks upload ini walau tab lain mengubah session di antaranya.
+        $prepareRedirect = route('import.excel.prepare-preview', ['ck' => $cacheKey]);
 
         return response()->json([
             'status' => 'success',
@@ -3964,10 +3960,13 @@ class ImportExcelController extends Controller
         try {
             $learnedDateOrders = app(ColumnFormatMemory::class)->dateOrders($normalizedTableName);
             $evolvedColumnsLookup = array_fill_keys(app(SchemaDriftRegistry::class)->evolvedColumns($normalizedTableName), true);
+            // Accepted renames: a renamed source header keeps filling its column.
+            $driftColumnAliases = app(SchemaDriftRegistry::class)->columnAliases($normalizedTableName);
         } catch (\Throwable) {
             // Format memory is an enhancement; an import must never fail because of it.
             $learnedDateOrders = [];
             $evolvedColumnsLookup = [];
+            $driftColumnAliases = [];
         }
 
         $filterLookups = [];
@@ -3995,10 +3994,17 @@ class ImportExcelController extends Controller
                 }
             }
 
-            $mappedDbCandidates = array_values(array_filter(
-                $this->resolveMappedDatabaseCandidates($headerName, $tableColumnsLookup, $tableColumnsByLower),
-                static fn ($candidateColumn): bool => !isset($skipColumnsLookup[strtolower((string) $candidateColumn)])
-            ));
+            $headerAliasKey = trim(strtolower((string) preg_replace('/[^a-z0-9]+/i', '_', (string) $headerName)), '_');
+            $aliasTarget = $driftColumnAliases[$headerAliasKey] ?? null;
+            if ($aliasTarget !== null && isset($tableColumnsLookup[$aliasTarget]) && !isset($skipColumnsLookup[$aliasTarget])) {
+                $dbColumn = $aliasTarget;
+                $mappedDbCandidates = [$tableColumnsByLower[$aliasTarget] ?? $aliasTarget];
+            } else {
+                $mappedDbCandidates = array_values(array_filter(
+                    $this->resolveMappedDatabaseCandidates($headerName, $tableColumnsLookup, $tableColumnsByLower),
+                    static fn ($candidateColumn): bool => !isset($skipColumnsLookup[strtolower((string) $candidateColumn)])
+                ));
+            }
             $decimalScale = null;
             $hasTextualTarget = false;
             $hasDateTarget = false;
@@ -4053,6 +4059,9 @@ class ImportExcelController extends Controller
                 'is_decimal' => isset($decimalColumnsLookup[$normalizedHeader]) || (!$isDateRule && $evolvedNumericKind === 'decimal'),
                 'is_integer' => isset($integerColumnsLookup[$normalizedHeader]) || (!$isDateRule && $evolvedNumericKind === 'integer'),
                 'date_order' => $isDateRule ? $dateOrder : null,
+                // LW321PN writes "0" for "no date"; it is stored as the zero date
+                // 0000-00-00 so the table mirrors the source value exactly.
+                'preserve_zero_date' => $isDateRule && StrictDateParser::preservesZeroDates($tableName),
                 'decimal_scale' => $decimalScale,
                 'month_name_first_date' => $this->isSsaAlmafactsTable($tableName) && $normalizedHeader === 'MONTH_DAY_YEAR_OF_POSISI',
                 'filter_lookup' => $filterLookup,
@@ -5933,6 +5942,26 @@ class ImportExcelController extends Controller
         }
     }
 
+    /**
+     * Accepted renames for a fixed-layout processor: source header key =>
+     * existing table column, so a renamed export label keeps filling it.
+     *
+     * @return array<string, string>
+     */
+    private function schemaDriftHeaderAliases(string $tableName): array
+    {
+        try {
+            $existing = array_fill_keys(array_map('strtolower', $this->cachedSchemaColumnListing($tableName)), true);
+
+            return array_filter(
+                app(SchemaDriftRegistry::class)->columnAliases($tableName),
+                static fn (string $column): bool => isset($existing[$column])
+            );
+        } catch (\Throwable) {
+            return [];
+        }
+    }
+
     private function stageSsaSimpananCsvWithPolars(?callable $send, string $csvPath, ?string $delimiter = null): ?array
     {
         $pythonExe = $this->findPython();
@@ -5958,6 +5987,7 @@ class ImportExcelController extends Controller
             'delimiter' => $delimiter,
             'output_csv_path' => $outputCsvPath,
             'extra_columns' => $this->schemaDriftExtraColumns('ssa_simpanan'),
+            'header_aliases' => $this->schemaDriftHeaderAliases('ssa_simpanan'),
         ], JSON_UNESCAPED_UNICODE));
 
         $cmd = escapeshellarg($pythonExe)
@@ -6207,6 +6237,7 @@ class ImportExcelController extends Controller
             'trusted_staged_csv' => str_starts_with($normalizedCsvPath, $normalizedStageDir . '/')
                 || $normalizedCsvPath === $normalizedStageDir,
             'extra_columns' => $this->schemaDriftExtraColumns('ssa_pinjaman'),
+            'header_aliases' => $this->schemaDriftHeaderAliases('ssa_pinjaman'),
         ], JSON_UNESCAPED_UNICODE));
 
         $cmd = escapeshellarg($pythonExe)
@@ -7399,11 +7430,15 @@ class ImportExcelController extends Controller
                 return $this->buildDirectLoadMonthNameFirstDateExpression($columnExpression);
             }
 
-            return $sourcePreNormalized
+            $dateExpression = $sourcePreNormalized
                 ? $this->buildFastDirectLoadDateExpression($columnExpression)
                 : (!empty($rule['allow_locale_date_text'])
                     ? $this->buildDirectLoadLocaleDateExpression($columnExpression, $rule['date_order'] ?? null)
                     : $this->buildDirectLoadDateExpression($columnExpression, $rule['date_order'] ?? null));
+
+            return !empty($rule['preserve_zero_date'])
+                ? StrictDateParser::buildMySqlZeroPreservingExpression($this->buildDirectLoadTextExpression($columnExpression), $dateExpression)
+                : $dateExpression;
         }
 
         if (!empty($rule['is_decimal'])) {
@@ -7572,6 +7607,10 @@ class ImportExcelController extends Controller
             $setClauses[] = "`{$context['unique_id_col']}` = CONCAT(@daily_loan_unique_prefix, LPAD((@daily_loan_rownum := @daily_loan_rownum + 1), {$uniquePadLength}, '0'), '{$context['suffix']}')";
         }
 
+        // LOAD DATA applies SET clauses in order, so two source fields aimed at
+        // one column would let the later (often empty) field silently erase the
+        // first. Keep one source per column, preferring the exact header name.
+        $assignedColumns = [];
         foreach ($normalizedHeaders as $index => $header) {
             $variable = '@csv_col_' . $index;
             $fieldVariables[] = $variable;
@@ -7601,10 +7640,27 @@ class ImportExcelController extends Controller
                 continue;
             }
 
+            $columnKey = strtolower($dbColumn);
+            $isExactHeader = strtolower(trim((string) preg_replace('/[^A-Za-z0-9]+/', '_', (string) $header), '_')) === $columnKey;
+            if (isset($assignedColumns[$columnKey])) {
+                $existing = $assignedColumns[$columnKey];
+                Log::warning('Direct LOAD DATA Daily Loan: dua kolom sumber menuju kolom yang sama; satu sumber dipertahankan.', [
+                    'column' => $dbColumn,
+                    'kept' => $isExactHeader && !$existing['exact'] ? $header : $existing['header'],
+                    'ignored' => $isExactHeader && !$existing['exact'] ? $existing['header'] : $header,
+                ]);
+                if (!$isExactHeader || $existing['exact']) {
+                    continue;
+                }
+                unset($setClauses[$existing['clause']]);
+            }
+
             $expression = $this->buildDirectLoadSqlExpression($rule, $variable, $dbColumn, $context);
             $expression = $this->applySqlColumnConstraints($expression, $dbColumn, $context);
             $setClauses[] = $this->quoteSqlIdentifier($dbColumn) . " = {$expression}";
+            $assignedColumns[$columnKey] = ['clause' => array_key_last($setClauses), 'header' => (string) $header, 'exact' => $isExactHeader];
         }
+        $setClauses = array_values($setClauses);
 
         if (count($setClauses) <= (!empty($context['unique_id_col']) ? 3 : 2)) {
             throw new \RuntimeException('Tidak ada mapping kolom Daily Loan yang bisa dipakai untuk direct import.');
@@ -9000,6 +9056,59 @@ class ImportExcelController extends Controller
         }
     }
 
+    /**
+     * Source fidelity preflight: every non-empty source date must survive
+     * normalization as a faithful value. A value that would become NULL, an
+     * implausible year (e.g. Excel serial 0 = 1899-12-30) or a zero date the
+     * source never wrote aborts the import before anything is written.
+     *
+     * @return array<string, array{rows: int, samples: array<int, string>}>
+     */
+    private function inspectLw321PnSourceFidelity(string $stagingTable, array $context): array
+    {
+        if (!preg_match('/^tmp_bulk_csv_stage_\d+_[a-z0-9]+$/', $stagingTable)) {
+            throw new \RuntimeException('Nama staging table LW321PN tidak valid untuk audit kesetiaan sumber.');
+        }
+
+        $checks = [];
+        foreach ((array) ($context['header_rules'] ?? []) as $sourceIndex => $rule) {
+            if (empty($rule['is_date']) || (int) $sourceIndex >= (int) ($context['header_count'] ?? PHP_INT_MAX)) {
+                continue;
+            }
+            $column = strtolower((string) (($rule['db_candidates'] ?? [])[0] ?? ''));
+            if ($column === '' || isset($checks[$column])) {
+                continue;
+            }
+
+            $checks[$column] = [
+                'source' => $this->quoteSqlIdentifier('c' . (int) $sourceIndex),
+                // Evaluated once per distinct source value (dates repeat a lot),
+                // with exactly the expression the INSERT uses.
+                'violation' => StrictDateParser::buildMySqlFidelityViolation(
+                    'd.`raw_value`',
+                    $this->buildDirectLoadSqlExpression($rule, 'd.`raw_value`', $column, $context),
+                    !empty($rule['preserve_zero_date'])
+                ),
+            ];
+        }
+
+        $violations = [];
+        foreach ($checks as $column => $check) {
+            $distinct = "(SELECT {$check['source']} AS `raw_value`, COUNT(*) AS `row_count` FROM `{$stagingTable}` GROUP BY {$check['source']}) AS d";
+            $bad = DB::select("SELECT d.`raw_value`, d.`row_count` FROM {$distinct} WHERE {$check['violation']} ORDER BY d.`row_count` DESC");
+            if ($bad === []) {
+                continue;
+            }
+
+            $violations[$column] = [
+                'rows' => (int) array_sum(array_map(static fn ($row): int => (int) $row->row_count, $bad)),
+                'samples' => array_map(static fn ($row): string => (string) $row->raw_value, array_slice($bad, 0, 5)),
+            ];
+        }
+
+        return $violations;
+    }
+
     private function inspectInvalidLw321PnFastPathRows(
         string $stagingTable,
         array $context,
@@ -9397,6 +9506,24 @@ class ImportExcelController extends Controller
                         $invalidLw321Rows['invalid_balance']
                     ));
                 }
+
+                $fidelityViolations = $this->inspectLw321PnSourceFidelity($stagingTable, $context);
+                if ($fidelityViolations !== []) {
+                    Log::error('LW321PN preflight: source dates would not be stored faithfully.', [
+                        'job_id' => $jobId,
+                        'violations' => $fidelityViolations,
+                    ]);
+
+                    throw new \RuntimeException(
+                        'Import LW321PN dibatalkan saat preflight: sebagian tanggal di dokumen sumber tidak dapat disimpan persis seperti aslinya ('
+                        . implode('; ', array_map(
+                            static fn (string $column, array $info): string => strtoupper($column) . ': ' . $info['rows'] . ' baris, contoh ' . implode(', ', array_map(static fn (string $v): string => '"' . $v . '"', $info['samples'])),
+                            array_keys($fidelityViolations),
+                            $fidelityViolations
+                        ))
+                        . '). Tidak ada data yang ditulis.'
+                    );
+                }
             }
 
             if ($isDlyKapResegmentasi) {
@@ -9491,6 +9618,12 @@ class ImportExcelController extends Controller
                         if (!$hasStrictMode) {
                             $importSqlModes[] = 'STRICT_TRANS_TABLES';
                         }
+                        // Strict stays on (no silent truncation). Only the zero
+                        // date is allowed, because a source "0" is stored as
+                        // 0000-00-00 exactly as the document wrote it.
+                        $importSqlModes = array_values(array_filter($importSqlModes, static function (string $mode): bool {
+                            return !in_array(strtoupper($mode), ['NO_ZERO_DATE', 'NO_ZERO_IN_DATE'], true);
+                        }));
                     } else {
                         $importSqlModes = array_values(array_filter($importSqlModes, static function (string $mode): bool {
                             return !in_array(strtoupper($mode), ['STRICT_TRANS_TABLES', 'STRICT_ALL_TABLES'], true);
@@ -10834,31 +10967,7 @@ class ImportExcelController extends Controller
             $candidates[] = $normalized;
         }
 
-        $aliasMap = [
-            'textbox20' => 'total_kewajiban',
-            'textbox21' => 'os_idr',
-            'c_c' => 'c_c',
-            'c' => 'c_c',
-            'p_c' => 'p_c',
-            'p' => 'p_c',
-            'f_c' => 'f_c',
-            'f' => 'f_c',
-            'month_day_year_of_posisi' => 'month_day_year_of_posisi',
-            'periode' => 'periode',
-            'kode' => 'kode_uker',
-            'segmen_dashboard' => 'segmen_dashboard',
-            'produk_dashboard' => 'produk_dashboard',
-            'cbal_base' => 'balance_dalam_idr',
-            'cbal' => 'balance_dalam_idr',
-            'orgamt_base' => 'plafon_dalam_idr',
-            'orgamt' => 'plafon_dalam_idr',
-            'kolek_lancar' => 'kolektibilitas_lancar',
-            'kolek_dpk' => 'kolektibilitas_dpk',
-            'kolek_kurang_lancar' => 'kolektibilitas_kurang_lancar',
-            'kolek_diragukan' => 'kolektibilitas_diragukan',
-            'kolek_macet' => 'kolektibilitas_macet',
-            'pn_referal' => 'pn_referral',
-        ];
+        $aliasMap = ImportHeaderAliases::CANDIDATE;
 
         if (isset($aliasMap[$raw])) {
             $candidates[] = $aliasMap[$raw];
@@ -11669,6 +11778,10 @@ class ImportExcelController extends Controller
         $headerName = (string) ($rule['header_name'] ?? '');
 
         if (!empty($rule['is_date'])) {
+            if (!empty($rule['preserve_zero_date']) && StrictDateParser::isZeroDateToken($this->normalizeQuotedCsvCellValue($value ?? ''))) {
+                return StrictDateParser::ZERO_DATE;
+            }
+
             return $this->normalizeImportDateValue(
                 $value,
                 !empty($rule['allow_locale_date_text']),
@@ -12324,10 +12437,10 @@ class ImportExcelController extends Controller
                 ? route('import.simpanan.preview', ['ck' => $cacheKey])
                 : route('import.excel.preview', ['ck' => $cacheKey]));
         $prepareRedirect = $activeIdReport === self::DAILY_LOAN_REPORT_ID
-            ? route('import.dailyloan.prepare-preview')
+            ? route('import.dailyloan.prepare-preview', ['ck' => $cacheKey])
             : ($activeIdReport === self::SIMPANAN_MULTIPN_REPORT_ID
-                ? route('import.simpanan.prepare-preview')
-                : route('import.excel.prepare-preview'));
+                ? route('import.simpanan.prepare-preview', ['ck' => $cacheKey])
+                : route('import.excel.prepare-preview', ['ck' => $cacheKey]));
 
         if ($request->ajax() || $request->wantsJson()) {
             return response()->json([
@@ -12343,20 +12456,22 @@ class ImportExcelController extends Controller
 
     private function normalizeSsaSpreadsheetUpload(string $tableName, string $path): string
     {
-        if (!in_array($tableName, ['ssa_simpanan', 'ssa_pinjaman'], true)
+        $staging = app(\App\Services\Import\SsaSpreadsheetStagingService::class);
+        // CRAS has its own controller and normalizes in its preview stream.
+        if ($tableName === \App\Services\Import\CrasSourceService::TABLE
+            || !$staging->supports($tableName)
             || !in_array(strtolower(pathinfo($path, PATHINFO_EXTENSION)), ['xlsx', 'xls'], true)) {
             return $path;
         }
 
-        $normalizedPath = 'excel_imports/'.Str::uuid()->toString().'.csv';
-        $stage = app(\App\Services\Import\SsaSpreadsheetStagingService::class)->stage(
-            Storage::path($path), $tableName, Storage::path($normalizedPath)
-        );
+        $normalizedPath = 'excel_imports/'.Str::uuid()->toString().'.'.$staging->stagedExtension($tableName);
+        $stage = $staging->stage(Storage::path($path), $tableName, Storage::path($normalizedPath));
         if ($stage === null) {
             return $path;
         }
 
         Storage::delete($path);
+        \App\Services\Import\Crosstab\CrosstabNormalizationNotice::remember($normalizedPath, $stage['normalization'] ?? null);
 
         return $normalizedPath;
     }
@@ -13473,6 +13588,10 @@ class ImportExcelController extends Controller
         }
 
         $headers = $this->resolveImportStrategy($tableName)->transformHeaders($headers);
+        // A required column whose export label was renamed and mapped by an
+        // accepted schema drift decision still satisfies the contract.
+        $driftAliases = $this->schemaDriftHeaderAliases($tableName);
+        $headers = array_map(static fn ($header): string => $driftAliases[strtolower((string) $header)] ?? (string) $header, $headers);
         $available = array_fill_keys(array_map('strtolower', $headers), true);
         $required = $this->isSsaSimpananTable($tableName)
             ? [
@@ -15681,10 +15800,28 @@ class ImportExcelController extends Controller
         return true;
     }
 
+    private function resolveStreamJobId(Request $request, int $sessionJobId): int
+    {
+        $requestedJobId = (int) $request->query('job_id', $request->input('job_id', 0));
+        if ($requestedJobId <= 0 || $requestedJobId === $sessionJobId) {
+            return $sessionJobId > 0 ? $sessionJobId : $requestedJobId;
+        }
+
+        $createdBy = DB::table('import_jobs')->where('id', $requestedJobId)->value('created_by');
+        if ($createdBy === null) {
+            return $sessionJobId;
+        }
+
+        return !auth()->check() || (string) $createdBy === (string) auth()->id()
+            ? $requestedJobId
+            : $sessionJobId;
+    }
+
     public function processExcelStream(Request $request)
     {
         $sessionParams = session('excel_import_params', []);
-        $jobId         = (int) ($sessionParams['job_id'] ?? $request->job_id ?? 0);
+        // Tiap tab memantau job-nya sendiri; session hanya menyimpan job terakhir.
+        $jobId = $this->resolveStreamJobId($request, (int) ($sessionParams['job_id'] ?? 0));
         if ($jobId <= 0) {
             return response()->stream(function () {
                 echo "event: error\n";

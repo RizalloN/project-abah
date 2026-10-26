@@ -44,3 +44,8 @@ it('adds iso datetime, generic day-month and textual clauses to the mysql expres
         ->and($sql)->toContain("'%Y-%c-%e'")
         ->and($sql)->toContain("'okt', 'oct'");
 });
+
+it('keeps the core banking zero date empty instead of Excel serial zero', function (string $value) {
+    expect(StrictDateParser::normalize($value))->toBeNull()
+        ->and(StrictDateParser::buildMySqlCaseExpression("'x'"))->toContain('BETWEEN 20000 AND 80000');
+})->with(['0', '00', '00/00/0000', '0000-00-00', '1', '99999']);

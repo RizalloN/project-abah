@@ -53,11 +53,20 @@ final class Lw321DailyLoanMapper
             'descriptions' => ['CASHCOLL KREDIT SMALL'],
         ],
         [
-            'segment' => 'Medium',
-            'product' => 'Medium',
+            // Daily Loan Dinamis membukukan RITKOM 5-25 M sebagai Small/Commercial
+            // dengan segmen kinerja MEDIUM (terverifikasi pada periode overlap).
+            'segment' => 'Small',
+            'product' => 'Commercial',
+            'performance_segment' => 'MEDIUM',
             'descriptions' => [
                 '10. RITKOM -> Rp. 5 M S/D 15 M',
                 '11. RITKOM -> Rp. 15 M S/D 25 M',
+            ],
+        ],
+        [
+            'segment' => 'Medium',
+            'product' => 'Medium',
+            'descriptions' => [
                 '(KWL) 1. MENENGAH > Rp 25 M S/D 50 M',
                 '(KWL) 2. MENENGAH > Rp 50 M S/D 200 M',
             ],
@@ -98,7 +107,30 @@ final class Lw321DailyLoanMapper
     ];
 
     /**
-     * @return array{segment:?string, product:?string, matched:bool}
+     * DESCRIPTION LW321 yang ditulis berbeda oleh Daily Loan Dinamis untuk
+     * rekening yang sama pada tanggal yang sama. DESCRIPTION lain identik.
+     *
+     * @var array<string, string>
+     */
+    private const DAILY_DESCRIPTIONS = [
+        '01. RITKOM - S/D Rp 50 JUTA' => '01. S/D Rp 50 JUTA',
+        '02. RITKOM - > Rp.50 JUTA S/D Rp 100 JUTA' => '02. > Rp.50 JUTA S/D Rp 100 JUTA',
+        '03. RITKOM - > Rp 100 JUTA S/D Rp 350 JUTA' => '03. > Rp 100 JUTA S/D Rp 350 JUTA',
+        '04. RITKOM - > Rp 350 JUTA S/D Rp 500 JUTA' => '04. > Rp 350 JUTA S/D Rp 500 JUTA',
+        '05. RITKOM - > Rp 500 JUTA S/D Rp 1 M' => '05. > Rp 500 JUTA S/D Rp 1 M',
+        '06. RITKOM - > Rp 1 M S/D Rp 2 M' => '06. > Rp 1 M S/D Rp 2 M',
+        '07. RITKOM - > Rp 2 M S/D Rp 3 M' => '07. > Rp 2 M S/D Rp 3 M',
+        '08. RITKOM - > Rp 3 M S/D Rp 4 M' => '08. > Rp 3 M S/D Rp 4 M',
+        '09. RITKOM - > Rp 4 M S/D Rp 5 M' => '09. > Rp 4 M S/D Rp 5 M',
+        'KREDIT MIKRO - KUPEDES' => 'Kupedes',
+        'KREDIT MIKRO - KUPEDES RAKYAT' => 'Kupedes Rakyat',
+        'KREDIT MIKRO - KUR MIKRO BARU' => 'KUR Mikro Baru',
+        'KREDIT RITEL - KONSUMTIF - NON CASH COLATERAL - BRIGUNA KARYA' => 'KREDIT RITEL - KONSUMTIF - NON CASH COLATERAL - KRETAP',
+        'KREDIT RITEL - KONSUMTIF - NON CASH COLATERAL - BRIGUNA PURNA' => 'KREDIT RITEL - KONSUMTIF - NON CASH COLATERAL - KRESUN',
+    ];
+
+    /**
+     * @return array{segment:?string, product:?string, performance_segment:?string, performance_product:?string, matched:bool}
      */
     public static function classifyDescription(?string $description): array
     {
@@ -106,14 +138,89 @@ final class Lw321DailyLoanMapper
         $rule = self::rulesByToken()[$token] ?? null;
 
         if ($rule === null) {
-            return ['segment' => null, 'product' => null, 'matched' => false];
+            return [
+                'segment' => null,
+                'product' => null,
+                'performance_segment' => null,
+                'performance_product' => null,
+                'matched' => false,
+            ];
         }
 
         return [
             'segment' => $rule['segment'],
             'product' => $rule['product'],
+            'performance_segment' => $rule['performance_segment'],
+            'performance_product' => $rule['performance_product'],
             'matched' => true,
         ];
+    }
+
+    /** DESCRIPTION dalam kosakata Daily Loan Dinamis; teks lain dipertahankan apa adanya. */
+    public static function dailyDescription(?string $description): ?string
+    {
+        $normalized = trim((string) $description);
+        if ($normalized === '' || $normalized === '-') {
+            return null;
+        }
+
+        return self::dailyDescriptionsByToken()[self::normalizeToken($normalized)] ?? $normalized;
+    }
+
+    public static function dailyDescriptionSql(string $descriptionExpression): string
+    {
+        $tokenSql = self::normalizedTokenSql($descriptionExpression);
+        $cases = [];
+        foreach (self::dailyDescriptionsByToken() as $token => $dailyDescription) {
+            $cases[] = 'WHEN '.self::quoteSqlLiteral($token).' THEN '.self::quoteSqlLiteral($dailyDescription);
+        }
+
+        return "(CASE {$tokenSql} ".implode(' ', $cases)
+            ." ELSE NULLIF(NULLIF(TRIM({$descriptionExpression}), ''), '-') END)";
+    }
+
+    public static function performanceSegmentSql(string $descriptionExpression): string
+    {
+        return self::classificationSql($descriptionExpression, 'performance_segment');
+    }
+
+    public static function performanceProductSql(string $descriptionExpression): string
+    {
+        return self::classificationSql($descriptionExpression, 'performance_product');
+    }
+
+    /** LW321 menulis suku bunga dalam persen (6.000000), Daily Loan dalam pecahan (0.060000). */
+    public static function dailyRate(mixed $rate): ?float
+    {
+        if ($rate === null || trim((string) $rate) === '' || ! is_numeric($rate)) {
+            return null;
+        }
+
+        return round(((float) $rate) / 100, 6);
+    }
+
+    public static function dailyRateSql(string $rateExpression): string
+    {
+        return "ROUND(({$rateExpression}) / 100, 6)";
+    }
+
+    /** LW321 menulis jangka waktu "36M", Daily Loan "36". */
+    public static function dailyTenor(?string $tenor): ?string
+    {
+        $normalized = trim((string) $tenor);
+        if ($normalized === '' || $normalized === '-') {
+            return null;
+        }
+
+        return preg_match('/^(\d+)\s*M$/i', $normalized, $matches) === 1 ? $matches[1] : $normalized;
+    }
+
+    public static function dailyTenorSql(string $tenorExpression): string
+    {
+        $tenor = "NULLIF(NULLIF(TRIM(COALESCE({$tenorExpression}, '')), ''), '-')";
+
+        return "(CASE WHEN {$tenor} REGEXP '^[0-9]+[[:space:]]*[Mm]$'"
+            ." THEN TRIM(SUBSTRING({$tenor}, 1, CHAR_LENGTH({$tenor}) - 1)) ELSE {$tenor} END)";
     }
 
     public static function resolveArrearsAge(
@@ -376,7 +483,7 @@ final class Lw321DailyLoanMapper
     }
 
     /**
-     * @return array<string, array{segment:string, product:string}>
+     * @return array<string, array{segment:string, product:string, performance_segment:string, performance_product:string}>
      */
     private static function rulesByToken(): array
     {
@@ -392,11 +499,32 @@ final class Lw321DailyLoanMapper
                 $rules[self::normalizeToken($description)] = [
                     'segment' => $rule['segment'],
                     'product' => $rule['product'],
+                    'performance_segment' => $rule['performance_segment'] ?? strtoupper($rule['segment']),
+                    'performance_product' => $rule['performance_product'] ?? self::normalizeToken($rule['product']),
                 ];
             }
         }
 
         return $rules;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private static function dailyDescriptionsByToken(): array
+    {
+        static $descriptions;
+
+        if ($descriptions !== null) {
+            return $descriptions;
+        }
+
+        $descriptions = [];
+        foreach (self::DAILY_DESCRIPTIONS as $lwDescription => $dailyDescription) {
+            $descriptions[self::normalizeToken($lwDescription)] = $dailyDescription;
+        }
+
+        return $descriptions;
     }
 
     /**

@@ -451,6 +451,73 @@ class ImportExcelControllerDailyLoanCsvTest extends TestCase
         }
     }
 
+    public function test_legacy_alias_does_not_rename_a_separate_column_the_file_also_carries(): void
+    {
+        // Since late September 2026 the export carries PN_PEMUTUS1 (filled)
+        // and a separate, mostly empty PN_PEMUTUS column.
+        $canonical = $this->invokeMethod('canonicalizeDailyLoanSourceHeaders', [[
+            'PERIODE', 'KODE_KANWIL1', 'PN_PEMUTUS1', 'PN_CRM1', 'PN_PEMUTUS', 'PN_REFERRAL_NAIK_KELAS1',
+        ]]);
+
+        $this->assertSame('PN_PEMUTUS1', $canonical[2]);
+        $this->assertSame('PN_PEMUTUS', $canonical[4]);
+        $this->assertCount(1, array_keys($canonical, 'PN_PEMUTUS1', true));
+    }
+
+    public function test_direct_load_plan_never_lets_two_source_fields_write_one_column(): void
+    {
+        $headers = $this->dailyLoanHeaders();
+        $schemaService = Mockery::mock(SchemaIntrospectionService::class);
+        $schemaService->shouldReceive('hasTable')->with('daily_loan_dinamis')->andReturnTrue();
+        $schemaService->shouldReceive('getColumnListing')->with('daily_loan_dinamis')->andReturn($headers);
+        $schemaService->shouldReceive('hasColumn')->andReturnTrue();
+        $metadata = array_fill_keys(array_map('strtolower', $headers), [
+            'type' => 'varchar(255)', 'base_type' => 'varchar', 'max_length' => 255,
+            'precision' => null, 'scale' => null, 'is_textual' => true, 'is_decimal' => false,
+        ]);
+        $metadata['rate'] = [
+            'type' => 'decimal(20,6)', 'base_type' => 'decimal', 'max_length' => null,
+            'precision' => 20, 'scale' => 6, 'is_textual' => false, 'is_decimal' => true,
+        ];
+        $schemaService->shouldReceive('getColumnMetadata')->with('daily_loan_dinamis')->andReturn($metadata);
+        app()->instance(SchemaIntrospectionService::class, $schemaService);
+
+        $pemutusIndex = array_search('PN_PEMUTUS1', $headers, true);
+        $this->assertNotFalse($pemutusIndex);
+        // The same field again under its legacy name, as the export now ships it.
+        $sourceHeaders = array_merge($headers, ['PN_PEMUTUS']);
+        $csvPath = storage_path('framework/testing/daily_loan_duplicate_target.csv');
+        @mkdir(dirname($csvPath), 0777, true);
+        file_put_contents($csvPath, implode(',', $sourceHeaders));
+
+        try {
+            $plan = $this->invokeMethod('buildDirectDailyLoanCsvLoadPlan', [$csvPath, $sourceHeaders, [
+                'prepared_source' => [
+                    'path' => $csvPath, 'cleanup' => false, 'normalized' => false, 'source_pre_normalized' => false,
+                    'backend' => 'raw', 'headers' => $sourceHeaders, 'skipped_rows' => [], 'skipped_count' => 0,
+                    'written_rows' => 1, 'period_hints' => ['2026-10-20'],
+                ],
+                'delimiter' => ',',
+                'source_backend' => 'raw',
+                'replace_periods' => ['2026-10-20'],
+            ]]);
+        } finally {
+            @unlink($csvPath);
+        }
+
+        $targets = [];
+        foreach ($plan['set_clauses'] as $clause) {
+            if (preg_match('/^`([^`]+)` =/', $clause, $match)) {
+                $targets[] = strtolower($match[1]);
+            }
+        }
+        $this->assertSame(array_values(array_unique($targets)), $targets, 'Each column must be written by exactly one source field.');
+        $pemutusClauses = array_values(array_filter($plan['set_clauses'], static fn (string $clause): bool => str_starts_with($clause, '`PN_PEMUTUS1`') || str_starts_with($clause, '`pn_pemutus1`')));
+        $this->assertCount(1, $pemutusClauses);
+        $this->assertStringContainsString('@csv_col_' . $pemutusIndex . ',', $pemutusClauses[0] . ',');
+        $this->assertStringNotContainsString('@csv_col_' . count($headers), $pemutusClauses[0]);
+    }
+
     public function test_build_direct_daily_loan_csv_load_plan_uses_prepared_source_metadata_without_reloading_file(): void
     {
         $schemaService = Mockery::mock(SchemaIntrospectionService::class);

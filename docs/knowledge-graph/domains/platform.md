@@ -8,7 +8,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | --- | ---: |
 | command | 3 |
 | file | 28 |
-| method | 51 |
+| method | 52 |
 | unresolved_symbol | 5 |
 | class | 11 |
 | table | 2 |
@@ -20,8 +20,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | --- | --- | ---: | --- |
 | `layouts.admin` | view | 70 | `resources/views/layouts/admin.blade.php:1` |
 | `layouts.sidebar` | view | 55 | `resources/views/layouts/sidebar.blade.php:1` |
+| `get` | method | 29 | `app/Support/ReportCacheVersion.php:9` |
 | `composite` | method | 28 | `app/Support/ReportCacheVersion.php:17` |
-| `get` | method | 26 | `app/Support/ReportCacheVersion.php:9` |
 | `bump` | method | 16 | `app/Support/ReportCacheVersion.php:31` |
 | `AppServiceProvider` | class | 15 | `app/Providers/AppServiceProvider.php:25` |
 | `boot` | method | 11 | `app/Providers/AppServiceProvider.php:70` |
@@ -86,8 +86,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Direction | Count |
 | --- | ---: |
-| platform -> core (calls) | 35 |
-| core -> platform (calls) | 24 |
+| platform -> core (calls) | 37 |
+| core -> platform (calls) | 27 |
 | dashboard-pinjaman -> platform (calls) | 16 |
 | core -> platform (extends_view) | 15 |
 | dashboard-pinjaman -> platform (extends_view) | 15 |
@@ -100,7 +100,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | import -> platform (calls) | 8 |
 | dashboard-simpanan -> platform (extends_view) | 8 |
 | platform -> core (references_route) | 8 |
-| core -> platform (contains) | 6 |
+| core -> platform (contains) | 7 |
 | platform -> import (references_route) | 6 |
 | dashboard-harian -> platform (calls) | 5 |
 | platform -> core (instantiates) | 5 |

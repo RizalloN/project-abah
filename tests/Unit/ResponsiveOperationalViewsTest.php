@@ -142,7 +142,7 @@ class ResponsiveOperationalViewsTest extends TestCase
 
         $this->assertMatchesRegularExpression('/@media \(max-width: 576px\).*?\.nonptp-header\s*\{[^}]*flex-direction:\s*column;/s', $nonPtp);
         $this->assertMatchesRegularExpression('/@media \(max-width: 576px\).*?\.nonptp-badge\s*\{[^}]*white-space:\s*normal;/s', $nonPtp);
-        $this->assertSame(4, substr_count($management, 'class="col-xl-3 col-md-6'));
+        $this->assertSame(2, substr_count($management, 'col-xl-6 col-md-6'));
     }
 
     public function test_data_ph_context_badges_wrap_and_remain_readable_on_fold_viewports(): void

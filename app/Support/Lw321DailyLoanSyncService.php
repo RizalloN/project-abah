@@ -594,14 +594,16 @@ final class Lw321DailyLoanSyncService
         $segment = "CASE WHEN {$accountValid} THEN {$accountSegment} WHEN {$sourceValid} THEN {$sourceSegment} END";
         $product = "CASE WHEN {$accountValid} THEN {$accountProduct} WHEN {$sourceValid} THEN {$sourceProduct} END";
         $performanceSegment = "CASE WHEN {$accountValid} THEN COALESCE({$accountPerformanceSegment}, UPPER({$accountSegment}))"
-            ." WHEN {$sourceValid} THEN UPPER({$sourceSegment})"
+            ." WHEN {$sourceValid} THEN ".Lw321DailyLoanMapper::performanceSegmentSql('l.description')
             ." ELSE '' END";
         $performanceProduct = "CASE WHEN {$accountValid} THEN COALESCE({$accountPerformanceProduct}, "
             .Lw321DailyLoanMapper::normalizedTokenSql($accountProduct).')'
-            ." WHEN {$sourceValid} THEN ".Lw321DailyLoanMapper::normalizedTokenSql($sourceProduct)
+            ." WHEN {$sourceValid} THEN ".Lw321DailyLoanMapper::performanceProductSql('l.description')
             ." ELSE '' END";
-        $description = "CASE WHEN {$accountValid} THEN COALESCE({$accountDescription}, NULLIF(NULLIF(TRIM(l.description), ''), '-'), {$accountProduct})"
-            ." ELSE NULLIF(NULLIF(TRIM(l.description), ''), '-') END";
+        // Rekening baru memakai kosakata DESCRIPTION Daily Loan (mis. "KUR Mikro Baru").
+        $sourceDescription = Lw321DailyLoanMapper::dailyDescriptionSql('l.description');
+        $description = "CASE WHEN {$accountValid} THEN COALESCE({$accountDescription}, {$sourceDescription}, {$accountProduct})"
+            ." ELSE {$sourceDescription} END";
         $status = "CASE WHEN {$accountIdentity} AND {$accountRestructuredStatus} = 1 THEN '3' ELSE '1' END";
         $nplMethod = "CASE WHEN {$accountIdentity} THEN {$accountNplMethod} END";
         $referral = "COALESCE(NULLIF(NULLIF(TRIM(l.pn_referral), ''), '-'),"
@@ -848,7 +850,7 @@ final class Lw321DailyLoanSyncService
         // Rekening yang ada di Daily Loan otoritatif terakhir memakai klasifikasi Daily Loan.
         if ($accountIdentityMatches && ($account['segment'] ?? null) !== null && ($account['product'] ?? null) !== null) {
             return [
-                'description' => $account['description'] ?? $description ?? $account['product'],
+                'description' => $account['description'] ?? Lw321DailyLoanMapper::dailyDescription($description) ?? $account['product'],
                 'segment' => $account['segment'],
                 'product' => $account['product'],
                 'performance_segment' => $account['performance_segment']
@@ -862,11 +864,11 @@ final class Lw321DailyLoanSyncService
 
         if ($source['matched']) {
             return [
-                'description' => $description,
+                'description' => Lw321DailyLoanMapper::dailyDescription($description),
                 'segment' => $source['segment'],
                 'product' => $source['product'],
-                'performance_segment' => strtoupper((string) $source['segment']),
-                'performance_product' => Lw321DailyLoanMapper::normalizeToken($source['product']),
+                'performance_segment' => $source['performance_segment'],
+                'performance_product' => $source['performance_product'],
                 'pn_referral' => $referral,
                 'source' => 'description',
             ] + $sticky;
@@ -1049,8 +1051,8 @@ final class Lw321DailyLoanSyncService
             'status_rekening1' => $classification['status'],
             'ln_type' => $this->stringValue($row['ln_type'] ?? null),
             'nama_debitur1' => $this->stringValue($row['nama_debitur'] ?? null),
-            'rate' => $this->numberValue($row['rate'] ?? null),
-            'jangka_waktu1' => $this->stringValue($row['jangka_waktu'] ?? null),
+            'rate' => Lw321DailyLoanMapper::dailyRate($row['rate'] ?? null),
+            'jangka_waktu1' => Lw321DailyLoanMapper::dailyTenor($this->stringValue($row['jangka_waktu'] ?? null)),
             'plafon' => $this->numberValue($row['plafon_dalam_idr'] ?? null)
                 ?? $this->numberValue($row['plafon'] ?? null),
             'baki_debet1' => $balance,
@@ -1163,8 +1165,8 @@ final class Lw321DailyLoanSyncService
             'status_rekening1' => $resolution['status'],
             'ln_type' => $nullableText('ln_type'),
             'nama_debitur1' => $nullableText('nama_debitur'),
-            'rate' => $source('rate'),
-            'jangka_waktu1' => $nullableText('jangka_waktu'),
+            'rate' => Lw321DailyLoanMapper::dailyRateSql($source('rate')),
+            'jangka_waktu1' => Lw321DailyLoanMapper::dailyTenorSql($source('jangka_waktu')),
             'plafon' => 'COALESCE('.$source('plafon_dalam_idr').', '.$source('plafon').')',
             'baki_debet1' => $balance,
             'nilai_tercatat1' => $balance,

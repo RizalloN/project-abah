@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Jobs\Middleware\DeferSnapshotJobsDuringImport;
+use App\Jobs\Middleware\SkipSupersededDirtyClaim;
 use App\Support\SnapshotDirtyPeriodService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -36,6 +37,7 @@ class ProcessSnapshotDirtyPeriodJob implements ShouldQueue
         $period = (string) ($this->claim['period_key'] ?? '');
 
         return [
+            new SkipSupersededDirtyClaim($this->claim),
             new DeferSnapshotJobsDuringImport(sourceTable: $sourceTable),
             (new WithoutOverlapping('snapshot:dirty:' . $sourceTable . ':' . $period))
                 ->releaseAfter(60)

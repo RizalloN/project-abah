@@ -76,3 +76,15 @@ it('keeps amount headers that mention a date word numeric', function () {
     expect($this->profiler->profile(['15032019', '20261016', '12345678'], 'SALDO_POSISI')['kind'])->toBe(ColumnValueProfiler::KIND_INTEGER)
         ->and($this->profiler->profile(['20261016', '20261017'], 'TANGGAL_POSISI')['kind'])->toBe(ColumnValueProfiler::KIND_DATE);
 });
+
+it('treats core banking zero dates as blank in a date column but keeps zero as a number elsewhere', function () {
+    $menunggak = $this->profiler->profile(array_merge(array_fill(0, 40, '0'), ['05/03/2002', '28/02/2002', '30/09/2014']), 'TGL_MENUNGGAK');
+    $amount = $this->profiler->profile(['0', '0', '1,250.50', '980.25'], 'TUNGGAKAN_POKOK');
+
+    expect($menunggak['kind'])->toBe(ColumnValueProfiler::KIND_DATE)
+        ->and($menunggak['nonconforming'])->toBe(0)
+        ->and($menunggak['blank'])->toBe(40)
+        ->and($this->profiler->profile(['00/00/0000', '0000-00-00', '20/10/2026'], 'TGL_PH')['nonconforming'])->toBe(0)
+        ->and($amount['kind'])->toBe(ColumnValueProfiler::KIND_DECIMAL)
+        ->and($amount['blank'])->toBe(0);
+});

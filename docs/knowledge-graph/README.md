@@ -25,9 +25,9 @@ If stale, rebuild with `php artisan knowledge:graph --build`.
 
 | Metric | Count |
 | --- | ---: |
-| Source files | 708 |
-| Graph nodes | 8,903 |
-| Graph edges | 35,630 |
+| Source files | 737 |
+| Graph nodes | 9,240 |
+| Graph edges | 36,998 |
 | Domains | 18 |
 
 ## Read The Right Artifact
@@ -45,25 +45,25 @@ If stale, rebuild with `php artisan knowledge:graph --build`.
 
 | Node | Kind | Domain | Degree |
 | --- | --- | --- | ---: |
-| `ImportExcelController` | class | import | 387 |
+| `ImportExcelController` | class | import | 390 |
 | `DashboardSimpananController` | class | dashboard-simpanan | 347 |
-| `DashboardHarianSnapshotService` | class | dashboard-harian | 210 |
-| `DashboardPinjamanReportController` | class | dashboard-pinjaman | 165 |
+| `DashboardHarianSnapshotService` | class | dashboard-harian | 209 |
+| `DashboardPinjamanReportController` | class | dashboard-pinjaman | 167 |
+| `nama_report` | table | core | 160 |
 | `ImportIndexController` | class | import | 159 |
-| `nama_report` | table | core | 153 |
 | `ReportSnapshotBuilder` | class | jobs-snapshots | 129 |
-| `ImportFileController` | class | import | 125 |
-| `import_jobs` | table | import | 115 |
+| `ImportFileController` | class | import | 126 |
+| `import_jobs` | table | import | 120 |
 | `KinerjaRmReportController` | class | dashboard-pinjaman | 105 |
-| `ImportProgressService` | class | import | 102 |
-| `ImportReportPhController` | class | import | 102 |
-| `daily_loan_dinamis` | table | dashboard-pinjaman | 96 |
+| `ImportProgressService` | class | import | 104 |
+| `ImportReportPhController` | class | import | 103 |
+| `daily_loan_dinamis` | table | dashboard-pinjaman | 99 |
 | `AlmafactsDashboardController` | class | almafacts | 91 |
 | `KinerjaRmMikroReportController` | class | dashboard-pinjaman | 88 |
 | `LandingMicroPerformanceService` | class | core | 85 |
+| `normalize` | method | core | 84 |
 | `ImportPerformancePisPerProdukController` | class | import | 83 |
 | `DriveAsixFile` | class | bank-pipeline | 80 |
-| `normalize` | method | core | 79 |
 | `ReportDataSyncService` | class | core | 72 |
 
 ## Edge Semantics

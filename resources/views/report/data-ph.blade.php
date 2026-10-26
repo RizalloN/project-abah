@@ -847,7 +847,9 @@
         @endphp
 
         <div class="px-4 py-3 small" role="note">
-            @if($usesGi405 ?? false)
+            @if(!($usesGi405 ?? false))
+                <strong>Sumber recovery: LW325 PH.</strong> Pergerakan bulan berjalan: TUPOK dan LUNAS terhadap posisi akhir bulan sebelumnya, ditambah klaim, dirinci per segmen.
+            @elseif($usesGi405 ?? false)
                 <strong>Sumber recovery: GI405.</strong> Posisi pendapatan kumulatif tahun berjalan; rincian produk tidak dialokasikan dari saldo PH.
                 @if(!($gi405SplitAvailable ?? false))
                     @if(($selectedPeriod ?? '') >= '2026-01-01')

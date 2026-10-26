@@ -29,38 +29,66 @@ return [
     'worker_pools' => [
         'imports-high' => [
             'queues' => 'imports-high',
+            'priority' => 10,
+            'critical' => true,
             'workers' => (int) env('QUEUE_IMPORT_WORKERS', env('ABAH_IMPORT_WORKERS', 3)),
         ],
         'imports-daily-loan' => [
             'queues' => 'imports-daily-loan',
+            'priority' => 10,
+            'critical' => true,
             'workers' => (int) env('QUEUE_DAILY_LOAN_WORKERS', 1),
         ],
         'snapshots-priority' => [
             'queues' => 'snapshots-priority',
+            'priority' => 20,
             'workers' => (int) env('QUEUE_SNAPSHOT_PRIORITY_WORKERS', 1),
         ],
         'snapshots' => [
             'queues' => 'snapshots-parallel',
+            'priority' => 40,
+            'elastic' => true,
             'workers' => (int) env('QUEUE_SNAPSHOT_WORKERS', env('ABAH_SNAPSHOT_WORKERS', 3)),
         ],
         'remote-sources' => [
             'queues' => 'remote-sources',
+            'priority' => 60,
+            'elastic' => true,
             'workers' => (int) env('QUEUE_REMOTE_SOURCE_WORKERS', 2),
         ],
         'background' => [
             // Sinkronisasi hasil import tidak boleh antre di belakang cache warm
             // yang dapat memindai jutaan baris data sumber.
             'queues' => 'default',
+            'priority' => 30,
+            'critical' => true,
             'workers' => (int) env('QUEUE_BACKGROUND_WORKERS', env('ABAH_REPORT_WORKERS', 2)),
         ],
         'reports-low' => [
             'queues' => 'reports-low',
+            'priority' => 70,
+            'elastic' => true,
             'workers' => (int) env('QUEUE_REPORTS_LOW_WORKERS', 1),
         ],
         'shadow-backfill' => [
             'queues' => 'shadow-backfill',
+            'priority' => 50,
+            'elastic' => true,
             'workers' => (int) env('QUEUE_SHADOW_WORKERS', env('ABAH_SHADOW_WORKERS', 2)),
         ],
+    ],
+
+    /*
+    | Shared worker budget across pools (App\Services\Import\WorkerCapacityPlanner).
+    | New workers are launched by pool priority within this budget; the budget
+    | shrinks when free RAM could not absorb another worker at its memory limit.
+    | Running workers are never stopped. Disable to return to static capacity.
+    */
+    'worker_planner' => [
+        'enabled' => (bool) env('QUEUE_PLANNER_ENABLED', true),
+        'max_total_workers' => (int) env('QUEUE_MAX_TOTAL_WORKERS', 12),
+        'memory_reserve_mb' => (int) env('QUEUE_MEMORY_RESERVE_MB', 2048),
+        'worker_memory_estimate_mb' => (int) env('QUEUE_WORKER_MEMORY_ESTIMATE_MB', env('QUEUE_WORKER_MEMORY', 512)),
     ],
 
     'worker_timeout' => (int) env('QUEUE_WORKER_TIMEOUT', 0),

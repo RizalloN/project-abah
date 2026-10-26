@@ -1,0 +1,11 @@
+/*
+ * Entry for the scroll report (default presentation layout).
+ * The slide deck (?layout=slides) keeps presentation.css. Only the shared
+ * dialogs, export progress and the timeseries modal are reused here; the
+ * report itself is styled entirely by the keynote layer.
+ */
+@import "./pres-interactions.css";
+@import "./pres-structured.css";
+@import "./keynote/base.css";
+@import "./keynote/stage.css";
+@import "./keynote/sheets.css";

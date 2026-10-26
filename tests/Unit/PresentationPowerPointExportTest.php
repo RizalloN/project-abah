@@ -754,7 +754,7 @@ class PresentationPowerPointExportTest extends TestCase
         $this->assertStringContainsString("->where('segmen_kinerja', 'MICRO')", $controller);
         $this->assertStringContainsString("'extreme_low_mantri' => \$this->buildPresentationExtremeLowMantri(\$requestedPeriod)", $controller);
         $this->assertStringContainsString("'rm_kur_tiering' => \$this->buildPresentationRmKurTiering(\$requestedPeriod)", $controller);
-        $this->assertStringContainsString('->buildEmbeddedPayload($category, $period, $mantri, $extremeLowView, $preferBrihcRoster)', $controller);
+        $this->assertStringContainsString('->buildEmbeddedPayload($category, $period, $mantri, $extremeLowView, $preferBrihcRoster, $nettKur)', $controller);
         $this->assertStringContainsString("'per_cabang'", $controller);
         $this->assertStringContainsString(':ppt_deck_v21_brihc_primary_roster', $controller);
         $this->assertStringContainsString("\$lockSeconds = \$type === 'presentation-payload' ? 300", $controller);

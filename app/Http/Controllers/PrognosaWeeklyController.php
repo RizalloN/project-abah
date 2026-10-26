@@ -813,8 +813,9 @@ class PrognosaWeeklyController extends Controller
             return (int) end($availableWeeks);
         }
 
-        $day = (int) Carbon::parse($selectedPeriod)->format('j');
-        $preferredWeek = max(1, intdiv(max(1, $day) - 1, 7) + 1);
+        // Week mengikuti hari ini (real time), bukan tanggal snapshot harian terakhir:
+        // snapshot 25 Okt dibuka pada 26 Okt sudah masuk week setelah cutoff Sabtu.
+        $preferredWeek = \App\Support\PrognosaCalendarWeek::forDate($today);
         $eligibleWeeks = array_values(array_filter(
             $availableWeeks,
             static fn (int $week): bool => $week <= $preferredWeek

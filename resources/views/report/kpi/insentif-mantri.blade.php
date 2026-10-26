@@ -251,6 +251,8 @@
         </div>
     @endif
 
+    @include('report.partials.productivity-source-quality', ['sourceQuality' => $sourceQuality ?? null])
+
     @if ($missingMonths->isNotEmpty())
         <div class="im-alert warn" role="status">
             <i class="fas fa-info-circle mt-1" aria-hidden="true"></i>

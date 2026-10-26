@@ -2,8 +2,8 @@
 
 | Methods | URI | Name | Domain | Handler |
 | --- | --- | --- | --- | --- |
-| POST | `login` | `generated::ErmTNOUdzW8g5lkh` | access-control | `App\Http\Controllers\Auth\AuthenticatedSessionController::store` |
-| POST | `confirm-password` | `generated::zaoDjlUakAcHw07z` | access-control | `App\Http\Controllers\Auth\ConfirmablePasswordController::store` |
+| POST | `confirm-password` | `generated::68qFgQUmBnkC5VWK` | access-control | `App\Http\Controllers\Auth\ConfirmablePasswordController::store` |
+| POST | `login` | `generated::xkxDBfGd3sTQDzxV` | access-control | `App\Http\Controllers\Auth\AuthenticatedSessionController::store` |
 | GET | `login` | `login` | access-control | `App\Http\Controllers\Auth\AuthenticatedSessionController::create` |
 | POST | `logout` | `logout` | access-control | `App\Http\Controllers\Auth\AuthenticatedSessionController::destroy` |
 | GET | `confirm-password` | `password.confirm` | access-control | `App\Http\Controllers\Auth\ConfirmablePasswordController::show` |
@@ -53,7 +53,7 @@
 | POST | `file-management/delete` | `file-management.destroy` | core | `App\Http\Controllers\Admin\FileManagementController::destroy` |
 | GET | `file-management/download` | `file-management.download` | core | `App\Http\Controllers\Admin\FileManagementDownloadController::__invoke` |
 | GET | `file-management` | `file-management.index` | core | `App\Http\Controllers\Admin\FileManagementController::index` |
-| GET | `up` | `generated::90IlLSPE7nTPQjLh` | core | Closure |
+| GET | `up` | `generated::rJu5tYBEK34EmFph` | core | Closure |
 | GET | `/` | `home` | core | Closure |
 | GET | `link-management` | `link-management.index` | core | `App\Http\Controllers\Admin\LinkManagementController::index` |
 | POST | `link-management` | `link-management.update` | core | `App\Http\Controllers\Admin\LinkManagementController::update` |
@@ -91,6 +91,7 @@
 | GET | `report/dashboard-pinjaman/kolek-tidak-sesuai/data` | `report.dashboard-pinjaman.kolek-tidak-sesuai.data` | dashboard-pinjaman | `App\Http\Controllers\DashboardPinjamanReportController::mismatchData` |
 | GET | `report/dashboard-pinjaman/kolek-tidak-sesuai/export` | `report.dashboard-pinjaman.kolek-tidak-sesuai.export` | dashboard-pinjaman | `App\Http\Controllers\DashboardPinjamanReportController::mismatchExport` |
 | GET | `report/dashboard-pinjaman/kolek-tidak-sesuai/filters` | `report.dashboard-pinjaman.kolek-tidak-sesuai.filters` | dashboard-pinjaman | `App\Http\Controllers\DashboardPinjamanReportController::mismatchFilters` |
+| GET | `report/dashboard-pinjaman/kolek-tidak-sesuai/timeseries` | `report.dashboard-pinjaman.kolek-tidak-sesuai.timeseries` | dashboard-pinjaman | `App\Http\Controllers\DashboardPinjamanReportController::mismatchTimeseries` |
 | GET | `report/dashboard-pinjaman/kredit` | `report.dashboard-pinjaman.kredit` | dashboard-pinjaman | `App\Http\Controllers\DashboardPinjamanReportController::kreditIndex` |
 | GET | `report/dashboard-pinjaman/kredit/data` | `report.dashboard-pinjaman.kredit.data` | dashboard-pinjaman | `App\Http\Controllers\DashboardPinjamanReportController::kreditData` |
 | GET | `report/dashboard-pinjaman/matrix-pergeseran-kolek` | `report.dashboard-pinjaman.matrix` | dashboard-pinjaman | `App\Http\Controllers\DashboardPinjamanReportController::matrixIndex` |
@@ -290,7 +291,17 @@
 | GET | `job-management/badge` | `job-management.badge` | import | `App\Http\Controllers\Import\ImportJobManagementController::badge` |
 | POST | `job-management/bulk-delete` | `job-management.bulk-destroy` | import | `App\Http\Controllers\Import\ImportJobManagementController::bulkDestroy` |
 | POST | `job-management/clear` | `job-management.clear` | import | `App\Http\Controllers\Import\ImportJobManagementController::clear` |
+| GET | `job-management/control/database` | `job-management.control.database` | import | `App\Http\Controllers\Import\ControlCenterController::database` |
+| POST | `job-management/control/database/lock` | `job-management.control.database.lock` | import | `App\Http\Controllers\Import\ControlCenterController::lockDatabase` |
+| POST | `job-management/control/database/unlock` | `job-management.control.database.unlock` | import | `App\Http\Controllers\Import\ControlCenterController::unlockDatabase` |
+| GET | `job-management/control/freshness` | `job-management.control.freshness` | import | `App\Http\Controllers\Import\ControlCenterController::freshness` |
+| GET | `job-management/control/health` | `job-management.control.health` | import | `App\Http\Controllers\Import\ControlCenterController::health` |
+| GET | `job-management/control/shadow` | `job-management.control.shadow` | import | `App\Http\Controllers\Import\ControlCenterController::shadow` |
+| POST | `job-management/control/shadow/repair` | `job-management.control.shadow.repair` | import | `App\Http\Controllers\Import\ControlCenterController::shadowRepair` |
+| GET | `job-management/control/snapshots` | `job-management.control.snapshots` | import | `App\Http\Controllers\Import\ControlCenterController::snapshots` |
+| GET | `job-management/control/workers` | `job-management.control.workers` | import | `App\Http\Controllers\Import\ControlCenterController::workers` |
 | GET | `job-management/data` | `job-management.data` | import | `App\Http\Controllers\Import\ImportJobManagementController::data` |
+| GET,POST,PUT,PATCH,DELETE,OPTIONS | `job-management/database/pma/{path?}` | `job-management.database.pma` | import | `App\Http\Controllers\Import\ControlCenterController::phpMyAdmin` |
 | DELETE | `job-management/{jobId}` | `job-management.destroy` | import | `App\Http\Controllers\Import\ImportJobManagementController::destroy` |
 | POST | `job-management/{jobId}/force-start` | `job-management.force-start` | import | `App\Http\Controllers\Import\ImportJobManagementController::forceStart` |
 | GET | `job-management` | `job-management.index` | import | `App\Http\Controllers\Import\ImportJobManagementController::index` |

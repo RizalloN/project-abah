@@ -167,6 +167,19 @@ class SnapshotDirtyPeriodServiceTest extends TestCase
             ->where('period_key', '2026-09-19')
             ->update(['claimed_at' => now()->subMinutes(30)]);
 
+        // Other suites drop the shared queue table; this test owns what it needs.
+        if (! Schema::hasTable('jobs')) {
+            Schema::create('jobs', function (Blueprint $table): void {
+                $table->id();
+                $table->string('queue')->index();
+                $table->longText('payload');
+                $table->unsignedTinyInteger('attempts');
+                $table->unsignedInteger('reserved_at')->nullable();
+                $table->unsignedInteger('available_at');
+                $table->unsignedInteger('created_at');
+            });
+        }
+
         $queueId = DB::table('jobs')->insertGetId([
             'queue' => 'snapshots-parallel',
             'payload' => json_encode(['claim_token' => $claim['claim_token']]),
@@ -296,5 +309,44 @@ class SnapshotDirtyPeriodServiceTest extends TestCase
             'shard_type' => 'branch',
             'shard_key' => '00045 -- MADIUN',
         ]);
+    }
+
+    public function test_claim_is_superseded_after_a_new_mark_and_its_job_is_dropped(): void
+    {
+        $service = new SnapshotDirtyPeriodService;
+        $service->mark('daily_loan_dinamis', '2026-10-20');
+        $first = $service->claimDue(1)[0];
+        $this->assertTrue($service->isClaimCurrent($first));
+
+        // New dirty rows reset the claim; the drain then re-claims with a new token.
+        $service->mark('daily_loan_dinamis', '2026-10-20');
+        $second = $service->claimDue(1)[0];
+
+        $this->assertFalse($service->isClaimCurrent($first));
+        $this->assertTrue($service->isClaimCurrent($second));
+        $this->assertTrue($service->isClaimCurrent(['source_table' => 'daily_loan_dinamis', 'period_key' => '2026-10-20']));
+
+        $stale = new class {
+            public bool $deleted = false;
+            public function attempts(): int { return 7; }
+            public function delete(): void { $this->deleted = true; }
+        };
+        $ran = false;
+        (new \App\Jobs\Middleware\SkipSupersededDirtyClaim($first))->handle($stale, function () use (&$ran) { $ran = true; });
+        $this->assertFalse($ran);
+        $this->assertTrue($stale->deleted);
+
+        $current = clone $stale;
+        $current->deleted = false;
+        (new \App\Jobs\Middleware\SkipSupersededDirtyClaim($second))->handle($current, function () use (&$ran) { $ran = true; });
+        $this->assertTrue($ran);
+        $this->assertFalse($current->deleted);
+    }
+
+    public function test_dirty_period_job_checks_its_claim_before_waiting_on_locks(): void
+    {
+        $job = new \App\Jobs\ProcessSnapshotDirtyPeriodJob(['source_table' => 'daily_loan_dinamis', 'period_key' => '2026-10-20', 'claim_token' => 'x']);
+
+        $this->assertInstanceOf(\App\Jobs\Middleware\SkipSupersededDirtyClaim::class, $job->middleware()[0]);
     }
 }

@@ -754,6 +754,24 @@ class ImportFileController extends Controller
         ];
     }
 
+    /**
+     * Preview yang membawa key tetapi konteksnya sudah kedaluwarsa tidak boleh
+     * jatuh ke report yang kebetulan aktif di session (bisa milik tab lain).
+     */
+    private function stalePreviewContextResponse(Request $request): ?\Illuminate\Http\JsonResponse
+    {
+        if ($request->attributes->get(\App\Http\Middleware\RestoreImportPreviewContext::ATTRIBUTE)
+            !== \App\Http\Middleware\RestoreImportPreviewContext::MISSING) {
+            return null;
+        }
+
+        return response()->json([
+            'status' => 'error',
+            'title' => 'Preview Kedaluwarsa',
+            'text' => 'Sesi preview ini sudah tidak berlaku. Buka ulang preview file ini agar data diimport ke report yang benar.',
+        ], 409);
+    }
+
     private function getActiveReportData()
     {
         $idReport = (int) session('active_id_report', 1);
@@ -784,6 +802,10 @@ class ImportFileController extends Controller
             } else {
                 $tableName = strtolower(str_replace(' ', '_', $reportData->nama_report));
             }
+        }
+
+        if ($tableName === \App\Services\Import\MauBrimoImportPolicy::TABLE) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['id_report' => 'Gunakan jalur import MAU BRIMO agar filter MBDESC Area 6 tetap berlaku.']);
         }
 
         if (!DB::getSchemaBuilder()->hasTable($tableName)) {
@@ -3458,6 +3480,15 @@ class ImportFileController extends Controller
         session(['final_import_path' => $filePath]);
         session(['import_display_to_source_map' => $displayToSourceMap]);
 
+        // Preview ini membawa report, file, dan peta kolomnya sendiri sehingga
+        // preview lain yang dibuka setelahnya tidak mengalihkan tujuan import.
+        $previewStateKey = 'csv_preview_' . Str::random(40);
+        app(\App\Services\Import\ExcelImportJobService::class)->putPreviewState($previewStateKey, [
+            'id_report' => (int) $idReport,
+            'table_name' => $tableName,
+            'file_path' => $filePath,
+        ]);
+
         $processRoute = route('import.process');
         $initRoute = route('import.init');
         $streamRoute = route('import.stream');
@@ -3491,6 +3522,7 @@ class ImportFileController extends Controller
             'manualPeriode' => $manualPeriode,
             'manualPeriodeInputType' => $manualPeriodeInputType,
             'manualPeriodeLabel' => $manualPeriodeLabel,
+            'previewStateKey' => $previewStateKey,
         ]);
     }
 
@@ -3568,6 +3600,9 @@ class ImportFileController extends Controller
         ]);
 
         $filePath = $this->authorizeImportSourceFile((string) $request->input('file_path'));
+        if (($this->getActiveReportData()?->table_name ?? null) === \App\Services\Import\MauBrimoImportPolicy::TABLE) {
+            return app(ImportMauBrimoController::class)->previewFilterOptions($request);
+        }
         $currentDelimiter = (string) $request->input('delimiter', 'auto');
         $columnIndex = (int) $request->input('column_index');
         $previewStateKey = trim((string) $request->input('preview_state_key', ''));
@@ -4023,6 +4058,9 @@ class ImportFileController extends Controller
         ]);
 
         $filePath = $this->authorizeImportSourceFile((string) $request->input('file_path'));
+        if (($this->getActiveReportData()?->table_name ?? null) === \App\Services\Import\MauBrimoImportPolicy::TABLE) {
+            return app(ImportMauBrimoController::class)->previewFilteredRows($request);
+        }
         $currentDelimiter = (string) $request->input('delimiter', 'auto');
         $limit = (int) $request->input('limit', 100);
         $previewStateKey = trim((string) $request->input('preview_state_key', ''));
@@ -4743,6 +4781,10 @@ class ImportFileController extends Controller
             'active_filters_json' => 'nullable|string',
             'delimiter' => 'required|string',
         ]);
+
+        if ($stalePreviewResponse = $this->stalePreviewContextResponse($request)) {
+            return $stalePreviewResponse;
+        }
 
         $filePath = $this->authorizeImportSourceFile((string) $request->input('file_path'));
         $selectedColumns = array_map('intval', $request->input('selected_columns', []));
@@ -5478,6 +5520,10 @@ class ImportFileController extends Controller
             'active_filters_json' => 'nullable|string',
             'delimiter' => 'required|string'
         ]);
+
+        if ($stalePreviewResponse = $this->stalePreviewContextResponse($request)) {
+            return $stalePreviewResponse;
+        }
 
         $filePath = $this->authorizeImportSourceFile((string) $request->input('file_path'));
         $selectedColumns = array_map('intval', $request->input('selected_columns', []));

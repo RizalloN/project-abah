@@ -7,8 +7,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Kind | Count |
 | --- | ---: |
 | file | 29 |
-| method | 78 |
-| unresolved_symbol | 31 |
+| method | 79 |
+| unresolved_symbol | 33 |
 | middleware | 9 |
 | route | 18 |
 | class | 19 |
@@ -19,7 +19,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Node | Kind | Degree | Source |
 | --- | --- | ---: | --- |
-| `current` | method | 60 | `app/Support/UserBranchScope.php:116` |
+| `current` | method | 62 | `app/Support/UserBranchScope.php:116` |
 | `User` | class | 27 | `app/Models/User.php:10` |
 | `update` | method | 23 | `app/Http/Controllers/Admin/UserManagementController.php:188` |
 | `LoginRequest` | class | 20 | `app/Http/Requests/Auth/LoginRequest.php:15` |
@@ -33,7 +33,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `users` | table | 11 | - |
 | `auth.forgot-password` | view | 10 | `resources/views/auth/forgot-password.blade.php:1` |
 | `auth.reset-password` | view | 10 | `resources/views/auth/reset-password.blade.php:1` |
-| `contentSecurityPolicy` | method | 10 | `app/Http/Middleware/SecurityHeadersMiddleware.php:85` |
+| `contentSecurityPolicy` | method | 10 | `app/Http/Middleware/SecurityHeadersMiddleware.php:94` |
 | `login` | route | 10 | - |
 | `store` | method | 10 | `app/Http/Controllers/Auth/AuthenticatedSessionController.php:30` |
 | `store` | method | 10 | `app/Http/Controllers/Auth/ConfirmablePasswordController.php:25` |
@@ -52,8 +52,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 ## Route Nodes
 
-- `generated::ErmTNOUdzW8g5lkh` - `login`
-- `generated::zaoDjlUakAcHw07z` - `confirm-password`
+- `generated::68qFgQUmBnkC5VWK` - `confirm-password`
+- `generated::xkxDBfGd3sTQDzxV` - `login`
 - `login` - `login`
 - `logout` - `logout`
 - `password.confirm` - `confirm-password`
@@ -116,33 +116,33 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Direction | Count |
 | --- | ---: |
-| import -> access-control (protected_by) | 1003 |
+| import -> access-control (protected_by) | 1065 |
+| dashboard-pinjaman -> access-control (protected_by) | 228 |
 | dashboard-simpanan -> access-control (protected_by) | 222 |
-| dashboard-pinjaman -> access-control (protected_by) | 222 |
 | bank-pipeline -> access-control (protected_by) | 136 |
 | core -> access-control (protected_by) | 75 |
-| access-control -> core (calls) | 63 |
+| access-control -> core (calls) | 66 |
 | dashboard-harian -> access-control (protected_by) | 60 |
 | input-management -> access-control (protected_by) | 42 |
 | almafacts -> access-control (protected_by) | 30 |
-| access-control -> core (accepts) | 28 |
+| access-control -> core (accepts) | 29 |
 | dashboard-simpanan -> access-control (calls) | 28 |
-| dashboard-pinjaman -> access-control (calls) | 22 |
+| dashboard-pinjaman -> access-control (calls) | 23 |
 | jobs-snapshots -> access-control (protected_by) | 20 |
 | database -> access-control (protected_by) | 13 |
 | access-control -> core (uses_component) | 13 |
 | access-control -> core (extends) | 11 |
+| core -> access-control (calls) | 9 |
 | bank-pipeline -> access-control (calls) | 8 |
-| core -> access-control (calls) | 8 |
 | marketshare -> access-control (protected_by) | 8 |
 | dashboard-harian -> access-control (calls) | 6 |
 | prognosa -> access-control (protected_by) | 6 |
 | database -> access-control (defines_table) | 5 |
 | access-control -> dashboard-simpanan (references_route) | 5 |
+| import -> access-control (calls) | 5 |
 | database -> access-control (checks_table) | 4 |
 | access-control -> presentation (calls) | 4 |
 | access-control -> platform (uses_component) | 4 |
 | platform -> access-control (references_route) | 3 |
 | database -> access-control (uses_table) | 3 |
 | database -> access-control (writes_table) | 3 |
-| platform -> access-control (calls) | 3 |

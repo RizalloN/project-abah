@@ -50,7 +50,7 @@
         <!-- Control Panel (4 Columns) -->
         <div class="row mb-4 align-items-stretch report-management-control-grid">
             <!-- 1. Pilihan Report -->
-            <div class="{{ $canManageReportOperations ? 'col-xl-3 col-md-6 mb-3 mb-xl-0' : 'col-12' }}">
+            <div class="{{ $canManageReportOperations ? 'col-xl-6 col-md-6 mb-3 mb-xl-0' : 'col-12' }}">
                 <div class="report-management-control-card h-100">
                     <label class="report-management-control-label" for="management-report-select">
                         <span>Report Utama</span>
@@ -69,7 +69,7 @@
 
             <!-- 2. Data Recovery -->
             @if($canManageReportOperations)
-            <div class="col-xl-3 col-md-6 mb-3 mb-xl-0">
+            <div class="col-xl-6 col-md-6 mb-3 mb-xl-0">
                 <div class="report-management-control-card h-100">
                     <label class="report-management-control-label" for="management-backup-select">
                         <span>Recovery SQL</span>
@@ -89,43 +89,11 @@
                 </div>
             </div>
 
-            <!-- 3. Sinkronisasi Manual -->
-            <div class="col-xl-3 col-md-6 mb-3 mb-md-0">
-                <div class="report-management-control-card h-100">
-                    <label class="report-management-control-label" for="management-force-sync-period">
-                        <span>Sinkronisasi Periode</span>
-                        <i class="fas fa-calendar-alt text-muted"></i>
-                    </label>
-                    <div class="d-flex" style="gap: 8px;">
-                        <div class="input-group flex-grow-1">
-                            <div class="input-group-prepend">
-                                <span class="input-group-text bg-white border-right-0 text-muted"><i class="far fa-calendar-alt"></i></span>
-                            </div>
-                            <input type="text" id="management-force-sync-period" class="form-control border-left-0 pl-0" placeholder="DD-MM-YYYY" inputmode="numeric" autocomplete="off" maxlength="10" title="Format tanggal DD-MM-YYYY">
-                        </div>
-                        <button type="button" id="btn-management-force-sync" class="btn report-management-icon-btn report-management-icon-btn--warning" title="Rebuild seluruh snapshot report yang memiliki data pada tanggal terpilih">
-                            <i class="fas fa-bolt"></i>
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 4. Pembersihan / Rebuild -->
-            <div class="col-xl-3 col-md-6">
-                <div class="report-management-control-card h-100 d-flex flex-column justify-content-between">
-                    <label class="report-management-control-label" for="management-rebuild-force">
-                        <span>Rebuild Snapshot</span>
-                        <i class="fas fa-sync text-muted"></i>
-                    </label>
-                    <div class="d-flex align-items-center justify-content-between" style="min-height: 40px;">
-                        <div class="custom-control custom-switch m-0">
-                            <input type="checkbox" class="custom-control-input" id="management-rebuild-force">
-                            <label class="custom-control-label text-dark font-weight-bold" for="management-rebuild-force" style="cursor: pointer; font-size: 0.84rem;">Mode Penuh</label>
-                        </div>
-                        <button type="button" id="btn-management-rebuild" class="btn report-management-icon-btn report-management-icon-btn--primary" title="Pembaruan Snapshot">
-                            <i class="fas fa-sync-alt"></i>
-                        </button>
-                    </div>
+            <!-- Pemeliharaan snapshot dipindahkan ke Kelola Job › Snapshot -->
+            <div class="col-12 mt-3">
+                <div class="report-management-snapshot-moved">
+                    <i class="fas fa-sync-alt" aria-hidden="true"></i>
+                    <span>Sinkronisasi periode dan rebuild snapshot kini dikelola terpusat di <a href="{{ route('job-management.index', ['tab' => 'snapshot']) }}">Kelola Job › Snapshot</a>, bersama status antrean refresh dan kesegaran snapshot setiap sumber.</span>
                 </div>
             </div>
             @endif
@@ -1282,6 +1250,14 @@
         padding-left: 0.5rem;
         padding-right: 0.5rem;
     }
+    .report-management-snapshot-moved {
+        display: flex; align-items: flex-start; gap: .6rem; padding: .7rem .9rem; border-radius: 12px;
+        border: 1px dashed var(--app-line-strong, #b9cfee); background: var(--app-info-soft, #edf6ff);
+        color: var(--app-ink, #0b1f3a); font-size: .85rem; line-height: 1.45;
+    }
+    .report-management-snapshot-moved i { margin-top: .2rem; color: var(--bri-nusantara, #0857c3); }
+    .report-management-snapshot-moved a { font-weight: 700; }
+
     .report-management-control-card {
         background: #f8fafc;
         border: 1px solid #e2e8f0;

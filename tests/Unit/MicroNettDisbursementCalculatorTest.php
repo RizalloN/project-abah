@@ -122,7 +122,7 @@ class MicroNettDisbursementCalculatorTest extends TestCase
         $this->assertSame(200_000_000.0, $result[0]['realisasi_os']);
     }
 
-    public function test_mantri_floors_negative_nett_while_kur_uses_gross_and_keeps_250_million_boundary(): void
+    public function test_mantri_ignores_deflation_while_kur_gross_and_250_million_boundary_stay_intact(): void
     {
         DB::table('daily_loan_dinamis')->insert([
             $this->row('OLD', 300_000_000, ['periode' => '2026-08-31']),
@@ -137,7 +137,7 @@ class MicroNettDisbursementCalculatorTest extends TestCase
         $this->assertSame('RM LAIN', $kur['rm']);
         $this->assertSame('RM LAIN', $mantri['owner']);
         $this->assertSame(250_000_000.0, $kur['realisasi_os']);
-        $this->assertSame(0.0, $mantri['realisasi_os']);
+        $this->assertSame(250_000_000.0, $mantri['realisasi_os']);
         $this->assertSame(1, $kur['realisasi_deb']);
         $this->assertSame(1, $mantri['realisasi_deb']);
         $this->assertSame(0, $kur['lt_250_realisasi_deb']);
@@ -145,10 +145,11 @@ class MicroNettDisbursementCalculatorTest extends TestCase
         $account = collect($calculator->mantriAccounts('2026-09-19'))->keyBy('account_key')['MANTRI'];
         $this->assertSame(300_000_000.0, $account['previous_os']);
         $this->assertSame(250_000_000.0, $account['plafon']);
-        $this->assertSame(0.0, $account['net_amount']);
+        $this->assertSame(250_000_000.0, $account['net_amount']);
+        $this->assertSame(0.0, $account['deduction_applied']);
     }
 
-    public function test_each_mantri_booking_subtracts_complete_micro_cif_exposure_and_ignores_small(): void
+    public function test_mantri_bookings_share_micro_cif_baseline_once_and_ignore_small_exposure(): void
     {
         DB::table('daily_loan_dinamis')->insert([
             $this->row('OLD-MICRO', 100_000_000, ['periode' => '2026-08-31']),
@@ -160,12 +161,13 @@ class MicroNettDisbursementCalculatorTest extends TestCase
         $calculator = app(MicroNettDisbursementCalculator::class);
         $mantri = $calculator->mantri('2026-09-19')[0];
         $this->assertSame(2, $mantri['realisasi_deb']);
-        $this->assertSame(300_000_000.0, $mantri['realisasi_os']);
+        $this->assertSame(400_000_000.0, $mantri['realisasi_os']);
         $accounts = collect($calculator->mantriAccounts('2026-09-19'))->keyBy('account_key');
         $this->assertSame(100_000_000.0, $accounts['NEW-A']['previous_os']);
-        $this->assertSame(200_000_000.0, $accounts['NEW-A']['net_amount']);
+        $this->assertSame(240_000_000.0, $accounts['NEW-A']['net_amount']);
         $this->assertSame(100_000_000.0, $accounts['NEW-B']['previous_os']);
-        $this->assertSame(100_000_000.0, $accounts['NEW-B']['net_amount']);
+        $this->assertSame(160_000_000.0, $accounts['NEW-B']['net_amount']);
+        $this->assertSame(100_000_000.0, $accounts->sum('deduction_applied'));
     }
 
     public function test_mantri_retains_disappeared_bookings_while_kur_uses_only_exact_position(): void
@@ -218,7 +220,7 @@ class MicroNettDisbursementCalculatorTest extends TestCase
         $this->assertSame(200_000_000.0, $result[0]['realisasi_os']);
     }
 
-    public function test_mantri_floors_each_booking_before_aggregating_same_cif(): void
+    public function test_mantri_nets_the_cif_once_before_allocating_proportional_booking_amounts(): void
     {
         DB::table('daily_loan_dinamis')->insert([
             $this->row('OLD', 300_000_000, ['periode' => '2026-08-31']),
@@ -228,14 +230,15 @@ class MicroNettDisbursementCalculatorTest extends TestCase
         ]);
 
         $calculator = app(MicroNettDisbursementCalculator::class);
-        $this->assertSame(50_000_000.0, $calculator->mantri('2026-09-19')[0]['realisasi_os']);
+        $this->assertSame(400_000_000.0, $calculator->mantri('2026-09-19')[0]['realisasi_os']);
         $this->assertSame(3, $calculator->mantri('2026-09-19')[0]['realisasi_deb']);
         $accounts = collect($calculator->mantriAccounts('2026-09-19'))->keyBy('account_key');
         $this->assertSame(300_000_000.0, $accounts['NEW-A']['previous_os']);
-        $this->assertSame(0.0, $accounts['NEW-A']['net_amount']);
+        $this->assertSame(142_857_142.86, $accounts['NEW-A']['net_amount']);
         $this->assertSame(300_000_000.0, $accounts['NEW-B']['previous_os']);
-        $this->assertSame(0.0, $accounts['NEW-B']['net_amount']);
-        $this->assertSame(50_000_000.0, $accounts['NEW-C']['net_amount']);
+        $this->assertSame(57_142_857.14, $accounts['NEW-B']['net_amount']);
+        $this->assertSame(200_000_000.0, $accounts['NEW-C']['net_amount']);
+        $this->assertSame(300_000_000.0, $accounts->sum('deduction_applied'));
     }
 
     public function test_kur_uses_only_official_kur_ritel_description(): void

@@ -7,13 +7,13 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Kind | Count |
 | --- | ---: |
 | command | 4 |
-| file | 161 |
-| function | 384 |
+| file | 162 |
+| function | 386 |
 | method | 193 |
 | unresolved_symbol | 18 |
 | route | 2 |
 | class | 19 |
-| table | 5 |
+| table | 6 |
 | view | 1 |
 
 ## Main Hubs
@@ -93,6 +93,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 - `information_schema.COLUMNS`
 - `information_schema.KEY_COLUMN_USAGE`
+- `information_schema.TABLES`
 - `information_schema.TRIGGERS`
 - `information_schema.statistics`
 - `performance_schema.table_io_waits_summary_by_index_usage`
@@ -102,14 +103,14 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Direction | Count |
 | --- | ---: |
 | database -> core (instantiates) | 79 |
+| database -> core (writes_table) | 62 |
 | database -> core (checks_table) | 62 |
-| database -> core (writes_table) | 60 |
-| database -> import (checks_table) | 46 |
+| database -> import (checks_table) | 47 |
 | database -> core (calls) | 36 |
-| database -> import (defines_table) | 27 |
+| database -> import (defines_table) | 28 |
 | database -> dashboard-pinjaman (checks_table) | 26 |
 | database -> core (accepts) | 22 |
-| database -> core (reads_table) | 18 |
+| database -> core (reads_table) | 19 |
 | database -> dashboard-simpanan (checks_table) | 15 |
 | database -> dashboard-pinjaman (alters_table) | 15 |
 | database -> jobs-snapshots (checks_table) | 14 |

@@ -7,48 +7,48 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Kind | Count |
 | --- | ---: |
 | command | 16 |
-| file | 118 |
-| method | 776 |
-| unresolved_symbol | 363 |
+| file | 127 |
+| method | 854 |
+| unresolved_symbol | 379 |
 | route | 16 |
-| class | 76 |
+| class | 84 |
 | table | 15 |
-| view | 46 |
+| view | 47 |
 
 ## Main Hubs
 
 | Node | Kind | Degree | Source |
 | --- | --- | ---: | --- |
-| `nama_report` | table | 153 | - |
+| `nama_report` | table | 160 | - |
 | `LandingMicroPerformanceService` | class | 85 | `app/Support/LandingMicroPerformanceService.php:16` |
-| `normalize` | method | 79 | `app/Support/StrictDateParser.php:128` |
+| `normalize` | method | 84 | `app/Support/StrictDateParser.php:185` |
 | `ReportDataSyncService` | class | 72 | `app/Support/ReportDataSyncService.php:19` |
 | `LandingSmeOperationalService` | class | 64 | `app/Support/LandingSmeOperationalService.php:16` |
-| `Controller` | class | 57 | `app/Http/Controllers/Controller.php:7` |
+| `Controller` | class | 58 | `app/Http/Controllers/Controller.php:7` |
 | `ManagedReportManagementService` | class | 52 | `app/Support/ManagedReportManagementService.php:11` |
-| `DataPhReportController` | class | 41 | `app/Http/Controllers/Report/DataPhReportController.php:16` |
+| `DataPhReportController` | class | 44 | `app/Http/Controllers/Report/DataPhReportController.php:16` |
 | `apply` | method | 41 | `app/Support/SargableDateFilter.php:9` |
 | `LandingConsumerOperationalService` | class | 39 | `app/Support/LandingConsumerOperationalService.php:15` |
+| `MicroNettDisbursementCalculator` | class | 37 | `app/Support/MicroNettDisbursementCalculator.php:13` |
 | `KinerjaNonPtpReportController` | class | 36 | `app/Http/Controllers/Report/KinerjaNonPtpReportController.php:17` |
 | `RkaLookupService` | class | 36 | `app/Support/RkaLookupService.php:11` |
 | `rka` | table | 32 | - |
 | `syncImportedTable` | method | 31 | `app/Support/ReportDataSyncService.php:137` |
 | `FileManagementController` | class | 30 | `app/Http/Controllers/Admin/FileManagementController.php:24` |
-| `MicroNettDisbursementCalculator` | class | 30 | `app/Support/MicroNettDisbursementCalculator.php:13` |
-| `index` | method | 30 | `app/Http/Controllers/Report/DataPhReportController.php:31` |
+| `index` | method | 29 | `app/Http/Controllers/Report/DataPhReportController.php:31` |
 | `analyzeTable` | method | 24 | `app/Support/ReportDataSyncService.php:23` |
 | `buildPayload` | method | 23 | `app/Support/LandingMicroPerformanceService.php:538` |
 | `drive.index` | view | 23 | `resources/views/drive/index.blade.php:1` |
 | `ShadowColumnRuleEngine` | class | 22 | `app/Services/Shadow/ShadowColumnRuleEngine.php:8` |
 | `SppgReportService` | class | 21 | `app/Services/Reports/SppgReportService.php:15` |
+| `fetchPlafondRealizationRows` | method | 21 | `app/Support/LandingMicroPerformanceService.php:1377` |
 | `index` | method | 21 | `app/Http/Controllers/EkosistemController.php:78` |
 | `index` | method | 21 | `app/Http/Controllers/Report/KinerjaNonPtpReportController.php:52` |
 | `LinkManagementController` | class | 20 | `app/Http/Controllers/Admin/LinkManagementController.php:17` |
-| `fetchPlafondRealizationRows` | method | 20 | `app/Support/LandingMicroPerformanceService.php:1376` |
+| `PhpMyAdminGateway` | class | 20 | `app/Services/ControlCenter/PhpMyAdminGateway.php:21` |
 | `quadrantPayload` | method | 20 | `app/Support/LandingConsumerOperationalService.php:629` |
 | `PruneReportDailyHistoryCommand` | class | 19 | `app/Console/Commands/PruneReportDailyHistoryCommand.php:19` |
-| `branchLabel` | method | 18 | `app/Support/LandingMicroPerformanceService.php:3594` |
-| `buildMantriPerformance` | method | 17 | `app/Support/LandingMicroPerformanceService.php:2307` |
+| `branchLabel` | method | 19 | `app/Support/LandingMicroPerformanceService.php:3633` |
 
 ## Route Nodes
 
@@ -56,7 +56,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `file-management.destroy` - `file-management/delete`
 - `file-management.download` - `file-management/download`
 - `file-management.index` - `file-management`
-- `generated::90IlLSPE7nTPQjLh` - `up`
+- `generated::rJu5tYBEK34EmFph` - `up`
 - `home` - `/`
 - `link-management.index` - `link-management`
 - `link-management.update` - `link-management`
@@ -80,6 +80,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `ConvertDocumentToMarkdownCommand` - `app/Console/Commands/ConvertDocumentToMarkdownCommand.php`
 - `DashboardCrossAlignmentGuard` - `app/Support/DashboardCrossAlignmentGuard.php`
 - `DataPhReportController` - `app/Http/Controllers/Report/DataPhReportController.php`
+- `DatabaseInsightService` - `app/Services/ControlCenter/DatabaseInsightService.php`
 - `DigitalPerformanceController` - `app/Http/Controllers/Report/DigitalPerformanceController.php`
 - `DocumentMarkdownService` - `app/Services/DocumentMarkdownService.php`
 - `EdcReportService` - `app/Services/Reports/EdcReportService.php`
@@ -88,6 +89,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `EkosistemMonitoring` - `app/Support/EkosistemMonitoring.php`
 - `FileManagementController` - `app/Http/Controllers/Admin/FileManagementController.php`
 - `FileManagementDownloadController` - `app/Http/Controllers/Admin/FileManagementDownloadController.php`
+- `HealthCheckService` - `app/Services/ControlCenter/HealthCheckService.php`
 - `JobHealthService` - `app/Services/JobHealthService.php`
 - `Kernel` - `app/Console/Kernel.php`
 - `KinerjaNonPtpReportController` - `app/Http/Controllers/Report/KinerjaNonPtpReportController.php`
@@ -107,14 +109,18 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `ManagedReportManagementService` - `app/Support/ManagedReportManagementService.php`
 - `ManagedReportRecoveryCoordinator` - `app/Support/ManagedReportRecoveryCoordinator.php`
 - `ManagedReportRecoveryStore` - `app/Support/ManagedReportRecoveryStore.php`
+- `MicroCifNettRule` - `app/Support/MicroCifNettRule.php`
 - `MicroNettDisbursementCalculator` - `app/Support/MicroNettDisbursementCalculator.php`
 - `MicroRmProductivityReference` - `app/Support/MicroRmProductivityReference.php`
 - `MicroRmRosterReference` - `app/Support/MicroRmRosterReference.php`
+- `MicroSameAccountTopupDetector` - `app/Support/MicroSameAccountTopupDetector.php`
 - `NamaReport` - `app/Models/NamaReport.php`
 - `OptimizedBulkDeleteService` - `app/Support/OptimizedBulkDeleteService.php`
 - `OptimizedDuplicateCleanupService` - `app/Support/OptimizedDuplicateCleanupService.php`
 - `OptimizedRkaLookupService` - `app/Support/OptimizedRkaLookupService.php`
 - `PhpCliBinary` - `app/Support/PhpCliBinary.php`
+- `PhpMyAdminGateway` - `app/Services/ControlCenter/PhpMyAdminGateway.php`
+- `ProductivitySourceQuality` - `app/Support/ProductivitySourceQuality.php`
 - `PruneReportDailyHistoryCommand` - `app/Console/Commands/PruneReportDailyHistoryCommand.php`
 - `PublicAccessHealthService` - `app/Services/Network/PublicAccessHealthService.php`
 - `QlolaReportService` - `app/Services/Reports/QlolaReportService.php`
@@ -122,6 +128,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `RebuildPerformanceRmCommand` - `app/Console/Commands/RebuildPerformanceRmCommand.php`
 - `RecoverSafeDumpCommand` - `app/Console/Commands/RecoverSafeDumpCommand.php`
 - `RefreshRemoteDashboardSourcesCommand` - `app/Console/Commands/RefreshRemoteDashboardSourcesCommand.php`
+- `ReportDataFreshnessService` - `app/Services/ControlCenter/ReportDataFreshnessService.php`
 - `ReportDataSyncService` - `app/Support/ReportDataSyncService.php`
 - `ReportFilterService` - `app/Services/Reports/ReportFilterService.php`
 - `ReportIndexHintResolver` - `app/Support/ReportIndexHintResolver.php`
@@ -135,6 +142,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `SchedulerHeartbeatCommand` - `app/Console/Commands/SchedulerHeartbeatCommand.php`
 - `ServerRuntimeController` - `app/Http/Controllers/Admin/ServerRuntimeController.php`
 - `ServerRuntimeService` - `app/Services/ServerRuntimeService.php`
+- `ShadowColumnHealthService` - `app/Services/ControlCenter/ShadowColumnHealthService.php`
 - `ShadowColumnRuleEngine` - `app/Services/Shadow/ShadowColumnRuleEngine.php`
 - `ShadowStatusCommand` - `app/Console/Commands/ShadowStatusCommand.php`
 - `ShadowValidateConsistencyCommand` - `app/Console/Commands/ShadowValidateConsistencyCommand.php`
@@ -143,10 +151,6 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `SpreadsheetFileFormatDetector` - `app/Support/SpreadsheetFileFormatDetector.php`
 - `StreamedFileLineCounter` - `app/Support/StreamedFileLineCounter.php`
 - `StrictDateParser` - `app/Support/StrictDateParser.php`
-- `SyncRkaBreakdownCommand` - `app/Console/Commands/SyncRkaBreakdownCommand.php`
-- `TrustedSpreadsheetUrl` - `app/Rules/TrustedSpreadsheetUrl.php`
-- `TuneDatabasePerformanceCommand` - `app/Console/Commands/TuneDatabasePerformanceCommand.php`
-- `ValidateShadowColumnsCommand` - `app/Console/Commands/ValidateShadowColumnsCommand.php`
 
 ## Command Nodes
 
@@ -208,6 +212,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `report.data-ph` - `resources/views/report/data-ph.blade.php`
 - `report.ekosistem` - `resources/views/report/ekosistem.blade.php`
 - `report.partials.floating-scrollbar` - `resources/views/report/partials/floating-scrollbar.blade.php`
+- `report.partials.productivity-source-quality` - `resources/views/report/partials/productivity-source-quality.blade.php`
 - `report.partials.sticky-table-viewport-script` - `resources/views/report/partials/sticky-table-viewport-script.blade.php`
 - `report.partials.sticky-table-viewport-style` - `resources/views/report/partials/sticky-table-viewport-style.blade.php`
 - `report.performance-edc` - `resources/views/report/performance-edc.blade.php`
@@ -238,33 +243,33 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Direction | Count |
 | --- | ---: |
-| import -> core (calls) | 580 |
-| import -> core (instantiates) | 281 |
-| dashboard-pinjaman -> core (calls) | 279 |
+| import -> core (calls) | 659 |
+| import -> core (instantiates) | 301 |
+| dashboard-pinjaman -> core (calls) | 283 |
+| import -> core (accepts) | 226 |
 | dashboard-simpanan -> core (calls) | 201 |
-| import -> core (accepts) | 195 |
 | bank-pipeline -> core (calls) | 167 |
-| jobs-snapshots -> core (calls) | 108 |
-| dashboard-pinjaman -> core (accepts) | 102 |
-| dashboard-harian -> core (calls) | 83 |
+| jobs-snapshots -> core (calls) | 114 |
+| dashboard-pinjaman -> core (accepts) | 103 |
+| dashboard-harian -> core (calls) | 82 |
 | database -> core (instantiates) | 79 |
 | core -> access-control (protected_by) | 75 |
-| access-control -> core (calls) | 63 |
+| access-control -> core (calls) | 66 |
 | bank-pipeline -> core (accepts) | 63 |
+| database -> core (writes_table) | 62 |
 | database -> core (checks_table) | 62 |
 | prognosa -> core (calls) | 61 |
-| database -> core (writes_table) | 60 |
 | dashboard-pinjaman -> core (instantiates) | 60 |
 | presentation -> core (calls) | 60 |
 | dashboard-simpanan -> core (accepts) | 59 |
+| platform -> core (calls) | 37 |
 | bank-pipeline -> core (instantiates) | 37 |
 | database -> core (calls) | 36 |
-| platform -> core (calls) | 35 |
-| jobs-snapshots -> core (uses_trait) | 33 |
+| jobs-snapshots -> core (uses_trait) | 35 |
 | almafacts -> core (calls) | 31 |
-| access-control -> core (accepts) | 28 |
+| access-control -> core (accepts) | 29 |
+| import -> core (reads_table) | 29 |
 | prognosa -> core (accepts) | 28 |
 | core -> bank-pipeline (references_route) | 28 |
-| import -> core (reads_table) | 27 |
-| input-management -> core (calls) | 25 |
-| prognosa -> core (instantiates) | 25 |
+| core -> platform (calls) | 27 |
+| import -> core (extends) | 26 |

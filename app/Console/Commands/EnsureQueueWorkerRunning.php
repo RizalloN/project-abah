@@ -7,6 +7,7 @@ use App\Jobs\EnsureImportedSnapshotsFreshJob;
 use App\Services\Import\ImportExecutionService;
 use App\Services\Import\ImportProgressService;
 use App\Services\Import\QueueSupervisorProcessRunner;
+use App\Services\Import\WorkerCapacityPlanner;
 use App\Services\Import\QueueWorkerControlService;
 use App\Services\Import\SafeWorkerRestartService;
 use App\Services\Import\SnapshotQueuePauseService;
@@ -67,11 +68,12 @@ class EnsureQueueWorkerRunning extends Command
 
             $this->recoverOrphanedImports();
 
+            $targets = $this->plannedPoolTargets($pools);
             foreach ($pools as $poolName => $pool) {
                 $this->checkAndEnsureWorker(
                     $poolName,
                     $pool['queues'],
-                    $pool['workers'],
+                    $targets[$poolName] ?? $pool['workers'],
                     $timeout,
                     $memory,
                     $maxJobs,
@@ -139,11 +141,12 @@ class EnsureQueueWorkerRunning extends Command
                     $this->maintainMonitorHealth();
                     $this->recoverOrphanedImports();
 
+                    $targets = $this->plannedPoolTargets($pools);
                     foreach ($pools as $poolName => $pool) {
                         $this->checkAndEnsureWorker(
                             $poolName,
                             $pool['queues'],
-                            $pool['workers'],
+                            $targets[$poolName] ?? $pool['workers'],
                             $timeout,
                             $memory,
                             $maxJobs,
@@ -411,6 +414,24 @@ class EnsureQueueWorkerRunning extends Command
         }
     }
 
+    /**
+     * Allowed workers per pool from the shared capacity plan. The planner is
+     * fail-safe and falls back to the static pool capacity on any error.
+     *
+     * @param array<string, array{queues: string, workers: int}> $pools
+     * @return array<string, int>
+     */
+    private function plannedPoolTargets(array $pools): array
+    {
+        try {
+            return app(WorkerCapacityPlanner::class)->targets($pools);
+        } catch (\Throwable $e) {
+            Log::warning('Worker capacity plan unavailable; using static capacity.', ['message' => $e->getMessage()]);
+
+            return array_map(static fn (array $pool): int => (int) $pool['workers'], $pools);
+        }
+    }
+
     private function workersNeededForDemand(int $capacity, int $active, int $ready, int $reserved): int
     {
         // Reservations estimate occupancy, but never establish process liveness.
@@ -503,6 +524,11 @@ class EnsureQueueWorkerRunning extends Command
         }
         if ($maxTime > 0) {
             $workerArgs[] = '--max-time=' . $maxTime;
+        }
+        // Elastic pools return their memory once the queue is drained; the
+        // monitor launches a fresh worker as soon as new work arrives.
+        if ((bool) config('queue.worker_pools.' . $poolName . '.elastic', false)) {
+            $workerArgs[] = '--stop-when-empty';
         }
 
         // Start worker in background (non-blocking).

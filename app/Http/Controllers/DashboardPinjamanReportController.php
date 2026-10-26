@@ -398,7 +398,8 @@ class DashboardPinjamanReportController extends Controller
 
     public function ugNplIndex(Request $request)
     {
-        $availablePeriods = $this->fetchPeriods();
+        // UG NPL needs NPB/next-payment columns that LW321PN-materialized periods do not carry.
+        $availablePeriods = $this->fetchNativeDailyLoanPeriods();
         $selectedPeriod = $this->resolveSmallArrearsSelectedPeriod($request->input('periode'), $availablePeriods);
         $branchSelection = $this->resolveSmallArrearsBranchSelection($request->input('cabang1'));
         $unitSelection = $this->resolveSmallArrearsUnitSelection($request->input('unit1'), $branchSelection['is_area_all']);
@@ -435,7 +436,7 @@ class DashboardPinjamanReportController extends Controller
         DB::connection()->disableQueryLog();
         $this->releaseSessionLockIfNeeded();
 
-        $availablePeriods = $this->fetchPeriods();
+        $availablePeriods = $this->fetchNativeDailyLoanPeriods();
         $selectedPeriod = $this->resolveSmallArrearsSelectedPeriod($request->input('periode'), $availablePeriods);
         $branchSelection = $this->resolveSmallArrearsBranchSelection($request->input('cabang1'));
         $unitSelection = $this->resolveSmallArrearsUnitSelection($request->input('unit1'), $branchSelection['is_area_all']);
@@ -1348,6 +1349,142 @@ class DashboardPinjamanReportController extends Controller
             'summary_rows' => $payload['summary_rows'],
             'audit' => $payload['audit'],
         ]);
+    }
+
+    public function mismatchTimeseries(Request $request)
+    {
+        @set_time_limit(0);
+        DB::connection()->disableQueryLog();
+        $this->releaseSessionLockIfNeeded();
+
+        $requestedPeriod = $request->input('periode');
+        $selectedPeriod = is_string($requestedPeriod) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $requestedPeriod)
+            && $this->nativeDailyLoanQuery()->where('periode', $requestedPeriod)->exists()
+                ? $requestedPeriod : $this->resolveEffectivePeriod($requestedPeriod);
+        $selection = $this->resolveKolekMismatchBranchSelection($request->input('cabang1'));
+        $pointMonth = $request->input('point');
+        if ($pointMonth !== null && (!is_string($pointMonth)
+            || !preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $pointMonth)
+            || !$selectedPeriod || $pointMonth < substr($selectedPeriod, 0, 4) . '-01'
+            || $pointMonth > substr($selectedPeriod, 0, 7))) {
+            return response()->json(['message' => 'Bulan grafik tidak valid.'], 422);
+        }
+        $context = [
+            'selected_period' => $selectedPeriod,
+            'selected_branch' => $selection['label'],
+            'month' => $selectedPeriod ? substr($selectedPeriod, 0, 7) : null,
+        ];
+
+        if (!$selectedPeriod || $selection['effective_branches'] === []) {
+            return response()->json($context + ['status' => 'empty', 'timeseries' => []]);
+        }
+
+        $points = [];
+        $warming = false;
+        $partial = false;
+        $lastMonth = Carbon::parse($selectedPeriod)->startOfMonth();
+        for ($month = $lastMonth->copy()->startOfYear(); $month->lte($lastMonth); $month->addMonth()) {
+            $monthKey = $month->format('Y-m');
+            if ($pointMonth !== null && $pointMonth !== $monthKey) {
+                continue;
+            }
+            $period = $monthKey === $context['month'] ? $selectedPeriod : $month->copy()->endOfMonth()->toDateString();
+            $emptyPoint = ['month' => $monthKey, 'period' => null, 'available' => false, 'memburuk_count' => null, 'memburuk_balance' => null];
+            $cacheKey = 'dashboard_pinjaman_kolek_memburuk_timeseries:v2-monthly:' . md5(json_encode([
+                'cache_version' => $this->reportCacheVersion(),
+                'period' => $period,
+                'branches' => $selection['effective_branches'],
+            ]));
+            if ($request->boolean('cached')) {
+                $cached = Cache::get($cacheKey);
+                if (is_array($cached) && isset($cached['point'])) {
+                    $points[] = $cached['point'];
+                } elseif (!DB::table('daily_loan_dinamis')->where('periode', $period)->exists()) {
+                    $points[] = $emptyPoint;
+                } else {
+                    $partial = true;
+                    $points[] = $emptyPoint + ['pending' => true];
+                }
+                continue;
+            }
+            $payload = $this->rememberPayload(
+                $cacheKey,
+                now()->addDay(),
+                fn () => ['status' => 'ready', 'point' => $this->buildKolekMismatchTrendPoint($period, $selection['effective_branches'])],
+                $request->boolean('refresh'),
+                fn () => ['status' => 'warming', 'point' => $emptyPoint],
+                lockSeconds: 180
+            );
+            $warming = $warming || $payload['status'] === 'warming';
+            $points[] = $payload['point'];
+        }
+
+        return response()->json($context + ['status' => $warming ? 'warming' : ($partial ? 'partial' : 'ready'), 'timeseries' => $points], $warming ? 202 : 200);
+    }
+
+    private function buildKolekMismatchTrendPoint(string $period, array $branches): array
+    {
+        $available = $this->nativeDailyLoanQuery()->where('periode', $period)
+            ->whereIn(DB::raw('TRIM(cabang1)'), $branches)->exists();
+        $point = [
+            'month' => substr($period, 0, 7), 'period' => $available ? $period : null,
+            'available' => $available, 'memburuk_count' => $available ? 0 : null,
+            'memburuk_balance' => $available ? 0.0 : null,
+        ];
+        if (!$available) {
+            return $point;
+        }
+
+        // Keep the table's classifier and per-position aging, with a narrow projection.
+        $columns = array_values(array_intersect([
+            'periode', 'cabang1', 'unit1', 'nomor_rekening1', 'status_rekening1', 'baki_debet1',
+            'kolek', 'kol_adk1', 'umur_tunggakan', 'tunggakan_pokok', 'tunggakan_bunga',
+            'tanggal_menunggak', 'tgl_akad_restruk', 'npl_method', 'flag_restruk',
+        ], Schema::getColumnListing('daily_loan_dinamis')));
+        // Resolve the stored branch spellings through a covering index first.
+        // This preserves TRIM/collation semantics while allowing a branch range
+        // on the existing (periode, cabang1, ...) index for the expensive scan.
+        $branchNames = DB::query()->fromSub(
+            DB::table(DB::raw($this->qualifyIndexedSource('daily_loan_dinamis', 'kb', [self::LOAN_CABANG_UNIT_INDEX])))
+                ->where('periode', $period)->select('cabang1')->distinct(),
+            'branch_names'
+        )->whereIn(DB::raw('TRIM(cabang1)'), $branches)->pluck('cabang1')->all();
+        $query = $this->nativeDailyLoanQuery('kts', $this->qualifyIndexedSource('daily_loan_dinamis', 'kts', [self::LOAN_CABANG_UNIT_INDEX, self::LOAN_REKENING_INDEX]))
+            ->where('periode', $period)
+            ->whereIn('cabang1', $branchNames)
+            ->whereIn(DB::raw('TRIM(status_rekening1)'), ['1', '3'])
+            ->where('baki_debet1', '>', 0)
+            ->select($columns);
+        if (count(array_intersect(['kolek', 'umur_tunggakan', 'tunggakan_pokok', 'tunggakan_bunga'], $columns)) === 4) {
+            // Transfer only possible worsening rows. Noncanonical kolek values and
+            // date-derived aging still go through the table's full PHP classifier.
+            $query->where(function (Builder $query): void {
+                $query->whereNull('kolek')->orWhereNotIn('kolek', ['1', '2', '3', '4', '5']);
+                foreach ([1 => 0, 2 => 90, 3 => 120, 4 => 180] as $kolek => $minimumAge) {
+                    $query->orWhere(function (Builder $query) use ($kolek, $minimumAge): void {
+                        $query->where('kolek', (string) $kolek)
+                            ->where(function (Builder $query) use ($minimumAge): void {
+                                $query->where('umur_tunggakan', '>', $minimumAge)
+                                    ->orWhere(function (Builder $query): void {
+                                        $query->where(fn (Builder $query) => $query->whereNull('umur_tunggakan')->orWhere('umur_tunggakan', '<=', 0))
+                                            ->where(fn (Builder $query) => $query->where('tunggakan_pokok', '>', 0)->orWhere('tunggakan_bunga', '>', 0));
+                                    });
+                            });
+                    });
+                }
+            });
+        }
+
+        foreach ($query->cursor() as $row) {
+            $resolved = $this->resolveKolekMismatchRowData($row, $period);
+            if ($resolved === null || $resolved['keterangan'] !== 'memburuk') {
+                continue;
+            }
+            $point['memburuk_count']++;
+            $point['memburuk_balance'] += $resolved['outstanding_balance'];
+        }
+
+        return $point;
     }
 
     public function mismatchExport(Request $request)
@@ -3968,7 +4105,7 @@ class DashboardPinjamanReportController extends Controller
         );
     }
 
-    private function rememberPayload(string $cacheKey, $ttl, callable $callback, bool $forceRefresh = false, ?callable $fallback = null)
+    private function rememberPayload(string $cacheKey, $ttl, callable $callback, bool $forceRefresh = false, ?callable $fallback = null, int $lockSeconds = 30)
     {
         $latestKey = $cacheKey . ':latest';
 
@@ -3979,7 +4116,7 @@ class DashboardPinjamanReportController extends Controller
             }
         }
 
-        $lock = Cache::lock($cacheKey . ':lock', 30);
+        $lock = Cache::lock($cacheKey . ':lock', $lockSeconds);
 
         try {
             return $lock->block(2, function () use ($cacheKey, $latestKey, $ttl, $callback, $forceRefresh) {
@@ -5022,8 +5159,8 @@ class DashboardPinjamanReportController extends Controller
             'umur_tunggakan' => $age,
             'cycles' => $cycles,
             'installment' => $installment,
-            'npb_pokok_la' => 0.0,
-            'npb_bunga_la' => 0.0,
+            'npb_pokok_la' => (float) ($row->npb_pokok_la ?? 0),
+            'npb_bunga_la' => (float) ($row->npb_bunga_la ?? 0),
             'estimated_principal' => $estimatedPrincipal,
             'estimated_interest' => $estimatedInterest,
             'estimated_penalty' => $estimatedPenalty,

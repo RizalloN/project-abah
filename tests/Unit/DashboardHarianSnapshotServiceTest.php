@@ -74,9 +74,7 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         $this->assertSame(['A.2.b. Deposito Korporasi'], $definitions['deposito_wholesale']['mata_anggaran']);
         $this->assertSame(['KC', 'KCP'], $definitions['kecil_non_cashcoll_os']['uker_contains_any']);
         $this->assertTrue($definitions['kecil_non_cashcoll_os']['include_kanca_summary']);
-        $this->assertSame(['Average daily Small'], $definitions['average_daily_small']['mata_anggaran']);
-        $this->assertSame(['KC', 'KCP'], $definitions['average_daily_small']['uker_contains_any']);
-        $this->assertTrue($definitions['average_daily_small']['include_kanca_summary']);
+        $this->assertArrayNotHasKey('average_daily_small', $definitions);
         $this->assertSame(['KC', 'KCP'], $definitions['briguna_konsumer_os']['uker_contains_any']);
         $this->assertTrue($definitions['briguna_konsumer_os']['include_kanca_summary']);
         $this->assertSame(['KC', 'KCP'], $definitions['kpr_os']['uker_contains_any']);
@@ -497,12 +495,10 @@ class DashboardHarianSnapshotServiceTest extends TestCase
             ->all();
         $this->assertSame([
             'B.1 KC Ponorogo',
-            'Daily Average Small',
             'Kecil',
             'Kecil Non Cashcoll',
             'Cashcoll',
             'B.2 KCP Sudirman Ponorogo',
-            'Daily Average Small',
             'Kecil',
             'Kecil Non Cashcoll',
             'Cashcoll',
@@ -574,7 +570,7 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         );
     }
 
-    public function test_daily_average_small_uses_calendar_day_denominator_and_splits_kc_kcp_with_rka(): void
+    public function test_dashboard_omits_daily_average_small_and_preserves_sme_kc_kcp_values(): void
     {
         $this->createSourceMetadataTables();
 
@@ -651,35 +647,18 @@ class DashboardHarianSnapshotServiceTest extends TestCase
             null
         );
         $rows = collect($payload['rows']);
-        $totalAverage = $rows->firstWhere('key', 'average_daily_small');
-        $officeAverages = $rows
+        $officeRows = $rows
             ->filter(fn (array $row): bool => ($row['parent_key'] ?? null) === 'sme_os')
-            ->filter(fn (array $row): bool => ($row['source_metric_key'] ?? null) === 'average_daily_small')
+            ->filter(fn (array $row): bool => (bool) ($row['office_breakdown'] ?? false))
             ->values();
 
-        $this->assertNotNull($totalAverage);
-        $this->assertSame('Daily Average Small', $totalAverage['label']);
-        $this->assertSame(35.0, (float) data_get($totalAverage, 'values.current'));
-        $this->assertSame(600.0, (float) data_get($totalAverage, 'values.rka'));
+        $this->assertFalse($rows->contains('key', 'average_daily_small'));
+        $this->assertFalse($rows->contains('source_metric_key', 'average_daily_small'));
+        $this->assertFalse($rows->contains('label', 'Daily Average Small'));
+        $this->assertSame(400.0, (float) data_get($rows->firstWhere('key', 'sme_os'), 'values.current'));
         $this->assertSame(
-            ['KC Ponorogo' => 21.0, 'KCP Sudirman Ponorogo' => 14.0],
-            $officeAverages->mapWithKeys(function (array $row): array {
-                $unitLabel = ($row['office_type'] ?? null) === 'kc' ? 'KC Ponorogo' : 'KCP Sudirman Ponorogo';
-
-                return [$unitLabel => (float) data_get($row, 'values.current')];
-            })->all()
-        );
-        $this->assertSame(
-            [500.0, 100.0],
-            $officeAverages->pluck('values.rka')->map(fn ($value): float => (float) $value)->all()
-        );
-        $this->assertTrue(
-            $rows->search(fn (array $row): bool => $row['key'] === 'sme_os')
-                < $rows->search(fn (array $row): bool => $row['key'] === 'average_daily_small')
-        );
-        $this->assertTrue(
-            $rows->search(fn (array $row): bool => $row['key'] === 'average_daily_small')
-                < $rows->search(fn (array $row): bool => (bool) ($row['office_breakdown'] ?? false) && ($row['parent_key'] ?? null) === 'sme_os')
+            [240.0, 160.0],
+            $officeRows->pluck('values.current')->map(fn ($value): float => (float) $value)->all()
         );
     }
 

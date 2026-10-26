@@ -5,8 +5,10 @@ namespace App\Http\Controllers\Import;
 use App\Http\Controllers\Controller;
 use App\Models\NamaReport;
 use App\Services\Import\CrasSourceService;
+use App\Services\Import\Crosstab\CrosstabNormalizationNotice;
 use App\Services\Import\ImportExecutionService;
 use App\Services\Import\ImportProgressService;
+use App\Services\Import\SsaSpreadsheetStagingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -21,6 +23,7 @@ class ImportCrasController extends Controller
     private const UPLOAD_DIRECTORY = 'cras_uploads';
     private const CHUNK_DIRECTORY = 'app/chunk_uploads_cras';
     private const PREVIEW_CACHE_HOURS = 6;
+    private const NORMALIZED_SUFFIX = '_crosstab.txt';
 
     public function __construct(
         private readonly CrasSourceService $sourceService,
@@ -231,9 +234,14 @@ class ImportCrasController extends Controller
 
             try {
                 $absolutePath = $this->resolveUploadedPath($relativePath);
-                $sourceType = strtolower((string) pathinfo($absolutePath, PATHINFO_EXTENSION)) === 'xlsx'
-                    ? 'XLSX'
-                    : 'UTF-16LE';
+                if (strtolower((string) pathinfo($absolutePath, PATHINFO_EXTENSION)) === 'xlsx') {
+                    [$relativePath, $absolutePath] = $this->normalizeCrosstabUpload($relativePath, $absolutePath, $send);
+                }
+                $sourceType = match (strtolower((string) pathinfo($absolutePath, PATHINFO_EXTENSION))) {
+                    'xlsx' => 'XLSX',
+                    'txt' => str_ends_with($absolutePath, self::NORMALIZED_SUFFIX) ? 'hasil normalisasi' : 'UTF-16LE',
+                    default => 'UTF-16LE',
+                };
                 $send('progress', [
                     'percent' => 2,
                     'message' => "Membaca {$sourceType} dan memvalidasi 33 kolom CRAS...",
@@ -619,6 +627,45 @@ class ImportCrasController extends Controller
         } finally {
             File::delete($stagedPath);
         }
+    }
+
+    /**
+     * An Excel crosstab export (merged or blank-repeated labels, title rows, an
+     * unlabeled measure) becomes the flat 33-column text CrasSourceService reads.
+     * A workbook that is already the exact template keeps the streaming XLSX path.
+     *
+     * @return array{0:string,1:string} [relative path, absolute path]
+     */
+    private function normalizeCrosstabUpload(string $relativePath, string $absolutePath, callable $send): array
+    {
+        $send('progress', [
+            'percent' => 1,
+            'message' => 'Mengenali format Excel CRAS (header, merge, sel kosong)...',
+        ]);
+        $normalizedRelative = dirname(str_replace('\\', '/', $relativePath)) . '/'
+            . pathinfo($relativePath, PATHINFO_FILENAME) . self::NORMALIZED_SUFFIX;
+        $stage = app(SsaSpreadsheetStagingService::class)->stage(
+            $absolutePath,
+            CrasSourceService::TABLE,
+            Storage::path($normalizedRelative),
+            static function (array $progress) use ($send): void {
+                $send('progress', [
+                    'percent' => 2,
+                    'message' => (string) ($progress['message'] ?? 'Menormalisasi crosstab CRAS...'),
+                    'rows_done' => (int) ($progress['rows_done'] ?? 0),
+                ]);
+            }
+        );
+        if ($stage === null) {
+            return [$relativePath, $absolutePath];
+        }
+
+        Storage::delete($relativePath);
+        CrosstabNormalizationNotice::remember($normalizedRelative, $stage['normalization'] ?? null);
+        session(['cras_file' => $normalizedRelative]);
+        request()->session()->save();
+
+        return [$normalizedRelative, $this->resolveUploadedPath($normalizedRelative)];
     }
 
     private function resolveReport(int $reportId = 0): ?NamaReport

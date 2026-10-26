@@ -16,7 +16,10 @@ class Lw321DailyLoanMapperTest extends TestCase
     ): void {
         $this->assertSame(
             ['segment' => $segment, 'product' => $product, 'matched' => true],
-            Lw321DailyLoanMapper::classifyDescription($description)
+            array_intersect_key(
+                Lw321DailyLoanMapper::classifyDescription($description),
+                array_flip(['segment', 'product', 'matched'])
+            )
         );
     }
 
@@ -40,8 +43,8 @@ class Lw321DailyLoanMapperTest extends TestCase
             ['09. RITKOM - > Rp 4 M S/D Rp 5 M', 'Small', 'Commercial'],
             ['KREDIT PANGAN', 'Small', 'Commercial'],
             ['CASHCOLL KREDIT SMALL', 'Small', 'Cashcall'],
-            ['10. RITKOM -> Rp. 5 M S/D 15 M', 'Medium', 'Medium'],
-            ['11. RITKOM -> Rp. 15 M S/D 25 M', 'Medium', 'Medium'],
+            ['10. RITKOM -> Rp. 5 M S/D 15 M', 'Small', 'Commercial'],
+            ['11. RITKOM -> Rp. 15 M S/D 25 M', 'Small', 'Commercial'],
             ['(KWL) 1. MENENGAH > Rp 25 M S/D 50 M', 'Medium', 'Medium'],
             ['(KWL) 2. MENENGAH > Rp 50 M S/D 200 M', 'Medium', 'Medium'],
             ['KREDIT MIKRO - GBT', 'Micro', 'Briguna-Mikro'],
@@ -56,14 +59,64 @@ class Lw321DailyLoanMapperTest extends TestCase
 
     public function test_blank_or_unknown_description_is_not_guessed(): void
     {
+        $unmatched = [
+            'segment' => null,
+            'product' => null,
+            'performance_segment' => null,
+            'performance_product' => null,
+            'matched' => false,
+        ];
+        $this->assertSame($unmatched, Lw321DailyLoanMapper::classifyDescription(null));
+        $this->assertSame($unmatched, Lw321DailyLoanMapper::classifyDescription('DESKRIPSI BARU'));
+    }
+
+    public function test_performance_dimensions_follow_daily_loan_including_ritkom_medium_band(): void
+    {
+        $ritkom = Lw321DailyLoanMapper::classifyDescription('10. RITKOM -> Rp. 5 M S/D 15 M');
+        $this->assertSame('MEDIUM', $ritkom['performance_segment']);
+        $this->assertSame('COMMERCIAL', $ritkom['performance_product']);
+
+        $menengah = Lw321DailyLoanMapper::classifyDescription('(KWL) 1. MENENGAH > Rp 25 M S/D 50 M');
+        $this->assertSame(['Medium', 'Medium', 'MEDIUM', 'MEDIUM'], [
+            $menengah['segment'], $menengah['product'], $menengah['performance_segment'], $menengah['performance_product'],
+        ]);
+
+        $kur = Lw321DailyLoanMapper::classifyDescription('KREDIT MIKRO - KUR MIKRO BARU');
+        $this->assertSame(['MICRO', 'KURMIKRO'], [$kur['performance_segment'], $kur['performance_product']]);
+    }
+
+    public function test_description_is_written_in_daily_loan_vocabulary(): void
+    {
+        $this->assertSame('KUR Mikro Baru', Lw321DailyLoanMapper::dailyDescription('KREDIT MIKRO - KUR MIKRO BARU'));
+        $this->assertSame('Kupedes Rakyat', Lw321DailyLoanMapper::dailyDescription('KREDIT MIKRO - KUPEDES RAKYAT'));
+        $this->assertSame('05. > Rp 500 JUTA S/D Rp 1 M', Lw321DailyLoanMapper::dailyDescription('05. RITKOM - > Rp 500 JUTA S/D Rp 1 M'));
         $this->assertSame(
-            ['segment' => null, 'product' => null, 'matched' => false],
-            Lw321DailyLoanMapper::classifyDescription(null)
+            'KREDIT RITEL - KONSUMTIF - NON CASH COLATERAL - KRETAP',
+            Lw321DailyLoanMapper::dailyDescription('KREDIT RITEL - KONSUMTIF - NON CASH COLATERAL - BRIGUNA KARYA')
         );
         $this->assertSame(
-            ['segment' => null, 'product' => null, 'matched' => false],
-            Lw321DailyLoanMapper::classifyDescription('DESKRIPSI BARU')
+            'KREDIT RITEL - KONSUMTIF - NON CASH COLATERAL - KRESUN',
+            Lw321DailyLoanMapper::dailyDescription('KREDIT RITEL - KONSUMTIF - NON CASH COLATERAL - BRIGUNA PURNA')
         );
+        // Deskripsi yang sudah identik dengan Daily Loan dipertahankan apa adanya.
+        $this->assertSame('KREDIT MIKRO - GBT', Lw321DailyLoanMapper::dailyDescription('KREDIT MIKRO - GBT'));
+        $this->assertSame('PRODUK BARU', Lw321DailyLoanMapper::dailyDescription('  PRODUK BARU '));
+        $this->assertNull(Lw321DailyLoanMapper::dailyDescription('-'));
+        $this->assertNull(Lw321DailyLoanMapper::dailyDescription(null));
+    }
+
+    public function test_rate_and_tenor_follow_daily_loan_units(): void
+    {
+        $this->assertSame(0.06, Lw321DailyLoanMapper::dailyRate('6.000000'));
+        $this->assertSame(0.2625, Lw321DailyLoanMapper::dailyRate(26.25));
+        $this->assertNull(Lw321DailyLoanMapper::dailyRate(null));
+        $this->assertNull(Lw321DailyLoanMapper::dailyRate(''));
+
+        $this->assertSame('36', Lw321DailyLoanMapper::dailyTenor('36M'));
+        $this->assertSame('120', Lw321DailyLoanMapper::dailyTenor(' 120m '));
+        $this->assertSame('24', Lw321DailyLoanMapper::dailyTenor('24'));
+        $this->assertSame('12D', Lw321DailyLoanMapper::dailyTenor('12D'));
+        $this->assertNull(Lw321DailyLoanMapper::dailyTenor(''));
     }
 
     public function test_age_uses_the_earliest_available_due_date(): void

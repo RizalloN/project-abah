@@ -45,10 +45,19 @@ class SecurityHeadersMiddleware
                 : 'same-origin'
         );
 
-        $response->headers->set('Content-Security-Policy', $this->contentSecurityPolicy($request));
+        // The phpMyAdmin gateway forwards phpMyAdmin's own CSP (it needs eval)
+        // and cache policy for its static assets; every other header still applies.
+        $proxied = (bool) $request->attributes->get('security_headers.proxied', false);
+        if (! ($proxied && $response->headers->has('Content-Security-Policy'))) {
+            $response->headers->set('Content-Security-Policy', $this->contentSecurityPolicy($request));
+        }
 
         if ($request->isSecure()) {
             $response->headers->set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+        }
+
+        if ($proxied) {
+            return $response;
         }
 
         $guard = auth()->guard();

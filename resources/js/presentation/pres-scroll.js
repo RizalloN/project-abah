@@ -1,5 +1,6 @@
 import './vendor/scrollcraft.js';
 import { WorldDirector } from './worlds/director.js';
+import { KeynoteStudio } from './worlds/keynote-studio.js';
 
 // The headline figures the ledger spine carries, and the chapter that locks each one in.
 const LEDGER_KEYS = ['simpanan', 'os', 'ldr', 'sml', 'npl'];
@@ -25,10 +26,15 @@ const parseFigure = (text) => {
  * spine and the motion layer (reveals, count-ups and scroll progress).
  */
 export class PresentationScrollDeck {
-    constructor({ root, onActivate, worldSource = null }) {
+    constructor({ root, onActivate, worldSource = null, reliefSource = null, figureSource = null }) {
         this.root = root;
         this.onActivate = onActivate;
-        this.worlds = new WorldDirector({ root, source: worldSource });
+        // The keynote layout carries one persistent relief instead of a sculpture per chapter.
+        this.keynote = root.hasAttribute('data-keynote');
+        this.figureSource = figureSource;
+        this.worlds = this.keynote
+            ? new KeynoteStudio({ root, config: window.__PRESENTATION_CONFIG__ || {}, source: reliefSource })
+            : new WorldDirector({ root, source: worldSource });
         this.worldDataTimer = null;
         this.depthElements = [];
         this.sections = Array.from(root.querySelectorAll('.pres-report-section'))
@@ -50,6 +56,7 @@ export class PresentationScrollDeck {
 
     init() {
         document.documentElement.classList.add('pres-scroll-ready');
+        if (this.keynote) this.initKeynote();
         const tools = this.root.querySelector('.pres-quick-tools');
         if (tools && !tools.querySelector('[data-presentation-motion]')) {
             const pause = document.createElement('button');
@@ -93,6 +100,13 @@ export class PresentationScrollDeck {
                 window.scrollTo({ top: window.scrollY + story.getBoundingClientRect().top + ((index + 0.5) / count) * travel, behavior: reduceMotion() ? 'auto' : 'smooth' });
                 return;
             }
+            const chapterLink = event.target.closest('[data-kn-chapter-link]');
+            if (chapterLink && this.keynote) {
+                event.preventDefault();
+                this.stopAutoplay();
+                this.scrollToChapter(chapterLink.dataset.knChapterLink);
+                return;
+            }
             const target = event.target.closest('[data-spine-target]');
             if (!target || !this.root.contains(target)) return;
             event.preventDefault();
@@ -127,6 +141,176 @@ export class PresentationScrollDeck {
         this.schedule();
     }
 
+    /* ------------------------------------------------------------ keynote -- */
+
+    initKeynote() {
+        const html = document.documentElement;
+        if (!reduceMotion()) html.classList.add('kn-motion');
+        this.nav = this.root.querySelector('[data-kn-nav]');
+        this.progressBar = this.root.querySelector('[data-kn-progress]');
+        this.statements = Array.from(this.root.querySelectorAll('[data-kn-statement]'));
+
+        // One menu holds every tool; it closes on Escape, outside click, or after a choice.
+        const menu = this.root.querySelector('[data-kn-menu]');
+        const toggle = menu?.querySelector('[data-kn-menu-toggle]');
+        const panel = menu?.querySelector('[data-kn-menu-panel]');
+        const setMenu = (open, { focus = false } = {}) => {
+            if (!toggle || !panel) return;
+            toggle.setAttribute('aria-expanded', String(open));
+            panel.hidden = !open;
+            if (open) panel.querySelector('button')?.focus({ preventScroll: true });
+            else if (focus) toggle.focus({ preventScroll: true });
+        };
+        toggle?.addEventListener('click', () => setMenu(toggle.getAttribute('aria-expanded') !== 'true'));
+        panel?.addEventListener('click', (event) => {
+            if (event.target.closest('button')) window.setTimeout(() => setMenu(false), 0);
+        });
+        document.addEventListener('click', (event) => {
+            if (menu && !menu.contains(event.target) && toggle?.getAttribute('aria-expanded') === 'true') setMenu(false);
+        });
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && toggle?.getAttribute('aria-expanded') === 'true') setMenu(false, { focus: true });
+        });
+
+        // The hero stage comes up from black once the loader has gone.
+        const loader = document.getElementById('dashboard-global-loader');
+        const ready = () => html.classList.add('kn-ready');
+        if (!loader || !loader.classList.contains('active')) ready();
+        else {
+            const watch = new MutationObserver(() => {
+                if (!loader.classList.contains('active')) {
+                    ready();
+                    watch.disconnect();
+                }
+            });
+            watch.observe(loader, { attributes: true, attributeFilter: ['class', 'style'] });
+            window.setTimeout(ready, 9000);
+        }
+
+        const split = () => this.root.querySelectorAll('[data-kn-lines]').forEach((title) => this.splitLines(title));
+        if (document.fonts?.ready) document.fonts.ready.then(split);
+        else split();
+        let resizeTimer = null;
+        window.addEventListener('resize', () => {
+            window.clearTimeout(resizeTimer);
+            resizeTimer = window.setTimeout(split, 180);
+        }, { passive: true });
+    }
+
+    /** Wrap a heading's words into measured lines that can rise out of their own masks. */
+    splitLines(title) {
+        const text = title.dataset.knText || title.textContent.trim().replace(/\s+/g, ' ');
+        title.dataset.knText = text;
+        title.setAttribute('aria-label', text);
+        title.innerHTML = text.split(' ').map((word) => `<span class="kn-word">${escapeText(word)}</span>`).join(' ');
+        const lines = [];
+        let lastTop = null;
+        title.querySelectorAll('.kn-word').forEach((word) => {
+            const top = word.offsetTop;
+            if (lastTop === null || Math.abs(top - lastTop) > 4) {
+                lines.push([]);
+                lastTop = top;
+            }
+            lines[lines.length - 1].push(word.textContent);
+        });
+        title.innerHTML = lines.map((words, index) => `<span class="kn-line" aria-hidden="true"><span style="--line:${index}">${escapeText(words.join(' '))}</span></span>`).join(' ');
+    }
+
+    scrollToChapter(key) {
+        const statement = this.root.querySelector(`#pres-chapter-${CSS.escape(key)}`);
+        if (!statement) return;
+        // Land a little into the statement so its copy has already arrived.
+        const travel = Math.max(0, statement.offsetHeight - window.innerHeight);
+        window.scrollTo({
+            top: Math.max(0, window.scrollY + statement.getBoundingClientRect().top + travel * 0.32),
+            behavior: reduceMotion() ? 'auto' : 'smooth',
+        });
+    }
+
+    readKeynote(viewportHeight) {
+        const doc = document.documentElement;
+        const total = Math.max(1, doc.scrollHeight - viewportHeight);
+        const read = Math.min(1, Math.max(0, window.scrollY / total));
+        if (this.nav && Math.abs((this.navRead ?? -1) - read) > 0.0015) {
+            this.navRead = read;
+            this.nav.style.setProperty('--kn-read', read.toFixed(4));
+        }
+
+        // Navigation turns dark over the theatre grounds.
+        if (this.nav) {
+            const probeY = this.nav.getBoundingClientRect().bottom + 2;
+            const under = document.elementFromPoint(Math.max(8, window.innerWidth * 0.5), probeY);
+            const dark = Boolean(under?.closest?.('.kn-ground--dark, .kn-hero'));
+            if (dark !== this.navDark) {
+                this.navDark = dark;
+                this.nav.classList.toggle('is-on-dark', dark);
+            }
+        }
+
+        const hero = this.root.querySelector('.kn-hero');
+        if (hero) {
+            const rect = hero.getBoundingClientRect();
+            const progress = reduceMotion() ? 0 : Math.min(1, Math.max(0, -rect.top / Math.max(1, rect.height - viewportHeight)));
+            if (Math.abs((hero._hp ?? -1) - progress) > 0.001) {
+                hero._hp = progress;
+                hero.style.setProperty('--hp', progress.toFixed(4));
+            }
+        }
+
+        this.statements.forEach((statement) => {
+            const rect = statement.getBoundingClientRect();
+            if (rect.bottom < -viewportHeight || rect.top > viewportHeight * 2) return;
+            const progress = reduceMotion() ? 0.5 : Math.min(1, Math.max(0, -rect.top / Math.max(1, rect.height - viewportHeight)));
+            if (Math.abs((statement._sp ?? -1) - progress) > 0.001) {
+                statement._sp = progress;
+                statement.style.setProperty('--sp', progress.toFixed(4));
+            }
+            if (progress > 0.16 && !statement.dataset.counted) {
+                statement.dataset.counted = '1';
+                statement.querySelectorAll('.kn-figure__value').forEach((figure) => this.countUp(figure));
+            }
+            const beats = statement.querySelectorAll('[data-kn-beat]');
+            if (beats.length) {
+                const current = progress < 0.5 ? 'sml' : 'npl';
+                if (statement.dataset.beat !== current) {
+                    statement.dataset.beat = current;
+                    beats.forEach((beat) => {
+                        const active = beat.dataset.knBeat === current;
+                        beat.classList.toggle('is-current', active);
+                        beat.setAttribute('aria-hidden', String(!active && !reduceMotion()));
+                        if (active) beat.querySelectorAll('.kn-figure__value').forEach((figure) => this.countUp(figure));
+                    });
+                }
+            }
+        });
+    }
+
+    /** Statement figures read through the renderer's own accessors (same numbers as the tables). */
+    fillFigures() {
+        const figures = this.figureSource?.();
+        if (!figures) return;
+        Object.entries(figures).forEach(([key, figure]) => {
+            this.root.querySelectorAll(`[data-figure="${key}"]`).forEach((slot) => {
+                const value = figure?.value || 'Belum tersedia';
+                if (slot.dataset.finalValue !== value) {
+                    slot.dataset.finalValue = value;
+                    slot.dataset.counted = '';
+                    slot.textContent = value;
+                }
+            });
+            this.root.querySelectorAll(`[data-figure-trend="${key}"]`).forEach((slot) => {
+                slot.textContent = figure?.trend || '';
+                slot.classList.toggle('is-up', figure?.tone === 'up');
+                slot.classList.toggle('is-down', figure?.tone === 'down');
+            });
+            this.root.querySelectorAll(`[data-figure-ratio="${key}"]`).forEach((slot) => {
+                slot.textContent = figure?.ratio ? `rasio ${figure.ratio}` : 'rasio belum tersedia';
+            });
+            if (figure?.label) this.root.querySelectorAll(`[data-figure-label="${key}"]`).forEach((slot) => { slot.textContent = figure.label; });
+            if (figure?.note) this.root.querySelectorAll(`[data-figure-note="${key}"]`).forEach((slot) => { slot.textContent = figure.note; });
+        });
+    }
+
     /** Called by the renderer after a section's markup is replaced. */
     sectionRendered(section) {
         // A scope refresh may replace nodes before they have entered the viewport.
@@ -138,6 +322,7 @@ export class PresentationScrollDeck {
         this.scan(section);
         this.worlds.scan(section);
         this.queueWorldData();
+        if (this.keynote) this.fillFigures();
         this.refresh();
     }
 
@@ -239,6 +424,7 @@ export class PresentationScrollDeck {
 
     read() {
         const viewportHeight = window.innerHeight;
+        if (this.keynote) this.readKeynote(viewportHeight);
         const topBar = this.topBarHeight();
         const readingLine = topBar + ((viewportHeight - topBar) * 0.38);
         this.readNarrative(this.marketJourneys, readingLine, topBar, viewportHeight, 'market');
@@ -429,6 +615,13 @@ export class PresentationScrollDeck {
     }
 
     topBarHeight() {
+        if (this.keynote) {
+            // On narrow screens the chapter tabs drop below the bar; both cover the page.
+            const bar = this.root.querySelector('.pres-top-bar');
+            const tabs = bar?.querySelector('.kn-nav__chapters');
+            const bottom = Math.max(bar?.getBoundingClientRect().bottom || 52, tabs && getComputedStyle(tabs).position === 'fixed' ? tabs.getBoundingClientRect().bottom : 0);
+            return bottom;
+        }
         return this.root.querySelector('.pres-top-bar')?.getBoundingClientRect().height || 64;
     }
 
@@ -491,7 +684,8 @@ export class PresentationScrollDeck {
             });
         });
         const label = scoped?.scope_label || data?.scope?.options?.find((option) => option.key === scopeKey)?.label;
-        if (label) this.root.querySelectorAll('[data-ledger-scope]').forEach((slot) => { slot.textContent = label; });
+        if (label && !this.keynote) this.root.querySelectorAll('[data-ledger-scope]').forEach((slot) => { slot.textContent = label; });
+        if (this.keynote) this.fillFigures();
         this.queueWorldData();
         this.refresh();
     }

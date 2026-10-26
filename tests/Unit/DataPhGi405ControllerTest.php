@@ -77,7 +77,7 @@ class DataPhGi405ControllerTest extends TestCase
         ]);
     }
 
-    public function test_gi405_only_date_is_selectable_with_visible_units_and_source_state_without_ph_stock(): void
+    public function test_period_list_follows_lw325_and_a_gi405_only_date_is_not_offered(): void
     {
         $this->ph('2026-08-31', 1000);
         $this->control('06343', -100);
@@ -85,90 +85,86 @@ class DataPhGi405ControllerTest extends TestCase
 
         $data = $this->index();
 
-        $this->assertSame('2026-09-30', $data['selectedPeriod']);
-        $this->assertContains('2026-09-30', $data['availablePeriods']->all());
-        $this->assertTrue($data['usesGi405']);
-        $this->assertTrue($data['showUnallocated']);
-        $this->assertFalse($data['hasCurrentPh']);
-        $this->assertContains('KC Madiun', array_column($data['filters']['kanca'], 'value'));
-        $this->assertContains('UNIT A', array_column($data['filters']['unit_kerja'], 'value'));
-        $this->assertContains('UNIT B', array_column($data['filters']['unit_kerja'], 'value'));
-        $this->assertEqualsWithDelta(150.0, $data['summary']['total_recovery'], 0.00001);
-        $this->assertEqualsWithDelta(0.0, $data['summary']['total_sisa_ph'], 0.00001);
-        $this->assertEqualsWithDelta(150.0, $data['grandTotals']['recovery_curr']['unallocated'], 0.00001);
-        $this->assertEqualsWithDelta(150.0, $data['grandTotals']['unclassified_recovery']['total'], 0.00001);
-        $this->assertEqualsWithDelta(0.0, $data['grandTotals']['recovery_curr']['micro'], 0.00001);
-        $this->assertEqualsWithDelta(0.0, $data['grandTotals']['recovery_curr']['small'], 0.00001);
+        // Recovery and its breakdown come from LW325; a GI405-only date would
+        // open on empty LW325 columns, so the default is the latest PH date.
+        $this->assertSame('2026-08-31', $data['selectedPeriod']);
+        $this->assertNotContains('2026-09-30', $data['availablePeriods']->all());
+        $this->assertFalse($data['usesGi405']);
+        $this->assertFalse($data['showUnallocated']);
+        $this->assertTrue($data['hasCurrentPh']);
+        $this->assertEqualsWithDelta(1000.0, $data['summary']['total_sisa_ph'], 0.00001);
     }
 
-    public function test_gi405_detail_branch_and_area_totals_reconcile_even_when_unit_has_no_ph_rows(): void
+    public function test_lw325_is_the_recovery_and_gi405_is_only_checked_in_the_backend(): void
     {
-        $this->control('06343', -100);
+        $this->phRow('2026-08-31', 'A1', 'UNIT A', 1000);
+        $this->phRow('2026-08-31', 'A2', 'UNIT B', 500);
+        $this->phRow('2026-09-30', 'A1', 'UNIT A', 800); // TUPOK 200; A2 paid off: LUNAS 500
+        $this->control('06343', -740);
         $this->control('06344', -50);
-        $this->control('06345', -20);
+        $this->control('06343', -60, '2026-08-31');
+        $this->control('06344', -30, '2026-08-31');
 
         $area = $this->index();
-        $detail = $this->index(['kanca' => ['KC Madiun']]);
-        $unitMetrics = $this->invokePrivate('getDataPhRecoveryMetrics', ['2026-09-30', ['KC Madiun'], 'all']);
-        $branchMetrics = $this->invokePrivate('getBranchOfficeDataPhRecoveryMetrics', ['2026-09-30', ['KC Madiun']]);
+        $madiun = collect($area['rows'])->firstWhere('kanca', 'KC Madiun');
 
-        $this->assertCount(2, $detail['rows']);
-        $this->assertEqualsWithDelta(150.0, $detail['summary']['total_recovery'], 0.00001);
-        $this->assertEqualsWithDelta(170.0, $area['summary']['total_recovery'], 0.00001);
-        $this->assertEqualsWithDelta(150.0, array_sum(array_column($unitMetrics, 'total')), 0.00001);
-        $this->assertEqualsWithDelta(150.0, $branchMetrics['KC Madiun']['total'], 0.00001);
-        $this->assertEqualsWithDelta($detail['summary']['total_recovery'], $branchMetrics['KC Madiun']['total'], 0.00001);
-        foreach ($detail['rows'] as $row) {
-            $this->assertSame('GI405', $row['recovery_source']);
-            $this->assertEqualsWithDelta(0.0, $row['tupok']['total'], 0.00001);
-            $this->assertEqualsWithDelta(0.0, $row['lunas']['total'], 0.00001);
-        }
+        $this->assertSame('lw325_ph/cognos', $madiun['recovery_source']);
+        $this->assertEqualsWithDelta(200.0, $madiun['tupok']['total'], 0.00001);
+        $this->assertEqualsWithDelta(500.0, $madiun['lunas']['total'], 0.00001);
+        $this->assertEqualsWithDelta(700.0, $madiun['recovery_curr']['total'], 0.00001);
+        $this->assertEqualsWithDelta(700.0, $madiun['recovery_curr']['micro'], 0.00001);
+        // GI405 is not part of the page.
+        $this->assertArrayNotHasKey('gi405_control', $madiun);
+        $this->assertArrayNotHasKey('gi405ControlTotals', $area);
+        $this->assertEqualsWithDelta(0.0, $area['grandTotals']['recovery_curr']['unallocated'], 0.00001);
+
+        // Backend: LW325 movement 700 against GI405 income since 31 Aug (790 - 90).
+        $check = (new DataPhReportController)->gi405Reconciliation('2026-09-30');
+
+        $this->assertSame('2026-08-31', $check['gi405_m1_period']);
+        $this->assertEqualsWithDelta(700.0, $check['branches']['KC Madiun']['lw325'], 0.00001);
+        $this->assertEqualsWithDelta(700.0, $check['branches']['KC Madiun']['gi405'], 0.00001);
+        $this->assertSame('ok', $check['branches']['KC Madiun']['status']);
+        $this->assertNull($check['branches']['KC Magetan']['gi405']);
+        $this->assertSame('unknown', $check['branches']['KC Magetan']['status']);
+        $this->assertSame('ok', $check['status']);
     }
 
-    public function test_official_zero_does_not_fall_back_to_nonzero_ph_estimate_or_cognos(): void
+    public function test_gi405_zero_income_flags_an_lw325_recovery_as_a_mismatch(): void
     {
         $this->control('06343', 0);
+        $this->control('06343', 0, '2026-08-31');
         $this->ph('2026-08-31', 1000);
         $this->ph('2026-09-30', 500);
-        DB::table('cognos_recovery')->insert([
-            'periode' => '2026-09-30', 'cabang' => 'KC Madiun', 'unit_kerja' => 'UNIT A',
-            'segmen_2' => 'Micro', 'produk' => 'Kupedes', 'total_recovery' => 999,
-        ]);
 
-        $branch = $this->invokePrivate('getBranchOfficeDataPhRecoveryMetrics', ['2026-09-30', ['KC Madiun']]);
-        $units = $this->invokePrivate('getDataPhRecoveryMetrics', ['2026-09-30', ['KC Madiun'], 'UNIT A']);
         $data = $this->index(['kanca' => ['KC Madiun'], 'unit_kerja' => 'UNIT A']);
+        $check = (new DataPhReportController)->gi405Reconciliation('2026-09-30');
 
-        $this->assertSame('GI405', $branch['KC Madiun']['source']);
-        $this->assertSame('GI405', $units['KC MADIUN|UNIT A']['source']);
-        $this->assertEqualsWithDelta(0.0, $branch['KC Madiun']['total'], 0.00001);
-        $this->assertEqualsWithDelta(0.0, $units['KC MADIUN|UNIT A']['total'], 0.00001);
-        $this->assertTrue($data['usesGi405']);
-        $this->assertTrue($data['hasCurrentPh']);
-        $this->assertEqualsWithDelta(0.0, $data['summary']['total_recovery'], 0.00001);
+        $this->assertEqualsWithDelta(500.0, $data['summary']['total_recovery'], 0.00001);
         $this->assertEqualsWithDelta(500.0, $data['summary']['total_sisa_ph'], 0.00001);
+        // A booked zero is a real GL value, not "missing".
+        $this->assertSame(0.0, $check['branches']['KC Madiun']['gi405']);
+        $this->assertSame('fail', $check['branches']['KC Madiun']['status']);
     }
 
-    public function test_historical_claim_split_is_explicit_and_does_not_invent_product_or_payment_type(): void
+    public function test_gi405_never_fills_the_lw325_breakdown_columns(): void
     {
+        $this->ph('2025-11-30', 1000);
+        $this->ph('2025-12-31', 900);
         $this->control('06343', -125, '2025-12-31');
         $this->ledger('418020000010', -100, '2025-12-31');
         $this->ledger('418020000013', -25, '2025-12-31');
 
-        $data = $this->index(['periode' => '2025-12-31', 'kanca' => ['KC Madiun']]);
-        $totals = $data['grandTotals'];
+        $totals = $this->index(['periode' => '2025-12-31', 'kanca' => ['KC Madiun']])['grandTotals'];
 
-        $this->assertEqualsWithDelta(125.0, $totals['recovery_curr']['total'], 0.00001);
-        $this->assertEqualsWithDelta(125.0, $totals['recovery_curr']['unallocated'], 0.00001);
-        $this->assertEqualsWithDelta(100.0, $totals['non_klaim']['unallocated'], 0.00001);
-        $this->assertEqualsWithDelta(25.0, $totals['klaim']['unallocated'], 0.00001);
+        $this->assertEqualsWithDelta(100.0, $totals['recovery_curr']['total'], 0.00001);
+        $this->assertEqualsWithDelta(100.0, $totals['tupok']['total'], 0.00001);
+        $this->assertEqualsWithDelta(0.0, $totals['recovery_curr']['unallocated'], 0.00001);
+        $this->assertEqualsWithDelta(0.0, $totals['klaim']['unallocated'], 0.00001);
         $this->assertEqualsWithDelta(0.0, $totals['unclassified_recovery']['total'], 0.00001);
-        $this->assertEqualsWithDelta(0.0, $totals['tupok']['total'], 0.00001);
-        $this->assertEqualsWithDelta(0.0, $totals['lunas']['total'], 0.00001);
-        $this->assertEqualsWithDelta(0.0, $totals['recovery_curr']['micro'], 0.00001);
     }
 
-    public function test_gi405_recovery_does_not_change_lw325_stock_or_nominatif_values(): void
+    public function test_gi405_control_does_not_change_lw325_stock_or_nominatif_values(): void
     {
         $this->control('06343', -125);
         $this->ph('2026-09-30', 50000, 'Small', 'Kecil');
@@ -179,7 +175,8 @@ class DataPhGi405ControllerTest extends TestCase
         ]);
         $nominatif = (new DataPhReportController)->nominatif($request)->getData(true);
 
-        $this->assertEqualsWithDelta(125.0, $data['summary']['total_recovery'], 0.00001);
+        $this->assertEqualsWithDelta(0.0, $data['summary']['total_recovery'], 0.00001, 'No previous month PH: no LW325 movement.');
+        $this->assertArrayNotHasKey('gi405ControlTotals', $data);
         $this->assertEqualsWithDelta(50000.0, $data['summary']['total_sisa_ph'], 0.00001);
         $this->assertEqualsWithDelta(50000.0, $data['grandTotals']['sisa_ph']['small'], 0.00001);
         $this->assertEqualsWithDelta(0.0, $data['grandTotals']['sisa_ph']['unallocated'], 0.00001);
@@ -190,6 +187,8 @@ class DataPhGi405ControllerTest extends TestCase
 
     public function test_selected_unit_and_pinned_branch_scope_do_not_show_other_gi405_units(): void
     {
+        $this->phRow('2026-09-30', 'A1', 'UNIT A', 10);
+        $this->phRow('2026-09-30', 'B1', 'UNIT B', 10);
         $this->control('06343', -100);
         $this->control('06344', -50);
         $this->control('06345', -20);
@@ -199,10 +198,8 @@ class DataPhGi405ControllerTest extends TestCase
 
         $this->assertCount(1, $unit['rows']);
         $this->assertSame('UNIT A', $unit['rows'][0]['unit']);
-        $this->assertEqualsWithDelta(100.0, $unit['summary']['total_recovery'], 0.00001);
         $this->assertCount(1, $scoped['rows']);
         $this->assertSame('KC Madiun', $scoped['rows'][0]['kanca']);
-        $this->assertEqualsWithDelta(150.0, $scoped['summary']['total_recovery'], 0.00001);
         $this->assertNotContains('KC Magetan', array_column($scoped['filters']['kanca'], 'value'));
         $this->assertNotContains('UNIT C', array_column($scoped['filters']['unit_kerja'], 'value'));
     }
@@ -263,21 +260,21 @@ class DataPhGi405ControllerTest extends TestCase
         $this->assertEqualsWithDelta(50.0, $delta['total'], 0.00001);
     }
 
-    public function test_january_index_ytd_and_month_delta_use_current_year_income_without_previous_year_subtraction(): void
+    public function test_january_reconciliation_restarts_instead_of_subtracting_previous_year_income(): void
     {
+        $this->ph('2026-01-31', 10);
         $this->control('06343', -125.25, '2026-01-31');
         $this->control('06343', -2000, '2025-12-31');
 
-        $data = $this->index(['periode' => '2026-01-31', 'kanca' => ['KC Madiun']]);
+        $check = (new DataPhReportController)->gi405Reconciliation('2026-01-31');
 
-        $this->assertEqualsWithDelta(2000.0, $data['grandTotals']['recovery_ytd']['total'], 0.00001);
-        $this->assertEqualsWithDelta(2000.0, $data['grandTotals']['recovery_m1']['total'], 0.00001);
-        $this->assertEqualsWithDelta(125.25, $data['grandTotals']['delta_ytd']['total'], 0.00001);
-        $this->assertEqualsWithDelta(125.25, $data['grandTotals']['delta_m1']['total'], 0.00001);
+        $this->assertSame('2025-12-31', $check['gi405_m1_period']);
+        $this->assertEqualsWithDelta(125.25, $check['branches']['KC Madiun']['gi405'], 0.00001);
     }
 
-    public function test_index_marks_legacy_month_comparison_unavailable_when_current_recovery_is_gi405(): void
+    public function test_month_comparison_stays_on_the_lw325_cognos_basis_when_gi405_exists(): void
     {
+        $this->ph('2026-02-28', 10);
         $this->control('06343', -150, '2026-02-28');
         DB::table('cognos_recovery')->insert([
             'periode' => '2026-01-31', 'cabang' => 'KC Madiun', 'unit_kerja' => 'UNIT A',
@@ -286,10 +283,11 @@ class DataPhGi405ControllerTest extends TestCase
 
         $data = $this->index(['periode' => '2026-02-28', 'kanca' => ['KC Madiun']]);
 
-        $this->assertFalse($data['rows'][0]['recovery_m1']['available']);
-        $this->assertEqualsWithDelta(0.0, $data['grandTotals']['recovery_m1']['total'], 0.00001);
-        $this->assertEqualsWithDelta(0.0, $data['grandTotals']['delta_m1']['total'], 0.00001);
-        $this->assertEqualsWithDelta(150.0, $data['grandTotals']['delta_ytd']['total'], 0.00001);
+        $this->assertNotFalse($data['rows'][0]['recovery_m1']['available'] ?? true);
+        $this->assertEqualsWithDelta(100.0, $data['grandTotals']['recovery_m1']['total'], 0.00001);
+        $check = (new DataPhReportController)->gi405Reconciliation('2026-02-28');
+        $this->assertNull($check['gi405_m1_period'], 'No GI405 position in January: no GL month income to compare.');
+        $this->assertSame('unknown', $check['status']);
     }
 
     private function index(array $parameters = []): array
@@ -318,6 +316,14 @@ class DataPhGi405ControllerTest extends TestCase
         DB::table('gi405_singlerow')->insert([
             'periode' => $period, 'branch' => '6343', 'nama_cabang' => 'KC Madiun', 'nama_uker' => 'UNIT A',
             'currency' => 'IDR', 'posting_control' => '*POST', 'account_number' => $account, 'ending_balance' => $balance,
+        ]);
+    }
+
+    private function phRow(string $period, string $account, string $unit, float $balance): void
+    {
+        DB::table('lw325_ph')->insert([
+            'periode' => $period, 'acctno' => $account, 'kanca' => 'KC Madiun', 'unit' => $unit,
+            'segmen_dashboard' => 'Micro', 'produk_dashboard' => 'Kupedes', 'flag_klaim' => 'N', 'pokok' => $balance,
         ]);
     }
 

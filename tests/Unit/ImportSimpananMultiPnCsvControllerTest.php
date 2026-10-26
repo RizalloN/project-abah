@@ -765,7 +765,11 @@ class ImportSimpananMultiPnCsvControllerTest extends TestCase
             ]);
             $finalPayload = $controller->finalizeChunkUpload($finalizeRequest)->getData(true);
             $this->assertSame('success', $finalPayload['status']);
-            $this->assertSame(route('import.simpanan.csv.prepare-preview'), $finalPayload['redirect']);
+            // ck membawa konteks upload ini ke prepare-preview (upload tab lain tidak menimpanya).
+            $this->assertSame(
+                route('import.simpanan.csv.prepare-preview', ['ck' => $finalPayload['cache_key']]),
+                $finalPayload['redirect']
+            );
 
             $finalPath = Storage::path((string) session('excel_path'));
             $this->assertFileExists($finalPath);

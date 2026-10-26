@@ -33,7 +33,13 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->web(append: [
             \App\Http\Middleware\SecurityHeadersMiddleware::class,
             \App\Http\Middleware\MonitorRequestPerformance::class,
+            // Beberapa preview import (tab berbeda) memakai konteks session masing-masing.
+            \App\Http\Middleware\RestoreImportPreviewContext::class,
         ]);
+
+        // phpMyAdmin behind the Job Management gateway posts its own forms with
+        // its own CSRF token; access is gated by superadmin session + password.
+        $middleware->validateCsrfTokens(except: ['job-management/database/pma/*', 'job-management/database/pma']);
 
         $middleware->alias([
             'auth.session' => \App\Http\Middleware\AuthenticateSession::class,

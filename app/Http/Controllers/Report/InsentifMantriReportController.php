@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Report;
 
 use App\Http\Controllers\Controller;
 use App\Services\Reports\MantriIncentiveService;
+use App\Support\ProductivitySourceQuality;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -52,6 +53,12 @@ class InsentifMantriReportController extends Controller
             'selectedPeriodLabel' => $selectedPeriod ? Carbon::parse($selectedPeriod)->locale('id')->translatedFormat('d F Y') : '-',
             'positionSource' => $selectedPeriod ? $this->service->positionSource($selectedPeriod) : null,
             'freshness' => $this->service->sourceFreshness(),
+            'sourceQuality' => app(ProductivitySourceQuality::class)->summarize(
+                $selectedPeriod,
+                'MICRO',
+                MantriIncentiveService::PRODUCTS,
+                $branchOptions
+            ),
             'filters' => $filters,
             'branchOptions' => $branchOptions,
             'unitsByBranch' => $unitsByBranch,

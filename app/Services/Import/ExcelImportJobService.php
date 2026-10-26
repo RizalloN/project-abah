@@ -2,10 +2,13 @@
 
 namespace App\Services\Import;
 
+use App\Support\Import\ImportSessionContext;
 use Illuminate\Support\Facades\Cache;
 
 class ExcelImportJobService
 {
+    public const SESSION_CONTEXT_KEY = 'session_context';
+
     private const PREVIEW_STATE_PREFIX = 'excel_preview_state_';
 
     public function __construct(private readonly ImportProgressService $progressService)
@@ -30,7 +33,41 @@ class ExcelImportJobService
     public function putPreviewState(string $key, array $payload): void
     {
         $payload['_owner_id'] = auth()->id();
-        Cache::put($this->previewStateKey($key), $payload, now()->addMinutes(30));
+
+        // Konteks session milik preview ini dicatat sekali (saat upload/preview pertama)
+        // dan tidak boleh tergantikan oleh session tab lain ketika state diperbarui.
+        if (!array_key_exists(self::SESSION_CONTEXT_KEY, $payload)) {
+            $existing = $this->getPreviewState($key);
+            if (is_array($existing[self::SESSION_CONTEXT_KEY] ?? null)) {
+                $payload[self::SESSION_CONTEXT_KEY] = $existing[self::SESSION_CONTEXT_KEY];
+            } elseif (app()->bound('request') && request()->hasSession()) {
+                $payload[self::SESSION_CONTEXT_KEY] = ImportSessionContext::capture(request()->session());
+            }
+        }
+
+        Cache::put($this->previewStateKey($key), $payload, now()->addMinutes($this->previewStateTtlMinutes()));
+    }
+
+    /**
+     * Daftarkan konteks session upload yang baru dibuat, sebelum preview dirender.
+     */
+    public function rememberPreviewSessionContext(string $key, array $context): void
+    {
+        if ($key === '' || $context === []) {
+            return;
+        }
+
+        $existing = $this->getPreviewState($key);
+        if (is_array($existing[self::SESSION_CONTEXT_KEY] ?? null)) {
+            return;
+        }
+
+        $this->putPreviewState($key, array_merge($existing, [self::SESSION_CONTEXT_KEY => $context]));
+    }
+
+    public function previewStateTtlMinutes(): int
+    {
+        return max(30, (int) config('import.preview_state_ttl_minutes', 360));
     }
 
     public function getPreviewState(?string $key): array

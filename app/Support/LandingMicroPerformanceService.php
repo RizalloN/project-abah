@@ -21,7 +21,7 @@ final class LandingMicroPerformanceService
 
     private const PERFORMANCE_RM_SNAPSHOT_TABLE = 'performance_rm_snapshots';
 
-    private const CACHE_VERSION = 'v41-mantri-verified-booking-cohort';
+    private const CACHE_VERSION = 'v46-mantri-zero-productivity';
 
     private const PERIOD_LOOKUP_INDEXES = [
         'idx_snapshot_filter_optimized',
@@ -681,7 +681,7 @@ final class LandingMicroPerformanceService
             $previous = max(0.0, (float) ($row['previous_os'] ?? 0.0));
             $amount = array_key_exists('net_amount', $row)
                 ? max(0.0, (float) $row['net_amount'])
-                : max(0.0, $current - $previous);
+                : MicroCifNettRule::amount($current, $previous);
             if ($amount <= 0.0) {
                 continue;
             }
@@ -1371,9 +1371,10 @@ final class LandingMicroPerformanceService
      * (produk, pola angsuran, dan PDWK) wajib memakai plafon akad ini, bukan delta OS.
      *
      * @param  array<string, mixed>|null  $branchScope
+     * @param  array<int, object|array<string, mixed>>|null  $sourceRows
      * @return array<int, object>
      */
-    private function fetchPlafondRealizationRows(string $period, ?array $branchScope): array
+    private function fetchPlafondRealizationRows(string $period, ?array $branchScope, ?array $sourceRows = null): array
     {
         $periodStart = Carbon::parse($period)->startOfMonth()->toDateString();
         $columns = array_values(array_filter([
@@ -1387,12 +1388,23 @@ final class LandingMicroPerformanceService
             $this->hasColumn(self::SOURCE_TABLE, 'cabang_normalized') ? 'cabang_normalized' : null,
         ]));
 
-        $query = DB::table(self::SOURCE_TABLE)
-            ->where('periode', $period)
-            ->whereBetween('tgl_realisasi', [$periodStart, $period])
-            ->select($columns);
-        $this->applyDailyMicroFilter($query);
-        $this->applyDailyBranchFilter($query, '', $branchScope);
+        if ($sourceRows === null) {
+            $query = DB::table(self::SOURCE_TABLE)
+                ->where('periode', $period)
+                ->whereBetween('tgl_realisasi', [$periodStart, $period])
+                ->select($columns);
+            $this->applyDailyMicroFilter($query);
+            $this->applyDailyBranchFilter($query, '', $branchScope);
+            $sourceRows = $query->get()->all();
+        } else {
+            $branches = $branchScope === null
+                ? array_map(static fn (string $branch): string => 'KC '.$branch, self::AREA_BRANCHES)
+                : [$this->branchLabel((string) ($branchScope['upper_label'] ?? $branchScope['label'] ?? ''))];
+            $sourceRows = collect($sourceRows)
+                ->map(static fn (object|array $row): object => (object) $row)
+                ->filter(fn (object $row): bool => in_array($this->branchLabel((string) ($row->cabang_normalized ?? $row->cabang1 ?? '')), $branches, true))
+                ->all();
+        }
 
         $paymentPatterns = $this->loanPaymentPatternMap();
         $decisionReferences = $this->decisionReferenceMap();
@@ -1401,7 +1413,7 @@ final class LandingMicroPerformanceService
             ->filter()
             ->all();
         $loanRows = $this->restoreDecisionIdentityFromSameMonth(
-            $this->deduplicateLoanAccounts($query->get()),
+            $this->deduplicateLoanAccounts(collect($sourceRows)),
             $period,
             $periodStart
         );
@@ -1426,7 +1438,7 @@ final class LandingMicroPerformanceService
                     $decisionProfiles
                 );
 
-                return (object) [
+                return (object) array_merge([
                     'account_key' => $accountKey,
                     'cif_key' => $this->loanCifKey($row),
                     'amount' => $plafon,
@@ -1459,7 +1471,9 @@ final class LandingMicroPerformanceService
                     'decision_identity_period' => $row->decision_identity_period ?? ($hasDecisionIdentity ? $period : null),
                     'manager_pn' => $this->normalisePn((string) ($row->pn_pengelola1 ?? '')),
                     'manager_raw' => trim((string) ($row->pn_pengelola1 ?? '')),
-                ];
+                ], array_intersect_key((array) $row, array_flip([
+                    'source_realization_date', 'booking_kind', 'topup_source', 'reference_plafon', 'observed_plafon',
+                ])));
             })
             ->filter(fn (object $row): bool => $row->account_key !== '' && $row->amount > 0.0)
             ->values()
@@ -1698,11 +1712,33 @@ final class LandingMicroPerformanceService
         ?array $realizationRows = null
     ): array {
         $realizationRows ??= $this->fetchPlafondRealizationRows($period, $branchScope);
+        $topups = app(MicroSameAccountTopupDetector::class)->bookings($period);
+        if ($topups !== []) {
+            $realizationRows = array_merge($realizationRows, $this->fetchPlafondRealizationRows($period, $branchScope, $topups));
+        }
         if ($realizationRows === []) {
             return [];
         }
 
-        $realizations = collect($realizationRows);
+        $canonicalAccount = static function (string $account): string {
+            $account = strtoupper(trim($account));
+
+            return ctype_digit($account) ? (ltrim($account, '0') ?: '0') : $account;
+        };
+        // Actual dated bookings take precedence over an inferred top-up of the
+        // same CIF/account. Normalize only this nett path, preserving gross rows.
+        $realizations = collect($realizationRows)
+            ->map(static function (object $row) use ($canonicalAccount): object {
+                $copy = clone $row;
+                $copy->account_key = $canonicalAccount((string) $row->account_key);
+                if (str_starts_with($copy->cif_key, 'REK:')) {
+                    $copy->cif_key = 'REK:'.$copy->account_key;
+                }
+
+                return $copy;
+            })
+            ->unique(fn (object $row): string => $row->cif_key.'|'.$row->account_key)
+            ->values();
         $candidateCifs = $realizations
             ->map(fn (object $row): string => str_starts_with($row->cif_key, 'REK:') ? '' : $row->cif_key)
             ->filter(fn (string $value): bool => $value !== '')
@@ -1719,8 +1755,14 @@ final class LandingMicroPerformanceService
         // cabang dengan CIF sama tidak keliru dianggap sudah tutup.
         $currentRows = $this->fetchCandidateLoanRows($period, $candidateCifs, $fallbackAccounts, null);
         $previousRows = $this->fetchCandidateLoanRows($previousPeriod, $candidateCifs, $fallbackAccounts, null);
-        $currentAccounts = $this->deduplicateLoanAccounts($currentRows);
-        $previousAccounts = $this->deduplicateLoanAccounts($previousRows);
+        $normalizeAccount = static function (object $row) use ($canonicalAccount): object {
+            $copy = clone $row;
+            $copy->nomor_rekening1 = $canonicalAccount((string) ($row->nomor_rekening1 ?? ''));
+
+            return $copy;
+        };
+        $currentAccounts = $this->deduplicateLoanAccounts($currentRows->map($normalizeAccount));
+        $previousAccounts = $this->deduplicateLoanAccounts($previousRows->map($normalizeAccount));
         $currentByCif = $currentAccounts->groupBy(fn ($row): string => $this->loanCifKey($row));
         $previousByCif = $previousAccounts->groupBy(fn ($row): string => $this->loanCifKey($row));
 
@@ -1739,32 +1781,25 @@ final class LandingMicroPerformanceService
                     ->filter(fn ($row): bool => ! $currentAccountKeys->has($this->loanAccountKey($row)))
                     ->sum(fn ($row): float => max(0.0, (float) ($row->baki_debet1 ?? 0.0)));
 
-                $sameAccountRows = $group->filter(fn (object $row): bool => $previousAccountOs->has($row->account_key));
-                $newAccountRows = $group->reject(fn (object $row): bool => $previousAccountOs->has($row->account_key));
-                $result = [];
-
-                foreach ($sameAccountRows as $row) {
-                    $previousOs = (float) $previousAccountOs->get($row->account_key, 0.0);
-                    $netAmount = max(0.0, (float) $row->plafon - $previousOs);
-                    if ($netAmount > 0.0) {
-                        $result[] = $this->decorateNetRow($row, $netAmount, $previousOs, 'suplesi');
+                $baseline = $closedExposure;
+                $amounts = [];
+                foreach ($group as $row) {
+                    if ($currentAccountKeys->has($row->account_key)) {
+                        $baseline += (float) $previousAccountOs->get($row->account_key, 0.0);
                     }
+                    $amounts[$row->account_key] = (float) $row->plafon;
                 }
-
-                $newPlafon = (float) $newAccountRows->sum('plafon');
-                $newNetTotal = max(0.0, $newPlafon - $closedExposure);
-                foreach ($newAccountRows as $row) {
-                    $netAmount = $newPlafon > 0.0
-                        ? $newNetTotal * ((float) $row->plafon / $newPlafon)
-                        : 0.0;
+                $allocated = MicroCifNettRule::allocate($amounts, $baseline);
+                $result = [];
+                foreach ($group as $row) {
+                    $netAmount = $allocated[$row->account_key];
                     if ($netAmount > 0.0) {
-                        $allocatedPrevious = max(0.0, (float) $row->plafon - $netAmount);
-                        $result[] = $this->decorateNetRow(
+                        $result[] = (object) array_merge((array) $this->decorateNetRow(
                             $row,
                             $netAmount,
-                            $allocatedPrevious,
-                            $closedExposure > 0.0 ? 'suplesi' : 'baru'
-                        );
+                            max(0.0, round((float) $row->plafon - $netAmount, 2)),
+                            $baseline > 0.0 ? 'suplesi' : 'baru'
+                        ), ['cif_previous_os' => $baseline]);
                     }
                 }
 
@@ -2494,6 +2529,7 @@ final class LandingMicroPerformanceService
             $managerMetric = $netByManager[(string) ($person['pn'] ?? '')] ?? ['amount' => 0.0, 'accounts' => []];
             $amount = (float) ($managerMetric['amount'] ?? 0.0);
             $key = match (true) {
+                $amount === 0.0 => 'none',
                 $category === 'contract' && $amount < 175_000_000 => 'extreme_low',
                 $category === 'contract' && $amount <= 350_000_000 => 'low',
                 $category === 'contract' && $amount <= 450_000_000 => 'mid',
@@ -2546,7 +2582,8 @@ final class LandingMicroPerformanceService
 
             $metrics[$pn] ??= ['amount' => 0.0, 'accounts' => []];
             $amount = (float) ($row->{$amountColumn} ?? 0.0);
-            $metrics[$pn]['amount'] += $amountColumn === 'net_amount' ? $amount : max(0.0, $amount);
+            $metrics[$pn]['amount'] = $amountColumn === 'net_amount'
+                ? round($metrics[$pn]['amount'] + $amount, 2) : $metrics[$pn]['amount'] + max(0.0, $amount);
             $metrics[$pn]['accounts'][$account] = true;
         }
 
@@ -2569,7 +2606,8 @@ final class LandingMicroPerformanceService
 
             $metrics[$branch] ??= ['amount' => 0.0, 'accounts' => []];
             $amount = (float) ($row->{$amountColumn} ?? 0.0);
-            $metrics[$branch]['amount'] += $amountColumn === 'net_amount' ? $amount : max(0.0, $amount);
+            $metrics[$branch]['amount'] = $amountColumn === 'net_amount'
+                ? round($metrics[$branch]['amount'] + $amount, 2) : $metrics[$branch]['amount'] + max(0.0, $amount);
             $metrics[$branch]['accounts'][$account] = true;
         }
 
@@ -2590,7 +2628,8 @@ final class LandingMicroPerformanceService
             }
 
             $amount = (float) ($row->{$amountColumn} ?? 0.0);
-            $metric['amount'] += $amountColumn === 'net_amount' ? $amount : max(0.0, $amount);
+            $metric['amount'] = $amountColumn === 'net_amount'
+                ? round($metric['amount'] + $amount, 2) : $metric['amount'] + max(0.0, $amount);
             $metric['accounts'][$account] = true;
         }
 

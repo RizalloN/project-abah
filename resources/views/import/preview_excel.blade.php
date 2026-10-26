@@ -127,6 +127,8 @@
             </div>
         </div>
 
+        @include('import.partials.crosstab-normalization-notice')
+
         @include('import.partials.schema-drift-panel')
 
         <form id="importForm" method="POST" data-filter-options-url="{{ $filterOptionsRoute ?? route('import.preview.filter-options') }}" data-filtered-rows-url="{{ route('import.preview.filtered-rows') }}" data-no-route-loading>
@@ -166,6 +168,7 @@
                 </div>
 
                 <div class="card-body p-0">
+                    @include('import.partials.filter-early-click')
                     <div class="table-responsive import-preview-table-shell">
                         <table class="table table-bordered table-hover m-0 import-preview-table">
                             <thead class="thead-light sticky-top" style="z-index: 2;">
@@ -181,14 +184,14 @@
                                                 </div>
 
                                                 @if(!$filtersDisabled && isset($formattedUniqueValues[$index]) && count($formattedUniqueValues[$index]) > 0)
-                                                <div class="dropdown">
+                                                <div class="dropdown import-preview-filter-dropdown">
                                                     <button class="btn btn-xs btn-light border dropdown-toggle filter-btn"
-                                                            type="button" data-toggle="dropdown"
-                                                            aria-expanded="false" data-boundary="window">
-                                                        <i class="fas fa-filter text-muted" id="icon_filter_{{ $index }}"></i>
+                                                            type="button" aria-haspopup="true" aria-expanded="false"
+                                                            aria-label="Filter kolom {{ $header }}" title="Filter kolom {{ $header }}">
+                                                        <i class="fas fa-filter text-muted" id="icon_filter_{{ $index }}" aria-hidden="true"></i>
                                                     </button>
 
-                                                    <div class="dropdown-menu dropdown-menu-right shadow p-0"
+                                                    <div class="dropdown-menu dropdown-menu-right shadow p-0 import-preview-filter-menu"
                                                          style="width: 280px; border-radius: 8px;">
                                                         <div class="p-2 bg-light border-bottom">
                                                             <div class="input-group input-group-sm">
@@ -432,14 +435,19 @@ document.addEventListener('DOMContentLoaded', function () {
         }, delay);
     }
 
+    // Jalur Excel memakai token "(Blank)" untuk nilai kosong (opsi, data-val, dan filter server).
     function normalizeFilterValue(value) {
-        return String(value ?? '').trim();
+        const normalized = String(value ?? '').trim();
+        return normalized === '' ? '(Blank)' : normalized;
     }
 
     function normalizeFilterValues(values) {
-        return Array.from(new Set(
-            (Array.isArray(values) ? values : []).map(normalizeFilterValue)
-        ));
+        // PHP mengirim array berkunci tidak berurutan sebagai objek JSON.
+        const list = Array.isArray(values)
+            ? values
+            : (values && typeof values === 'object' ? Object.values(values) : []);
+
+        return Array.from(new Set(list.map(normalizeFilterValue)));
     }
 
     function replaceFilterOptions(state, values) {
@@ -649,7 +657,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         const visibleCheckboxes = Array.from(document.querySelectorAll('.filter-checkbox[data-col="' + col + '"]'));
         const visibleValues = visibleCheckboxes.map(function (checkbox) {
-            return String(checkbox.value || '').trim();
+            return normalizeFilterValue(checkbox.value);
         });
         const comparisonValues = visibleValues.length ? visibleValues : filteredValues;
 
@@ -677,7 +685,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         document.querySelectorAll('.filter-checkbox[data-col="' + col + '"]').forEach(function (checkbox) {
-            checkbox.checked = state.selectedValues.has(String(checkbox.value || '').trim());
+            checkbox.checked = state.selectedValues.has(normalizeFilterValue(checkbox.value));
         });
     }
 
@@ -735,6 +743,13 @@ document.addEventListener('DOMContentLoaded', function () {
         const visibleValues = filteredValues.slice(0, filterRenderLimit);
         let html = '';
 
+        const loadErrorHtml = state.loadError && !state.isLoading
+            ? '<div class="small text-warning mb-2 filter-load-error" role="alert">' +
+              '<i class="fas fa-exclamation-triangle mr-1"></i>Opsi lengkap gagal dimuat (' + escapeHtml(state.loadError) + ')' +
+              (filteredValues.length ? '; menampilkan opsi dari sampel.' : '.') +
+              ' <button type="button" class="btn btn-link btn-sm p-0 align-baseline filter-retry" data-col="' + col + '">Coba lagi</button></div>'
+            : '';
+
         if (state.isLoading && !state.fullOptionsLoaded) {
             html = '<div class="text-center text-muted py-3 small">' +
                 '<i class="fas fa-spinner fa-spin mr-2"></i>Memuat opsi filter lengkap...</div>';
@@ -742,8 +757,9 @@ document.addEventListener('DOMContentLoaded', function () {
             html = state.isLoading
                 ? '<div class="text-center text-muted py-2 small">' +
                   '<i class="fas fa-spinner fa-spin mr-2"></i>Memuat opsi filter...</div>'
-                : '<div class="text-center text-muted py-2 small">Tidak ada opsi yang cocok.</div>';
+                : loadErrorHtml || '<div class="text-center text-muted py-2 small">Tidak ada opsi yang cocok.</div>';
         } else {
+            html += loadErrorHtml;
             if (state.isLoading) {
                 html += '<div class="small text-muted mb-2"><i class="fas fa-spinner fa-spin mr-1"></i>Memindahkan nilai dari file sumber...</div>';
             }
@@ -840,6 +856,7 @@ document.addEventListener('DOMContentLoaded', function () {
             replaceFilterOptions(state, normalizedValues);
             state.fullOptionsLoaded = true;
             state.loadedSignature = signature;
+            state.loadError = '';
             
             // Simpan ke cache untuk next load
             if (isInitialPrefetch || Object.keys(activeFilters).length === 0) {
@@ -849,6 +866,8 @@ document.addEventListener('DOMContentLoaded', function () {
             shouldRender = true;
         } catch (error) {
             console.error(error);
+            state.loadError = (error && error.message) || 'koneksi terputus';
+            shouldRender = true;
         } finally {
             state.isLoading = false;
             if (state.needsRefresh) {
@@ -906,8 +925,9 @@ document.addEventListener('DOMContentLoaded', function () {
             }
 
             const container = document.getElementById('list_container_' + key);
-            const dropdown = container ? container.closest('.dropdown') : null;
-            const isOpen = dropdown && (dropdown.classList.contains('show') || dropdown.querySelector('.dropdown-menu').classList.contains('show'));
+            // Menu yang terbuka dipindah ke body, jadi status dibaca dari menu itu sendiri.
+            const menu = container ? container.closest('.dropdown-menu') : null;
+            const isOpen = Boolean(menu && menu.classList.contains('show'));
 
             if (isOpen) {
                 ensureFullFilterOptions(key);
@@ -950,7 +970,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
                 const cell = row.children[req.index];
                 if (cell) {
-                    const cellVal = (cell.getAttribute('data-val') || '').trim();
+                    const cellVal = normalizeFilterValue(cell.getAttribute('data-val'));
                     if (!req.allowed.includes(cellVal)) {
                         pass = false;
                         break;
@@ -1114,10 +1134,9 @@ document.addEventListener('DOMContentLoaded', function () {
        FILTER ICON COLOR (biru jika ada filter aktif)
     ========================================================= */
     function updateFilterIcons() {
-        document.querySelectorAll('.dropdown').forEach(function (dropdown) {
-            var container = dropdown.querySelector('[id^="list_container_"]');
-            if (!container) return;
-            var colIndex  = container.id.split('_')[2];
+        // Berdasarkan container daftar (tetap ada walau menu sedang dipindah ke body).
+        document.querySelectorAll('.import-preview-filter-menu [id^="list_container_"]').forEach(function (container) {
+            var colIndex  = container.getAttribute('data-col');
             var state     = filterState[colIndex];
             var icon      = document.getElementById('icon_filter_' + colIndex);
             if (!icon) return;
@@ -1145,7 +1164,7 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
-        const value = e.target.value.trim();
+        const value = normalizeFilterValue(e.target.value);
         if (e.target.checked) {
             state.selectedValues.add(value);
         } else {
@@ -1227,18 +1246,191 @@ document.addEventListener('DOMContentLoaded', function () {
         updateFilterIcons();
     });
 
-    document.querySelectorAll('.dropdown').forEach(function (dropdown) {
-        dropdown.addEventListener('shown.bs.dropdown', async function () {
-            var container = dropdown.querySelector('[id^="list_container_"]');
-            if (!container) {
+    /* =========================================================
+       DROPDOWN FILTER (portal)
+       Menu dipindah ke body dengan posisi fixed. Di dalam thead sticky dan
+       .table-responsive, menu Bootstrap tertutup baris tabel sehingga ikon
+       filter terlihat tidak berfungsi.
+    ========================================================= */
+    function getFilterMenu(dropdown) {
+        return dropdown ? (dropdown.__portalFilterMenu || dropdown.querySelector('.import-preview-filter-menu')) : null;
+    }
+
+    function positionFilterMenu(dropdown) {
+        const menu = dropdown ? dropdown.__portalFilterMenu : null;
+        const button = dropdown ? dropdown.querySelector('.filter-btn') : null;
+        if (!menu || !button || !document.body.contains(menu)) {
+            return;
+        }
+
+        const rect = button.getBoundingClientRect();
+        const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
+        const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
+        const padding = 12;
+        const menuWidth = Math.max(260, Math.min(viewportWidth <= 420 ? viewportWidth - padding * 2 : 340, viewportWidth - padding * 2));
+        const spaceBelow = viewportHeight - rect.bottom - padding;
+        const spaceAbove = rect.top - padding;
+        const availableHeight = Math.max(220, Math.max(spaceBelow, spaceAbove));
+        const menuHeight = Math.min(Math.max(menu.scrollHeight || menu.offsetHeight || 380, 260), availableHeight);
+        const openAbove = spaceBelow < Math.min(260, menuHeight) && spaceAbove > spaceBelow;
+        const left = Math.max(padding, Math.min(rect.right - menuWidth, viewportWidth - menuWidth - padding));
+        const preferredTop = openAbove ? rect.top - menuHeight - 6 : rect.bottom + 6;
+        const top = Math.max(padding, Math.min(preferredTop, viewportHeight - menuHeight - padding));
+        const list = menu.querySelector('[id^="list_container_"]');
+
+        Object.assign(menu.style, {
+            position: 'fixed',
+            left: left + 'px',
+            top: top + 'px',
+            right: 'auto',
+            bottom: 'auto',
+            transform: 'none',
+            width: menuWidth + 'px',
+            maxHeight: menuHeight + 'px',
+            overflow: 'hidden',
+            zIndex: '2147483000',
+            display: 'block',
+            visibility: 'visible',
+            opacity: '1',
+        });
+
+        if (list) {
+            list.style.maxHeight = Math.max(140, menuHeight - 110) + 'px';
+            list.style.overflowY = 'auto';
+        }
+    }
+
+    function openFilterMenu(dropdown) {
+        const menu = getFilterMenu(dropdown);
+        if (!menu) {
+            return;
+        }
+
+        const button = dropdown.querySelector('.filter-btn');
+        menu.__filterDropdownOriginalParent = dropdown;
+        dropdown.__portalFilterMenu = menu;
+        dropdown.classList.add('show');
+        button?.setAttribute('aria-expanded', 'true');
+        menu.classList.add('show', 'import-preview-filter-menu-portal');
+        menu.style.visibility = 'hidden';
+        menu.style.display = 'block';
+        document.body.appendChild(menu);
+        positionFilterMenu(dropdown);
+        requestAnimationFrame(function () {
+            positionFilterMenu(dropdown);
+            const searchInput = menu.querySelector('.search-filter');
+            if (searchInput) {
+                searchInput.focus({ preventScroll: true });
+                searchInput.select();
+            }
+        });
+    }
+
+    function closeFilterMenu(dropdown, restoreFocus = false) {
+        const menu = dropdown ? dropdown.__portalFilterMenu : null;
+        if (!menu) {
+            return;
+        }
+
+        const button = dropdown.querySelector('.filter-btn');
+        dropdown.classList.remove('show');
+        button?.setAttribute('aria-expanded', 'false');
+        menu.classList.remove('show', 'import-preview-filter-menu-portal');
+        ['position', 'left', 'top', 'right', 'bottom', 'transform', 'width', 'maxHeight', 'overflow', 'zIndex', 'display', 'visibility', 'opacity']
+            .forEach(function (property) { menu.style[property] = ''; });
+        const list = menu.querySelector('[id^="list_container_"]');
+        if (list) {
+            list.style.maxHeight = '250px';
+            list.style.overflowY = 'auto';
+        }
+
+        dropdown.appendChild(menu);
+        menu.__filterDropdownOriginalParent = null;
+        dropdown.__portalFilterMenu = null;
+        if (restoreFocus) {
+            button?.focus({ preventScroll: true });
+        }
+    }
+
+    function closeAllFilterMenus(exceptDropdown) {
+        document.querySelectorAll('.import-preview-filter-dropdown').forEach(function (dropdown) {
+            if (dropdown !== exceptDropdown) {
+                closeFilterMenu(dropdown);
+            }
+        });
+    }
+
+    document.querySelectorAll('.import-preview-filter-dropdown .filter-btn').forEach(function (button) {
+        button.addEventListener('click', function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+
+            const dropdown = button.closest('.import-preview-filter-dropdown');
+            if (dropdown.__portalFilterMenu) {
+                closeFilterMenu(dropdown);
                 return;
             }
 
-            var col = container.getAttribute('data-col');
-            renderFilterList(col);
-            await ensureFullFilterOptions(col);
+            closeAllFilterMenus(dropdown);
+            openFilterMenu(dropdown);
+
+            const container = getFilterMenu(dropdown)?.querySelector('[id^="list_container_"]');
+            if (container) {
+                const col = container.getAttribute('data-col');
+                renderFilterList(col);
+                ensureFullFilterOptions(col);
+            }
         });
     });
+
+    document.querySelectorAll('.import-preview-filter-menu [id^="list_container_"]').forEach(function (container) {
+        container.addEventListener('click', function (event) {
+            const retry = event.target.closest ? event.target.closest('.filter-retry') : null;
+            if (!retry) {
+                return;
+            }
+
+            const col = retry.getAttribute('data-col');
+            if (filterState[col]) {
+                filterState[col].loadError = '';
+                filterState[col].loadedSignature = '';
+            }
+            ensureFullFilterOptions(col);
+        });
+    });
+
+    document.addEventListener('mousedown', function (event) {
+        const target = event.target;
+        if (target && target.closest && (target.closest('.import-preview-filter-menu-portal') || target.closest('.import-preview-filter-dropdown'))) {
+            return;
+        }
+        closeAllFilterMenus();
+    });
+
+    document.addEventListener('keydown', function (event) {
+        if (event.key !== 'Escape') {
+            return;
+        }
+        document.querySelectorAll('.import-preview-filter-dropdown.show').forEach(function (dropdown) {
+            closeFilterMenu(dropdown, true);
+        });
+    });
+
+    window.addEventListener('resize', function () {
+        document.querySelectorAll('.import-preview-filter-dropdown.show').forEach(positionFilterMenu);
+    });
+
+    window.addEventListener('scroll', function (event) {
+        // Scroll di dalam daftar opsi tidak perlu memindah menu.
+        if (event.target && event.target.closest && event.target.closest('.import-preview-filter-menu-portal')) {
+            return;
+        }
+        document.querySelectorAll('.import-preview-filter-dropdown.show').forEach(positionFilterMenu);
+    }, true);
+
+    if (typeof window.__importFilterMarkReady === 'function') {
+        window.__importFilterMarkReady();
+    }
 
     /* =========================================================
        IMPORT FORM SUBMIT — SSE dengan auto-reconnect

@@ -120,6 +120,7 @@
 
 <div id="kinerjaContentArea" class="animate-reveal">
     <div class="px-4 pb-4">
+        @include('report.partials.productivity-source-quality', ['sourceQuality' => $sourceQuality ?? null])
         <div class="kinerja-tabs-shell">
             <div class="kinerja-tabs-header">
                 <div class="kinerja-tabs-heading">

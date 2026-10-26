@@ -149,7 +149,9 @@ class MantriRefinedFormulaTest extends TestCase
         ], $lw);
         $rows = collect($calculator->cachedMantriAccounts($next))->keyBy('account_key');
         $this->assertEqualsCanonicalizing(['REGISTERED', 'SUBSEQUENT'], $rows->keys()->all());
-        $this->assertSame(120_000_000.0, $rows->sum('net_amount'));
+        // The shared 30m baseline is deducted once from 100m + 80m, leaving 150m.
+        $this->assertSame(150_000_000.0, $rows->sum('net_amount'));
+        $this->assertSame(30_000_000.0, $rows->sum('deduction_applied'));
         $this->assertSame(180_000_000.0, $rows->sum('plafon'));
         $this->assertSame([30_000_000.0], $rows->pluck('previous_os')->unique()->values()->all());
 
@@ -157,18 +159,18 @@ class MantriRefinedFormulaTest extends TestCase
         $kpi = (new ReflectionMethod(KinerjaRmMikroReportController::class, 'mantriProductivityPayload'))
             ->invoke(new KinerjaRmMikroReportController, $next);
         $this->assertTrue(data_get($landing, 'meta.available'), (string) data_get($landing, 'meta.error'));
-        $this->assertSame(120_000_000.0, (float) data_get($landing, 'mantri_performance.total.net_disbursement.amount'));
-        $this->assertSame(120_000_000.0, (float) $kpi['total']['realisasi_os']);
+        $this->assertSame(150_000_000.0, (float) data_get($landing, 'mantri_performance.total.net_disbursement.amount'));
+        $this->assertSame(150_000_000.0, (float) $kpi['total']['realisasi_os']);
         $this->assertSame(2, data_get($landing, 'mantri_performance.total.net_disbursement.deb'));
         $this->assertSame(2, (int) $kpi['total']['realisasi_deb']);
-        $this->assertSame(120_000_000.0 / $kpi['working_days'], (float) data_get($landing, 'mantri_performance.total.net_disbursement.average_per_hke'));
+        $this->assertSame(150_000_000.0 / $kpi['working_days'], (float) data_get($landing, 'mantri_performance.total.net_disbursement.average_per_hke'));
 
         $this->importPosition($last, [
             $this->loan($last, 'NEXT-IMPORT', 20_000_000, ['tgl_realisasi' => $last, 'cifno' => 'FRESH-CIF', 'cifno_clean' => 'FRESH-CIF']),
         ], $lw);
         $final = $calculator->cachedMantriAccounts($last);
         $this->assertCount(3, $final);
-        $this->assertSame(140_000_000.0, collect($final)->sum('net_amount'));
+        $this->assertSame(170_000_000.0, collect($final)->sum('net_amount'));
         $this->assertNotContains('UNCAPTURED-HISTORY', array_column($final, 'account_key'));
         $this->assertSame($first, $calculator->cachedMantriAccounts($period));
     }
@@ -186,7 +188,7 @@ class MantriRefinedFormulaTest extends TestCase
     }
 
     #[DataProvider('futureFloorImports')]
-    public function test_floor_applies_to_each_account_before_same_initiator_totals_tiers_and_hke_in_both_consumers(bool $lw, string $period, int $hke): void
+    public function test_downsizing_credits_new_booking_before_same_initiator_totals_tiers_and_hke_in_both_consumers(bool $lw, string $period, int $hke): void
     {
         $previous = Carbon::parse($period)->startOfMonth()->subDay()->toDateString();
         $oldDate = Carbon::parse($previous)->startOfMonth()->addDays(4)->toDateString();
@@ -198,43 +200,44 @@ class MantriRefinedFormulaTest extends TestCase
             $this->loan($period, 'REFINANCED', 100_000_000, ['tgl_realisasi' => $period, 'cifno' => 'CIF-REFINANCE', 'cifno_clean' => 'CIF-REFINANCE']),
             $this->loan($period, 'POSITIVE', 190_000_000, ['tgl_realisasi' => $period, 'cifno' => 'CIF-FRESH', 'cifno_clean' => 'CIF-FRESH']),
         ], $lw);
-        // Retention must preserve the full120m baseline while flooring100m-120m at zero.
+        // Retention preserves the 120m baseline; the smaller 100m booking receives its full 100m nett.
         DB::table('daily_loan_dinamis')->where('periode', $previous)->delete();
         $calculator = app(MicroNettDisbursementCalculator::class);
         $accounts = collect($calculator->mantriAccounts($period))->keyBy('account_key');
         $this->assertCount(2, $accounts);
         $this->assertSame(120_000_000.0, $accounts['REFINANCED']['previous_os']);
-        $this->assertSame(0.0, $accounts['REFINANCED']['net_amount']);
+        $this->assertSame(100_000_000.0, $accounts['REFINANCED']['net_amount']);
+        $this->assertSame(0.0, $accounts['REFINANCED']['deduction_applied']);
         $this->assertSame(190_000_000.0, $accounts['POSITIVE']['net_amount']);
         $this->assertSame(290_000_000.0, $accounts->sum('plafon'));
-        $this->assertSame(190_000_000.0, $accounts->sum('net_amount'));
+        $this->assertSame(290_000_000.0, $accounts->sum('net_amount'));
         $this->assertSame(['00000801 - INITIATOR'], $accounts->pluck('owner')->unique()->values()->all());
         $personMetric = $calculator->mantri($period)[0];
         $this->assertSame(2, $personMetric['realisasi_deb']);
-        $this->assertSame(190_000_000.0, $personMetric['realisasi_os']);
+        $this->assertSame(290_000_000.0, $personMetric['realisasi_os']);
 
         $landing = app(LandingMicroPerformanceService::class)->payload($period);
         $kpi = (new ReflectionMethod(KinerjaRmMikroReportController::class, 'mantriProductivityPayload'))
             ->invoke(new KinerjaRmMikroReportController, $period);
         $this->assertTrue(data_get($landing, 'meta.available'), (string) data_get($landing, 'meta.error'));
-        $this->assertSame(190_000_000.0, (float) data_get($landing, 'mantri_performance.total.net_disbursement.amount'));
-        $this->assertSame(190_000_000.0, (float) $kpi['total']['realisasi_os']);
+        $this->assertSame(290_000_000.0, (float) data_get($landing, 'mantri_performance.total.net_disbursement.amount'));
+        $this->assertSame(290_000_000.0, (float) $kpi['total']['realisasi_os']);
         $this->assertSame(2, data_get($landing, 'mantri_performance.total.net_disbursement.deb'));
         $this->assertSame(2, (int) $kpi['total']['realisasi_deb']);
         $this->assertSame(290_000_000.0, (float) data_get($landing, 'mantri_performance.total.realization.amount'));
         $this->assertSame($hke, data_get($landing, 'mantri_performance.working_days'));
         $this->assertSame($hke, $kpi['working_days']);
-        $this->assertSame(190_000_000.0 / $hke, (float) data_get($landing, 'mantri_performance.total.net_disbursement.average_per_hke'));
+        $this->assertSame(290_000_000.0 / $hke, (float) data_get($landing, 'mantri_performance.total.net_disbursement.average_per_hke'));
         $branch = collect(data_get($landing, 'mantri_performance.rows'))->firstWhere('branch', 'KC MADIUN');
-        $this->assertSame(190_000_000.0 / 2 / $hke, (float) data_get($branch, 'net_disbursement.average_per_mantri_hke'));
+        $this->assertSame(290_000_000.0 / 2 / $hke, (float) data_get($branch, 'net_disbursement.average_per_mantri_hke'));
         $low = collect(data_get($branch, 'tiers.contract.buckets'))->firstWhere('key', 'low');
         $this->assertSame(1, $low['mantri']);
         $this->assertSame('801', $low['people'][0]['pn']);
-        $this->assertSame(190_000_000.0, $low['people'][0]['net_amount']);
+        $this->assertSame(290_000_000.0, $low['people'][0]['net_amount']);
         $this->assertSame(2, $low['people'][0]['net_deb']);
         $person = collect($kpi['rows'])->firstWhere('pn_mantri', '00000801');
-        $this->assertSame(190_000_000.0, (float) $person['realisasi_os']);
-        $this->assertSame(190.0 / $hke, (float) $person['ratas_mantri_hk']);
+        $this->assertSame(290_000_000.0, (float) $person['realisasi_os']);
+        $this->assertSame(290.0 / $hke, (float) $person['ratas_mantri_hk']);
     }
 
     #[DataProvider('importSources')]

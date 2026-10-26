@@ -3,6 +3,9 @@
 return [
     'cache_store' => env('IMPORT_CACHE_STORE', 'file'),
 
+    // Preview yang dibiarkan terbuka (mis. menunggu import tab lain) tetap dapat diimport.
+    'preview_state_ttl_minutes' => (int) env('IMPORT_PREVIEW_STATE_TTL_MINUTES', 360),
+
     'python_binary' => env('IMPORT_PYTHON_BIN'),
 
     'queue' => [
@@ -89,4 +92,18 @@ return [
             'max_rows' => env('IMPORT_DIRECT_LOAD_GI405_REC_DH_MAX_ROWS', 0),
         ],
     ],
+
+    // Report lain yang ekspor Excel-nya berbentuk crosstab (sel merge / label berulang
+    // dikosongkan) dapat didaftarkan di sini tanpa mengubah kode. SSA Simpanan,
+    // Pinjaman, Almafacts, dan CRAS sudah bawaan (App\Services\Import\Crosstab).
+    // Contoh:
+    // 'nama_tabel' => [
+    //     'label' => 'Nama Report',
+    //     'columns' => ['periode', 'kanca', 'uker', 'produk', 'nominal'],
+    //     'dimension_count' => 4,          // 4 kolom pertama = dimensi; sisanya measure
+    //     'aliases' => ['Kantor Cabang' => 'kanca'],
+    //     'date_format' => 'Y-m-d',
+    //     'reject_blank_dimensions' => false,
+    // ],
+    'crosstab_profiles' => [],
 ];

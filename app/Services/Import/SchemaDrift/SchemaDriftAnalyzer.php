@@ -72,8 +72,24 @@ class SchemaDriftAnalyzer
             'rejected_columns' => $this->registry->rejectedColumns($table),
             'known_headers' => $baselineAvailable ? $this->baseline->knownKeys($table) : [],
             'baseline_established' => !$baselineAvailable || $this->baseline->isEstablished($table),
+            'previous_document' => $baselineAvailable ? $this->baseline->previousDocument($table) : [],
+            'column_aliases' => $this->registry->columnAliases($table),
             'report_label' => $options['report_label'] ?? $this->reportLabel($table),
         ]);
+
+        // A fixed-layout pipeline cannot route a renamed header onto an existing
+        // column, so the rename is reported for review instead of offered as a
+        // one-click mapping. Widening a column helps every pipeline.
+        $mode = app(SchemaEvolutionPolicy::class)->modeFor($table);
+        $report['evolution_mode'] = $mode;
+        if ($mode === SchemaEvolutionPolicy::MODE_MONITOR) {
+            foreach ($report['new_columns'] as &$newColumn) {
+                if (($newColumn['suggestion']['action'] ?? null) === 'map') {
+                    $newColumn['suggestion']['action'] = 'review';
+                }
+            }
+            unset($newColumn);
+        }
 
         $report['source'] = [
             'name' => $options['source_name'] ?? basename($absolutePath),
@@ -89,6 +105,7 @@ class SchemaDriftAnalyzer
         if (($options['record'] ?? true) === true) {
             try {
                 $event = $this->registry->record($report, $report['source']['name']);
+                $report['resolved_events'] = $this->registry->reconcile($report, $event ? (int) $event->id : null);
             } catch (Throwable $e) {
                 Log::warning('Schema drift event could not be recorded.', ['table' => $table, 'error' => $e->getMessage()]);
             }

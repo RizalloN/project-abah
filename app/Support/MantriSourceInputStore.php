@@ -16,6 +16,8 @@ final class MantriSourceInputStore
 
     private const BASELINE_COLUMNS = ['nomor_rekening1', 'cifno', 'baki_debet1', 'description', 'segmen_kinerja', 'produk_kinerja', 'unit1', 'cabang1'];
 
+    private const BASELINE_PLAFOND_COLUMNS = [...self::BASELINE_COLUMNS, 'plafon'];
+
     private string $directory;
 
     private bool $enabled;
@@ -163,7 +165,7 @@ final class MantriSourceInputStore
         foreach (['baseline_accounts', 'unclassified_accounts'] as $kind) {
             foreach ($input[$kind] ?? [] as $row) {
                 yield $kind === 'baseline_accounts' && array_is_list($row)
-                    ? array_combine(self::BASELINE_COLUMNS, $row) : $row;
+                    ? array_combine(count($row) === 9 ? self::BASELINE_PLAFOND_COLUMNS : self::BASELINE_COLUMNS, $row) : $row;
             }
         }
     }
@@ -205,7 +207,7 @@ final class MantriSourceInputStore
                 $result['refreshed_periods'][] = $date;
             } else {
                 $input['complete_presence'] = false;
-                foreach (['presence', 'bookings', 'unclassified_accounts', 'baseline_accounts'] as $kind) {
+                foreach (['presence', 'bookings', 'same_account_bookings', 'unclassified_accounts', 'baseline_accounts'] as $kind) {
                     $input[$kind] = [];
                 }
                 $input['source']['capture_state'] = 'removed_from_native_daily_loan';
@@ -251,6 +253,13 @@ final class MantriSourceInputStore
             ->where(function ($query): void {
                 $query->whereNull('uniqueid_namareport')->orWhere('uniqueid_namareport', 'not like', 'LW321PN:%');
             });
+        if (! (clone $query)->exists()) {
+            return ['period' => $period, 'skipped' => true, 'reason' => 'no_native_source_rows'];
+        }
+        // Detection may decode a full retained prior-month baseline. Release
+        // that read cache before accumulating this complete position as well.
+        $sameAccountBookings = app(MicroSameAccountTopupDetector::class)->captureNativePeriod($period);
+        $this->readCache = [];
         $presence = [];
         $bookings = [];
         $unclassified = [];
@@ -312,7 +321,7 @@ final class MantriSourceInputStore
                 'source_kind' => 'daily_loan_import',
                 'table' => 'daily_loan_dinamis',
                 'classification_basis' => 'canonical_daily_loan',
-                'baseline_columns' => self::BASELINE_COLUMNS,
+                'baseline_columns' => self::BASELINE_PLAFOND_COLUMNS,
                 'row_count' => $rows,
                 'max_updated_at' => $maxUpdated,
                 'raw_sha256' => hash_final($digest),
@@ -320,6 +329,7 @@ final class MantriSourceInputStore
             'complete_presence' => true,
             'presence' => $presence,
             'bookings' => $bookings,
+            'same_account_bookings' => $sameAccountBookings,
             'unclassified_accounts' => $unclassified,
             'baseline_accounts' => $baselineAccounts,
             'owner_evidence' => $ownerEvidence,
@@ -339,6 +349,12 @@ final class MantriSourceInputStore
             throw new RuntimeException('LW321 source table is unavailable.');
         }
         $ownerEvidence = $this->captureOwnerEvidence($period);
+        $query = DB::table('lw321pn')->where('periode', $period);
+        if (! (clone $query)->exists()) {
+            throw new RuntimeException('An empty LW321 source cannot declare complete account presence.');
+        }
+        $sameAccountBookings = app(MicroSameAccountTopupDetector::class)->captureLwPeriod($period);
+        $this->readCache = [];
 
         $presence = [];
         $bookings = [];
@@ -348,7 +364,7 @@ final class MantriSourceInputStore
         $maxUpdated = null;
         $digest = hash_init('sha256');
         $month = substr($period, 0, 7);
-        foreach (DB::table('lw321pn')->where('periode', $period)->orderBy('no_rekening')->cursor() as $record) {
+        foreach ($query->orderBy('no_rekening')->cursor() as $record) {
             $raw = (array) $record;
             hash_update($digest, $this->json($raw)."\n");
             $rows++;
@@ -417,7 +433,7 @@ final class MantriSourceInputStore
             'source' => [
                 'source_kind' => 'lw321_import',
                 'table' => 'lw321pn',
-                'baseline_columns' => self::BASELINE_COLUMNS,
+                'baseline_columns' => self::BASELINE_PLAFOND_COLUMNS,
                 'row_count' => $rows,
                 'max_updated_at' => $maxUpdated,
                 'raw_sha256' => hash_final($digest),
@@ -426,6 +442,7 @@ final class MantriSourceInputStore
             'complete_presence' => true,
             'presence' => $presence,
             'bookings' => $bookings,
+            'same_account_bookings' => $sameAccountBookings,
             'unclassified_accounts' => $unclassified,
             'baseline_accounts' => $baselineAccounts,
             'owner_evidence' => $ownerEvidence,
@@ -460,6 +477,9 @@ final class MantriSourceInputStore
         $presenceLookup = array_fill_keys($data['presence'], true);
         $nativeClassification = ($data['source']['source_kind'] ?? null) === 'daily_loan_import';
         $rowKinds = ['bookings', 'unclassified_accounts'];
+        if (array_key_exists('same_account_bookings', $data)) {
+            $rowKinds[] = 'same_account_bookings';
+        }
         if (array_key_exists('baseline_accounts', $data)) {
             $rowKinds[] = 'baseline_accounts';
         }
@@ -471,11 +491,11 @@ final class MantriSourceInputStore
                 }
                 $packedInput = null;
                 if ($kind === 'baseline_accounts' && array_is_list($row)) {
-                    if (count($row) !== count(self::BASELINE_COLUMNS)) {
+                    if (! in_array(count($row), [count(self::BASELINE_COLUMNS), count(self::BASELINE_PLAFOND_COLUMNS)], true)) {
                         throw new InvalidArgumentException('Invalid compact Mantri baseline input.');
                     }
                     $packedInput = $row;
-                    $row = array_combine(self::BASELINE_COLUMNS, $row);
+                    $row = array_combine(count($row) === 9 ? self::BASELINE_PLAFOND_COLUMNS : self::BASELINE_COLUMNS, $row);
                 }
                 $branch = strtoupper((string) ($this->text($row['cabang1'] ?? null) ?? $this->text($row['cabang_normalized'] ?? null)));
                 if (! in_array($branch, self::BRANCHES, true)) {
@@ -488,10 +508,23 @@ final class MantriSourceInputStore
                     $row = $normalizedRow;
                 }
                 unset($normalizedRow);
-                if ($kind === 'bookings') {
+                if (in_array($kind, ['bookings', 'same_account_bookings'], true)) {
+                    $excluded = $kind === 'same_account_bookings'
+                        ? $row['segmen_kinerja'] !== 'MICRO' || str_contains((string) $row['produk_kinerja'], 'BRIGUNA')
+                            || str_contains(strtoupper((string) $row['description']), 'BRIGUNA')
+                            || Lw321DailyLoanMapper::normalizeToken($row['description']) === 'KREDITMIKROGBT'
+                        : $this->excluded($row['produk_kinerja'], $nativeClassification ? null : $row['description']);
                     if ($row['tgl_realisasi'] === null || substr($row['tgl_realisasi'], 0, 7) !== substr($period, 0, 7)
-                        || $row['tgl_realisasi'] > $period || $this->excluded($row['produk_kinerja'], $nativeClassification ? null : $row['description'])) {
+                        || $row['tgl_realisasi'] > $period || $excluded) {
                         continue;
+                    }
+                    if ($kind === 'same_account_bookings') {
+                        $originalDate = StrictDateParser::normalize($this->text($row['source_realization_date'] ?? null));
+                        if ($row['cifno'] === null || $row['plafon'] === null || $originalDate === null
+                            || $originalDate >= substr($period, 0, 7).'-01') {
+                            throw new InvalidArgumentException('Same-account Mantri booking requires a verified older realization date, CIF, and plafond.');
+                        }
+                        $row['source_realization_date'] = $originalDate;
                     }
                 } elseif ($kind === 'baseline_accounts') {
                     if (! $this->isMonthEnd($period)) {
@@ -561,7 +594,7 @@ final class MantriSourceInputStore
         return $row;
     }
 
-    /** Month-end balances need no owner, booking, plafond, or repeated position fields. */
+    /** Legacy eight-column baselines remain readable; a proven plafond is appended separately. */
     private function normalizeBaselineRow(string $period, array $row, bool $nativeClassification): array
     {
         if (($row['periode'] ?? $period) !== $period) {
@@ -581,7 +614,7 @@ final class MantriSourceInputStore
             $product = $classification['matched'] ? $classification['product'] : null;
         }
 
-        return [
+        $baseline = [
             'nomor_rekening1' => $account,
             'cifno' => $this->text($row['cifno'] ?? null),
             'baki_debet1' => $this->amount($row['baki_debet1'] ?? null),
@@ -591,6 +624,11 @@ final class MantriSourceInputStore
             'unit1' => $this->text($row['unit1'] ?? null) ?? $this->text($row['unit_normalized'] ?? null),
             'cabang1' => $this->text($row['cabang1'] ?? null) ?? $this->text($row['cabang_normalized'] ?? null),
         ];
+        if (($row['plafon'] ?? null) !== null) {
+            $baseline['plafon'] = $this->amount($row['plafon']);
+        }
+
+        return $baseline;
     }
 
     private function decode(string $path, string $period): ?array
@@ -805,7 +843,7 @@ final class MantriSourceInputStore
         $segment = strtoupper(trim((string) ($row['segmen_kinerja'] ?? '')));
         $product = Lw321DailyLoanMapper::normalizeToken($row['produk_kinerja'] ?? null);
         if ($segment === 'MICRO') {
-            return ! in_array($product, ['KURRITEL', 'KURKECIL'], true);
+            return true;
         }
 
         return $segment === '' && $product === ''

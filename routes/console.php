@@ -430,21 +430,44 @@ Artisan::command('shadow:auto-backfill-scheduler', function () {
         return 0;
     }
 
-    $exitCode = \Illuminate\Support\Facades\Artisan::call('shadow:backfill', [
-        '--queue' => true,
-        '--skip-snapshot' => true,
-        '--chunk-size' => 10000,
-        '--retry-count' => 3,
-    ]);
+    // Discovery scans daily_loan_dinamis for minutes; run it on the queue so the
+    // scheduler tick (and its Task Scheduler instance) finishes in seconds.
+    \App\Jobs\DiscoverShadowBackfillJob::dispatch();
 
-    $this->line('Shadow auto-backfill dispatched (exit: ' . $exitCode . ').');
-    return $exitCode;
+    $this->line('Shadow auto-backfill discovery queued.');
+    return 0;
 })->purpose('Auto-discover and queue shadow column backfill for daily_loan_dinamis');
 
 Schedule::command('shadow:auto-backfill-scheduler')
     ->everyFifteenMinutes()
     ->withoutOverlapping(30)
     ->runInBackground();
+
+// A new period has no landing micro payload yet; build it on a worker before
+// the first visitor has to wait (cheap cache lookups once warm).
+Schedule::job(new \App\Jobs\WarmLandingMicroPerformanceJob())
+    ->name('landing:warm-micro-performance')
+    ->everyTenMinutes();
+
+Artisan::command('data-ph:reconcile-gi405 {--period= : Periode LW325 PH (default: terbaru)}', function () {
+    $result = app(\App\Http\Controllers\Report\DataPhReportController::class)
+        ->gi405Reconciliation($this->option('period') ?: null);
+    $amount = static fn (?float $value): string => $value === null ? 'n/d' : number_format($value, 0, ',', '.');
+    $percent = static fn (?float $value): string => $value === null ? 'n/d' : sprintf('%+.2f%%', $value);
+
+    $this->line('Data PH (LW325) vs GI405 — periode ' . ($result['period'] ?? '-') . ', GI405 sejak ' . ($result['gi405_m1_period'] ?? '-'));
+    $rows = [];
+    foreach ($result['branches'] as $branch => $row) {
+        $rows[] = [$branch, $amount($row['lw325']), $amount($row['gi405']), $amount($row['diff']), $percent($row['diff_pct']), strtoupper($row['status'])];
+    }
+    if ($result['total'] !== null) {
+        $rows[] = ['AREA 6', $amount($result['total']['lw325']), $amount($result['total']['gi405']), $amount($result['total']['diff']), $percent($result['total']['diff_pct']), strtoupper($result['total']['status'])];
+    }
+    $this->table(['KC', 'LW325 bulan berjalan', 'GI405 bulan berjalan', 'Selisih', '%', 'Status'], $rows);
+    $this->line('Status keseluruhan: ' . strtoupper($result['status']));
+
+    return in_array($result['status'], ['ok', 'unknown'], true) ? 0 : 1;
+})->purpose('Cocokkan recovery Data PH (LW325) dengan pendapatan GI405 bulan berjalan');
 
 Artisan::command('reports:delete-scope {table} {--period=} {--blank-kanca} {--chunk=10000}', function () {
     $table = strtolower(trim((string) $this->argument('table')));

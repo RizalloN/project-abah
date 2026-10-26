@@ -75,6 +75,34 @@ class SourceHeaderBaseline
     }
 
     /**
+     * Headers seen in the most recently analysed document (every analysis
+     * touches last_seen_at of the headers it carried, empty ones included).
+     *
+     * @return array<string, object> keyed by header key
+     */
+    public function previousDocument(string $table, int $windowSeconds = 120): array
+    {
+        $rows = $this->forTable($table);
+        $latest = null;
+        foreach ($rows as $row) {
+            $seen = $row->last_seen_at ? strtotime((string) $row->last_seen_at) : false;
+            if ($seen !== false && ($latest === null || $seen > $latest)) {
+                $latest = $seen;
+            }
+        }
+
+        if ($latest === null) {
+            return [];
+        }
+
+        return array_filter($rows, static function ($row) use ($latest, $windowSeconds): bool {
+            $seen = $row->last_seen_at ? strtotime((string) $row->last_seen_at) : false;
+
+            return $seen !== false && $seen >= $latest - $windowSeconds;
+        });
+    }
+
+    /**
      * Records the source columns of an analysed document. New headers are only
      * absorbed while the baseline is being established or when the caller says
      * they were decided (accepted/rejected); pending ones stay "new" until then.

@@ -9,12 +9,12 @@
     $perUnitKerjaUrl = route('report.dashboard-pinjaman.kinerjarmmikro', array_merge($baseFilters, ['extreme_low_view' => 'per_unit_kerja']));
     $perCabangUrl = route('report.dashboard-pinjaman.kinerjarmmikro', array_merge($baseFilters, ['extreme_low_view' => 'per_cabang']));
     $identityColumnCount = $isBranchView ? 3 : 4;
-    $tableColumnCount = $identityColumnCount + 20;
+    $tableColumnCount = $identityColumnCount + 22;
     $extremeLowDetails = $payload['details'] ?? [];
     $bucketLabels = collect($total['buckets'] ?? [])->map(fn ($bucket) => $bucket['label'] ?? '-')->all();
     $extremeLowGroups = [
         'extreme_low' => ['el_0_100', 'el_100_200', 'el_200_400'],
-        'under_800' => ['el_0_100', 'el_100_200', 'el_200_400', 'low_400_600', 'low_600_800'],
+        'under_800' => ['none', 'el_0_100', 'el_100_200', 'el_200_400', 'low_400_600', 'low_600_800'],
         'all' => array_keys($bucketLabels),
     ];
     $groupPrefixes = ['extreme' => 'Extreme Low ', 'low' => 'Low ', 'mid' => 'Mid ', 'high' => 'High '];
@@ -61,6 +61,7 @@
                     <th class="head-base" rowspan="3">Unit Kerja</th>
                 @endif
                 <th class="head-base" rowspan="3">Total Mantri</th>
+                <th class="head-base" colspan="2" rowspan="2">Belum Realisasi</th>
                 <th class="head-extreme" colspan="8">Extreme Low</th>
                 <th class="head-low" colspan="4">Low</th>
                 <th class="head-under" colspan="2">Total Under 800 Juta</th>
@@ -82,7 +83,7 @@
                 <th class="head-high" colspan="2">{{ $total['buckets']['high_1200']['label'] ?? '-' }}</th>
             </tr>
             <tr>
-                @for ($i = 0; $i < 10; $i++)
+                @for ($i = 0; $i < 11; $i++)
                     <th>Org</th>
                     <th>%</th>
                 @endfor
@@ -101,6 +102,8 @@
                         $drillUnit = $isBranchView ? null : ($row['nama_uker'] ?? null);
                     @endphp
                     <td class="text-right strong" {!! $drillAttrs($drillBranch, $drillUnit, $extremeLowGroups['all'], 'Total Mantri') !!}>{{ $formatAmount($row['total_mantri'] ?? 0) }}</td>
+                    <td class="text-right heat-muted" {!! $drillAttrs($drillBranch, $drillUnit, 'none') !!}>{{ $formatAmount($row['buckets']['none']['deb'] ?? 0) }}</td>
+                    <td class="text-right heat-muted" {!! $drillAttrs($drillBranch, $drillUnit, 'none') !!}>{{ $formatPercent($row['buckets']['none']['pct'] ?? 0, 2) }}</td>
 
                     @foreach (['el_0_100', 'el_100_200', 'el_200_400'] as $bucketKey)
                         <td class="text-right cell-extreme" {!! $drillAttrs($drillBranch, $drillUnit, $bucketKey) !!}>{{ $formatAmount($row['buckets'][$bucketKey]['deb'] ?? 0) }}</td>
@@ -133,6 +136,8 @@
             <tr class="rm-mikro-total">
                 <td class="text-center" colspan="{{ $isBranchView ? 2 : 3 }}">{{ $total['branch_office'] ?? ($userBranchScope['upper_label'] ?? 'AREA 6') }}</td>
                 <td class="text-right" {!! $drillAttrs(null, null, $extremeLowGroups['all'], 'Total Mantri') !!}>{{ $formatAmount($total['total_mantri'] ?? 0) }}</td>
+                <td class="text-right heat-muted" {!! $drillAttrs(null, null, 'none') !!}>{{ $formatAmount($total['buckets']['none']['deb'] ?? 0) }}</td>
+                <td class="text-right heat-muted" {!! $drillAttrs(null, null, 'none') !!}>{{ $formatPercent($total['buckets']['none']['pct'] ?? 0, 2) }}</td>
                 @foreach (['el_0_100', 'el_100_200', 'el_200_400'] as $bucketKey)
                     <td class="text-right cell-extreme" {!! $drillAttrs(null, null, $bucketKey) !!}>{{ $formatAmount($total['buckets'][$bucketKey]['deb'] ?? 0) }}</td>
                     <td class="text-right cell-extreme" {!! $drillAttrs(null, null, $bucketKey) !!}>{{ $formatPercent($total['buckets'][$bucketKey]['pct'] ?? 0, 2) }}</td>

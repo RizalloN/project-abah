@@ -5,6 +5,7 @@ namespace App\Services\Import\SchemaDrift;
 use App\Services\Import\SchemaIntrospectionService;
 use App\Services\Import\SmartContentHeaderGuardService;
 use App\Support\Import\ColumnValueProfiler;
+use App\Support\Import\ImportHeaderAliases;
 use App\Support\StrictDateParser;
 use Throwable;
 
@@ -73,12 +74,23 @@ class SchemaDriftDetector
         // Without a baseline option the detector keeps its strict behaviour:
         // every unknown header is a new column.
         $baselineEstablished = (bool) ($options['baseline_established'] ?? true);
+        // Accepted renames: canonical source header => existing table column.
+        $aliases = [];
+        foreach ((array) ($options['column_aliases'] ?? []) as $aliasHeader => $aliasColumn) {
+            $aliasColumn = strtolower(trim((string) $aliasColumn));
+            if (isset($meta[$aliasColumn])) {
+                $aliases[strtolower(trim((string) $aliasHeader))] = $aliasColumn;
+            }
+        }
+        $previousDocument = (array) ($options['previous_document'] ?? []);
         $sourceHeaders = array_values($sourceHeaders);
         $profiles = $this->profiler->profileColumns($sourceHeaders, $sampleRows);
+        $resolution = $this->resolveColumns($sourceHeaders, $canonicalHeaders, $ignored, $aliases, $meta, $tableColumnsLower);
 
         $columns = [];
         $newColumns = [];
         $unmappedColumns = [];
+        $adjustments = [];
         $adaptations = [];
         $matchedDb = [];
         $dateOrders = [];
@@ -94,7 +106,7 @@ class SchemaDriftDetector
                 continue;
             }
 
-            $dbColumn = $this->resolveDbColumn($label, $canonical, $meta, $tableColumnsLower);
+            $dbColumn = $resolution[$index] ?? null;
             if ($dbColumn !== null && isset($managed[$dbColumn])) {
                 $columns[] = $this->columnEntry($index, $label, $canonical, $dbColumn, 'ignored', $profile, []);
                 continue;
@@ -115,6 +127,11 @@ class SchemaDriftDetector
                 $findings = $this->assess($table, $dbColumn, $meta[$dbColumn], $profile);
                 foreach ($findings as $finding) {
                     $adaptations[] = $finding + ['column' => $dbColumn, 'header' => $label];
+                    if (isset($finding['adjustment'])) {
+                        $adjustment = $finding['adjustment'] + ['header' => $label, 'finding' => $finding['code']];
+                        $adjustment['decision'] = isset($rejected['adjust:' . $dbColumn]) ? 'rejected' : 'pending';
+                        $adjustments[$dbColumn] = $adjustment;
+                    }
                 }
 
                 $order = $profile['date']['order'] ?? null;
@@ -152,6 +169,7 @@ class SchemaDriftDetector
             $newColumns[] = [
                 'index' => $index,
                 'header' => $label,
+                'canonical' => $canonical,
                 'proposed_column' => $proposedName,
                 'proposed_type' => $proposedType,
                 'type_options' => array_values(array_unique(array_merge([$proposedType], self::TYPE_OPTIONS))),
@@ -174,10 +192,33 @@ class SchemaDriftDetector
             $missing[] = (string) ($columnMeta['name'] ?? $lowerColumn);
         }
 
+        // Columns the previous document of this report carried but this one does
+        // not: either renamed in the source (map the new header onto them) or
+        // dropped (the import would silently leave them empty).
+        $dropped = $this->droppedColumns($previousDocument, $matchedDb, $meta, $managed);
+        $newColumns = $this->suggestRenames($table, $newColumns, $profiles, $dropped);
+        $mappedTargets = array_filter(array_map(
+            static fn (array $column): ?string => ($column['suggestion']['action'] ?? null) === 'map' ? $column['suggestion']['column'] : null,
+            $newColumns
+        ));
+        foreach ($dropped as $droppedColumn => $previous) {
+            if (in_array($droppedColumn, $mappedTargets, true)) {
+                continue;
+            }
+            $adaptations[] = $this->finding(self::SEVERITY_WARNING, 'column_dropped', 'Kolom hilang dari dokumen sumber', sprintf(
+                'Dokumen sebelumnya membawa kolom "%s" (contoh: %s), dokumen ini tidak. Kolom %s akan kosong untuk import ini.',
+                (string) ($previous->header_label ?: $droppedColumn),
+                (string) ($previous->example ?: '-'),
+                $droppedColumn
+            )) + ['column' => $droppedColumn, 'header' => (string) ($previous->header_label ?: $droppedColumn)];
+        }
+
         $pendingNew = array_values(array_filter($newColumns, static fn (array $column): bool => $column['decision'] === 'pending'));
+        $pendingAdjustments = array_values(array_filter($adjustments, static fn (array $adjustment): bool => $adjustment['decision'] === 'pending'));
+        $hasPendingDecision = $pendingNew !== [] || $pendingAdjustments !== [];
         $severities = array_column($adaptations, 'severity');
         $status = match (true) {
-            $pendingNew !== [] => self::STATUS_DRIFT,
+            $hasPendingDecision => self::STATUS_DRIFT,
             in_array(self::SEVERITY_DANGER, $severities, true), in_array(self::SEVERITY_WARNING, $severities, true) => self::STATUS_ATTENTION,
             $adaptations !== [] => self::STATUS_ADAPTED,
             default => self::STATUS_MATCH,
@@ -189,28 +230,165 @@ class SchemaDriftDetector
             'table' => $table,
             'report_label' => $options['report_label'] ?? null,
             'status' => $status,
-            'headline' => $this->headline($status, count($pendingNew), count($adaptations), $missing, count($unmappedColumns), $baselineEstablished),
+            'headline' => $this->headline($status, count($pendingNew), count($adaptations), $missing, count($unmappedColumns), $baselineEstablished, count($pendingAdjustments), count($mappedTargets)),
             'stats' => [
                 'source_columns' => count(array_filter($columns, static fn (array $column): bool => $column['state'] !== 'ignored')),
                 'matched' => count($matchedDb),
                 'new' => count($pendingNew),
+                'renamed' => count($mappedTargets),
                 'unmapped' => count($unmappedColumns),
                 'rejected' => count($newColumns) - count($pendingNew),
                 'missing' => count($missing),
+                'dropped' => count($dropped) - count(array_intersect(array_keys($dropped), $mappedTargets)),
+                'adjustments' => count($pendingAdjustments),
                 'adaptations' => count($adaptations),
                 'sample_rows' => count($sampleRows),
             ],
             'columns' => $columns,
             'new_columns' => $newColumns,
+            'adjustments' => array_values($adjustments),
             'unmapped_columns' => $unmappedColumns,
             'baseline_established' => $baselineEstablished,
             'missing_columns' => $missing,
             'adaptations' => $adaptations,
             'date_orders' => $dateOrders,
-            'fingerprint' => $this->fingerprint($table, $pendingNew, $formatChanges),
-            'has_pending_decision' => $pendingNew !== [],
+            'fingerprint' => $this->fingerprint($table, $pendingNew, $formatChanges, $pendingAdjustments),
+            'has_pending_decision' => $hasPendingDecision,
             'has_blocking_issue' => in_array(self::SEVERITY_DANGER, $severities, true),
         ];
+    }
+
+    /**
+     * @return array<string, object> db column => previous-document baseline row
+     */
+    private function droppedColumns(array $previousDocument, array $matchedDb, array $meta, array $managed): array
+    {
+        $previousColumns = [];
+        foreach ($previousDocument as $row) {
+            $column = strtolower(trim((string) ($row->db_column ?? '')));
+            if ($column !== '' && isset($meta[$column]) && !isset($managed[$column])) {
+                $previousColumns[$column] = $row;
+            }
+        }
+
+        if ($previousColumns === []) {
+            return [];
+        }
+
+        $dropped = array_diff_key($previousColumns, $matchedDb);
+        $kept = count($previousColumns) - count($dropped);
+
+        // A column that only ever arrived empty loses nothing when it disappears.
+        $dropped = array_filter($dropped, static function ($row): bool {
+            $signature = strtolower(trim((string) ($row->signature ?? '')));
+
+            return $signature !== '' && $signature !== ColumnValueProfiler::KIND_EMPTY;
+        });
+
+        // A different layout variant of the same report (e.g. the Excel and the
+        // CSV export) shares few columns with the previous document; comparing
+        // them column by column would only produce noise.
+        if ($dropped === [] || $kept < count($previousColumns) * 0.6) {
+            return [];
+        }
+
+        return $dropped;
+    }
+
+    /**
+     * Pairs new source headers with columns the previous document carried, when
+     * the data has the same shape and the names are related (renamed export
+     * label). The import then fills the existing column instead of a new one.
+     *
+     * @param array<string, object> $dropped
+     */
+    private function suggestRenames(string $table, array $newColumns, array $profiles, array $dropped): array
+    {
+        if ($dropped === []) {
+            return $newColumns;
+        }
+
+        $pending = array_keys(array_filter($newColumns, static fn (array $column): bool => $column['decision'] === 'pending'));
+        $candidates = [];
+        foreach ($pending as $position) {
+            $column = $newColumns[$position];
+            $profile = $profiles[$column['index']] ?? [];
+            foreach ($dropped as $target => $previous) {
+                $previousSignature = (string) ($previous->signature ?? $this->memory->previous($table, $target)?->signature ?? '');
+                $currentSignature = (string) ($profile['signature'] ?? '');
+                if ($previousSignature !== '' && $currentSignature !== ''
+                    && self::isMeaningfulFormatChange($previousSignature, $currentSignature)) {
+                    continue;
+                }
+
+                $nameScore = max(
+                    $this->nameSimilarity((string) $column['proposed_column'], $target),
+                    $this->nameSimilarity((string) $column['proposed_column'], $this->normalizeName((string) ($previous->header_label ?? '')))
+                );
+                $loneRename = count($pending) === 1 && count($dropped) === 1 && $previousSignature !== '' && $currentSignature !== '';
+                if ($nameScore < 0.5 && !$loneRename) {
+                    continue;
+                }
+
+                $candidates[] = [$position, $target, $nameScore + ($previousSignature === $currentSignature ? 0.25 : 0), $previous];
+            }
+        }
+
+        usort($candidates, static fn (array $a, array $b): int => $b[2] <=> $a[2]);
+        $usedPositions = [];
+        $usedTargets = [];
+        foreach ($candidates as [$position, $target, $score, $previous]) {
+            if (isset($usedPositions[$position]) || isset($usedTargets[$target])) {
+                continue;
+            }
+            $usedPositions[$position] = true;
+            $usedTargets[$target] = true;
+            $newColumns[$position]['suggestion'] = [
+                'action' => 'map',
+                'column' => $target,
+                'confidence' => round(min(1, $score), 2),
+                'reason' => sprintf(
+                    'Kemungkinan kolom "%s" berganti nama: dokumen sebelumnya membawa "%s" dengan format sama (%s), dokumen ini tidak.',
+                    $target,
+                    (string) ($previous->header_label ?: $target),
+                    (string) ($previous->label ?: 'format sama')
+                ),
+            ];
+        }
+
+        return $newColumns;
+    }
+
+    private function nameSimilarity(string $left, string $right): float
+    {
+        if ($left === '' || $right === '') {
+            return 0.0;
+        }
+        if ($left === $right) {
+            return 1.0;
+        }
+
+        $leftTokens = array_values(array_filter(explode('_', $left)));
+        $rightTokens = array_values(array_filter(explode('_', $right)));
+        $shared = count(array_intersect($leftTokens, $rightTokens));
+        $tokenScore = $shared / max(1, max(count($leftTokens), count($rightTokens)));
+
+        // Abbreviations: "no_rek" vs "nomor_rekening", "tgl_ph" vs "tanggal_ph".
+        $prefixHits = 0;
+        foreach ($leftTokens as $token) {
+            foreach ($rightTokens as $other) {
+                if ($token !== $other && strlen($token) >= 2 && strlen($other) >= 2
+                    && (str_starts_with($other, $token) || str_starts_with($token, $other))) {
+                    $prefixHits++;
+                    break;
+                }
+            }
+        }
+        $prefixScore = ($shared + $prefixHits) / max(1, max(count($leftTokens), count($rightTokens)));
+
+        similar_text($left, $right, $percent);
+
+        return max($tokenScore, $prefixScore * 0.9, $percent / 100 * 0.8);
     }
 
     /**
@@ -273,6 +451,20 @@ class SchemaDriftDetector
                     ));
                 }
 
+                $zeroValues = (int) ($profile['zero_date_values'] ?? 0);
+                if ($zeroValues > 0) {
+                    $findings[] = StrictDateParser::preservesZeroDates($table)
+                        ? $this->finding(self::SEVERITY_INFO, 'zero_date_kept', 'Nilai 0 dipertahankan', sprintf(
+                            '%d nilai "0" pada sampel (artinya tidak ada tanggal) disimpan sebagai tanggal nol %s, sama persis dengan dokumen sumber.',
+                            $zeroValues,
+                            StrictDateParser::ZERO_DATE
+                        ))
+                        : $this->finding(self::SEVERITY_INFO, 'zero_date_empty', 'Nilai 0 berarti tanpa tanggal', sprintf(
+                            '%d nilai "0" pada sampel berarti tidak ada tanggal dan disimpan kosong.',
+                            $zeroValues
+                        ));
+                }
+
                 if (($date['order'] ?? null) === StrictDateParser::ORDER_MONTH_FIRST) {
                     $findings[] = $this->finding(self::SEVERITY_INFO, 'month_first', 'Urutan bulan/hari dikenali', sprintf(
                         'Format %s %s; dikonversi otomatis ke YYYY-MM-DD.',
@@ -322,13 +514,20 @@ class SchemaDriftDetector
                 $scale = (int) ($columnMeta['scale'] ?? 0);
                 $precision = (int) ($columnMeta['precision'] ?? 0);
                 if ($isIntegerTarget && !empty($number['has_fraction'])) {
-                    $findings[] = $this->finding(self::SEVERITY_WARNING, 'fraction_rounded', 'Pecahan dibulatkan', "Kolom {$dbColumn} bertipe {$dbType}; nilai desimal sumber akan dibulatkan.");
+                    $findings[] = $this->finding(self::SEVERITY_WARNING, 'fraction_rounded', 'Pecahan dibulatkan', "Kolom {$dbColumn} bertipe {$dbType}; nilai desimal sumber akan dibulatkan.")
+                        + $this->adjustmentFor($dbColumn, $dbType, $this->decimalTypeFor(max(18, (int) ($number['max_integer_digits'] ?? 0) + 2), min(4, max(2, (int) ($number['max_scale'] ?? 2)))), 'Ubah ke DECIMAL agar pecahan tersimpan utuh.');
+                }
+                $integerCapacity = $this->integerDigitCapacity($baseType, (string) ($columnMeta['type'] ?? ''));
+                if ($isIntegerTarget && $integerCapacity !== null && (int) ($number['max_digits'] ?? 0) > $integerCapacity) {
+                    $findings[] = $this->finding(self::SEVERITY_DANGER, 'integer_overflow', 'Bilangan melebihi kapasitas', sprintf('Nilai terbesar memiliki %d digit, melebihi kapasitas %s (%d digit).', (int) $number['max_digits'], $dbType, $integerCapacity))
+                        + $this->adjustmentFor($dbColumn, $dbType, (int) $number['max_digits'] <= 18 ? 'BIGINT' : 'DECIMAL(30,0)', 'Perlebar tipe bilangan agar nilai tidak gagal tersimpan.');
                 }
                 if ($isDecimalTarget && (int) ($number['max_scale'] ?? 0) > $scale) {
                     $findings[] = $this->finding(self::SEVERITY_INFO, 'scale_rounded', 'Desimal dibulatkan', sprintf('Sumber memiliki %d angka desimal; disimpan dengan %d desimal sesuai %s.', (int) $number['max_scale'], $scale, $dbType));
                 }
                 if ($isDecimalTarget && $precision > 0 && (int) ($number['max_integer_digits'] ?? 0) > $precision - $scale) {
-                    $findings[] = $this->finding(self::SEVERITY_DANGER, 'numeric_overflow', 'Angka melebihi kapasitas', sprintf('Nilai terbesar memiliki %d digit bulat, melebihi kapasitas %s.', (int) $number['max_integer_digits'], $dbType));
+                    $findings[] = $this->finding(self::SEVERITY_DANGER, 'numeric_overflow', 'Angka melebihi kapasitas', sprintf('Nilai terbesar memiliki %d digit bulat, melebihi kapasitas %s.', (int) $number['max_integer_digits'], $dbType))
+                        + $this->adjustmentFor($dbColumn, $dbType, $this->decimalTypeFor((int) $number['max_integer_digits'] + 2, $scale), 'Perbesar presisi DECIMAL; skala desimal dipertahankan.');
                 }
                 if (($number['style'] ?? '') === 'mixed') {
                     $findings[] = $this->finding(self::SEVERITY_WARNING, 'mixed_separators', 'Pemisah angka bercampur', 'Ditemukan format 1,234.56 dan 1.234,56 sekaligus; setiap nilai dibaca dari pola pemisahnya sendiri.');
@@ -340,7 +539,10 @@ class SchemaDriftDetector
         } elseif (!empty($columnMeta['is_textual'])) {
             $maxLength = (int) ($columnMeta['max_length'] ?? 0);
             if ($maxLength > 0 && (int) $profile['max_length'] > $maxLength) {
-                $findings[] = $this->finding(self::SEVERITY_WARNING, 'text_truncated', 'Teks melebihi kapasitas', sprintf('Nilai terpanjang %d karakter melebihi %s; kelebihannya akan terpotong.', (int) $profile['max_length'], $dbType));
+                $findings[] = $this->finding(self::SEVERITY_WARNING, 'text_truncated', 'Teks melebihi kapasitas', sprintf('Nilai terpanjang %d karakter melebihi %s; kelebihannya akan terpotong.', (int) $profile['max_length'], $dbType))
+                    + (in_array($baseType, ['varchar', 'char'], true)
+                        ? $this->adjustmentFor($dbColumn, $dbType, $this->varcharTypeFor((int) $profile['max_length']), 'Perlebar kolom teks agar nilai sumber tersimpan utuh.')
+                        : []);
             }
         }
 
@@ -368,7 +570,103 @@ class SchemaDriftDetector
         return $findings;
     }
 
-    private function resolveDbColumn(string $label, string $canonical, array $meta, array $tableColumnsLower): ?string
+    /**
+     * A safe widening proposal attached to a finding. Only ever grows a column:
+     * existing values keep their meaning, nothing is narrowed or reinterpreted.
+     */
+    private function adjustmentFor(string $column, string $fromType, string $toType, string $reason): array
+    {
+        if (strtoupper($fromType) === strtoupper($toType) || !self::isAllowedType($toType)) {
+            return [];
+        }
+
+        return ['adjustment' => [
+            'column' => $column,
+            'from_type' => strtoupper($fromType),
+            'to_type' => strtoupper($toType),
+            'reason' => $reason,
+        ]];
+    }
+
+    private function varcharTypeFor(int $maxLength): string
+    {
+        foreach ([50, 100, 150, 255, 500, 1000, 2000, 4000] as $size) {
+            if ($size >= (int) ceil($maxLength * 1.2)) {
+                return "VARCHAR({$size})";
+            }
+        }
+
+        return 'TEXT';
+    }
+
+    private function decimalTypeFor(int $integerDigits, int $scale): string
+    {
+        $scale = max(0, min(10, $scale));
+        $precision = max(20, $integerDigits + $scale);
+
+        return $precision <= 38 ? "DECIMAL({$precision},{$scale})" : 'DECIMAL(38,' . max(0, 38 - $integerDigits) . ')';
+    }
+
+    /**
+     * Digit count above which a value can never fit the integer column (the
+     * profile knows digit counts, not exact maxima, so this errs on the side
+     * of no false alarm: INT flags 11+ digits, BIGINT 20+).
+     */
+    private function integerDigitCapacity(string $baseType, string $fullType): ?int
+    {
+        $unsigned = str_contains(strtolower($fullType), 'unsigned');
+
+        return match ($baseType) {
+            'tinyint' => 3,
+            'smallint' => 5,
+            'mediumint' => $unsigned ? 8 : 7,
+            'int', 'integer' => 10,
+            'bigint' => $unsigned ? 20 : 19,
+            default => null,
+        };
+    }
+
+    /**
+     * Resolves every header before any is judged, mirroring the import:
+     * accepted renames, exact names and the import's own aliases claim their
+     * columns first. A fuzzy family alias (any "balance" header onto any
+     * balance column) only fills a column nobody claimed, so a legitimate
+     * second column of the source can never become a "duplicate" of the first.
+     *
+     * @return array<int, string> source index => table column
+     */
+    private function resolveColumns(array $sourceHeaders, array $canonicalHeaders, array $ignored, array $aliases, array $meta, array $tableColumnsLower): array
+    {
+        $resolved = [];
+        $unresolved = [];
+        foreach ($sourceHeaders as $index => $rawHeader) {
+            $label = trim((string) $rawHeader);
+            $canonical = strtolower(trim((string) ($canonicalHeaders[$index] ?? $this->normalizeName($label))));
+            if ($label === '' || $canonical === '' || preg_match('/^col_\d+$/', $canonical) === 1 || isset($ignored[$canonical])) {
+                continue;
+            }
+
+            $column = $aliases[$canonical] ?? $this->resolveExactColumn($label, $canonical, $meta);
+            if ($column !== null) {
+                $resolved[$index] = $column;
+            } else {
+                $unresolved[$index] = $label;
+            }
+        }
+
+        $claimed = array_fill_keys(array_values($resolved), true);
+        foreach ($unresolved as $index => $label) {
+            $column = $this->resolveFamilyAlias($label, $meta, $tableColumnsLower);
+            if ($column !== null && !isset($claimed[$column])) {
+                $resolved[$index] = $column;
+                $claimed[$column] = true;
+            }
+        }
+
+        return $resolved;
+    }
+
+    private function resolveExactColumn(string $label, string $canonical, array $meta): ?string
     {
         if (isset($meta[$canonical])) {
             return $canonical;
@@ -379,6 +677,17 @@ class SchemaDriftDetector
             return $snake;
         }
 
+        foreach (ImportHeaderAliases::candidates($label) as $candidate) {
+            if (isset($meta[$candidate])) {
+                return $candidate;
+            }
+        }
+
+        return null;
+    }
+
+    private function resolveFamilyAlias(string $label, array $meta, array $tableColumnsLower): ?string
+    {
         try {
             $candidate = app(SmartContentHeaderGuardService::class)->resolveAliasCandidate($label, $tableColumnsLower);
             if (is_string($candidate) && isset($meta[strtolower($candidate)])) {
@@ -473,10 +782,15 @@ class SchemaDriftDetector
         };
     }
 
-    private function headline(string $status, int $newCount, int $adaptationCount, array $missing, int $unmappedCount = 0, bool $baselineEstablished = true): string
+    private function headline(string $status, int $newCount, int $adaptationCount, array $missing, int $unmappedCount = 0, bool $baselineEstablished = true, int $adjustmentCount = 0, int $renameCount = 0): string
     {
+        $decisions = array_filter([
+            $newCount - $renameCount > 0 ? ($newCount - $renameCount) . ' kolom baru' : null,
+            $renameCount > 0 ? $renameCount . ' kolom kemungkinan berganti nama' : null,
+            $adjustmentCount > 0 ? $adjustmentCount . ' kolom perlu diperlebar' : null,
+        ]);
         $headline = match ($status) {
-            self::STATUS_DRIFT => "{$newCount} kolom baru terdeteksi di dokumen sumber — perlu keputusan Terima atau Tolak.",
+            self::STATUS_DRIFT => ucfirst(implode(', ', $decisions)) . ' — perlu keputusan Terima atau Tolak.',
             self::STATUS_ATTENTION => 'Struktur cocok, tetapi ada isi kolom yang perlu diperhatikan.',
             self::STATUS_ADAPTED => "Struktur cocok. {$adaptationCount} perbedaan format dikenali dan disesuaikan otomatis.",
             default => $missing === [] && $unmappedCount === 0
@@ -548,12 +862,23 @@ class SchemaDriftDetector
         return true;
     }
 
-    private function fingerprint(string $table, array $pendingNew, array $formatChanges): string
+    /**
+     * A decision is identified by what is being decided (new columns and
+     * widenings), so the same new column keeps one notification even when the
+     * date format of another column changes between two uploads.
+     */
+    private function fingerprint(string $table, array $pendingNew, array $formatChanges, array $pendingAdjustments = []): string
     {
+        $decisions = array_merge(
+            array_map(static fn (array $column): string => 'new:' . $column['proposed_column'], $pendingNew),
+            array_map(static fn (array $adjustment): string => 'adjust:' . $adjustment['column'] . ':' . $adjustment['to_type'], $pendingAdjustments)
+        );
         $parts = [
             'table' => $table,
-            'new' => array_map(static fn (array $column): string => $column['proposed_column'], $pendingNew),
-            'formats' => array_map(static fn (array $change): string => ($change['column'] ?? '') . ':' . ($change['to'] ?? ''), $formatChanges),
+            'new' => $decisions,
+            'formats' => $decisions === []
+                ? array_map(static fn (array $change): string => ($change['column'] ?? '') . ':' . ($change['to'] ?? ''), $formatChanges)
+                : [],
         ];
         sort($parts['new']);
         sort($parts['formats']);

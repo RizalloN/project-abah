@@ -94,6 +94,10 @@ final class ColumnValueProfiler
         $maxLength = 0;
         $samples = [];
         $failedDateSamples = [];
+        // "0", "00/00/0000", "0000-00-00": core banking's "no date". Decided after
+        // the loop: blank in a date column, a real zero in a numeric one.
+        $zeroDateTokens = 0;
+        $zeroDateValues = 0;
 
         foreach ($values as $value) {
             $total++;
@@ -107,6 +111,11 @@ final class ColumnValueProfiler
             $maxLength = max($maxLength, $length);
             if (count($samples) < self::MAX_SAMPLES && !in_array($text, $samples, true)) {
                 $samples[] = $text;
+            }
+
+            if (StrictDateParser::isZeroDateToken($text)) {
+                $zeroDateTokens++;
+                continue;
             }
 
             $dateSignal = $this->classifyDate($text, $headerLooksLikeDate);
@@ -127,6 +136,25 @@ final class ColumnValueProfiler
                 $failedDateSamples[] = $text;
             }
             $counts[self::KIND_TEXT]++;
+        }
+
+        if ($zeroDateTokens > 0) {
+            $otherValues = $total - $blank - $zeroDateTokens;
+            $dateDominant = $counts[self::KIND_DATE] > 0
+                && $counts[self::KIND_DATE] >= (int) ceil($otherValues * self::DOMINANCE_RATIO);
+            if ($dateDominant || ($headerLooksLikeDate && $otherValues === 0)) {
+                $blank += $zeroDateTokens;
+                $zeroDateValues = $zeroDateTokens;
+            } else {
+                $counts[self::KIND_INTEGER] += $zeroDateTokens;
+                $zeroSignal = $this->classifyNumber('0');
+                for ($i = 0; $i < min($zeroDateTokens, 1); $i++) {
+                    $this->accumulateNumber($numeric, $zeroSignal);
+                }
+                if (count($samples) < self::MAX_SAMPLES && !in_array('0', $samples, true)) {
+                    $samples[] = '0';
+                }
+            }
         }
 
         $nonEmpty = $total - $blank;
@@ -156,6 +184,7 @@ final class ColumnValueProfiler
             'max_length' => $maxLength,
             'samples' => $samples,
             'example' => $this->representativeExample($samples),
+            'zero_date_values' => $zeroDateValues,
             'failed_date_samples' => $failedDateSamples,
             'date' => in_array($kind, [self::KIND_DATE, self::KIND_DATETIME], true) ? $dateProfile : null,
             'number' => in_array($kind, [self::KIND_DECIMAL, self::KIND_INTEGER, self::KIND_IDENTIFIER], true)

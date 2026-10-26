@@ -61,7 +61,7 @@ class MantriManualFormulaTest extends TestCase
     }
 
     #[DataProvider('reportPositions')]
-    public function test_nonnegative_net_uses_initiator_and_preserves_full_closed_eligible_month_end_exposure(string $period): void
+    public function test_cif_deflation_keeps_new_credit_and_preserves_initiator_and_full_eligible_month_end_exposure(string $period): void
     {
         $date = Carbon::parse($period);
         $previous = $date->copy()->startOfMonth()->subDay()->toDateString();
@@ -92,7 +92,8 @@ class MantriManualFormulaTest extends TestCase
         $this->assertSame('NEW-BOOKING', $rows[0]['account_key']);
         $this->assertSame('00000901 - INITIATOR', $rows[0]['owner']);
         $this->assertSame(125_000_000.0, $rows[0]['previous_os']);
-        $this->assertSame(0.0, $rows[0]['net_amount']);
+        $this->assertSame(100_000_000.25, $rows[0]['net_amount']);
+        $this->assertSame(0.0, $rows[0]['deduction_applied']);
         $this->assertSame('daily_loan_dinamis', $rows[0]['baseline_source']);
         $this->assertSame($booking, $rows[0]['realization_date']);
         $this->assertSame($period, $rows[0]['periode']);
@@ -381,18 +382,21 @@ class MantriManualFormulaTest extends TestCase
         $before = collect($calculator->mantriAccounts('2026-11-19'))->keyBy('account_key');
         $this->assertEqualsCanonicalizing(['8001', '8002'], $before->keys()->map('strval')->all());
         $this->assertSame(80_000_000.0, $before['8001']['previous_os']);
-        $this->assertSame(0.0, $before['8001']['net_amount']);
-        $this->assertSame(20_000_000.0, $before['8002']['net_amount']);
+        $this->assertSame(23_333_333.33, $before['8001']['net_amount']);
+        $this->assertSame(46_666_666.67, $before['8002']['net_amount']);
         $this->assertSame('00000901 - INITIATOR', $before['8001']['owner']);
         $this->assertSame(150_000_000.0, $before->sum('plafon'));
-        $this->assertSame(20_000_000.0, $before->sum('net_amount'));
+        $this->assertSame(70_000_000.0, $before->sum('net_amount'));
+        $this->assertSame(80_000_000.0, $before->sum('deduction_applied'));
         $after = collect($calculator->mantriAccounts('2026-11-20'))->keyBy('account_key');
         $this->assertEqualsCanonicalizing(['8001', '8002'], $after->keys()->map('strval')->all());
         $this->assertSame(80_000_000.0, $after['8001']['previous_os']);
-        $this->assertSame(820_000_000.0, $after['8001']['net_amount']);
+        $this->assertSame(828_000_000.0, $after['8001']['net_amount']);
+        $this->assertSame(92_000_000.0, $after['8002']['net_amount']);
         $this->assertSame('00000804 - APPROVED NEW MONTH OWNER', $after['8001']['owner']);
         $this->assertSame('mantri_origination_ledger', $after['8001']['identity_source']);
-        $this->assertSame(840_000_000.0, $after->sum('net_amount'));
+        $this->assertSame(920_000_000.0, $after->sum('net_amount'));
+        $this->assertSame(80_000_000.0, $after->sum('deduction_applied'));
     }
 
     public function test_overlapping_report_dates_reuse_position_reads_and_import_version_refreshes_them(): void
@@ -415,7 +419,8 @@ class MantriManualFormulaTest extends TestCase
             $this->assertCount(2, $second);
             $this->assertSame(130_000_000.0, collect($second)->sum('net_amount'));
             $reads = collect(DB::getQueryLog())->filter(fn (array $query): bool => str_contains($query['query'], 'from "daily_loan_dinamis"')
-                && str_contains($query['query'], '"plafon"'))->values();
+                && str_contains($query['query'], '"plafon"')
+                && str_contains($query['query'], '"tgl_realisasi" between'))->values();
             $this->assertCount(1, $reads);
             $this->assertContains('2026-10-19', $reads[0]['bindings']);
             $this->assertNotContains('2026-10-13', $reads[0]['bindings']);
@@ -510,7 +515,7 @@ class MantriManualFormulaTest extends TestCase
     {
         return [
             'automatic raw import has unit-only Micro evidence' => ['lw321_import', 50_000_000.0, 50_000_000.0],
-            'manual cohort explicitly verifies unknown KC account' => ['manual_workbook_baseline', 120_000_000.0, 0.0],
+            'manual cohort explicitly verifies unknown KC account' => ['manual_workbook_baseline', 120_000_000.0, 100_000_000.0],
         ];
     }
 
@@ -662,7 +667,7 @@ class MantriManualFormulaTest extends TestCase
     {
         return [
             'native month end supersedes old raw baseline' => [true, 70_000_000.0, 30_000_000.0],
-            'materialized month end keeps verified raw unknown supplement' => [false, 1_069_000_000.0, 0.0],
+            'materialized month end keeps verified raw unknown supplement' => [false, 1_069_000_000.0, 100_000_000.0],
         ];
     }
 

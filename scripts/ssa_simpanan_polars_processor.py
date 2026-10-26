@@ -46,7 +46,16 @@ BASE_COLUMNS = SSA_SIMPANAN_COLUMNS
 EXTRA_COLUMNS: list[str] = []
 
 
+EXTRA_HEADER_ALIASES: dict[str, str] = {}
+
+
 def configure_extra_columns(config: dict) -> None:
+    EXTRA_HEADER_ALIASES.clear()
+    for alias_key, alias_column in (config.get("header_aliases") or {}).items():
+        alias_key = str(alias_key).strip().lower()
+        alias_column = str(alias_column).strip().lower()
+        if re.fullmatch(r"[a-z0-9_]{1,128}", alias_key) and re.fullmatch(r"[a-z][a-z0-9_]{0,63}", alias_column):
+            EXTRA_HEADER_ALIASES[alias_key] = alias_column
     EXTRA_COLUMNS.clear()
     for name in config.get("extra_columns") or []:
         name = str(name).strip().lower()
@@ -199,7 +208,10 @@ def normalize_header_name(header_name: str) -> str:
         "BULAN_TAHUN": "bulan_tahun",
     }
 
-    return aliases.get(normalized, normalized.lower())
+    if normalized in aliases:
+        return aliases[normalized]
+    # Accepted renames from schema drift decisions (header key -> column).
+    return EXTRA_HEADER_ALIASES.get(normalized.lower(), normalized.lower())
 
 
 def normalize_locale_date_text(value: str) -> str:

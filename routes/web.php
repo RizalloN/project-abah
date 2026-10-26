@@ -28,6 +28,7 @@ use App\Http\Controllers\Import\ImportJobStatusController;
 use App\Http\Controllers\Import\ImportPerformancePisPerProdukController;
 use App\Http\Controllers\Import\ImportReportPhController;
 use App\Http\Controllers\Import\ImportSchemaDriftController;
+use App\Http\Controllers\Import\ControlCenterController;
 use App\Http\Controllers\Import\ImportSimpananMultiPnCsvController;
 use App\Http\Controllers\Import\SnapshotAuditController;
 use App\Http\Controllers\Input\BodBocController;
@@ -206,6 +207,8 @@ Route::middleware(['auth', 'auth.session', 'user.branch.scope', 'release.session
         ->name('report.dashboard-pinjaman.kolek-tidak-sesuai.filters');
     Route::get('/report/dashboard-pinjaman/kolek-tidak-sesuai/data', [DashboardPinjamanReportController::class, 'mismatchData'])
         ->name('report.dashboard-pinjaman.kolek-tidak-sesuai.data');
+    Route::get('/report/dashboard-pinjaman/kolek-tidak-sesuai/timeseries', [DashboardPinjamanReportController::class, 'mismatchTimeseries'])
+        ->name('report.dashboard-pinjaman.kolek-tidak-sesuai.timeseries');
     Route::get('/report/dashboard-pinjaman/kolek-tidak-sesuai/export', [DashboardPinjamanReportController::class, 'mismatchExport'])
         ->name('report.dashboard-pinjaman.kolek-tidak-sesuai.export');
     Route::get('/report/dashboard-pinjaman/kredit', [DashboardPinjamanReportController::class, 'kreditIndex'])
@@ -320,6 +323,21 @@ Route::middleware(['auth', 'auth.session', 'role:admin', 'user.branch.scope', 'r
     Route::get('/job-management/runtime', [ServerRuntimeController::class, 'status'])->middleware('role:superadmin')->name('job-management.runtime.status');
     Route::post('/job-management/runtime/control', [ServerRuntimeController::class, 'control'])->middleware(['role:superadmin', 'throttle:admin-sensitive'])->name('job-management.runtime.control');
     Route::get('/job-management/badge', [ImportJobManagementController::class, 'badge'])->middleware('role:superadmin')->name('job-management.badge');
+    Route::middleware('role:superadmin')->prefix('job-management/control')->name('job-management.control.')->group(function (): void {
+        Route::get('/health', [ControlCenterController::class, 'health'])->name('health');
+        Route::get('/freshness', [ControlCenterController::class, 'freshness'])->name('freshness');
+        Route::get('/workers', [ControlCenterController::class, 'workers'])->name('workers');
+        Route::get('/snapshots', [ControlCenterController::class, 'snapshots'])->name('snapshots');
+        Route::get('/shadow', [ControlCenterController::class, 'shadow'])->name('shadow');
+        Route::post('/shadow/repair', [ControlCenterController::class, 'shadowRepair'])->middleware('throttle:admin-sensitive')->name('shadow.repair');
+        Route::get('/database', [ControlCenterController::class, 'database'])->name('database');
+        Route::post('/database/unlock', [ControlCenterController::class, 'unlockDatabase'])->middleware('throttle:admin-sensitive')->name('database.unlock');
+        Route::post('/database/lock', [ControlCenterController::class, 'lockDatabase'])->name('database.lock');
+    });
+    Route::any('/job-management/database/pma/{path?}', [ControlCenterController::class, 'phpMyAdmin'])
+        ->where('path', '[A-Za-z0-9_\-./]*')
+        ->middleware('role:superadmin')
+        ->name('job-management.database.pma');
     Route::get('/job-management/data', [ImportJobManagementController::class, 'data'])->middleware('role:superadmin')->name('job-management.data');
     Route::post('/job-management/worker/start', [ImportJobManagementController::class, 'startWorker'])->middleware('throttle:admin-sensitive')->middleware('role:superadmin')->name('job-management.worker.start');
     Route::post('/job-management/worker/stop', [ImportJobManagementController::class, 'stopWorker'])->middleware('throttle:admin-sensitive')->middleware('role:superadmin')->name('job-management.worker.stop');

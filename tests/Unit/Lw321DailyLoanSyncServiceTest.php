@@ -515,15 +515,37 @@ class Lw321DailyLoanSyncServiceTest extends TestCase
 
     public function test_new_account_without_prior_daily_uses_lw_description_mapping(): void
     {
-        DB::table('lw321pn')->insert($this->sourceRow());
+        DB::table('lw321pn')->insert(array_merge($this->sourceRow(), [
+            'rate' => 6,
+            'jangka_waktu' => '36M',
+        ]));
 
         app(Lw321DailyLoanSyncService::class)->synchronize('2026-09-08');
         $mapped = DB::table('daily_loan_dinamis')->where('periode', '2026-09-08')->first();
 
-        $this->assertSame('KREDIT MIKRO - KUR MIKRO BARU', $mapped->description);
+        // Rekening baru ditulis dalam kosakata & satuan Daily Loan Dinamis.
+        $this->assertSame('KUR Mikro Baru', $mapped->description);
         $this->assertSame('Micro', $mapped->segmen_dashboard);
         $this->assertSame('KUR-Mikro', $mapped->produk_dashboard);
         $this->assertSame('1', $mapped->status_rekening1);
+        $this->assertEqualsWithDelta(0.06, (float) $mapped->rate, 0.0000001);
+        $this->assertSame('36', $mapped->jangka_waktu1);
+    }
+
+    public function test_new_ritkom_medium_band_account_follows_daily_loan_classification(): void
+    {
+        DB::table('lw321pn')->insert(array_merge($this->sourceRow(), [
+            'description' => '10. RITKOM -> Rp. 5 M S/D 15 M',
+        ]));
+
+        app(Lw321DailyLoanSyncService::class)->synchronize('2026-09-08');
+        $mapped = DB::table('daily_loan_dinamis')->where('periode', '2026-09-08')->first();
+
+        $this->assertSame('10. RITKOM -> Rp. 5 M S/D 15 M', $mapped->description);
+        $this->assertSame('Small', $mapped->segmen_dashboard);
+        $this->assertSame('Commercial', $mapped->produk_dashboard);
+        $this->assertSame('MEDIUM', $mapped->segmen_kinerja);
+        $this->assertSame('COMMERCIAL', $mapped->produk_kinerja);
     }
 
     public function test_kolek_follows_lw_collectability_balances_like_daily_loan(): void
@@ -691,6 +713,8 @@ class Lw321DailyLoanSyncServiceTest extends TestCase
             $table->string('pn_pengelola_1')->nullable();
             $table->string('pn_pemutus')->nullable();
             $table->string('pn_referral')->nullable();
+            $table->decimal('rate', 10, 6)->nullable();
+            $table->string('jangka_waktu')->nullable();
         });
     }
 
@@ -737,6 +761,8 @@ class Lw321DailyLoanSyncServiceTest extends TestCase
             $table->string('pn_referral1')->nullable();
             $table->string('rm_normalized')->nullable();
             $table->string('nama_debitur1')->nullable();
+            $table->decimal('rate', 20, 6)->nullable();
+            $table->string('jangka_waktu1')->nullable();
             $table->date('tgl_realisasi')->nullable();
             $table->decimal('plafon', 20, 2)->nullable();
             $table->decimal('tunggakan_pokok', 20, 2)->nullable();

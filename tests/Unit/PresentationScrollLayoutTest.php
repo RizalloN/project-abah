@@ -194,3 +194,32 @@ it('keeps the depth layer readable without motion', function (): void {
         ->toContain('.rp-orbit__beat { position: static; opacity: 1; transform: none; }')
         ->not->toContain('—');
 });
+
+it('serves the keynote by default while the deck and the classic scroll stay reachable', function (): void {
+    $controller = file_get_contents(app_path('Http/Controllers/DashboardSimpananController.php'));
+
+    expect($controller)
+        ->toContain("in_array(\$layout, ['slides', 'classic'], true) ? 'presentation' : 'presentation.keynote'")
+        ->and(file_get_contents(base_path('vite.config.js')))
+        ->toContain('resources/css/presentation/presentation-keynote.css');
+
+    $html = view('presentation.keynote', [
+        'selectedPeriod' => '2026-10-24',
+        'periods' => ['2026-10-24', '2026-10-23'],
+        'presentationPayload' => null,
+    ])->render();
+
+    preg_match_all('/id="pres-slide-(\d+)"/', $html, $slides);
+
+    expect($html)
+        ->toContain('data-keynote')
+        ->toContain('id="ppt-export-dialog"')
+        ->toContain('id="pres-compare-dialog"')
+        ->toContain('id="pres-note-dialog"')
+        ->and(array_values(array_unique(array_map('intval', $slides[1]))))->toBe(range(0, 14));
+
+    foreach (['pasar', 'dana', 'pinjaman', 'kualitas', 'tren', 'aksi'] as $chapter) {
+        expect($html)->toContain('id="pres-chapter-'.$chapter.'"')
+            ->toContain('data-kn-chapter-link="'.$chapter.'"');
+    }
+});

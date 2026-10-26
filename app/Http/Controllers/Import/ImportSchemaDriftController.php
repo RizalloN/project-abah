@@ -62,9 +62,23 @@ class ImportSchemaDriftController extends Controller
             'columns.*.name' => ['sometimes', 'string', 'max:64'],
             'columns.*.type' => ['sometimes', 'string', 'max:40'],
             'columns.*.include' => ['sometimes'],
+            'columns.*.action' => ['sometimes', 'string', 'in:add,map,skip'],
+            'columns.*.target' => ['sometimes', 'nullable', 'string', 'max:64'],
+            'adjustments' => ['sometimes', 'array', 'max:100'],
+            'adjustments.*.column' => ['required', 'string', 'max:64'],
+            'adjustments.*.to_type' => ['sometimes', 'string', 'max:40'],
+            'adjustments.*.include' => ['sometimes'],
         ]);
 
-        return $this->decide(fn () => $this->registry->accept($event, $this->actor($request), (array) ($validated['columns'] ?? [])), 'Kolom baru berhasil ditambahkan ke tabel. Import berikutnya akan langsung mengisi kolom tersebut.');
+        return $this->decide(
+            fn () => $this->registry->accept(
+                $event,
+                $this->actor($request),
+                (array) ($validated['columns'] ?? []),
+                (array) ($validated['adjustments'] ?? [])
+            ),
+            'Keputusan diterapkan. Import berikutnya langsung memakai struktur kolom yang baru.'
+        );
     }
 
     public function reject(Request $request, int $event): JsonResponse

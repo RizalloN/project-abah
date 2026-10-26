@@ -426,6 +426,30 @@
         font-weight: 700;
     }
 
+    .loan-mismatch-trends { margin: 1.5rem 0 0; }
+    .loan-mismatch-trends__heading { display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:.5rem 1rem; margin-bottom:.75rem; }
+    .loan-mismatch-trends__heading h6 { margin:0; color:#0f172a; font-weight:750; font-size:1rem; }
+    .loan-mismatch-trends__heading p { margin:0; color:#475569; font-size:.8rem; }
+    .loan-mismatch-trends__grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem; }
+    .loan-mismatch-trend { min-width:0; padding:1rem; border:1px solid #cbd5e1; border-radius:8px; background:#fff; }
+    .loan-mismatch-trend h6 { color:#334155; font-size:.85rem; font-weight:700; margin:0 0 .4rem; }
+    .loan-mismatch-trend__value { color:#0f172a; font-size:1.35rem; font-weight:750; font-variant-numeric:tabular-nums; margin-bottom:1rem; }
+    .loan-mismatch-trend__plot { height:280px; position:relative; }
+    .loan-mismatch-trend__progress { color:#475569; font-size:.8rem; min-height:1.2rem; margin-bottom:.5rem; }
+    .loan-mismatch-trends__status { color:#475569; font-size:.8rem; margin:.75rem 0 0; }
+    .loan-mismatch-trends details { margin-top:.5rem; color:#475569; font-size:.8rem; }
+    .loan-mismatch-trends summary { cursor:pointer; width:fit-content; padding:.5rem 0; }
+    .loan-mismatch-trends summary:focus-visible, #loanMismatchTrendRetry:focus-visible { outline:3px solid #0857c3; outline-offset:3px; }
+    .loan-mismatch-trends [hidden] { display:none !important; }
+    .loan-mismatch-trends__data { max-height:240px; overflow:auto; }
+    .loan-mismatch-trends__data table { width:100%; font-variant-numeric:tabular-nums; }
+    .loan-mismatch-trends__data th, .loan-mismatch-trends__data td { padding:.45rem; border-bottom:1px solid #e2e8f0; }
+    .loan-mismatch-trends__data th:not(:first-child), .loan-mismatch-trends__data td:not(:first-child) { text-align:right; }
+    @media (max-width: 767.98px) {
+        .loan-mismatch-trends__grid { grid-template-columns:minmax(0,1fr); }
+        .loan-mismatch-trend__plot { height:230px; }
+    }
+
     @media (max-width: 991.98px) {
         .loan-filter-modern,
         .loan-mismatch-summary {
@@ -525,6 +549,35 @@
                     </div>
                 </div>
 
+                <section class="loan-mismatch-trends" id="loanMismatchTrends" aria-labelledby="loanMismatchTrendsTitle" aria-busy="false">
+                    <div class="loan-mismatch-trends__heading">
+                        <h6 id="loanMismatchTrendsTitle">Tren bulanan kolek Memburuk</h6>
+                        <p id="loanMismatchTrendContext">Januari sampai bulan periode audit yang diproses.</p>
+                    </div>
+                    <div class="loan-mismatch-trends__grid">
+                        <div class="loan-mismatch-trend">
+                            <h6 id="loanMismatchCountTitle">Jumlah rekening Memburuk</h6>
+                            <div class="loan-mismatch-trend__value" id="loanMismatchCountValue">—</div>
+                            <div class="loan-mismatch-trend__progress" data-trend-progress aria-hidden="true"></div>
+                            <div class="loan-mismatch-trend__plot"><canvas id="loanMismatchCountChart" role="img" aria-labelledby="loanMismatchCountTitle" aria-describedby="loanMismatchTrendStatus">Data bulanan tersedia melalui Buka data grafik.</canvas></div>
+                        </div>
+                        <div class="loan-mismatch-trend">
+                            <h6 id="loanMismatchBalanceTitle">Nominal OS Memburuk</h6>
+                            <div class="loan-mismatch-trend__value" id="loanMismatchBalanceValue">—</div>
+                            <div class="loan-mismatch-trend__progress" data-trend-progress aria-hidden="true"></div>
+                            <div class="loan-mismatch-trend__plot"><canvas id="loanMismatchBalanceChart" role="img" aria-labelledby="loanMismatchBalanceTitle" aria-describedby="loanMismatchTrendStatus">Data bulanan tersedia melalui Buka data grafik.</canvas></div>
+                        </div>
+                    </div>
+                    <p class="loan-mismatch-trends__status" id="loanMismatchTrendStatus" role="status" aria-live="polite">Grafik akan tampil setelah klik Proses. Hanya kategori Memburuk; Belum Waktunya Penyesuaian tidak dihitung.</p>
+                    <button type="button" id="loanMismatchTrendRetry" class="btn btn-sm btn-outline-primary mt-2" hidden>Coba muat grafik lagi</button>
+                    <details id="loanMismatchTrendDetails" hidden>
+                        <summary>Buka data grafik</summary>
+                        <div class="loan-mismatch-trends__data" tabindex="0" aria-label="Data bulanan grafik kolek Memburuk">
+                            <table data-abah-no-table-guard><caption class="sr-only">Jumlah rekening dan nominal OS Memburuk per posisi bulanan</caption><thead><tr><th scope="col">Bulan / posisi</th><th scope="col">Rekening</th><th scope="col">OS (Rp)</th></tr></thead><tbody id="loanMismatchTrendData"></tbody></table>
+                        </div>
+                    </details>
+                </section>
+
                 <div class="table-responsive mt-4">
                     <div class="loan-mismatch-table-wrap">
                         <table class="table table-hover loan-mismatch-table mb-0">
@@ -580,6 +633,7 @@
 </div>
 
 @push('scripts')
+<script src="{{ asset('vendor/chartjs/chart.min.js') }}"></script>
 @include('report.dashboard-pinjaman._partials._scripts_shared')
 <script>
     document.addEventListener('DOMContentLoaded', function () {
@@ -594,9 +648,165 @@
         const filterUrl = @json(route('report.dashboard-pinjaman.kolek-tidak-sesuai.filters'));
         const dataUrl = @json(route('report.dashboard-pinjaman.kolek-tidak-sesuai.data'));
         const exportUrl = @json(route('report.dashboard-pinjaman.kolek-tidak-sesuai.export'));
+        const timeseriesUrl = @json(route('report.dashboard-pinjaman.kolek-tidak-sesuai.timeseries'));
         const areaAllValue = 'AREA_6_ALL';
         const areaBranches = ['KC Madiun', 'KC Magetan', 'KC Ngawi', 'KC Ponorogo'];
         const initialSelectedBranch = @json(($mismatchSelectedBranches ?? ['AREA_6_ALL'])[0] ?? 'AREA_6_ALL');
+        const trendPanel = document.getElementById('loanMismatchTrends');
+        const trendStatus = document.getElementById('loanMismatchTrendStatus');
+        const trendRetry = document.getElementById('loanMismatchTrendRetry');
+        const trendDetails = document.getElementById('loanMismatchTrendDetails');
+        const trendCharts = [];
+        const trendNumber = new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 });
+        const trendCompact = new Intl.NumberFormat('id-ID', { notation: 'compact', maximumFractionDigits: 1 });
+        let trendRequest = null;
+        let appliedTrendParams = null;
+        let tableRequest = null;
+        let branchRequest = null;
+        const trendMonth = new Intl.DateTimeFormat('id-ID', { month: 'short' });
+
+        function clearTrendCharts() {
+            trendCharts.splice(0).forEach(chart => chart.destroy());
+            trendDetails.hidden = true;
+            document.getElementById('loanMismatchCountValue').textContent = '—';
+            document.getElementById('loanMismatchBalanceValue').textContent = '—';
+            trendPanel.querySelectorAll('[data-trend-progress]').forEach(node => node.textContent = 'Memuat riwayat bulanan...');
+        }
+
+        function renderTrends(points, branch, period) {
+            const available = points.filter(point => point.available);
+            const pending = points.filter(point => point.pending).length;
+            const failed = points.filter(point => point.failed).length;
+            const latest = points[points.length - 1];
+            trendPanel.querySelectorAll('[data-trend-progress]').forEach(node => {
+                node.textContent = pending ? `Menghitung riwayat: ${points.length - pending}/${points.length} bulan selesai` : `${available.length}/${points.length} posisi bulanan tersedia`;
+            });
+            document.getElementById('loanMismatchTrendContext').textContent = `Jan-${trendMonth.format(new Date(`${period}T12:00:00`))} ${period.slice(0, 4)} | ${branch} | posisi terakhir ${formatDate(period)}`;
+            document.getElementById('loanMismatchTrendData').innerHTML = points.map(point => {
+                const label = point.period ? formatDate(point.period) : point.month;
+                const unavailable = point.pending ? 'Memuat...' : point.failed ? 'Gagal dimuat' : 'Tidak tersedia';
+                return `<tr><th scope="row">${escapeHtml(label)}</th><td>${point.available ? trendNumber.format(point.memburuk_count) : unavailable}</td><td>${point.available ? trendNumber.format(point.memburuk_balance) : unavailable}</td></tr>`;
+            }).join('');
+            trendDetails.hidden = false;
+            document.getElementById('loanMismatchCountValue').textContent = latest?.available ? `${trendNumber.format(latest.memburuk_count)} rekening` : '—';
+            document.getElementById('loanMismatchBalanceValue').textContent = latest?.available ? `Rp ${trendNumber.format(latest.memburuk_balance)}` : '—';
+            const basis = 'Bulan sebelumnya: posisi akhir bulan. Bulan terakhir: posisi audit. Hanya Memburuk; Belum Waktunya Penyesuaian tidak dihitung.';
+            trendStatus.textContent = pending ? `Memuat tren bulanan: ${points.length - pending} dari ${points.length} bulan selesai. ${basis}` : `${available.length} dari ${points.length} bulan tersedia. ${basis}${failed ? ` ${failed} bulan gagal dimuat; klik Coba muat grafik lagi.` : ''}${available.length < points.length - failed ? ' Jeda garis berarti data Daily Loan Dinamis asli tidak tersedia pada posisi tersebut.' : ''}`;
+            trendRetry.hidden = pending > 0 || failed === 0;
+            if (typeof window.Chart !== 'function') {
+                trendStatus.textContent += ' Grafik tidak dapat dimuat. Buka data grafik untuk melihat angka bulanan.';
+                return;
+            }
+            if (trendCharts.length) {
+                trendCharts.forEach((chart, i) => {
+                    const key = i === 0 ? 'memburuk_count' : 'memburuk_balance';
+                    chart.data.datasets[0].data = points.map(point => point.available ? point[key] : null);
+                    chart.update('none');
+                });
+                return;
+            }
+            [
+                ['loanMismatchCountChart', 'memburuk_count', 'Rekening', '#b45309'],
+                ['loanMismatchBalanceChart', 'memburuk_balance', 'OS (Rp)', '#0857c3'],
+            ].forEach(([id, key, label, color]) => {
+                trendCharts.push(new Chart(document.getElementById(id), {
+                    type: 'line',
+                    data: {
+                        labels: points.map(point => point.month),
+                        datasets: [{ label, data: points.map(point => point.available ? point[key] : null), borderColor: color, backgroundColor: `${color}12`, fill: true, borderWidth: 3, pointBackgroundColor: '#fff', pointBorderWidth: 2, pointRadius: 3.5, pointHoverRadius: 6, pointHitRadius: 14, spanGaps: false, tension: 0.2 }],
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        animation: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? false : { duration: 250 },
+                        interaction: { mode: 'index', intersect: false },
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: { callbacks: {
+                                title: items => items.length && points[items[0].dataIndex].period ? `Posisi ${formatDate(points[items[0].dataIndex].period)}` : '',
+                                label: item => `${label}: ${trendNumber.format(item.parsed.y)}`,
+                            } },
+                        },
+                        scales: {
+                            x: { grid: { display: false }, title: { display: true, text: `Bulan (${period.slice(0, 4)})` }, ticks: { autoSkip: false, maxRotation: 0, font: { size: 11 }, callback: function (value) { return trendMonth.format(new Date(`${this.getLabelForValue(value)}-01T12:00:00`)); } } },
+                            y: { beginAtZero: true, title: { display: true, text: label }, ticks: { precision: key === 'memburuk_count' ? 0 : undefined, maxTicksLimit: 6, callback: value => key === 'memburuk_count' ? trendNumber.format(value) : trendCompact.format(value) }, grid: { color: '#e2e8f0' } },
+                        },
+                    },
+                }));
+            });
+        }
+
+        async function loadTrends(params) {
+            trendRequest?.abort();
+            const request = trendRequest = new AbortController();
+            appliedTrendParams = new URLSearchParams(params);
+            clearTrendCharts();
+            trendPanel.setAttribute('aria-busy', 'true');
+            trendRetry.hidden = true;
+            trendStatus.textContent = 'Memuat riwayat bulanan untuk periode dan cabang yang diproses...';
+            try {
+                const cachedQuery = new URLSearchParams(params);
+                cachedQuery.set('cached', '1');
+                const res = await fetch(`${timeseriesUrl}?${cachedQuery}`, { signal: request.signal });
+                if (!res.ok) throw new Error('Riwayat bulanan gagal dimuat.');
+                const cached = await res.json();
+                if (request !== trendRequest || request.signal.aborted) return;
+                const period = cached.selected_period;
+                const points = (cached.timeseries || []).map(point => ({ ...point, pending: Boolean(point.pending) }));
+                if (!period || !points.length) {
+                    trendStatus.textContent = 'Daily Loan Dinamis asli belum tersedia untuk periode dan cabang ini.';
+                    trendPanel.querySelectorAll('[data-trend-progress]').forEach(node => node.textContent = 'Posisi bulanan tidak tersedia');
+                    return;
+                }
+                // All historical months come from the applied filters, independently
+                // of the slower nominative/table request.
+                params = new URLSearchParams(params);
+                params.set('periode', period);
+                const paint = () => renderTrends(points, cached.selected_branch, period);
+                paint();
+                const queue = points.filter(point => point.pending);
+                async function worker() {
+                    while (queue.length && !request.signal.aborted) {
+                        const point = queue.shift();
+                        const query = new URLSearchParams(params);
+                        query.set('point', point.month);
+                        try {
+                            let payload;
+                            for (let attempt = 0; attempt < 40; attempt++) {
+                                const res = await fetch(`${timeseriesUrl}?${query}`, { signal: request.signal });
+                                if (!res.ok) throw new Error('Grafik gagal dimuat.');
+                                payload = await res.json();
+                                if (payload.status !== 'warming') break;
+                                await new Promise((resolve, reject) => {
+                                    const stop = () => { clearTimeout(timer); reject(new DOMException('Aborted', 'AbortError')); };
+                                    const timer = setTimeout(() => { request.signal.removeEventListener('abort', stop); resolve(); }, 3000);
+                                    request.signal.addEventListener('abort', stop, { once: true });
+                                });
+                            }
+                            if (request.signal.aborted || request !== trendRequest) return;
+                            const result = payload?.timeseries?.find(item => item.month === point.month);
+                            if (payload?.status === 'warming' || !result) throw new Error('Perhitungan grafik belum selesai.');
+                            Object.assign(point, result, { pending: false, failed: false });
+                        } catch (error) {
+                            if (error.name === 'AbortError' || request !== trendRequest) return;
+                            Object.assign(point, { pending: false, failed: true });
+                        }
+                        paint();
+                    }
+                }
+                await Promise.all([worker(), worker()]);
+            } catch (error) {
+                if (error.name === 'AbortError' || request !== trendRequest) return;
+                trendStatus.textContent = 'Riwayat bulanan gagal dimuat. Klik Coba muat grafik lagi.';
+                trendPanel.querySelectorAll('[data-trend-progress]').forEach(node => node.textContent = 'Riwayat belum dapat dimuat');
+                trendRetry.hidden = false;
+            } finally {
+                if (request === trendRequest) trendPanel.setAttribute('aria-busy', 'false');
+            }
+        }
+
+        trendRetry.addEventListener('click', () => {
+            if (appliedTrendParams) loadTrends(new URLSearchParams(appliedTrendParams));
+        });
 
         function escapeHtml(value) {
             return String(value ?? '')
@@ -642,11 +852,20 @@
 
         async function loadBranches() {
             if (!periodInput.value) return;
-            const res = await fetch(`${filterUrl}?periode=${periodInput.value}`);
-            const payload = await res.json();
-            syncHiddenBranchSelect(payload.branches || [], branchSelect.dataset.selected || initialSelectedBranch);
-            branchSelect.disabled = false;
-            window.jQuery(branchSelect).trigger('change');
+            branchRequest?.abort();
+            const request = branchRequest = new AbortController();
+            const period = periodInput.value;
+            try {
+                const res = await fetch(`${filterUrl}?periode=${period}`, { signal: request.signal });
+                if (!res.ok) throw new Error('Daftar cabang gagal dimuat.');
+                const payload = await res.json();
+                if (request !== branchRequest || period !== periodInput.value) return;
+                syncHiddenBranchSelect(payload.branches || [], branchSelect.dataset.selected || initialSelectedBranch);
+                branchSelect.disabled = false;
+                window.jQuery(branchSelect).trigger('change');
+            } catch (error) {
+                if (error.name !== 'AbortError') throw error;
+            }
         }
 
         async function loadData() {
@@ -654,7 +873,10 @@
 
             if (!periodInput.value || !selectedBranch) return;
             
-            const originalBtnHtml = submitButton.innerHTML;
+            tableRequest?.abort();
+            const request = tableRequest = new AbortController();
+            const originalBtnHtml = submitButton.dataset.originalHtml || submitButton.innerHTML;
+            submitButton.dataset.originalHtml = originalBtnHtml;
             submitButton.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i> Memuat...`;
             submitButton.disabled = true;
             
@@ -663,15 +885,24 @@
                 params.set('periode', periodInput.value);
                 params.set('cabang1', selectedBranch);
 
-                const res = await fetch(`${dataUrl}?${params.toString()}`);
+                loadTrends(new URLSearchParams(params));
+                const res = await fetch(`${dataUrl}?${params.toString()}`, { signal: request.signal });
+                if (!res.ok) throw new Error('Data audit gagal dimuat.');
                 const payload = await res.json();
+                if (request !== tableRequest || request.signal.aborted) return;
                 renderTable(payload.summary_rows, payload.selected_period, payload.selected_branch);
                 document.getElementById('loanMismatchTotal').textContent = formatNumber(payload.audit.mismatch_rows);
                 document.getElementById('loanMismatchUnits').textContent = formatNumber(payload.audit.units_with_mismatch);
                 document.getElementById('loanMismatchOutstanding').textContent = formatCurrency(payload.audit.total_outstanding_balance);
+            } catch (error) {
+                if (error.name !== 'AbortError' && request === tableRequest) {
+                    badge.textContent = 'Data audit gagal dimuat. Klik Proses untuk mencoba lagi.';
+                }
             } finally {
-                submitButton.innerHTML = originalBtnHtml;
-                submitButton.disabled = false;
+                if (request === tableRequest) {
+                    submitButton.innerHTML = originalBtnHtml;
+                    submitButton.disabled = false;
+                }
             }
         }
 
@@ -817,7 +1048,7 @@
 
         initModernSelectors();
 
-        if (periodInput.value) loadBranches();
+        if (periodInput.value) loadBranches().catch(() => null);
     });
 </script>
 @endpush

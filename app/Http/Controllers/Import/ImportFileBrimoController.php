@@ -125,6 +125,14 @@ class ImportFileBrimoController extends Controller
         return $tableName;
     }
 
+    private function isMauBrimoReport(): bool
+    {
+        $reportId = session('active_id_report');
+
+        return $reportId && DB::getSchemaBuilder()->hasTable('nama_report')
+            && DB::table('nama_report')->where('id_report', $reportId)->value('table_name') === \App\Services\Import\MauBrimoImportPolicy::TABLE;
+    }
+
     private function resolveUniqueSuffix(string $tableName): string
     {
         return match ($tableName) {
@@ -268,6 +276,9 @@ class ImportFileBrimoController extends Controller
 
     public function preview(Request $request)
     {
+        if ($this->isMauBrimoReport()) {
+            return app(ImportMauBrimoController::class)->preview($request);
+        }
         ini_set('memory_limit', '512M');
         ini_set('auto_detect_line_endings', true);
         ini_set('max_execution_time', 300);
@@ -448,6 +459,9 @@ class ImportFileBrimoController extends Controller
 
     public function processImport(Request $request)
     {
+        if ($this->isMauBrimoReport()) {
+            return app(ImportMauBrimoController::class)->processImport($request);
+        }
         ini_set('memory_limit', '-1');
         ini_set('auto_detect_line_endings', true);
         ini_set('max_execution_time', 0); 

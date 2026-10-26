@@ -153,6 +153,6 @@
             @endif
         </section>
     @endforeach
-    <p class="micro-nett-help">Nett setiap rekening adalah plafon dikurangi OS CIF mikro akhir bulan sebelumnya yang rekeningnya sudah tidak ada pada posisi berjalan, dengan batas minimum nol sebelum dijumlahkan menjadi nett MTD. Pemilik mengikuti PN Pemrakarsa dan bukti atribusi sumber saat pencairan, sedangkan penempatan mengikuti roster aktif BRIHC Area 6. Ratas / Mantri / HKE adalah nett dibagi jumlah Mantri PT Non Briguna dan Kontrak, lalu dibagi hari kerja efektif. Unit tanpa pemetaan MBM ditandai “Belum dipetakan”. Klik 2x pada angka untuk melihat daftar Mantri.</p>
+    <p class="micro-nett-help">Nett dihitung per CIF dari total plafon pencairan dan OS mikro akhir bulan sebelumnya yang lunas atau direbooking. Jika pencairan lebih kecil dari OS pembanding, pencairan dihitung penuh; jika sama atau lebih besar, nett adalah selisihnya. Pengurang dipakai sekali per CIF, lalu nett dibagi proporsional ke rekening pencairan. Pemilik mengikuti PN Pemrakarsa dan bukti atribusi sumber saat pencairan, sedangkan penempatan mengikuti roster aktif BRIHC Area 6. Ratas / Mantri / HKE adalah nett dibagi jumlah Mantri PT Non Briguna dan Kontrak, lalu dibagi hari kerja efektif. Unit tanpa pemetaan MBM ditandai “Belum dipetakan”. Klik 2x pada angka untuk melihat daftar Mantri.</p>
     @include('report.dashboard-pinjaman._kinerjarmmikro_partials.micro-nett-drilldown')
 </div>

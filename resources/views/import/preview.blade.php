@@ -178,6 +178,8 @@
         </div>
         @endif
 
+        @include('import.partials.crosstab-normalization-notice')
+
         @include('import.partials.schema-drift-panel')
 
         <form id="importForm" action="{{ $processRoute ?? route('import.process') }}" method="POST" data-no-route-loading data-init-url="{{ $initRoute ?? '' }}" data-stream-url="{{ $streamRoute ?? '' }}" data-filter-options-url="{{ $filterOptionsRoute ?? route('import.preview.filter-options') }}" data-filtered-rows-url="{{ $filteredRowsRoute ?? route('import.preview.filtered-rows') }}" data-warm-index-url="{{ $warmIndexRoute ?? route('import.preview.warm-index') }}">
@@ -260,6 +262,7 @@
                         </div>
                     @endif
 
+                    @include('import.partials.filter-early-click')
                     <div class="table-responsive import-preview-table-shell{{ $hidePreviewRowsUntilJs ? ' is-preview-loading' : '' }}">
                         <table class="table table-bordered table-hover m-0 import-preview-table">
                             <thead class="thead-light sticky-top" style="z-index: 2;">
@@ -286,7 +289,7 @@
                                                 <input type="hidden" name="has_filter[]" value="{{ $index }}">
 
                                                 <div class="dropdown import-preview-filter-dropdown">
-                                                    <button class="btn btn-xs btn-light border dropdown-toggle filter-btn" type="button" data-filter-dropdown-toggle="1" @if(!($portalFilterDropdowns ?? true)) data-toggle="dropdown" data-boundary="window" @endif aria-haspopup="true" aria-expanded="false">
+                                                    <button class="btn btn-xs btn-light border dropdown-toggle filter-btn" type="button" data-filter-dropdown-toggle="1" @if(!($portalFilterDropdowns ?? true)) data-toggle="dropdown" data-boundary="window" @endif aria-haspopup="true" aria-expanded="false" aria-label="Filter kolom {{ $header }}" title="Filter kolom {{ $header }}">
                                                         <i class="fas fa-filter text-muted" id="icon_filter_{{ $index }}"></i>
                                                     </button>
 
@@ -678,9 +681,12 @@
         }
 
         function normalizeFilterValues(values) {
-            return Array.from(new Set(
-                (Array.isArray(values) ? values : []).map(normalizeFilterValue)
-            ));
+            // PHP mengirim array berkunci tidak berurutan sebagai objek JSON.
+            const list = Array.isArray(values)
+                ? values
+                : (values && typeof values === 'object' ? Object.values(values) : []);
+
+            return Array.from(new Set(list.map(normalizeFilterValue)));
         }
 
         function isFilterStateFullySelected(state) {
@@ -1019,6 +1025,13 @@
             const visibleValues = filteredValues.slice(0, filterRenderLimit);
             let html = '';
 
+            const loadErrorHtml = state.loadError && !state.isLoading
+                ? '<div class="small text-warning mb-2 filter-load-error" role="alert">' +
+                  '<i class="fas fa-exclamation-triangle mr-1"></i>Opsi lengkap gagal dimuat (' + escapeHtml(state.loadError) + ')' +
+                  (filteredValues.length ? '; menampilkan opsi dari sampel.' : '.') +
+                  ' <button type="button" class="btn btn-link btn-sm p-0 align-baseline filter-retry" data-col="' + col + '">Coba lagi</button></div>'
+                : '';
+
             if (state.isLoading && !state.fullOptionsLoaded) {
                 html = '<div class="text-center text-muted py-3 small">' +
                     '<i class="fas fa-spinner fa-spin mr-2"></i>Memuat opsi filter lengkap...</div>';
@@ -1026,8 +1039,9 @@
                 html = state.isLoading
                     ? '<div class="text-center text-muted py-2 small">' +
                       '<i class="fas fa-spinner fa-spin mr-2"></i>Memuat opsi filter...</div>'
-                    : '<div class="text-center text-muted py-2 small">Tidak ada opsi yang cocok.</div>';
+                    : loadErrorHtml || '<div class="text-center text-muted py-2 small">Tidak ada opsi yang cocok.</div>';
             } else {
+                html += loadErrorHtml;
                 if (state.isLoading) {
                     html += '<div class="small text-muted mb-2"><i class="fas fa-spinner fa-spin mr-1"></i>Memindahkan nilai dari file sumber...</div>';
                 }
@@ -1126,6 +1140,7 @@
                 replaceFilterOptions(state, normalizedValues);
                 state.fullOptionsLoaded = true;
                 state.loadedSignature = signature;
+                state.loadError = '';
                 // Simpan ke cache untuk next load
                 if (isInitialPrefetch || Object.keys(activeFilters).length === 0) {
                     saveToLocalStorage(col, normalizedValues);
@@ -1135,6 +1150,7 @@
 
             } catch (error) {
                 console.error('Error loading filter options:', error);
+                state.loadError = (error && error.message) || 'koneksi terputus';
                 shouldRender = true;
             } finally {
                 state.isLoading = false;
@@ -1244,7 +1260,8 @@
 
                     const cell = row.children[req.index];
                     if (cell) {
-                        const cellVal = (cell.getAttribute('data-val') || '').trim();
+                        // Normalisasi sama dengan opsi filter (whitespace dipertahankan bila diminta report).
+                        const cellVal = normalizeFilterValue(cell.getAttribute('data-val') || '');
                         if (!req.allowed.includes(cellVal)) {
                             pass = false;
                             break;
@@ -1638,6 +1655,31 @@
                 ensureFullFilterOptions(container.getAttribute('data-col'));
             });
         });
+
+        // Container daftar tetap sama walau menu dipindah ke body; isinya saja yang dirender ulang.
+        document.querySelectorAll('.import-preview-filter-menu [id^="list_container_"]').forEach(function (container) {
+            container.addEventListener('click', function (event) {
+                const retry = event.target.closest ? event.target.closest('.filter-retry') : null;
+                if (!retry) {
+                    return;
+                }
+
+                const col = retry.getAttribute('data-col');
+                if (filterState[col]) {
+                    filterState[col].loadError = '';
+                    filterState[col].loadedSignature = '';
+                }
+                ensureFullFilterOptions(col);
+            });
+        });
+
+        function markFilterButtonsReady() {
+            if (typeof window.__importFilterMarkReady === 'function') {
+                window.__importFilterMarkReady();
+            }
+        }
+
+        markFilterButtonsReady();
 
         function positionPortaledFilterMenu(dropdown) {
             const menu = dropdown ? dropdown.__portalFilterMenu : null;

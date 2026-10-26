@@ -389,6 +389,7 @@ class ImportReportPhController extends Controller
             'active_filters' => $this->normalizeActiveFiltersForPolars($activeFilters),
             'extra_columns' => $this->extraTargetColumnSpecs(),
             'date_orders' => $this->learnedDateOrders(),
+            'header_aliases' => $this->driftHeaderAliases(),
         ], $extraConfig), JSON_UNESCAPED_UNICODE));
 
         $cmd = escapeshellarg($pythonExe)
@@ -805,6 +806,7 @@ class ImportReportPhController extends Controller
 
             $headers[$index] = self::EXCEL_HEADER_OCCURRENCE_ALIASES[$normalized][$occurrence]
                 ?? self::EXCEL_HEADER_ALIASES[$normalized]
+                ?? $this->driftHeaderAliases()[$normalized]
                 ?? $label;
         }
 
@@ -2364,7 +2366,7 @@ class ImportReportPhController extends Controller
                 continue;
             }
 
-            $normalizedHeaders[] = self::EXCEL_HEADER_ALIASES[$normalized] ?? $normalized;
+            $normalizedHeaders[] = self::EXCEL_HEADER_ALIASES[$normalized] ?? $this->driftHeaderAliases()[$normalized] ?? $normalized;
         }
 
         return $normalizedHeaders;
@@ -2743,6 +2745,31 @@ class ImportReportPhController extends Controller
     private ?array $extraTargetColumnKinds = null;
     private ?array $targetColumnCache = null;
     private ?array $learnedDateOrderCache = null;
+    private ?array $driftHeaderAliasCache = null;
+
+    /**
+     * Accepted renames (source header key => lw325_ph column), so a renamed
+     * export label keeps filling the column it was mapped onto.
+     *
+     * @return array<string, string>
+     */
+    private function driftHeaderAliases(): array
+    {
+        if ($this->driftHeaderAliasCache !== null) {
+            return $this->driftHeaderAliasCache;
+        }
+
+        try {
+            $columns = array_fill_keys($this->targetColumns(), true);
+
+            return $this->driftHeaderAliasCache = array_filter(
+                app(\App\Services\Import\SchemaDrift\SchemaDriftRegistry::class)->columnAliases(self::TABLE_NAME),
+                static fn (string $column): bool => isset($columns[$column])
+            );
+        } catch (\Throwable) {
+            return $this->driftHeaderAliasCache = [];
+        }
+    }
 
     /**
      * Fixed LW325 columns followed by columns added through an accepted schema

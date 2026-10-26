@@ -19,6 +19,9 @@
         </div>
     </div>
 
+    @include('import.partials.control-center')
+
+    <div class="cc-panel" id="cc-panel-operations" role="tabpanel" aria-labelledby="cc-tab-operations" hidden>
     <!-- Keep main wrapper and data attributes intact -->
     <div class="card border-0 shadow-sm job-management-main-card" id="job-management-card"
         data-fetch-url="{{ route('job-management.data') }}"
@@ -338,6 +341,7 @@
                 <div id="job-pagination" class="card-footer bg-white d-none py-3 px-4" style="border-top: 1px solid #e2e8f0;"></div>
             </div>
         </div>
+    </div>
     </div>
 </div>
 @endsection

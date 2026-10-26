@@ -1,0 +1,852 @@
+/*
+ * Keynote presentation: tokens, page surface, navigation, menu, loader, dialogs.
+ *
+ * Light by default (Apple #f5f5f7 and white), dark only for the theatre grounds.
+ * One hue, BRI blue, in two stops keyed to the ground. Semantic colours (up,
+ * down, risk) are data, not decoration. Every rule is scoped under .kn so the
+ * shared dialog and modal styles imported beside it keep working.
+ */
+
+.kn {
+    --kn-font: "Geist", "SF Pro Display", "Segoe UI Variable Display", system-ui, -apple-system, sans-serif;
+    --kn-nav-h: 52px;
+    --kn-gutter: clamp(20px, 4.4vw, 56px);
+    --kn-wrap: min(1240px, calc(100vw - (var(--kn-gutter) * 2)));
+    --kn-measure: 62ch;
+    --kn-ease: cubic-bezier(0.23, 1, 0.32, 1);
+    --kn-ease-io: cubic-bezier(0.65, 0, 0.35, 1);
+
+    --kn-r-tile: 28px;
+    --kn-r-inner: 16px;
+    --kn-r-control: 999px;
+
+    --kn-t-hero: clamp(3.6rem, 9.6vw, 9.25rem);
+    --kn-t-statement: clamp(2.5rem, 5vw, 4.75rem);
+    --kn-t-figure: clamp(3.4rem, 7.2vw, 7rem);
+    --kn-t-title: clamp(2rem, 3.6vw, 3.4rem);
+    --kn-t-lede: clamp(1.18rem, 1.55vw, 1.42rem);
+    --kn-t-body: 1.0625rem;
+    --kn-t-small: 0.875rem;
+    --kn-t-micro: 0.78rem;
+
+    /* Light ground (default). */
+    --kn-canvas: #f5f5f7;
+    --kn-paper: #ffffff;
+    --kn-ink: #1d1d1f;
+    --kn-ink-2: #424245;
+    --kn-ink-soft: #6e6e73;
+    --kn-line: rgba(0, 0, 0, 0.08);
+    --kn-line-strong: rgba(0, 0, 0, 0.14);
+    --kn-fill: rgba(0, 0, 0, 0.035);
+    --kn-accent: #0058d0;
+    --kn-accent-soft: rgba(0, 88, 208, 0.08);
+    --kn-accent-ink: #ffffff;
+    --kn-up: #1b7f3b;
+    --kn-down: #c4111f;
+    --kn-risk: #a65200;
+    --kn-shadow: 0 1px 2px rgba(18, 24, 38, 0.04), 0 10px 30px -12px rgba(18, 24, 38, 0.12);
+    --kn-shadow-raised: 0 2px 6px rgba(18, 24, 38, 0.05), 0 24px 60px -24px rgba(18, 24, 38, 0.22);
+
+    margin: 0;
+    min-height: 100%;
+    background: var(--kn-canvas);
+    color: var(--kn-ink);
+    font-family: var(--kn-font);
+    font-size: var(--kn-t-body);
+    line-height: 1.55;
+    letter-spacing: -0.011em;
+    font-feature-settings: "ss01", "cv11";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+}
+
+html.pres-keynote {
+    background: #f5f5f7;
+    scroll-behavior: auto;
+    scroll-padding-top: 52px;
+    scrollbar-color: rgba(0, 0, 0, 0.28) transparent;
+}
+
+html.pres-keynote,
+html.pres-keynote body {
+    height: auto;
+    overflow-x: clip;
+}
+
+.kn *,
+.kn *::before,
+.kn *::after {
+    box-sizing: border-box;
+}
+
+.kn ::selection {
+    background: rgba(0, 88, 208, 0.18);
+    color: inherit;
+}
+
+.kn :focus-visible {
+    outline: 2px solid var(--kn-accent);
+    outline-offset: 3px;
+    border-radius: 6px;
+}
+
+.kn a {
+    color: var(--kn-accent);
+    text-decoration-thickness: 1px;
+    text-underline-offset: 0.2em;
+}
+
+.kn img {
+    max-width: 100%;
+}
+
+.kn .kn-sr,
+.kn .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+.kn .kn-skip {
+    position: fixed;
+    top: 8px;
+    left: 8px;
+    z-index: 200;
+    padding: 10px 16px;
+    border-radius: var(--kn-r-control);
+    background: var(--kn-ink);
+    color: var(--kn-paper);
+    font-weight: 600;
+    text-decoration: none;
+    transform: translateY(-160%);
+    transition: transform 160ms var(--kn-ease);
+}
+
+.kn .kn-skip:focus-visible {
+    transform: none;
+}
+
+/* Grounds. Restating colour with the tokens re-inks text that already resolved on body. */
+.kn .kn-ground--light {
+    --kn-ground: var(--kn-canvas);
+    background: var(--kn-canvas);
+    color: var(--kn-ink);
+}
+
+.kn .kn-ground--paper {
+    --kn-ground: var(--kn-paper);
+    background: var(--kn-paper);
+    color: var(--kn-ink);
+}
+
+.kn .kn-ground--paper .rp-paper,
+.kn .kn-ground--paper .kn-tile {
+    background: var(--kn-canvas);
+    box-shadow: none;
+}
+
+.kn .kn-ground--dark {
+    --kn-canvas: #0b0b0d;
+    --kn-paper: #161618;
+    --kn-ink: #f5f5f7;
+    --kn-ink-2: #d2d2d7;
+    --kn-ink-soft: #a1a1a6;
+    --kn-line: rgba(255, 255, 255, 0.1);
+    --kn-line-strong: rgba(255, 255, 255, 0.18);
+    --kn-fill: rgba(255, 255, 255, 0.05);
+    --kn-accent: #4c9dff;
+    --kn-accent-soft: rgba(76, 157, 255, 0.14);
+    --kn-accent-ink: #04122b;
+    --kn-up: #46d17a;
+    --kn-down: #ff6b6b;
+    --kn-risk: #ffb340;
+    --kn-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 18px 40px -24px rgba(0, 0, 0, 0.7);
+    --kn-shadow-raised: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 30px 70px -30px rgba(0, 0, 0, 0.85);
+    --kn-ground: #0b0b0d;
+    background: #0b0b0d;
+    color: var(--kn-ink);
+    color-scheme: dark;
+}
+
+.kn .kn-ground--dark ::selection {
+    background: rgba(76, 157, 255, 0.3);
+}
+
+/* Buttons and links: pills, one weight, press feedback. */
+.kn .kn-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 32px;
+    padding: 0 16px;
+    border: 0;
+    border-radius: var(--kn-r-control);
+    font: 500 var(--kn-t-small) / 1 var(--kn-font);
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background-color 160ms var(--kn-ease), transform 120ms var(--kn-ease), box-shadow 160ms var(--kn-ease);
+}
+
+.kn .kn-button:active {
+    transform: scale(0.97);
+}
+
+.kn .kn-button--primary {
+    background: var(--kn-accent);
+    color: var(--kn-accent-ink);
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .kn .kn-button--primary:hover {
+        background: color-mix(in srgb, var(--kn-accent) 88%, #000);
+    }
+}
+
+.kn .kn-button--large {
+    min-height: 48px;
+    padding: 0 28px;
+    font-size: 1.0625rem;
+}
+
+.kn .kn-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--kn-accent);
+    font-weight: 500;
+    text-decoration: none;
+}
+
+.kn .kn-link i {
+    font-size: 0.72em;
+    transition: transform 160ms var(--kn-ease);
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .kn .kn-link:hover {
+        text-decoration: underline;
+    }
+
+    .kn .kn-link:hover i {
+        transform: translateX(2px);
+    }
+}
+
+/* ------------------------------------------------------------- navigation -- */
+
+.kn .kn-nav {
+    position: fixed;
+    inset: 0 0 auto;
+    z-index: 60;
+    height: var(--kn-nav-h);
+    color: #1d1d1f;
+    background: rgba(250, 250, 252, 0.72);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    backdrop-filter: saturate(180%) blur(20px);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+    transition: background-color 260ms var(--kn-ease), color 260ms var(--kn-ease), border-color 260ms var(--kn-ease);
+}
+
+.kn .kn-nav.is-on-dark {
+    color: #f5f5f7;
+    background: rgba(18, 18, 20, 0.66);
+    border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+
+.kn .kn-nav.is-on-dark .kn-nav__chapter,
+.kn .kn-nav.is-on-dark .kn-nav__period,
+.kn .kn-nav.is-on-dark .kn-nav__back {
+    color: rgba(245, 245, 247, 0.72);
+}
+
+.kn .kn-nav__inner {
+    display: grid;
+    grid-template-columns: auto auto 1fr auto;
+    align-items: center;
+    gap: 18px;
+    width: min(1440px, calc(100vw - (var(--kn-gutter) * 2)));
+    height: 100%;
+    margin: 0 auto;
+}
+
+.kn .kn-nav__back {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 36px;
+    padding: 0 4px;
+    color: #424245;
+    font-size: var(--kn-t-small);
+    text-decoration: none;
+    transition: color 160ms var(--kn-ease);
+}
+
+.kn .kn-nav__back i {
+    font-size: 0.72rem;
+}
+
+.kn .kn-nav__title {
+    margin: 0;
+    font-size: 1.125rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    white-space: nowrap;
+}
+
+.kn .kn-nav__chapters {
+    justify-self: center;
+    min-width: 0;
+}
+
+.kn .kn-nav__chapters ol {
+    display: flex;
+    gap: 2px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.kn .kn-nav__chapter {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    min-height: 36px;
+    padding: 0 12px;
+    border-radius: var(--kn-r-control);
+    color: #424245;
+    font-size: var(--kn-t-small);
+    font-weight: 450;
+    text-decoration: none;
+    transition: color 160ms var(--kn-ease), background-color 160ms var(--kn-ease);
+}
+
+.kn .kn-nav__chapter::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    bottom: 3px;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: currentColor;
+    opacity: 0;
+    transform: translateX(-50%) scale(0.5);
+    transition: opacity 200ms var(--kn-ease), transform 200ms var(--kn-ease);
+}
+
+.kn .kn-nav__chapter.is-active,
+.kn .kn-nav__chapter[aria-current] {
+    color: inherit;
+    font-weight: 600;
+}
+
+.kn .kn-nav__chapter.is-active::after,
+.kn .kn-nav__chapter[aria-current]::after {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .kn .kn-nav__chapter:hover,
+    .kn .kn-nav__back:hover {
+        color: inherit;
+    }
+
+    .kn .kn-nav__chapter:hover {
+        background: rgba(127, 127, 127, 0.1);
+    }
+}
+
+.kn .kn-nav__end {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.kn .kn-nav__period {
+    margin: 0;
+    color: #6e6e73;
+    font-size: var(--kn-t-micro);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.kn .kn-nav__ppt {
+    min-height: 30px;
+    padding: 0 14px;
+    font-size: 0.8125rem;
+}
+
+.kn .kn-nav.is-on-dark .kn-nav__ppt {
+    --kn-accent: #4c9dff;
+    --kn-accent-ink: #04122b;
+}
+
+.kn .kn-nav__progress {
+    position: absolute;
+    inset: auto 0 -1px;
+    height: 2px;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.kn .kn-nav__progress i {
+    display: block;
+    height: 100%;
+    background: #0058d0;
+    transform-origin: 0 50%;
+    transform: scaleX(var(--kn-read, 0));
+}
+
+.kn .kn-nav.is-on-dark .kn-nav__progress i {
+    background: #4c9dff;
+}
+
+/* --------------------------------------------------------- overflow menu -- */
+
+.kn .kn-menu {
+    position: relative;
+}
+
+.kn .kn-menu__toggle {
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    transition: background-color 160ms var(--kn-ease);
+}
+
+.kn .kn-menu__toggle svg {
+    width: 20px;
+    height: 20px;
+    fill: currentColor;
+}
+
+.kn .kn-menu__toggle[aria-expanded="true"],
+.kn .kn-menu__toggle:hover {
+    background: rgba(127, 127, 127, 0.14);
+}
+
+.kn .kn-menu__panel {
+    position: absolute;
+    top: calc(100% + 10px);
+    right: 0;
+    width: 300px;
+    padding: 8px;
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.94);
+    -webkit-backdrop-filter: saturate(180%) blur(24px);
+    backdrop-filter: saturate(180%) blur(24px);
+    color: #1d1d1f;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06), 0 24px 60px -18px rgba(18, 24, 38, 0.38);
+    transform-origin: top right;
+    animation: kn-menu-in 200ms var(--kn-ease);
+}
+
+.kn .kn-menu__panel[hidden] {
+    display: none;
+}
+
+@keyframes kn-menu-in {
+    from { opacity: 0; transform: scale(0.96) translateY(-4px); }
+    to { opacity: 1; transform: none; }
+}
+
+.kn .kn-menu__group {
+    display: grid;
+    gap: 2px;
+}
+
+.kn .kn-menu__group button {
+    display: grid;
+    grid-template-columns: 22px 1fr auto;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-height: 40px;
+    padding: 0 12px;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    color: inherit;
+    font: 450 var(--kn-t-small) / 1.2 var(--kn-font);
+    text-align: left;
+    cursor: pointer;
+    transition: background-color 120ms var(--kn-ease);
+}
+
+.kn .kn-menu__group button i {
+    color: #6e6e73;
+    font-size: 0.86rem;
+    text-align: center;
+}
+
+.kn .kn-menu__group button:hover,
+.kn .kn-menu__group button:focus-visible {
+    background: rgba(0, 88, 208, 0.08);
+    outline-offset: -2px;
+}
+
+.kn .kn-menu__group button[aria-pressed="true"] i {
+    color: #0058d0;
+}
+
+.kn .kn-menu__group kbd {
+    min-width: 22px;
+    padding: 2px 6px;
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.05);
+    color: #6e6e73;
+    font: 500 0.72rem / 1.2 var(--kn-font);
+    text-align: center;
+}
+
+.kn .kn-menu__meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin: 6px 4px 0;
+    padding: 10px 8px 4px;
+    border-top: 1px solid rgba(0, 0, 0, 0.08);
+    color: #6e6e73;
+    font-size: var(--kn-t-micro);
+}
+
+.kn .kn-menu__meta strong {
+    color: #1d1d1f;
+    font-weight: 600;
+}
+
+.kn .pres-live-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.kn .pres-live-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #1b7f3b;
+}
+
+.kn .kn-menu__brand {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin: 0;
+    padding: 10px 12px 6px;
+}
+
+.kn .kn-menu__brand img {
+    height: 18px;
+    width: auto;
+}
+
+.kn .pres-motion-toggle {
+    display: none !important;
+}
+
+/* ----------------------------------------------------------------- loader -- */
+
+.kn-loader {
+    position: fixed;
+    inset: 0;
+    z-index: 120;
+    display: grid;
+    place-content: center;
+    gap: 18px;
+    background: #0b0b0d;
+    color: #f5f5f7;
+    font-family: "Geist", system-ui, -apple-system, sans-serif;
+    text-align: center;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 520ms cubic-bezier(0.23, 1, 0.32, 1), visibility 0s linear 520ms;
+}
+
+.kn-loader.active {
+    opacity: 1;
+    visibility: visible;
+    transition: opacity 260ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.kn-loader__title {
+    margin: 0;
+    font-size: clamp(1.6rem, 3vw, 2.4rem);
+    font-weight: 600;
+    letter-spacing: -0.035em;
+}
+
+.kn-loader__track {
+    width: min(240px, 60vw);
+    height: 2px;
+    margin: 0 auto;
+    overflow: hidden;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.14);
+}
+
+.kn-loader__track i {
+    display: block;
+    width: 0;
+    height: 100%;
+    background: #f5f5f7;
+    transition: width 400ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.kn-loader__meta {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    width: min(240px, 60vw);
+    margin: 0 auto;
+    color: #a1a1a6;
+    font-size: 0.78rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.kn-loader .dashboard-loading-sub {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ---------------------------------------------------------------- dialogs -- */
+
+.kn .kn-dialog {
+    --pres-tool-accent: #0058d0;
+    border: 0;
+    border-radius: 24px;
+    color: #1d1d1f;
+    font-family: var(--kn-font);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 40px 100px -30px rgba(10, 18, 40, 0.5);
+}
+
+.kn .kn-dialog::backdrop {
+    background: rgba(10, 12, 16, 0.42);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+}
+
+.kn .kn-dialog h2 {
+    letter-spacing: -0.03em;
+}
+
+.kn .pres-ppt-export-btn,
+.kn .pres-tool-dialog button#pres-compare-refresh,
+.kn #pres-note-save {
+    border-radius: var(--kn-r-control);
+}
+
+/* ------------------------------------------------------------------ toast -- */
+
+.kn .kn-toast {
+    position: fixed;
+    left: 50%;
+    bottom: 28px;
+    z-index: 90;
+    max-width: min(520px, calc(100vw - 32px));
+    padding: 12px 18px;
+    border-radius: var(--kn-r-control);
+    background: rgba(29, 29, 31, 0.92);
+    color: #f5f5f7;
+    font-size: var(--kn-t-small);
+    pointer-events: none;
+    opacity: 0;
+    transform: translate(-50%, 12px);
+    transition: opacity 200ms var(--kn-ease), transform 200ms var(--kn-ease);
+}
+
+.kn .kn-toast.show,
+.kn .kn-toast.is-visible,
+.kn .kn-toast.active {
+    opacity: 1;
+    transform: translate(-50%, 0);
+}
+
+.kn .kn-legacy {
+    display: none !important;
+}
+
+/* ------------------------------------------------------------ responsive -- */
+
+@media (max-width: 1120px) {
+    .kn .kn-nav__period {
+        display: none;
+    }
+}
+
+@media (max-width: 960px) {
+    .kn .kn-nav__inner {
+        grid-template-columns: auto 1fr auto;
+        gap: 10px;
+    }
+
+    .kn .kn-nav__chapters {
+        position: fixed;
+        inset: var(--kn-nav-h) 0 auto;
+        justify-self: stretch;
+        height: 44px;
+        overflow-x: auto;
+        scrollbar-width: none;
+        background: inherit;
+        -webkit-backdrop-filter: saturate(180%) blur(20px);
+        backdrop-filter: saturate(180%) blur(20px);
+        border-bottom: 1px solid rgba(127, 127, 127, 0.14);
+    }
+
+    .kn .kn-nav__chapters::-webkit-scrollbar {
+        display: none;
+    }
+
+    .kn .kn-nav__chapters ol {
+        width: max-content;
+        height: 100%;
+        align-items: center;
+        padding: 0 var(--kn-gutter);
+    }
+
+    .kn {
+        --kn-nav-h: 52px;
+    }
+
+    html.pres-keynote {
+        scroll-padding-top: 96px;
+    }
+
+    .kn .kn-nav__back .pres-back-text {
+        display: none;
+    }
+}
+
+@media (max-width: 560px) {
+    .kn .kn-nav__title {
+        font-size: 1rem;
+    }
+
+    .kn .kn-nav__ppt {
+        padding: 0 12px;
+    }
+
+    .kn .kn-menu__panel {
+        position: fixed;
+        top: calc(var(--kn-nav-h) + 52px);
+        right: 12px;
+        left: 12px;
+        width: auto;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .kn *,
+    .kn *::before,
+    .kn *::after {
+        animation-duration: 1ms !important;
+        animation-iteration-count: 1 !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+@media print {
+    .kn .kn-nav,
+    .kn-loader,
+    .kn-relief {
+        display: none !important;
+    }
+}
+
+/* ------------------------------------------- daily timeseries modal -- */
+/* The comparison modal is shared with the slide deck; in the keynote it takes the same quiet surface as the other dialogs. */
+
+.kn .psd-timeseries-modal {
+    background: rgba(12, 14, 20, 0.42);
+    -webkit-backdrop-filter: saturate(160%) blur(20px);
+    backdrop-filter: saturate(160%) blur(20px);
+}
+
+.kn .psd-timeseries-dialog {
+    border: 0;
+    border-radius: var(--kn-r-tile);
+    box-shadow: 0 40px 120px -30px rgba(10, 14, 24, 0.5), 0 0 0 1px rgba(0, 0, 0, 0.04);
+    font-family: var(--kn-font);
+}
+
+.kn .psd-timeseries-dialog :is(h2, p, span, strong, small, button, text) {
+    font-family: inherit;
+}
+
+.kn .psd-timeseries-dialog-header {
+    padding: 26px 30px 20px;
+    border-bottom: 1px solid var(--kn-line);
+    background: #ffffff;
+}
+
+.kn .psd-timeseries-dialog-header span {
+    color: var(--kn-accent);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0;
+    text-transform: none;
+}
+
+.kn .psd-timeseries-dialog-header h2 {
+    color: #1d1d1f;
+    font-size: clamp(1.5rem, 2.2vw, 2rem);
+    font-weight: 600;
+    letter-spacing: -0.035em;
+}
+
+.kn .psd-timeseries-dialog-header p {
+    color: #6e6e73;
+    font-weight: 400;
+}
+
+.kn .psd-timeseries-metric-selector > strong {
+    color: #1d1d1f;
+    font-weight: 600;
+}
+
+.kn .psd-timeseries-dialog-header button {
+    min-height: 36px;
+    border: 0;
+    border-radius: 999px;
+    background: #f5f5f7;
+    box-shadow: none;
+    color: #1d1d1f;
+    font-weight: 500;
+}
+
+.kn .psd-timeseries-dialog-header button span {
+    display: inline;
+    color: inherit;
+    font-size: inherit;
+    font-weight: inherit;
+}
+
+.kn .psd-timeseries-dialog-header button:hover {
+    background: #e8e8ed;
+    color: #1d1d1f;
+}
+
+.kn .psd-timeseries-dialog-header .psd-timeseries-metric-selector button.is-active {
+    color: #ffffff;
+    background: var(--kn-accent);
+}

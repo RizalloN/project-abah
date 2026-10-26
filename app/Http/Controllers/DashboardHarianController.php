@@ -347,7 +347,7 @@ class DashboardHarianController extends Controller
     ): array
     {
         $cacheKey = 'dashboard_harian:payload:' . md5(json_encode([
-            'schema' => 'penc-pct-v28-retail-konsol-unit-scope',
+            'schema' => 'penc-pct-v29-without-daily-average-small',
             'version' => $this->reportCacheVersion(),
             'period' => $selectedPeriod,
             'rka' => $selectedRka,

@@ -100,21 +100,24 @@ class MantriKanwilFormulaTest extends TestCase
         $this->assertEqualsCanonicalizing(['11', '12', '13', 'DISAPPEARED', 'FALLBACK'], $accounts->keys()->map('strval')->all());
         $this->assertSame(300_000_000.25, $accounts['11']['plafon']);
         $this->assertSame(25_000_000.0, $accounts['11']['previous_os']);
-        $this->assertSame(275_000_000.25, $accounts['11']['net_amount']);
-        $this->assertSame(75_000_000.0, $accounts['12']['net_amount']);
-        $this->assertSame(175_000_000.0, $accounts['13']['net_amount']);
-        $this->assertSame(974_000_000.0, $accounts['DISAPPEARED']['net_amount']);
+        // One 25m CIF baseline is shared proportionally over 1,599,000,000.25
+        // of bookings, including the registered booking absent today.
+        $this->assertSame(295_309_568.73, $accounts['11']['net_amount']);
+        $this->assertSame(98_436_522.83, $accounts['12']['net_amount']);
+        $this->assertSame(196_873_045.65, $accounts['13']['net_amount']);
+        $this->assertSame(983_380_863.04, $accounts['DISAPPEARED']['net_amount']);
+        $this->assertEqualsWithDelta(25_000_000.0, $accounts->sum('deduction_applied'), 0.000001);
         $this->assertSame('00000123 - PEMRAKARSA', $accounts['11']['owner']);
         $this->assertSame('RM LAIN', $accounts['FALLBACK']['owner']);
         $this->assertSame(250_000_000.0, $accounts['FALLBACK']['net_amount']);
         $this->assertSame(['daily_loan_dinamis'], $accounts->pluck('baseline_source')->unique()->values()->all());
         $metrics = collect($calculator->mantri($period));
         $this->assertSame(5, $metrics->sum('realisasi_deb'));
-        $this->assertSame(1_749_000_000.25, $metrics->sum('realisasi_os'));
+        $this->assertSame(1_824_000_000.25, $metrics->sum('realisasi_os'));
     }
 
     #[DataProvider('reportPositions')]
-    public function test_each_booking_is_floored_before_owner_totals_and_preserves_actual_baseline_in_every_period(string $period): void
+    public function test_cif_deflation_keeps_fresh_booking_and_preserves_actual_baseline_in_every_period(string $period): void
     {
         $date = Carbon::parse($period);
         $previous = $date->copy()->startOfMonth()->subDay()->toDateString();
@@ -138,20 +141,22 @@ class MantriKanwilFormulaTest extends TestCase
         $this->assertCount(4, $accounts);
         $this->assertSame(300_000_000.75, $accounts['NEW-NEGATIVE']['previous_os']);
         $this->assertSame(250_000_000.25, $accounts['NEW-NEGATIVE']['plafon']);
-        $this->assertSame(0.0, $accounts['NEW-NEGATIVE']['net_amount']);
+        $this->assertSame(250_000_000.25, $accounts['NEW-NEGATIVE']['net_amount']);
+        $this->assertSame(0.0, $accounts['NEW-NEGATIVE']['deduction_applied']);
         $this->assertSame(100_000_000.10, $accounts['NEW-POSITIVE']['previous_os']);
         $this->assertEqualsWithDelta(100_000_000.30, $accounts['NEW-POSITIVE']['net_amount'], 0.000001);
         $this->assertSame(50_000_000.55, $accounts['NEW-EQUAL']['previous_os']);
         $this->assertSame(0.0, $accounts['NEW-EQUAL']['net_amount']);
         $this->assertSame(400_000_000.20, $accounts['NEW-OTHER']['previous_os']);
-        $this->assertSame(0.0, $accounts['NEW-OTHER']['net_amount']);
+        $this->assertSame(100_000_000.10, $accounts['NEW-OTHER']['net_amount']);
+        $this->assertSame(0.0, $accounts['NEW-OTHER']['deduction_applied']);
 
         $metrics = collect($calculator->mantri($period))->keyBy('owner');
         $this->assertCount(2, $metrics);
         $this->assertSame(3, $metrics['00000123 - PEMRAKARSA']['realisasi_deb']);
-        $this->assertEqualsWithDelta(100_000_000.30, $metrics['00000123 - PEMRAKARSA']['realisasi_os'], 0.000001);
+        $this->assertEqualsWithDelta(350_000_000.55, $metrics['00000123 - PEMRAKARSA']['realisasi_os'], 0.000001);
         $this->assertSame(1, $metrics['00000456 - PEMRAKARSA LAIN']['realisasi_deb']);
-        $this->assertSame(0.0, $metrics['00000456 - PEMRAKARSA LAIN']['realisasi_os']);
+        $this->assertSame(100_000_000.10, $metrics['00000456 - PEMRAKARSA LAIN']['realisasi_os']);
         $kur = $calculator->kurRm($period);
         $this->assertCount(1, $kur);
         $this->assertSame(1, $kur[0]['realisasi_deb']);
@@ -171,7 +176,8 @@ class MantriKanwilFormulaTest extends TestCase
         $accounts = app(MicroNettDisbursementCalculator::class)->mantriAccounts('2026-12-11');
         $this->assertCount(3, $accounts);
         $this->assertSame([40_000_000.0], collect($accounts)->pluck('previous_os')->unique()->values()->all());
-        $this->assertSame(180_000_000.0, collect($accounts)->sum('net_amount'));
+        $this->assertSame(260_000_000.0, collect($accounts)->sum('net_amount'));
+        $this->assertSame(40_000_000.0, collect($accounts)->sum('deduction_applied'));
     }
 
     public function test_raw_source_branch_scope_excludes_outside_branch_despite_inside_normalized_label(): void

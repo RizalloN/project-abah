@@ -2,9 +2,14 @@
 
 namespace Tests\Unit;
 
+use App\Console\Commands\BackfillShadowColumnsCommand;
+use App\Jobs\ProcessShadowBackfillJob;
+use App\Support\DailyLoanManualSegmentRule;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
@@ -119,5 +124,76 @@ class BackfillShadowColumnsCommandTest extends TestCase
         $this->assertSame('MEDIUM', $row->segmen_kinerja);
         $this->assertSame('COMMERCIAL', $row->produk_kinerja);
         $this->assertNotNull($row->shadow_built_at);
+    }
+
+    public function test_auto_discover_trusts_verified_older_periods_and_always_rechecks_recent_ones(): void
+    {
+        $periods = ['2026-07-01', '2026-07-02', '2026-07-03', '2026-07-04', '2026-07-05'];
+        foreach ($periods as $period) {
+            DB::table('daily_loan_dinamis')->insert([
+                'uniqueid_namareport' => 'row-' . $period,
+                'periode' => $period,
+                'description' => '10. RITKOM -> Rp. 5 M S/D 15 M',
+                'segmen_dashboard' => 'Small',
+                'produk_dashboard' => 'Commercial',
+                'cabang1' => 'KC Madiun',
+                'unit1' => 'KC Madiun',
+                'branch1' => '45',
+                'pn_pengelola1' => '00123',
+                'cifno' => 'CIF-01',
+                'updated_at' => $period . ' 10:00:00',
+            ]);
+        }
+        $this->artisan('shadow:backfill', ['--periods' => implode(',', $periods), '--skip-snapshot' => true, '--no-interaction' => true])
+            ->assertSuccessful();
+
+        $existsProbes = function (): int {
+            $count = 0;
+            DB::listen(function ($query) use (&$count): void {
+                $sql = strtolower($query->sql);
+                if (str_contains($sql, 'exists') && str_contains($sql, 'from "daily_loan_dinamis"')) {
+                    $count++;
+                }
+            });
+            $this->artisan('shadow:backfill', ['--skip-snapshot' => true, '--no-interaction' => true])->assertSuccessful();
+
+            return $count;
+        };
+
+        $this->assertSame(5, $existsProbes());
+        Queue::fake();
+        DB::table('daily_loan_dinamis')->where('periode', '2026-07-05')->update(['shadow_built_at' => null]);
+
+        $this->artisan('shadow:backfill', ['--queue' => true, '--skip-snapshot' => true, '--no-interaction' => true])->assertSuccessful();
+
+        Queue::assertPushed(ProcessShadowBackfillJob::class, fn (ProcessShadowBackfillJob $job): bool => $job->periods === ['2026-07-05']);
+        $this->assertTrue(Cache::has(BackfillShadowColumnsCommand::VERIFIED_CACHE_PREFIX . DailyLoanManualSegmentRule::VERSION . ':2026-07-01'));
+        $this->assertFalse(Cache::has(BackfillShadowColumnsCommand::VERIFIED_CACHE_PREFIX . DailyLoanManualSegmentRule::VERSION . ':2026-07-05'));
+    }
+
+    public function test_auto_discover_skips_verified_older_periods_on_the_next_run(): void
+    {
+        foreach (['2026-07-01', '2026-07-02', '2026-07-03', '2026-07-04', '2026-07-05'] as $period) {
+            Cache::put(BackfillShadowColumnsCommand::VERIFIED_CACHE_PREFIX . DailyLoanManualSegmentRule::VERSION . ':' . $period, time(), 600);
+            DB::table('daily_loan_dinamis')->insert([
+                'uniqueid_namareport' => 'row-' . $period,
+                'periode' => $period,
+                'updated_at' => $period . ' 10:00:00',
+            ]);
+        }
+
+        $probed = [];
+        DB::listen(function ($query) use (&$probed): void {
+            if (str_contains(strtolower($query->sql), 'exists') && str_contains(strtolower($query->sql), 'from "daily_loan_dinamis"')) {
+                $probed[] = $query->bindings[0] ?? null;
+            }
+        });
+        Queue::fake();
+
+        $this->artisan('shadow:backfill', ['--queue' => true, '--skip-snapshot' => true, '--no-interaction' => true])->assertSuccessful();
+
+        // Only the three newest periods are probed; older verified ones are trusted.
+        $this->assertCount(3, $probed);
+        Queue::assertPushed(ProcessShadowBackfillJob::class, fn (ProcessShadowBackfillJob $job): bool => $job->periods === ['2026-07-05', '2026-07-04', '2026-07-03']);
     }
 }

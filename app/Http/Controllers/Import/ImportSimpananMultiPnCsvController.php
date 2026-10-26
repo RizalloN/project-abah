@@ -292,7 +292,7 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
         return response()->json([
             'status' => 'success',
             'cache_key' => $cacheKey,
-            'redirect' => route('import.simpanan.csv.prepare-preview'),
+            'redirect' => route('import.simpanan.csv.prepare-preview', ['ck' => $cacheKey]),
         ]);
     }
 

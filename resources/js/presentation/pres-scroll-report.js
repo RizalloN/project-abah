@@ -341,6 +341,8 @@ const quadrantTable = ({ title, history = {} }) => {
 export class ScrollReportRenderer extends StructuredDeckRenderer {
     constructor(options) {
         super(options);
+        // The keynote layout swaps the cover, agenda and market visuals; every figure stays on the same accessors.
+        this.keynote = Boolean(this.root?.hasAttribute?.('data-keynote'));
         this.onSectionRendered = options.onSectionRendered || null;
         this.mappingFocusedKey = '';
         this.mappingReading = 'members';
@@ -379,7 +381,7 @@ export class ScrollReportRenderer extends StructuredDeckRenderer {
         ];
         section.innerHTML = renderers[index]?.() || '';
         section.classList.toggle('has-narrative-stage', index === 2 || index === 3);
-        this.renderChapterArt(index);
+        if (!this.keynote) this.renderChapterArt(index);
         section.classList.remove('is-section-loading');
         section.setAttribute('aria-busy', 'false');
         this.onSectionRendered?.(section, index);
@@ -670,8 +672,205 @@ export class ScrollReportRenderer extends StructuredDeckRenderer {
         return result;
     }
 
+    /* -------------------------------------------------- keynote figures -- */
+
+    /** One real figure per chapter statement, read through the same accessors as the sheets. */
+    statementFigures() {
+        if (!this.data) return null;
+        const card = (key) => this.summaryCard(key) || {};
+        const toneOf = (text) => {
+            const value = String(text || '').trim();
+            if (!value || value === '-') return '';
+            return value.startsWith('-') ? 'down' : 'up';
+        };
+        const trend = (key) => {
+            const value = card(key).trend;
+            return value && value !== '-' ? `${value} tren` : '';
+        };
+        const os = this.comparisonScope()?.credit?.total?.os || {};
+        const periods = this.comparisonPeriods();
+        const scene = this.marketStoryScenes()[0] || null;
+        const ldr = card('ldr');
+        const mappingReady = Boolean(this.marketShareMappingPayload()?.ready && this.marketShareActiveUnits().length);
+        return {
+            pasar: {
+                ...(scene
+                    ? { value: scene.shareLabel, label: `Pangsa DPK BRI ${scene.scope}`, trend: scene.ytd && scene.ytd !== '-' ? `${scene.ytd} YtD` : '', tone: toneOf(scene.ytd) }
+                    : { value: '', label: 'Pangsa DPK BRI' }),
+                note: mappingReady
+                    ? 'Tinggi setiap kecamatan adalah penetrasi nasabah BRI.'
+                    : 'Tinggi setiap wilayah adalah pangsa DPK BRI di cabangnya.',
+            },
+            simpanan: { value: card('simpanan').value, trend: trend('simpanan'), tone: toneOf(card('simpanan').trend) },
+            os: { value: card('os').value, trend: ldr.value ? `LDR ${ldr.value}` : trend('os'), tone: '' },
+            sml: { value: card('sml').value, ratio: card('sml').ratio },
+            npl: { value: card('npl').value, ratio: card('npl').ratio },
+            'os-ytd': {
+                value: os.deltas_fmt?.ytd || '',
+                trend: periods.ytd?.label ? `terhadap posisi ${periods.ytd.label}` : '',
+                tone: toneOf(os.deltas_fmt?.ytd),
+            },
+            aksi: { value: '5', label: 'Agenda prioritas' },
+        };
+    }
+
+    /**
+     * Figures for the one persistent relief. Branch states carry the same
+     * formatted values the tables print beside them.
+     */
+    reliefData() {
+        if (!this.data) return null;
+        const comparison = this.comparisonScope() || {};
+        const funding = comparison.funding || {};
+        const credit = comparison.credit || {};
+        const branchKey = (label) => {
+            const token = String(label || '').toUpperCase().replace(/^KC\s+/, '').trim();
+            return ['MADIUN', 'MAGETAN', 'NGAWI', 'PONOROGO'].find((name) => token === name || token.includes(name))?.toLowerCase() || null;
+        };
+        const fundingRows = this.isArea()
+            ? (funding.branches || []).map((branch) => ({ label: branch.scope_label, metric: branch.total }))
+            : [{ label: this.scopeLabel(), metric: funding.total }];
+        const creditRows = this.isArea()
+            ? (credit.branches || []).map((branch) => ({ label: branch.scope_label, total: branch.total || {} }))
+            : [{ label: this.scopeLabel(), total: credit.total || {} }];
+        const state = (rows, valueOf, labelOf) => {
+            const values = {};
+            const labels = [];
+            rows.forEach((row) => {
+                const key = branchKey(row.label);
+                const value = valueOf(row);
+                if (!key || value === null || value === undefined || !Number.isFinite(Number(value))) return;
+                values[key] = Number(value);
+                labels.push({ branch: key, title: row.label, value: labelOf(row) || '-' });
+            });
+            return { values, labels };
+        };
+
+        const mapping = this.lastMappingWorld || this.worldMapping();
+        const pasar = { kind: 'district', values: {}, labels: [] };
+        (mapping?.districts || []).forEach((district) => {
+            const value = Number(district.penetration);
+            if (Number.isFinite(value)) pasar.values[district.code] = value;
+        });
+        (mapping?.hierarchy?.level === 'branch' ? mapping.hierarchy.groups : []).forEach((group) => {
+            const key = branchKey(group.label);
+            if (key) pasar.labels.push({ branch: key, title: group.label, value: `${formatPercent(group.penetration)} penetrasi` });
+        });
+        // Penetration needs the REKAP mapping; until it is ready the relief reads BRI's DPK share per branch.
+        if (!Object.keys(pasar.values).length) {
+            const scene = this.marketStoryScenes()[0];
+            pasar.kind = 'branch';
+            pasar.labels = [];
+            (scene?.branches || []).forEach((branch) => {
+                const key = branchKey(branch.label);
+                const value = Number(String(branch.value).replace(/[%\s]/g, '').replace(',', '.'));
+                if (!key || !Number.isFinite(value)) return;
+                pasar.values[key] = value;
+                pasar.labels.push({ branch: key, title: `KC ${branch.label}`, value: `${branch.value} DPK` });
+            });
+        }
+
+        return {
+            scopedBranch: this.isArea() ? null : branchKey(this.scopeLabel()),
+            states: {
+                pasar,
+                dana: state(fundingRows, (row) => asNumber(row.metric?.current), (row) => row.metric?.current_fmt),
+                pinjaman: state(creditRows, (row) => asNumber(row.total?.os?.current), (row) => row.total?.os?.current_fmt),
+                sml: state(creditRows, (row) => row.total?.sml?.ratio_positions?.current, (row) => `SML ${row.total?.sml?.ratio_positions_fmt?.current || '-'}`),
+                npl: state(creditRows, (row) => row.total?.npl?.ratio_positions?.current, (row) => `NPL ${row.total?.npl?.ratio_positions_fmt?.current || '-'}`),
+                tren: state(creditRows, (row) => row.total?.os?.deltas?.ytd, (row) => `${row.total?.os?.deltas_fmt?.ytd || '-'} YtD`),
+            },
+        };
+    }
+
+    /** The selected position in Indonesian ("24 Okt 2026"); falls back to the payload label. */
+    keynotePeriod() {
+        const raw = window.__PRESENTATION_CONFIG__?.selectedPeriod;
+        const date = raw ? new Date(`${raw}T00:00:00`) : null;
+        return date && !Number.isNaN(date.getTime())
+            ? new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }).format(date)
+            : this.period();
+    }
+
+    /* ---------------------------------------------------- keynote hero -- */
+    keynoteHero() {
+        const card = (key) => this.summaryCard(key) || {};
+        const figure = (label, key, extra = '') => `<div><dt>${h(label)}</dt><dd>${h(card(key).value || '-')}${extra ? `<small>${h(extra)}</small>` : ''}</dd></div>`;
+        const title = this.isArea() ? 'Area 6' : this.scopeLabel();
+        return `
+            <div class="kn-hero">
+                <div class="kn-hero__sticky">
+                    <div class="kn-hero__light" aria-hidden="true"></div>
+                    <div class="kn-hero__head">
+                        <p class="kn-hero__kicker" data-kn-in style="--i:0">Region 13 &middot; Posisi ${h(this.keynotePeriod())}</p>
+                        <h1 class="kn-hero__title" data-kn-in style="--i:1">Kinerja <span>${h(title)}.</span></h1>
+                    </div>
+                    <div class="kn-hero__stage" data-relief-slot="hero" aria-hidden="true"><div class="kn-relief-poster" data-relief-poster="hero"></div></div>
+                    <div class="kn-hero__foot">
+                        <p class="kn-hero__sub" data-kn-in style="--i:2"><strong>Madiun, Kota Madiun, Magetan, Ngawi, Ponorogo.</strong> ${AREA6_TOTALS.districts} kecamatan, satu laporan.</p>
+                        <dl class="kn-hero__figures" data-kn-in style="--i:3">
+                            ${figure('Simpanan', 'simpanan', card('simpanan').trend && card('simpanan').trend !== '-' ? `${card('simpanan').trend} tren` : '')}
+                            ${figure('Outstanding', 'os', card('os').trend && card('os').trend !== '-' ? `${card('os').trend} tren` : '')}
+                            ${figure('SML', 'sml', card('sml').ratio ? `rasio ${card('sml').ratio}` : '')}
+                            ${figure('NPL', 'npl', card('npl').ratio ? `rasio ${card('npl').ratio}` : '')}
+                        </dl>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    /* -------------------------------------------------- keynote agenda -- */
+    keynoteAgenda() {
+        const groups = [
+            { key: 'pasar', title: 'Pasar', meta: 'Pangsa BRI dan penetrasi per kecamatan', figure: this.statementFigures()?.pasar?.value },
+            { key: 'dana', title: 'Dana', meta: 'Simpanan, produk, dan delapan strategi', figure: this.summaryCard('simpanan')?.value },
+            { key: 'pinjaman', title: 'Pinjaman', meta: 'SME, Konsumer, dan Mikro', figure: this.summaryCard('os')?.value },
+            { key: 'kualitas', title: 'Kualitas', meta: 'SML dan NPL per cabang dan segmen', figure: this.summaryCard('npl')?.ratio ? `NPL ${this.summaryCard('npl').ratio}` : '' },
+            { key: 'tren', title: 'Tren', meta: 'Seluruh indikator dalam satu garis waktu', figure: '' },
+            { key: 'aksi', title: 'Aksi', meta: 'Lima agenda manajemen berikutnya', figure: '' },
+        ];
+        return `
+            <div class="kn-agenda">
+                <div class="kn-agenda__intro">
+                    <h2 data-rv>Yang kita bahas hari ini.</h2>
+                    <p data-rv style="--i:1">Dari posisi kita di pasar, sampai langkah yang perlu diambil.</p>
+                    <small data-rv style="--i:2">Cakupan ${h(this.scopeLabel())}, posisi ${h(this.keynotePeriod())}.</small>
+                </div>
+                <ol class="kn-agenda__list">
+                    ${groups.map((group, index) => `
+                        <li data-rv style="--i:${index}">
+                            <a href="#pres-chapter-${h(group.key)}" data-kn-chapter-link="${h(group.key)}">
+                                <strong>${h(group.title)}</strong>
+                                <span>${h(group.meta)}${group.figure ? `, <b>${h(group.figure)}</b>` : ''}</span>
+                                <i class="fas fa-arrow-down" aria-hidden="true"></i>
+                            </a>
+                        </li>
+                    `).join('')}
+                </ol>
+            </div>
+        `;
+    }
+
+    /** A thin ring: BRI's share in the accent, the rest in neutral. */
+    keynoteRing(market) {
+        const rings = market.kind === 'quality' ? market.quality : market.competitors?.length ? [market.competitors[0]] : [];
+        if (!rings?.length) return '<p class="rp-empty">Data market share belum tersedia.</p>';
+        const item = rings[0];
+        const share = Number.isFinite(item.share) ? Math.max(0, Math.min(100, item.share)) : 0;
+        const other = market.competitors?.[1];
+        return `<svg viewBox="0 0 400 400" role="img" aria-label="${h(market.segment)}. BRI ${h(item.label)}${other ? `, bank lain ${h(other.label)}` : ''}.">
+            <circle class="kn-ring__track" cx="200" cy="200" r="150" fill="none" stroke-width="22"/>
+            <circle class="kn-ring__share" cx="200" cy="200" r="150" fill="none" stroke-width="22" stroke-linecap="round" pathLength="100" stroke-dasharray="${share.toFixed(2)} ${(100 - share).toFixed(2)}" transform="rotate(-90 200 200)"/>
+            <text class="kn-ring__value" x="200" y="206" text-anchor="middle">${h(item.label)}</text>
+            <text class="kn-ring__caption" x="200" y="240" text-anchor="middle">pangsa BRI</text>
+            ${other ? `<text class="kn-ring__pair" x="200" y="268" text-anchor="middle">bank lain ${h(other.label)}</text>` : ''}
+        </svg>`;
+    }
+
     /* ---------------------------------------------------------- 0 cover -- */
     scrollCover() {
+        if (this.keynote) return this.keynoteHero();
         const cards = this.summaryScope().cards || [];
         const os = findByKey(cards, 'os') || {};
         const funding = findByKey(cards, 'simpanan') || {};
@@ -718,6 +917,7 @@ export class ScrollReportRenderer extends StructuredDeckRenderer {
 
     /* --------------------------------------------------------- 1 agenda -- */
     scrollAgenda() {
+        if (this.keynote) return this.keynoteAgenda();
         const funding = this.summaryCard('simpanan');
         const os = this.summaryCard('os');
         const sml = this.summaryCard('sml');
@@ -783,6 +983,7 @@ export class ScrollReportRenderer extends StructuredDeckRenderer {
 
     /* ---------------------------------------------- 2 market share area -- */
     marketPoster(market) {
+        if (this.keynote) return this.keynoteRing(market);
         const rings = market.kind === 'quality' ? market.quality : market.competitors?.length ? [market.competitors[0]] : [];
         if (!rings?.length) return '<p class="rp-empty">Data market share belum tersedia.</p>';
         const quality = market.kind === 'quality';
@@ -953,7 +1154,10 @@ export class ScrollReportRenderer extends StructuredDeckRenderer {
         const topBranch = [...(mapWorld?.hierarchy?.groups || [])].sort((left, right) => asNumber(right.penetration) - asNumber(left.penetration))[0] || null;
         const narrative = available
             ? `${scopeLabel} mencakup ${formatInteger(units.length)} unit kerja pada ${formatInteger(districtCodes.size)} kecamatan. BRI telah menjangkau ${existingText} dari ${potentialText} total potensi atau ${penetrationText}; gap ${formatInteger(gap)} calon nasabah menjadi ruang ekspansi pasar.`
-            : 'Polygon dan data unit kerja sedang dimuat dari sheet REKAP.';
+            : (this.keynote && dashboard
+                ? `Dashboard workbook mencatat ${existingText} nasabah existing dari ${potentialText} potensi, penetrasi ${penetrationText}. Peta per unit tampil setelah polygon unit kerja tersedia di sheet ${mapping?.sheet || 'REKAP'}.`
+                : 'Polygon dan data unit kerja sedang dimuat dari sheet REKAP.');
+        const showJourney = !this.keynote || Boolean(mapWorld);
         const reading = available
             ? [
                 `${status.label}. ${ranked[0]?.unit?.name || 'Unit teratas'} memimpin pada ${this.formatMarketShareMappingMetric(ranked[0]?.score, 'penetration')}, sedangkan ${weakest?.unit?.name || 'unit terbawah'} berada di ${this.formatMarketShareMappingMetric(weakest?.score, 'penetration')} dan menjadi titik prioritas penguatan penetrasi.`,
@@ -963,7 +1167,7 @@ export class ScrollReportRenderer extends StructuredDeckRenderer {
             : 'Status penetrasi akan terbentuk setelah polygon dan data unit tersedia.';
 
         return `
-            ${available ? this.orbitDescent({ scopeLabel, units, districtCount: districtCodes.size, potentialText, existingText, penetrationText }) : ''}
+            ${available && !this.keynote ? this.orbitDescent({ scopeLabel, units, districtCount: districtCodes.size, potentialText, existingText, penetrationText }) : ''}
             ${stickyBar(`Mapping market share ${scopeLabel}`, penetrationText)}
             ${sectionHead({
                 title: `Mapping penetrasi ${scopeLabel}`,
@@ -980,22 +1184,22 @@ export class ScrollReportRenderer extends StructuredDeckRenderer {
                     ? { label: contextCard.label, value: contextCard.value, meta: 'Dashboard workbook', tone: 'blue' }
                     : { label: 'Cakupan', value: formatInteger(districtCodes.size), meta: 'kecamatan', tone: 'blue' },
             ])}
-            <div class="rp-mapping-journey" data-mapping-journey data-world-track="flow">
+            ${showJourney ? `<div class="rp-mapping-journey" data-mapping-journey data-world-track="flow">
                 <aside class="rp-mapping-stage"><div class="rp-mapping-stage__inner">
                     <p class="rp-market-stage__scope">${h(scopeLabel)}</p><h3 data-mapping-caption>${this.isArea() ? 'Potensi per cabang' : 'Potensi per unit'}</h3>
                     <div class="pres-world rp-mapping-stage__world" data-world="penetration" data-mapping-stage data-map-poster-prefix="detail-poster-"><div class="pres-world__fallback">${mapWorld ? area6Poster(mapWorld).replaceAll('poster-', 'detail-poster-') : ''}</div></div>
                     <p class="rp-mapping-stage__note">${this.isArea() ? 'Setiap warna menunjukkan cakupan cabang.' : 'Bidang bergaris menandai cakupan layanan bersama.'}</p>
                 </div></aside>
                 ${this.mappingHierarchyPanel(mapWorld)}
-            </div>
+            </div>` : ''}
             <p class="rp-source">Workbook ${h(mapping?.sheet || 'REKAP')}, diperbarui ${h(mapping?.updated_at || '-')}. Angka cabang dan unit dijumlahkan tanpa pengulangan. Bidang tetap mengikuti batas kecamatan; cakupan layanan bersama tidak membentuk batas unit baru.</p>
             ${this.insights([
                 { label: 'Penetrasi agregat', value: penetrationText, meta: status.label, tone: status.tone },
-                { label: 'Gap terhadap potensi', value: `${formatInteger(gap)} nasabah`, meta: `${formatInteger(districtCodes.size)} kecamatan terpetakan`, tone: 'amber' },
+                { label: 'Gap terhadap potensi', value: `${formatInteger(gap)} nasabah`, meta: districtCodes.size ? `${formatInteger(districtCodes.size)} kecamatan terpetakan` : 'calon nasabah belum terjangkau', tone: 'amber' },
                 this.isArea()
                     ? { label: 'Cabang penetrasi tertinggi', value: topBranch?.label || '-', meta: topBranch ? formatPercent(topBranch.penetration) : 'Belum tersedia', tone: 'cyan' }
                     : { label: 'Unit penetrasi tertinggi', value: ranked[0]?.unit?.name || '-', meta: ranked[0] ? this.formatMarketShareMappingMetric(ranked[0].score, 'penetration') : 'Belum tersedia', tone: 'cyan' },
-            ])}
+            ].filter((item) => !this.keynote || item.value !== '-'))}
         `;
     }
 
@@ -1468,7 +1672,11 @@ export class ScrollReportRenderer extends StructuredDeckRenderer {
                 return `<section class="rp-trend-group" data-trend-group="${h(key)}"><header><h3>${h(group.label || key)}</h3><p>${h(group.description || '')}</p></header>
                     ${series.map((item) => trendChart({ title: item.label || item.key, labels, series: item, seriesKeys: [item.key], tone: ['sml', 'npl'].includes(item.key) ? 'amber' : 'blue', note: 'Nilai sumber pada setiap titik. Detail harian tersedia dengan membuka grafik.', fullHistory: true })).join('')}
                     ${isBusiness ? `<section class="rp-paper rp-legacy" data-rv>${this.renderBusinessQuadrant()}</section><p class="rp-source">LDR ${h(business.ldrLabel)} dihitung dari pinjaman dibagi simpanan.</p>` : ''}
-                    ${dataTable({ title: `Posisi bulanan ${group.label || key}`, meta: `${rows.length} periode`, columns: [{ label: 'Periode', render: (row) => h(row.label) }, ...series.map((item, index) => ({ label: h(item.label), render: (row) => h(row.values[index]) }))], rows, empty: 'Timeseries belum tersedia pada cakupan ini.' })}
+                    ${(() => {
+                        const table = dataTable({ title: `Posisi bulanan ${group.label || key}`, meta: `${rows.length} periode`, columns: [{ label: 'Periode', render: (row) => h(row.label) }, ...series.map((item, index) => ({ label: h(item.label), render: (row) => h(row.values[index]) }))], rows, empty: 'Timeseries belum tersedia pada cakupan ini.' });
+                        // Keynote keeps the monthly table one click away instead of a screen of rows.
+                        return this.keynote ? `<details class="kn-disclosure"><summary>Lihat posisi bulanan ${h(group.label || key)}<span>${rows.length} periode</span></summary>${table}</details>` : table;
+                    })()}
                 </section>`;
             }).join('') || '<p class="rp-empty">Kelompok timeseries belum tersedia pada laporan ini.</p>'}`;
     }

@@ -26,6 +26,63 @@ class StrictDateParser
     public const ORDER_MONTH_FIRST = 'mdy';
     public const ORDER_YEAR_FIRST = 'ymd';
 
+    /** The DATE value that represents a source "0" (core banking: no date). */
+    public const ZERO_DATE = '0000-00-00';
+
+    /**
+     * Import tables that store a source "0" date as ZERO_DATE (mirroring the
+     * document). Every other table stores it as NULL.
+     */
+    public const ZERO_DATE_TABLES = ['lw321pn'];
+
+    public static function preservesZeroDates(?string $table): bool
+    {
+        return in_array(strtolower(trim((string) $table)), self::ZERO_DATE_TABLES, true);
+    }
+
+    /** "0", "00", "00/00/0000", "0000-00-00", optionally with a zero clock. */
+    private const ZERO_DATE_PATTERN = '/^(?:0+|0{1,2}[\/.\-]0{1,2}[\/.\-]0{2,4}|0{4}[\/.\-]0{2}[\/.\-]0{2})(?:\s+0{1,2}:0{2}(?::0{2})?(?:\s*[AP]M)?)?$/i';
+
+    /** MySQL REGEXP equivalent of ZERO_DATE_PATTERN (case-insensitive by collation). */
+    private const ZERO_DATE_SQL_PATTERN = '^(0+|0{1,2}[/.-]0{1,2}[/.-]0{2,4}|0{4}[/.-]0{2}[/.-]0{2})( +0{1,2}:0{2}(:0{2})?( *[AaPp][Mm])?)?$';
+
+    public static function isZeroDateToken(?string $value): bool
+    {
+        return preg_match(self::ZERO_DATE_PATTERN, trim((string) ($value ?? ''))) === 1;
+    }
+
+    /**
+     * SQL that keeps a source zero date as 0000-00-00 and parses everything
+     * else with the regular expression. Used where the target table stores the
+     * source "0" as written instead of turning it into NULL.
+     */
+    public static function buildMySqlZeroPreservingExpression(string $textExpression, string $dateExpression): string
+    {
+        // A string literal, not DATE('0000-00-00'): under NO_ZERO_DATE the DATE()
+        // call yields NULL, which would make the result depend on sql_mode.
+        return "CASE WHEN {$textExpression} REGEXP '" . self::ZERO_DATE_SQL_PATTERN . "' "
+            . "THEN '" . self::ZERO_DATE . "' ELSE {$dateExpression} END";
+    }
+
+    /**
+     * SQL condition: the normalized date does not faithfully represent a
+     * non-empty source value (it became NULL, an implausible year, or a zero
+     * date the source never wrote). Used as an import preflight.
+     */
+    public static function buildMySqlFidelityViolation(string $rawExpression, string $normalizedExpression, bool $zeroMustBePreserved = false): string
+    {
+        $raw = "TRIM(COALESCE({$rawExpression}, ''))";
+        $isZero = "{$raw} REGEXP '" . self::ZERO_DATE_SQL_PATTERN . "'";
+        $nullAllowed = $zeroMustBePreserved ? 'FALSE' : "({$isZero})";
+
+        // Whitespace-only cells (CR/LF/tab from a trailing line) are empty, not data.
+        return "(NOT ({$raw} REGEXP '^[[:space:]]*$') AND {$raw} <> '\\\\N' AND ("
+            . "({$normalizedExpression}) IS NULL AND NOT {$nullAllowed} "
+            . "OR (CAST({$normalizedExpression} AS CHAR) = '" . self::ZERO_DATE . "' AND NOT ({$isZero})) "
+            . "OR (CAST({$normalizedExpression} AS CHAR) <> '" . self::ZERO_DATE . "' AND YEAR({$normalizedExpression}) NOT BETWEEN 1900 AND 2100)"
+            . "))";
+    }
+
     /**
      * Normalize a date using a column-level order hint learned from the source
      * file (for example PERIODE exported as MM/DD/YYYY hh:mm:ss AM). The hint is
@@ -347,7 +404,13 @@ class StrictDateParser
                 . "WHEN CAST(LEFT({$textExpression}, 2) AS UNSIGNED) > 12 "
                 . "AND DATE_FORMAT(STR_TO_DATE({$textExpression}, '%m%d%Y'), '%m%d%Y') = {$textExpression} THEN STR_TO_DATE({$textExpression}, '%m%d%Y') "
                 . "ELSE NULL END "
-            . "WHEN {$textExpression} REGEXP '^[0-9]+(\\\\.[0-9]+)?$' THEN DATE_ADD('1899-12-30', INTERVAL CAST({$textExpression} AS DECIMAL(18,5)) DAY) "
+            // Excel serials only within 1954..2119 (20000..80000), like normalize():
+            // core banking writes "0" for "no date", which must stay NULL instead
+            // of becoming serial 0 = 1899-12-30.
+            . "WHEN {$textExpression} REGEXP '^[0-9]+(\\\\.[0-9]+)?$' THEN CASE "
+                . "WHEN CAST({$textExpression} AS DECIMAL(18,5)) BETWEEN 20000 AND 80000 "
+                . "THEN DATE_ADD('1899-12-30', INTERVAL CAST({$textExpression} AS DECIMAL(18,5)) DAY) "
+                . "ELSE NULL END "
             . "WHEN {$textExpression} REGEXP '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' "
                 . "AND DATE_FORMAT(STR_TO_DATE({$textExpression}, '%Y-%m-%d'), '%Y-%m-%d') = {$textExpression} THEN STR_TO_DATE({$textExpression}, '%Y-%m-%d') "
             . "WHEN {$textExpression} REGEXP '^[0-9]{4}-[0-9]{2}-[0-9]{2}[T ]+[0-9]{1,2}:[0-9]{2}' "

@@ -180,6 +180,10 @@ class ManagedReportManagementService
             'period_priority' => ['posisi', 'periode'],
             'kanca_priority' => ['mbdesc', 'branch', 'brdesc'],
         ],
+        'mau_brimo_r_all' => [
+            'period_priority' => ['posisi', 'periode'],
+            'kanca_priority' => ['mbdesc'],
+        ],
         'user_brimo_rpt_v2' => [
             'period_priority' => ['posisi', 'periode'],
             'kanca_priority' => ['mbdesc', 'branch', 'brdesc'],

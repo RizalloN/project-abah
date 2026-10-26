@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Support\DailyLoanManualSegmentRule;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
@@ -36,6 +37,15 @@ class BackfillShadowColumnsCommand extends Command
     private array $performanceMetrics = [];
     private array $failedChunks = [];
     private const MAX_RETRY_PASSES = 3;
+
+    // Auto-discover scans every period with a non-indexed predicate; a clean
+    // period scans all of its rows. The newest periods (where imports land)
+    // are always checked, older clean periods are trusted for a while, and the
+    // scan stops at a time budget and resumes on the next run.
+    public const VERIFIED_CACHE_PREFIX = 'shadow:backfill:verified:';
+    private const ALWAYS_CHECK_RECENT_PERIODS = 3;
+    private const VERIFIED_TTL_SECONDS = 21600;
+    private const DISCOVERY_BUDGET_SECONDS = 120;
 
     public function handle(): int
     {
@@ -152,7 +162,19 @@ class BackfillShadowColumnsCommand extends Command
             ->all();
 
         $periods = [];
-        foreach ($allPeriods as $period) {
+        $deadline = microtime(true) + self::DISCOVERY_BUDGET_SECONDS;
+        foreach ($allPeriods as $index => $period) {
+            $verifiedKey = self::VERIFIED_CACHE_PREFIX . DailyLoanManualSegmentRule::VERSION . ':' . $period;
+            if ($index >= self::ALWAYS_CHECK_RECENT_PERIODS) {
+                if (Cache::has($verifiedKey)) {
+                    continue;
+                }
+                if (microtime(true) > $deadline) {
+                    $this->line('   Auto-discover: time budget reached; remaining periods are checked on the next run.');
+                    break;
+                }
+            }
+
             // Highly optimized sub-check utilizing the index on `periode` and stopping immediately when 1 match is found
             $needsBackfill = DB::table('daily_loan_dinamis')
                 ->where('periode', $period)
@@ -160,10 +182,13 @@ class BackfillShadowColumnsCommand extends Command
                 ->exists();
 
             if ($needsBackfill) {
+                Cache::forget($verifiedKey);
                 $periods[] = $period;
                 if (count($periods) >= 10) {
                     break;
                 }
+            } else {
+                Cache::put($verifiedKey, time(), self::VERIFIED_TTL_SECONDS);
             }
         }
 

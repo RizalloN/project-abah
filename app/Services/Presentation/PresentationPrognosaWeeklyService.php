@@ -1456,7 +1456,7 @@ class PresentationPrognosaWeeklyService
 
     private function weekOfMonth(Carbon $date): int
     {
-        return min(5, max(1, intdiv(max(1, $date->day) - 1, 7) + 1));
+        return \App\Support\PrognosaCalendarWeek::forDate($date);
     }
 
     private function dateFromCell(Worksheet $sheet, int $column, int $row): ?Carbon

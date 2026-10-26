@@ -1055,3 +1055,291 @@ it('excludes penalty-only residue from small arrears summary and export', functi
     expect(collect($rows)->skip(1)->pluck('D')->all())->not->toContain('LN-PENALTY-ONLY');
 });
 
+it('returns year to date mismatch points from exact month ends and the selected native position', function () {
+    $base = [
+        'periode' => '2026-01-31',
+        'cabang1' => 'KC Madiun',
+        'unit1' => 'Unit M',
+        'status_rekening1' => '1',
+        'baki_debet1' => 100.25,
+        'kolek' => 1,
+        'umur_tunggakan' => 10,
+        'tunggakan_pokok' => 10,
+        'tunggakan_bunga' => 0,
+    ];
+    foreach ([
+        ['uniqueid_namareport' => 'ts-native-one', 'nomor_rekening1' => 'NATIVE-ONE'],
+        ['uniqueid_namareport' => 'ts-native-two', 'nomor_rekening1' => 'NATIVE-TWO', 'baki_debet1' => 200.5, 'kolek' => null, 'kol_adk1' => '1'],
+        ['uniqueid_namareport' => 'LW321PN:ts-mixed', 'nomor_rekening1' => 'LW-MIXED', 'baki_debet1' => 900],
+        ['uniqueid_namareport' => 'ts-better', 'nomor_rekening1' => 'BETTER', 'kolek' => 3],
+        ['uniqueid_namareport' => 'ts-waiting', 'nomor_rekening1' => 'WAITING', 'kolek' => 2, 'umur_tunggakan' => 0, 'tunggakan_pokok' => 0, 'flag_restruk' => 'Y', 'tgl_akad_restruk' => '2026-01-15'],
+        ['uniqueid_namareport' => 'ts-closed', 'nomor_rekening1' => 'CLOSED', 'status_rekening1' => '2'],
+        ['uniqueid_namareport' => 'ts-no-account', 'nomor_rekening1' => 'TOTAL SOURCE'],
+        ['uniqueid_namareport' => 'ts-no-balance', 'nomor_rekening1' => 'ZERO', 'baki_debet1' => 0],
+        ['uniqueid_namareport' => 'ts-other-branch', 'nomor_rekening1' => 'OTHER', 'cabang1' => 'KC Ngawi', 'baki_debet1' => 777],
+        ['uniqueid_namareport' => 'ts-due-today', 'nomor_rekening1' => 'DUE-TODAY', 'periode' => '2026-02-28', 'umur_tunggakan' => 0, 'tanggal_menunggak' => '2026-02-28'],
+        ['uniqueid_namareport' => 'LW321PN:ts-only', 'nomor_rekening1' => 'LW-ONLY', 'periode' => '2026-03-31'],
+        ['uniqueid_namareport' => 'ts-other-date', 'nomor_rekening1' => 'OTHER-DATE', 'periode' => '2026-04-30', 'cabang1' => 'KC Ngawi'],
+        ['uniqueid_namareport' => 'ts-not-month-end', 'nomor_rekening1' => 'EARLY-MAY', 'periode' => '2026-05-30', 'baki_debet1' => 9999],
+        ['uniqueid_namareport' => 'ts-closed-date', 'nomor_rekening1' => 'CLOSED-DATE', 'periode' => '2026-06-30', 'status_rekening1' => '2'],
+        ['uniqueid_namareport' => 'ts-last', 'nomor_rekening1' => 'LAST', 'periode' => '2026-10-21', 'baki_debet1' => 400.75],
+        ['uniqueid_namareport' => 'ts-later-current', 'nomor_rekening1' => 'LATER', 'periode' => '2026-10-22', 'baki_debet1' => 9999],
+        ['uniqueid_namareport' => 'ts-before', 'nomor_rekening1' => 'BEFORE', 'periode' => '2025-12-31', 'baki_debet1' => 9999],
+        ['uniqueid_namareport' => 'ts-after', 'nomor_rekening1' => 'AFTER', 'periode' => '2026-11-01', 'baki_debet1' => 9999],
+    ] as $row) {
+        DB::table('daily_loan_dinamis')->insert(array_merge($base, $row));
+    }
+
+    $this->actingAs(User::factory()->create());
+    $response = $this->getJson('/report/dashboard-pinjaman/kolek-tidak-sesuai/timeseries?'.http_build_query([
+        'periode' => '2026-10-21',
+        'cabang1' => ['KC Madiun'],
+    ]))->assertOk()->assertJsonPath('selected_period', '2026-10-21')->assertJsonPath('selected_branch', 'KC Madiun');
+    $series = collect($response->json('timeseries'))->keyBy('month');
+    expect($series)->toHaveCount(10);
+    expect($series->keys()->first())->toBe('2026-01');
+    expect($series->keys()->last())->toBe('2026-10');
+    expect($series['2026-01']['period'])->toBe('2026-01-31');
+    expect($series['2026-01']['available'])->toBeTrue();
+    expect($series['2026-01']['memburuk_count'])->toBe(2);
+    expect((float) $series['2026-01']['memburuk_balance'])->toBe(300.75);
+    expect($series['2026-02']['period'])->toBe('2026-02-28');
+    expect($series['2026-02']['available'])->toBeTrue();
+    expect($series['2026-02']['memburuk_count'])->toBe(0);
+    expect((float) $series['2026-02']['memburuk_balance'])->toBe(0.0);
+    expect($series['2026-06']['available'])->toBeTrue();
+    expect($series['2026-06']['memburuk_count'])->toBe(0);
+    foreach (['2026-03', '2026-04', '2026-05'] as $missingMonth) {
+        expect($series[$missingMonth]['available'])->toBeFalse();
+        expect($series[$missingMonth]['memburuk_count'])->toBeNull();
+        expect($series[$missingMonth]['memburuk_balance'])->toBeNull();
+    }
+    expect($series['2026-03']['period'])->toBeNull();
+    expect($series['2026-05']['period'])->toBeNull();
+    expect($series['2026-10']['period'])->toBe('2026-10-21');
+    expect($series['2026-10']['memburuk_count'])->toBe(1);
+    expect((float) $series['2026-10']['memburuk_balance'])->toBe(400.75);
+    $this->getJson('/report/dashboard-pinjaman/kolek-tidak-sesuai/data?'.http_build_query([
+        'periode' => '2026-01-31', 'cabang1' => ['KC Madiun'],
+    ]))->assertOk()->assertJsonPath('summary_rows.0.memburuk_count', 2)->assertJsonPath('summary_rows.0.memburuk_os', 300.75);
+});
+
+it('returns an empty mismatch timeseries when only normalized lw321pn source exists', function () {
+    DB::table('daily_loan_dinamis')->insert([
+        'uniqueid_namareport' => 'LW321PN:ts-empty',
+        'periode' => '2026-10-18',
+        'cabang1' => 'KC Madiun',
+        'nomor_rekening1' => 'LW-ONLY',
+        'status_rekening1' => '1',
+        'kolek' => 1,
+        'umur_tunggakan' => 10,
+        'baki_debet1' => 100,
+    ]);
+    $this->actingAs(User::factory()->create())
+        ->getJson('/report/dashboard-pinjaman/kolek-tidak-sesuai/timeseries?periode=2026-10-18')
+        ->assertOk()->assertJsonPath('selected_period', null)->assertJsonPath('timeseries', []);
+});
+
+it('enforces branch scope and isolates cached mismatch timeseries for area and restricted users', function () {
+    $base = ['periode' => '2026-10-18', 'unit1' => 'Unit A', 'status_rekening1' => '1', 'kolek' => 1, 'umur_tunggakan' => 10, 'tunggakan_pokok' => 10];
+    foreach ([
+        ['uniqueid_namareport' => 'ts-scope-madiun', 'nomor_rekening1' => 'MDN', 'cabang1' => 'KC Madiun', 'baki_debet1' => 100],
+        ['uniqueid_namareport' => 'ts-scope-ngawi', 'nomor_rekening1' => 'NGW', 'cabang1' => 'KC Ngawi', 'baki_debet1' => 200],
+    ] as $row) {
+        DB::table('daily_loan_dinamis')->insert(array_merge($base, $row));
+    }
+    $url = '/report/dashboard-pinjaman/kolek-tidak-sesuai/timeseries?periode=2026-10-18';
+    $this->actingAs(User::factory()->create(['pn' => '90001234']))
+        ->getJson($url)->assertOk()->assertJsonPath('timeseries.9.memburuk_count', 2)->assertJsonPath('timeseries.9.memburuk_balance', 300);
+    $this->actingAs(User::factory()->create(['pn' => '0045']))
+        ->getJson($url.'&'.http_build_query(['cabang1' => ['KC Ngawi']]))
+        ->assertOk()->assertJsonPath('selected_branch', 'KC Madiun')
+        ->assertJsonPath('timeseries.9.memburuk_count', 1)->assertJsonPath('timeseries.9.memburuk_balance', 100);
+});
+
+it('keeps worsening timeseries equal to the table across kolek thresholds and derived aging', function () {
+    $base = [
+        'periode' => '2026-10-22', 'cabang1' => 'KC Madiun', 'unit1' => 'Unit Boundary',
+        'status_rekening1' => '1', 'baki_debet1' => 100.25, 'kolek' => 1,
+        'umur_tunggakan' => 0, 'tunggakan_pokok' => 0, 'tunggakan_bunga' => 0,
+    ];
+    foreach ([1 => 0, 2 => 90, 3 => 120, 4 => 180] as $kolek => $threshold) {
+        foreach ([$threshold, $threshold + 1] as $age) {
+            DB::table('daily_loan_dinamis')->insert(array_merge($base, [
+                'uniqueid_namareport' => "ts-boundary-{$kolek}-{$age}",
+                'nomor_rekening1' => "BOUNDARY-{$kolek}-{$age}",
+                'kolek' => $kolek, 'umur_tunggakan' => $age,
+            ]));
+        }
+    }
+    foreach ([
+        ['id' => 'actual-five', 'kolek' => 5, 'umur_tunggakan' => 181],
+        ['id' => 'null-age-derived', 'kolek' => 2, 'umur_tunggakan' => null, 'tunggakan_pokok' => 10, 'tanggal_menunggak' => '2026-06-01'],
+        ['id' => 'zero-age-derived', 'kolek' => 3, 'umur_tunggakan' => 0, 'tunggakan_bunga' => 10, 'tanggal_menunggak' => '2026-05-01'],
+        ['id' => 'negative-age-derived', 'kolek' => 4, 'umur_tunggakan' => -1, 'tunggakan_pokok' => 10, 'tanggal_menunggak' => '2026-01-01'],
+        ['id' => 'null-age-no-arrears', 'kolek' => 1, 'umur_tunggakan' => null, 'tanggal_menunggak' => '2026-01-01'],
+        ['id' => 'negative-no-arrears', 'kolek' => 1, 'umur_tunggakan' => -1, 'tanggal_menunggak' => '2026-01-01'],
+        ['id' => 'fallback-kolek', 'kolek' => null, 'kol_adk1' => '2', 'umur_tunggakan' => 91],
+        ['id' => 'text-kolek', 'kolek' => 'KOL 2', 'umur_tunggakan' => 91],
+        ['id' => 'padded-kolek', 'kolek' => '02', 'umur_tunggakan' => 91],
+        ['id' => 'improving', 'kolek' => 3, 'umur_tunggakan' => 10],
+        ['id' => 'waiting', 'kolek' => 2, 'umur_tunggakan' => 0, 'flag_restruk' => 'Y', 'tgl_akad_restruk' => '2026-10-01'],
+    ] as $row) {
+        $id = $row['id'];
+        unset($row['id']);
+        DB::table('daily_loan_dinamis')->insert(array_merge($base, [
+            'uniqueid_namareport' => 'ts-boundary-'.$id, 'nomor_rekening1' => 'BOUNDARY-'.$id,
+        ], $row));
+    }
+
+    $this->actingAs(User::factory()->create());
+    $query = http_build_query(['periode' => '2026-10-22', 'cabang1' => ['KC Madiun']]);
+    $table = $this->getJson('/report/dashboard-pinjaman/kolek-tidak-sesuai/data?'.$query)->assertOk();
+    $series = $this->getJson('/report/dashboard-pinjaman/kolek-tidak-sesuai/timeseries?'.$query)->assertOk();
+    $tableCount = collect($table->json('summary_rows'))->sum('memburuk_count');
+    $tableBalance = collect($table->json('summary_rows'))->sum('memburuk_os');
+    expect($tableCount)->toBe(10);
+    expect((float) $tableBalance)->toBe(1002.5);
+    expect(collect($series->json('timeseries'))->sum('memburuk_count'))->toBe($tableCount);
+    expect((float) collect($series->json('timeseries'))->sum('memburuk_balance'))->toBe((float) $tableBalance);
+});
+
+it('loads individual year to date mismatch points and isolates the latest position cache', function () {
+    $base = ['cabang1' => 'KC Madiun', 'unit1' => 'Unit A', 'status_rekening1' => '1', 'kolek' => 1, 'umur_tunggakan' => 10];
+    foreach ([
+        ['uniqueid_namareport' => 'ts-point-january', 'nomor_rekening1' => 'JAN', 'periode' => '2026-01-31', 'baki_debet1' => 100],
+        ['uniqueid_namareport' => 'ts-point-earlier', 'nomor_rekening1' => 'EARLIER', 'periode' => '2026-10-18', 'baki_debet1' => 200],
+        ['uniqueid_namareport' => 'ts-point-latest', 'nomor_rekening1' => 'LATEST', 'periode' => '2026-10-21', 'baki_debet1' => 300],
+        ['uniqueid_namareport' => 'LW321PN:ts-point-newest', 'nomor_rekening1' => 'LW', 'periode' => '2026-10-22', 'baki_debet1' => 9999],
+    ] as $row) {
+        DB::table('daily_loan_dinamis')->insert(array_merge($base, $row));
+    }
+    $this->actingAs(User::factory()->create());
+    $url = '/report/dashboard-pinjaman/kolek-tidak-sesuai/timeseries?';
+    $query = ['periode' => '2026-10-22', 'cabang1' => ['KC Madiun']];
+    $full = $this->getJson($url.http_build_query($query))->assertOk()->assertJsonPath('selected_period', '2026-10-21');
+    expect($full->json('timeseries'))->toHaveCount(10);
+    $single = $this->getJson($url.http_build_query($query + ['point' => '2026-01']))->assertOk();
+    expect($single->json('timeseries'))->toHaveCount(1);
+    $single->assertJsonPath('timeseries.0.month', '2026-01')->assertJsonPath('timeseries.0.period', '2026-01-31')->assertJsonPath('timeseries.0.memburuk_balance', 100);
+    $this->getJson($url.http_build_query(['periode' => '2026-10-18', 'cabang1' => ['KC Madiun'], 'point' => '2026-10']))
+        ->assertOk()->assertJsonPath('timeseries.0.period', '2026-10-18')->assertJsonPath('timeseries.0.memburuk_balance', 200);
+    $this->getJson($url.http_build_query($query + ['point' => '2026-10']))
+        ->assertOk()->assertJsonPath('timeseries.0.period', '2026-10-21')->assertJsonPath('timeseries.0.memburuk_balance', 300);
+    foreach (['2026-11', '2025-12', '2026-00', 'invalid'] as $invalidMonth) {
+        $this->getJson($url.http_build_query($query + ['point' => $invalidMonth]))->assertUnprocessable();
+    }
+});
+
+it('returns pending cached mismatch points without inventing zero and reuses calculated values', function () {
+    $base = ['cabang1' => 'KC Madiun', 'unit1' => 'Unit A', 'status_rekening1' => '1', 'kolek' => 1, 'umur_tunggakan' => 10];
+    foreach ([
+        ['uniqueid_namareport' => 'ts-cached-january', 'nomor_rekening1' => 'JAN', 'periode' => '2026-01-31', 'baki_debet1' => 100.25],
+        ['uniqueid_namareport' => 'ts-cached-october', 'nomor_rekening1' => 'OCT', 'periode' => '2026-10-21', 'baki_debet1' => 300.5],
+    ] as $row) {
+        DB::table('daily_loan_dinamis')->insert(array_merge($base, $row));
+    }
+    $this->actingAs(User::factory()->create());
+    $url = '/report/dashboard-pinjaman/kolek-tidak-sesuai/timeseries?';
+    $query = ['periode' => '2026-10-21', 'cabang1' => ['KC Madiun']];
+    $cachedUrl = $url.http_build_query($query + ['cached' => 1]);
+    $cold = $this->getJson($cachedUrl)->assertOk()->assertJsonPath('status', 'partial');
+    $coldPoints = collect($cold->json('timeseries'))->keyBy('month');
+    expect($coldPoints)->toHaveCount(10);
+    foreach (['2026-01', '2026-10'] as $month) {
+        expect($coldPoints[$month]['pending'])->toBeTrue();
+        expect($coldPoints[$month]['memburuk_count'])->toBeNull();
+        expect($coldPoints[$month]['memburuk_balance'])->toBeNull();
+    }
+    expect($coldPoints['2026-02']['pending'] ?? false)->toBeFalse();
+    expect($coldPoints['2026-02']['available'])->toBeFalse();
+
+    $this->getJson($url.http_build_query($query + ['point' => '2026-01']))->assertOk();
+    $partial = $this->getJson($cachedUrl)->assertOk()->assertJsonPath('status', 'partial');
+    $partialPoints = collect($partial->json('timeseries'))->keyBy('month');
+    expect($partialPoints['2026-01']['pending'] ?? false)->toBeFalse();
+    expect($partialPoints['2026-01']['memburuk_count'])->toBe(1);
+    expect((float) $partialPoints['2026-01']['memburuk_balance'])->toBe(100.25);
+    expect($partialPoints['2026-10']['pending'])->toBeTrue();
+
+    $full = $this->getJson($url.http_build_query($query))->assertOk();
+    $warm = $this->getJson($cachedUrl)->assertOk()->assertJsonPath('status', 'ready');
+    expect(collect($warm->json('timeseries'))->contains(fn (array $point) => $point['pending'] ?? false))->toBeFalse();
+    expect($warm->json('timeseries'))->toBe($full->json('timeseries'));
+});
+
+it('checks cached mismatch points without scanning every native source period', function () {
+    $base = ['cabang1' => 'KC Madiun', 'unit1' => 'Unit A', 'status_rekening1' => '1', 'kolek' => 1, 'umur_tunggakan' => 10];
+    foreach ([
+        ['uniqueid_namareport' => 'ts-query-january', 'nomor_rekening1' => 'JAN', 'periode' => '2026-01-31', 'baki_debet1' => 100],
+        ['uniqueid_namareport' => 'ts-query-october', 'nomor_rekening1' => 'OCT', 'periode' => '2026-10-21', 'baki_debet1' => 300],
+    ] as $row) {
+        DB::table('daily_loan_dinamis')->insert(array_merge($base, $row));
+    }
+    $this->actingAs(User::factory()->create());
+    $queries = [];
+    DB::listen(function ($query) use (&$queries) {
+        $queries[] = $query->sql;
+    });
+    $url = '/report/dashboard-pinjaman/kolek-tidak-sesuai/timeseries?';
+    $query = ['periode' => '2026-10-21', 'cabang1' => ['KC Madiun']];
+    $this->getJson($url.http_build_query($query + ['cached' => 1]))->assertOk()->assertJsonPath('status', 'partial');
+    $coldQueries = $queries;
+    $this->getJson($url.http_build_query($query))->assertOk();
+    $queries = [];
+    $this->getJson($url.http_build_query($query + ['cached' => 1]))->assertOk()->assertJsonPath('status', 'ready');
+    expect($coldQueries)->not->toBeEmpty();
+    expect($queries)->not->toBeEmpty();
+    foreach (array_merge($coldQueries, $queries) as $sql) {
+        $normalized = strtolower(str_replace(['`', '"'], '', $sql));
+        $isGlobalPeriodScan = preg_match('/select\s+distinct\s+periode\s+from\s+daily_loan_dinamis\b/', $normalized)
+            && ! preg_match('/\bperiode\s*=\s*\?/', $normalized);
+        $this->assertFalse((bool) $isGlobalPeriodScan, $sql);
+    }
+});
+
+it('keeps historical mismatch months and branch totals aligned when the selected period changes', function () {
+    $base = ['unit1' => 'Unit A', 'status_rekening1' => '1', 'kolek' => 1, 'umur_tunggakan' => 10];
+    foreach (['KC Madiun' => 1, 'KC Ngawi' => 10] as $branch => $multiplier) {
+        foreach (['2026-01-31' => 100, '2026-09-30' => 200, '2026-10-21' => 300] as $period => $balance) {
+            $id = $branch.'-'.$period;
+            DB::table('daily_loan_dinamis')->insert(array_merge($base, [
+                'uniqueid_namareport' => $id, 'nomor_rekening1' => $id,
+                'cabang1' => $branch, 'periode' => $period, 'baki_debet1' => $balance * $multiplier,
+            ]));
+        }
+    }
+    $this->actingAs(User::factory()->create());
+    $url = '/report/dashboard-pinjaman/kolek-tidak-sesuai/timeseries?';
+    foreach (['KC Madiun' => 1, 'KC Ngawi' => 10] as $branch => $multiplier) {
+        foreach (['2026-10-21' => [10, 600], '2026-09-30' => [9, 300]] as $period => [$months, $balance]) {
+            $response = $this->getJson($url.http_build_query(['periode' => $period, 'cabang1' => [$branch]]))
+                ->assertOk()->assertJsonPath('selected_period', $period)->assertJsonPath('selected_branch', $branch);
+            $points = collect($response->json('timeseries'));
+            expect($points)->toHaveCount($months);
+            expect($points->first()['month'])->toBe('2026-01');
+            expect($points->last()['month'])->toBe(substr($period, 0, 7));
+            expect($points->last()['period'])->toBe($period);
+            expect($points->sum('memburuk_count'))->toBe($months === 10 ? 3 : 2);
+            expect((float) $points->sum('memburuk_balance'))->toBe((float) ($balance * $multiplier));
+        }
+    }
+});
+
+it('includes padded source branch labels in mismatch points exactly as the existing table does', function () {
+    $base = ['periode' => '2026-10-21', 'unit1' => 'Unit A', 'status_rekening1' => '1', 'kolek' => 1, 'umur_tunggakan' => 10];
+    foreach ([' KC Madiun ' => 100.25, 'KC Madiun' => 200.5, 'KC Ngawi' => 999] as $branch => $balance) {
+        DB::table('daily_loan_dinamis')->insert(array_merge($base, [
+            'uniqueid_namareport' => 'ts-padded-'.$branch, 'nomor_rekening1' => 'PADDED-'.$branch,
+            'cabang1' => $branch, 'baki_debet1' => $balance,
+        ]));
+    }
+    $this->actingAs(User::factory()->create());
+    $query = http_build_query(['periode' => '2026-10-21', 'cabang1' => ['KC Madiun']]);
+    $table = $this->getJson('/report/dashboard-pinjaman/kolek-tidak-sesuai/data?'.$query)->assertOk();
+    $series = $this->getJson('/report/dashboard-pinjaman/kolek-tidak-sesuai/timeseries?'.$query.'&point=2026-10')->assertOk();
+    expect(collect($table->json('summary_rows'))->sum('memburuk_count'))->toBe(2);
+    expect((float) collect($table->json('summary_rows'))->sum('memburuk_os'))->toBe(300.75);
+    $series->assertJsonPath('timeseries.0.memburuk_count', 2)->assertJsonPath('timeseries.0.memburuk_balance', 300.75);
+});
+

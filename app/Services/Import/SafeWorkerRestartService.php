@@ -25,6 +25,9 @@ class SafeWorkerRestartService
     /** Short, idempotent cache/presentation work never blocks a restart. */
     public const LIGHT_QUEUES = ['reports-low', 'remote-sources'];
 
+    /** Queues whose jobs write imported data; they always block a restart. */
+    public const IMPORT_QUEUES = ['imports-high', 'imports-daily-loan'];
+
     /** Idle must be observed this long, spanning gaps between chained phases. */
     private const QUIET_SECONDS = 60;
 
@@ -135,6 +138,25 @@ class SafeWorkerRestartService
         }
 
         $busy = $this->busyReasons();
+        if ($busy !== [] && $this->shouldEscalate($pending, $busy)) {
+            // Snapshot/background queues that never drain (for example jobs
+            // retrying a bug that the new code fixes) must not starve the
+            // restart forever. queue:restart is graceful: running jobs finish.
+            $errors = $this->syntaxErrors();
+            if ($errors === []) {
+                $status = $this->workerControl->restart('Otomatis (eskalasi: antrean non-import tidak pernah diam)');
+                if (($status['restart_rejected'] ?? '') === '') {
+                    $this->forgetPending();
+                    Log::warning('Restart aman dieskalasi: antrean non-import tidak pernah diam.', [
+                        'pending_since' => $pending['requested_at'] ?? null,
+                        'busy' => $busy,
+                    ]);
+
+                    return ['action' => 'restarted', 'escalated' => true, 'worker_status' => $status];
+                }
+            }
+        }
+
         if ($busy !== []) {
             if ($pending['idle_since'] !== null) {
                 $pending['idle_since'] = null;
@@ -181,6 +203,33 @@ class SafeWorkerRestartService
     }
 
     /**
+     * A pending restart may stop waiting for perfect idleness only when
+     * nothing that writes imported data is involved: no import job, no managed
+     * snapshot rebuild/unknown pipeline state, and no work in an import queue.
+     *
+     * @param array<string, mixed> $pending
+     * @param array<int, array{type:string,label:string,queue?:string}> $busy
+     */
+    public function shouldEscalate(array $pending, array $busy): bool
+    {
+        $escalateAfter = max(5, (int) config('queue.safe_restart_escalate_minutes', 20)) * 60;
+        if ((time() - (int) ($pending['requested_at'] ?? time())) < $escalateAfter) {
+            return false;
+        }
+
+        foreach ($busy as $reason) {
+            if (!in_array($reason['type'] ?? '', ['job', 'queue'], true)) {
+                return false;
+            }
+            if (in_array((string) ($reason['queue'] ?? ''), self::IMPORT_QUEUES, true)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
      * Everything still in flight. An empty list means a restart cannot cut
      * off any import, snapshot, delete or job.
      *
@@ -219,10 +268,10 @@ class SafeWorkerRestartService
                 $running = (int) $row->running;
                 $waiting = in_array((string) $row->queue, self::LIGHT_QUEUES, true) ? 0 : (int) $row->waiting;
                 if ($running > 0) {
-                    $reasons[] = ['type' => 'job', 'label' => $running.' job sedang diproses di '.$row->queue];
+                    $reasons[] = ['type' => 'job', 'label' => $running.' job sedang diproses di '.$row->queue, 'queue' => (string) $row->queue];
                 }
                 if ($waiting > 0) {
-                    $reasons[] = ['type' => 'queue', 'label' => $waiting.' job menunggu di '.$row->queue];
+                    $reasons[] = ['type' => 'queue', 'label' => $waiting.' job menunggu di '.$row->queue, 'queue' => (string) $row->queue];
                 }
             }
         }

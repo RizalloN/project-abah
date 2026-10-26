@@ -791,6 +791,15 @@ def main():
     unique_suffix = str(config.get("unique_suffix") or "_RPH")
     date_orders   = {str(k).strip().lower(): str(v).strip().lower() for k, v in (config.get("date_orders") or {}).items()}
 
+    # Accepted renames: a renamed export label keeps filling its column. The
+    # fixed aliases win so a known LW325 label can never be redirected.
+    for alias_key, alias_column in (config.get("header_aliases") or {}).items():
+        alias_key = str(alias_key).strip().lower()
+        alias_column = str(alias_column).strip().lower()
+        if (re.fullmatch(r"[a-z0-9_]{1,128}", alias_key) and re.fullmatch(r"[a-z][a-z0-9_]{0,63}", alias_column)
+                and alias_key not in EXCEL_HEADER_ALIASES):
+            EXCEL_HEADER_ALIASES[alias_key] = alias_column
+
     # Columns added through an accepted schema drift decision join the fixed
     # LW325 layout with the normalization that matches their database type.
     for spec in (config.get("extra_columns") or []):

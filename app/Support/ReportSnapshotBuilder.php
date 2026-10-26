@@ -2695,7 +2695,10 @@ class ReportSnapshotBuilder
         );
         array_push(
             $selects,
-            "{$snapshotRmSql} as rm",
+            // MariaDB ONLY_FULL_GROUP_BY does not match a CASE ... IN (...) select
+            // expression to the identical GROUP BY expression; MAX() of the grouped
+            // expression returns the same value and satisfies the check.
+            "MAX({$snapshotRmSql}) as rm",
             '? as segmen',
             "{$canonicalProductSql} as produk",
             'SUM(COALESCE(d.plafon, 0)) as plafon',
@@ -3735,7 +3738,7 @@ class ReportSnapshotBuilder
                 'branch_normalized as branch_code',
                 'produk_kinerja as produk',
             ])
-            ->selectRaw("{$snapshotRmSql} as rm")
+            ->selectRaw("MAX({$snapshotRmSql}) as rm")
             ->selectRaw('SUM(COALESCE(plafon, 0)) as plafon')
             ->selectRaw(
                 "SUM(CASE WHEN segmen_kinerja = ? AND produk_kinerja IN (?, ?) AND {$kurRitelDescriptionSql} = ? AND NOT ({$area6BranchSql}) THEN COALESCE(plafon, 0) ELSE COALESCE(baki_debet1, 0) END) as loan_os",

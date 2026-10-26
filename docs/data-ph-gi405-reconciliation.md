@@ -1,5 +1,9 @@
 # Data PH: rekonsiliasi GI405
 
+> **Diperbarui 23 Oktober 2026 (keputusan pengguna).** Halaman Data PH menampilkan recovery, rincian segmen, TUPOK, LUNAS, Non Klaim, Klaim, pembanding dan delta dari **LW325 PH** (fallback Cognos), sesuai logika controller. GI405 **tidak ditampilkan** di halaman. Pilihan periode dan periode default mengikuti LW325/Cognos.
+>
+> GI405 dipakai sebagai **pengecekan backend**: `DataPhReportController::gi405Reconciliation()` membandingkan Total Recovery LW325 bulan berjalan per KC dengan pendapatan GI405 sejak posisi GI405 terakhir bulan sebelumnya (reset Januari diperhitungkan). Toleransi: selisih ≤5% sesuai, ≤10% perhatian, >10% tidak sesuai; tanpa posisi GI405 pada tanggal yang sama berstatus belum tersedia. Hasilnya tampil sebagai item **Rekonsiliasi Data PH ↔ GI405** di health check Kelola Job (cache 15 menit) dan dapat dijalankan manual: `php artisan data-ph:reconcile-gi405 [--period=YYYY-MM-DD]`. Saat diperbarui: 20 Okt 2026 Area 6 −2,53% (keempat KC sesuai); 30 Sep 2026 Ponorogo −23,27% dan Ngawi −6,70% tertandai. Aturan GI405 di bawah (tanda akuntansi, reset Januari, nol sah, sumber kontrol/Single Row) tetap berlaku untuk pengecekan ini.
+
 Perubahan 16 Oktober 2026. Scope hanya Data PH; import, snapshot Dashboard Harian, dan laporan lain tidak diubah.
 
 ## Dasar perhitungan

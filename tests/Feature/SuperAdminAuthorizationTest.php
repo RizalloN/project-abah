@@ -398,9 +398,14 @@ class SuperAdminAuthorizationTest extends TestCase
 
             $this->assertStringContainsString('id="management-report-select"', $html);
             $this->assertStringContainsString('id="btn-management-filter"', $html);
-            foreach (['btn-management-recover', 'btn-management-force-sync', 'btn-management-rebuild', 'btn-management-deduplicate', 'btn-management-delete-selected'] as $id) {
+            foreach (['btn-management-recover', 'btn-management-deduplicate', 'btn-management-delete-selected'] as $id) {
                 $this->assertSame($privileged, str_contains($html, 'id="'.$id.'"'), $role.' / '.$id);
             }
+            // Snapshot sync/rebuild moved to the Job Management control panel.
+            foreach (['btn-management-force-sync', 'btn-management-rebuild'] as $id) {
+                $this->assertStringNotContainsString('id="'.$id.'"', $html, $role.' / '.$id);
+            }
+            $this->assertSame($privileged, str_contains($html, 'href="'.route('job-management.index', ['tab' => 'snapshot']).'"'), $role.' / snapshot tab link');
             foreach (['job-management.index', 'link-management.index'] as $route) {
                 $this->assertSame($privileged, str_contains($html, 'href="'.route($route).'"'), $role.' / '.$route);
             }
@@ -590,6 +595,10 @@ class SuperAdminAuthorizationTest extends TestCase
             'job-management.clear', 'job-management.bulk-destroy', 'job-management.force-start', 'job-management.snapshot.force-start',
             'job-management.terminate', 'job-management.destroy', 'job-management.queue.destroy', 'job-management.queue.force-run', 'job-management.queue.purge',
             'file-management.snapshots.latest-check', 'file-management.database-backup', 'file-management.database-backup.status',
+            'job-management.control.health', 'job-management.control.freshness', 'job-management.control.workers',
+            'job-management.control.snapshots', 'job-management.control.shadow', 'job-management.control.shadow.repair',
+            'job-management.control.database', 'job-management.control.database.unlock', 'job-management.control.database.lock',
+            'job-management.database.pma',
             'link-management.index', 'link-management.update',
             'import.queue-status',
             'import.report-management.rebuild', 'import.report-management.rebuild.status',

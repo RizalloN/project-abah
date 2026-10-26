@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Jobs\SyncImportedReportJob;
 use App\Support\MantriSourceInputStore;
 use App\Support\MicroNettDisbursementCalculator;
+use App\Support\ProductivitySourceQuality;
 use App\Support\ReportCacheVersion;
 use App\Support\UserBranchScope;
 use Carbon\Carbon;
@@ -75,7 +76,8 @@ class KinerjaRmMikroReportController extends Controller
     private const MANTRI_HEADCOUNT_POSITIONS = ['ASSOCIATE MANTRI 1', 'ASSOCIATE MANTRI 2', 'JUNIOR ASSOCIATE MANTRI'];
 
     private const EXTREME_LOW_BUCKETS = [
-        'el_0_100' => ['label' => '0 s.d 100 Jt', 'group' => 'extreme'],
+        'none' => ['label' => 'Belum Realisasi', 'group' => 'none'],
+        'el_0_100' => ['label' => 's.d 100 Jt', 'group' => 'extreme'],
         'el_100_200' => ['label' => '>100 s.d 200 Jt', 'group' => 'extreme'],
         'el_200_400' => ['label' => '>200 s.d 400 Jt', 'group' => 'extreme'],
         'low_400_600' => ['label' => '>400 s.d 600 Jt', 'group' => 'low'],
@@ -130,6 +132,12 @@ class KinerjaRmMikroReportController extends Controller
             'targetMonthlyJuta' => self::TARGET_MONTHLY_JUTA,
             'weeklyTargetJuta' => self::WEEKLY_TARGET_JUTA,
             'payload' => $payload,
+            'sourceQuality' => app(ProductivitySourceQuality::class)->summarize(
+                $selectedPeriod,
+                'MICRO',
+                $selectedRmCategory === 'mantri' ? self::MANTRI_PRODUCTS : ['KURMIKRO'],
+                self::AREA_BRANCH_ORDER
+            ),
             'formatAmount' => fn ($value, int $decimals = 0) => $this->formatAmount($value, $decimals),
             'formatJuta' => fn ($value, int $decimals = 0) => $this->formatJuta($value, $decimals),
             'formatPercent' => fn ($value, int $decimals = 1) => $this->formatPercent($value, $decimals),
@@ -143,7 +151,8 @@ class KinerjaRmMikroReportController extends Controller
         ?string $requestedPeriod,
         bool $mantri,
         ?string $extremeLowView = null,
-        bool $preferBrihcRoster = false
+        bool $preferBrihcRoster = false,
+        bool $nettKur = false
     ): array {
         try {
             $requestedPeriod = $requestedPeriod
@@ -176,7 +185,9 @@ class KinerjaRmMikroReportController extends Controller
             ? ['rows' => [], 'total' => [], 'months' => [], 'working_days' => 0]
             : ($mantri
                 ? $this->buildMantriPayload($category, $dataPeriod, $extremeLowView ?? 'per_unit_kerja')
-                : $this->buildReportPayload($category, $dataPeriod, $preferBrihcRoster));
+                : ($nettKur && $category === 'per_rm'
+                    ? $this->perRmPayload($dataPeriod, $preferBrihcRoster, true)
+                    : $this->buildReportPayload($category, $dataPeriod, $preferBrihcRoster)));
 
         $payload['meta'] = array_merge((array) ($payload['meta'] ?? []), [
             'requested_period' => $requestedPeriod,
@@ -208,7 +219,7 @@ class KinerjaRmMikroReportController extends Controller
     {
         $reference = app(\App\Support\MicroRmRosterReference::class);
         $referenceVersion = $mantri ? app(MantriSourceInputStore::class)->fingerprint($period) : $reference->fingerprint();
-        $cachePrefix = $mantri ? 'nett_workbook_v14-mantri-verified-cohort' : 'nett_workbook_v6-kanwil-gross';
+        $cachePrefix = $mantri ? 'nett_workbook_v19-mantri-zero-productivity' : 'nett_workbook_v10-kur-old-date-topup';
 
         return Cache::remember($this->cacheKey($cachePrefix, $period, [$referenceVersion, $mantri ? 'mantri' : 'rm']), 600, function () use ($period, $mantri, $reference): array {
             if (! $mantri) {
@@ -216,7 +227,10 @@ class KinerjaRmMikroReportController extends Controller
                 $people = $reference->people($period, $this->landingKurRmRoster());
                 $roster = collect($people)->filter(fn (array $person): bool => in_array($this->normalizeKey($person['branch']), self::AREA_BRANCH_ORDER, true)
                     && ($scope === null || $this->normalizeKey($person['branch']) === $this->normalizeKey($scope['upper_label'])))->values()->all();
-                $rows = $this->snapshotAggregates($period, ['rm'])->values()->map(function (array $row): array {
+                $rows = collect(app(MicroNettDisbursementCalculator::class)->cachedKurRmNett($period))
+                    ->filter(fn (array $row): bool => $scope === null
+                        || $this->normalizeKey($row['cabang']) === $this->normalizeKey($scope['upper_label']))
+                    ->values()->map(function (array $row): array {
                     $identity = trim((string) ($row['rm'] ?? ''));
                     [$pn, $name] = preg_match('/^\d+$/', $identity)
                         ? [$identity, ''] : $this->splitRm($identity);
@@ -289,9 +303,15 @@ class KinerjaRmMikroReportController extends Controller
         ];
     }
 
-    private function perRmPayload(string $period, bool $preferBrihcRoster = false): array
+    private function perRmPayload(string $period, bool $preferBrihcRoster = false, bool $nett = false): array
     {
-        $rows = $this->snapshotAggregates($period, ['rm'])->values()
+        $scope = UserBranchScope::current();
+        $source = $nett
+            ? collect(app(MicroNettDisbursementCalculator::class)->cachedKurRmNett($period))
+                ->filter(fn (array $row): bool => $scope === null
+                    || $this->normalizeKey($row['cabang']) === $this->normalizeKey($scope['upper_label']))
+            : $this->snapshotAggregates($period, ['rm']);
+        $rows = $source->values()
             ->map(function (array $row) {
                 [$pn, $name] = $this->splitRm((string) ($row['rm'] ?? ''));
 
@@ -308,7 +328,8 @@ class KinerjaRmMikroReportController extends Controller
         }
 
         $rows = $rows
-            ->filter(fn (array $row): bool => (float) ($row['realisasi_os'] ?? 0) > 0)
+            ->filter(fn (array $row): bool => (float) ($row['realisasi_os'] ?? 0) > 0
+                || ($nett && (int) ($row['realisasi_deb'] ?? 0) > 0))
             ->sortBy(fn ($row) => $this->branchSortKey($row['cabang']).'|'.$row['nama'])
             ->values();
 
@@ -1180,7 +1201,7 @@ class KinerjaRmMikroReportController extends Controller
             : '';
         $cacheFingerprint .= ':'.app(MantriSourceInputStore::class)->fingerprint($period);
 
-        return Cache::remember('kinerja_rm_mikro_mantri_v27_verified_cohort:'.$this->reportCacheVersion().':'.$period.':'.$category.':'.$extremeLowView.$cacheFingerprint, 600, function () use ($category, $period, $extremeLowView): array {
+        return Cache::remember('kinerja_rm_mikro_mantri_v32_zero_productivity:'.$this->reportCacheVersion().':'.$period.':'.$category.':'.$extremeLowView.$cacheFingerprint, 600, function () use ($category, $period, $extremeLowView): array {
             return match ($category) {
                 'kuadran' => $this->mantriKuadranPayload($period),
                 'produktivitas_mantri' => $this->mantriProductivityPayload($period),
@@ -1574,7 +1595,7 @@ class KinerjaRmMikroReportController extends Controller
     private function cachedExtremeLowMantriRosterRows(string $period): Collection
     {
         return Cache::remember(
-            'kinerja_rm_mikro_extreme_low_roster_v13_cohort:'.$this->reportCacheVersion().':'.$period.':'.$this->dailyLoanPeriodCacheFingerprint($period).':'.app(MantriSourceInputStore::class)->fingerprint($period),
+            'kinerja_rm_mikro_extreme_low_roster_v18_zero_productivity:'.$this->reportCacheVersion().':'.$period.':'.$this->dailyLoanPeriodCacheFingerprint($period).':'.app(MantriSourceInputStore::class)->fingerprint($period),
             600,
             fn (): Collection => $this->extremeLowMantriRosterRows($period)
         );
@@ -1761,7 +1782,7 @@ class KinerjaRmMikroReportController extends Controller
             ];
         }
 
-        $under800Deb = (int) collect(['el_0_100', 'el_100_200', 'el_200_400', 'low_400_600', 'low_600_800'])
+        $under800Deb = (int) collect(['none', 'el_0_100', 'el_100_200', 'el_200_400', 'low_400_600', 'low_600_800'])
             ->sum(fn (string $key): int => (int) ($buckets[$key]['deb'] ?? 0));
         $extremeLowDeb = (int) collect(['el_0_100', 'el_100_200', 'el_200_400'])
             ->sum(fn (string $key): int => (int) ($buckets[$key]['deb'] ?? 0));
@@ -1800,6 +1821,7 @@ class KinerjaRmMikroReportController extends Controller
     private function extremeLowBucketKey(float $amount): string
     {
         return match (true) {
+            $amount === 0.0 => 'none',
             $amount <= 100000000 => 'el_0_100',
             $amount <= 200000000 => 'el_100_200',
             $amount <= 400000000 => 'el_200_400',

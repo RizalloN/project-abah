@@ -348,9 +348,9 @@ class DataPhReportControllerTest extends TestCase
                 'produk_dashboard' => 'Kupedes',
                 'flag_klaim' => 'Y',
                 'clmamt' => 0,
-                'pokok' => 800000, // tupok 200k -> 30% subrogasi = 60k
+                'pokok' => 800000, // tupok 200k, fully booked as Recovery DH (GI405 418020000010)
             ],
-            // ACC4 missing in current -> lunas 1000k -> 30% subrogasi = 300k
+            // ACC4 missing in current -> lunas 1000k, fully booked as Recovery DH
             [
                 'periode' => '2026-07-31',
                 'acctno' => 'ACC5', // New account with claim
@@ -370,9 +370,10 @@ class DataPhReportControllerTest extends TestCase
         $this->assertEqualsWithDelta(400000.0, $metrics['KC Madiun']['tupok']['micro'], 0.01);
         $this->assertEqualsWithDelta(500000.0, $metrics['KC Madiun']['lunas']['micro'], 0.01);
         $this->assertEqualsWithDelta(900000.0, $metrics['KC Madiun']['non_klaim']['micro'], 0.01);
-        $this->assertEqualsWithDelta(1060000.0, $metrics['KC Madiun']['klaim']['micro'], 0.01);
-        $this->assertEqualsWithDelta(1960000.0, $metrics['KC Madiun']['micro'], 0.01);
-        $this->assertEqualsWithDelta(1960000.0, $metrics['KC Madiun']['total'], 0.01);
+        // Claimed accounts: 200k + 1,000k movement + 700k new claim payout.
+        $this->assertEqualsWithDelta(1900000.0, $metrics['KC Madiun']['klaim']['micro'], 0.01);
+        $this->assertEqualsWithDelta(2800000.0, $metrics['KC Madiun']['micro'], 0.01);
+        $this->assertEqualsWithDelta(2800000.0, $metrics['KC Madiun']['total'], 0.01);
     }
 
     public function test_data_ph_view_contains_rincian_recovery_columns(): void

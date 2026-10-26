@@ -93,7 +93,7 @@ class MantriKanwilHkeTest extends TestCase
         $this->assertSame('10', trim($this->xpath($report)->query('//section[@data-sheet="bo"]//tbody/tr[1]/td[contains(@class, "micro-nett-amount")]/following-sibling::td[1]')->item(0)->textContent));
     }
 
-    public function test_current_hr_and_workbook_rosters_classify_zero_and_negative_nett_as_extreme_low(): void
+    public function test_current_hr_and_workbook_rosters_separate_zero_productivity_without_changing_signed_nett(): void
     {
         $roster = [];
         $rows = [];
@@ -114,14 +114,14 @@ class MantriKanwilHkeTest extends TestCase
             $landingTier = $method->invoke(app(LandingMicroPerformanceService::class), collect($roster)->where('category', $category)->values(), $netByManager, $category);
             $workbookBuckets = collect($workbook['total']['tiers'][$category]['buckets'])->keyBy('key');
             $landingBuckets = collect($landingTier['buckets'])->keyBy('key');
-            $this->assertSame(0, $workbookBuckets['none']['mantri']);
-            $this->assertSame(4, $workbookBuckets['extreme_low']['mantri']);
-            $this->assertSame(100.0, (float) $workbookBuckets['extreme_low']['share']);
-            $this->assertSame(0, $landingBuckets['none']['mantri']);
-            $this->assertSame(4, $landingBuckets['extreme_low']['mantri']);
-            $this->assertSame(100.0, (float) $landingBuckets['extreme_low']['share']);
+            $this->assertSame(2, $workbookBuckets['none']['mantri']);
+            $this->assertSame(2, $workbookBuckets['extreme_low']['mantri']);
+            $this->assertSame(50.0, (float) $workbookBuckets['extreme_low']['share']);
+            $this->assertSame(2, $landingBuckets['none']['mantri']);
+            $this->assertSame(2, $landingBuckets['extreme_low']['mantri']);
+            $this->assertSame(50.0, (float) $landingBuckets['extreme_low']['share']);
         }
-        $this->assertSame(['extreme_low'], collect($workbook['sheet_rows']['bo'])->flatMap(fn (array $row): array => $row['members'])->pluck('nett_tier')->unique()->values()->all());
+        $this->assertSame(['extreme_low', 'none'], collect($workbook['sheet_rows']['bo'])->flatMap(fn (array $row): array => $row['members'])->pluck('nett_tier')->unique()->values()->all());
     }
 
     private function landingRow(LandingMicroPerformanceService $service, string $branch, Collection $people, float $net, int $hke): array

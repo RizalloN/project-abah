@@ -267,7 +267,8 @@ function (
 
     public function test_restart_endpoint_schedules_when_busy_and_cancel_endpoint_clears_it(): void
     {
-        $this->actingAs(User::factory()->make(['name' => 'Audit Worker', 'pn' => 'audit-worker', 'role' => 'admin']));
+        // Worker control is a superadmin-only endpoint (role:superadmin + reserved PN).
+        $this->actingAs(User::factory()->make(['name' => 'Audit Worker', 'pn' => '90179583', 'role' => 'superadmin']));
         $this->queueJob('snapshots-parallel', time());
         Artisan::shouldReceive('call')->never();
 
@@ -279,5 +280,28 @@ function (
         $this->postJson(route('job-management.worker.restart.cancel'))
             ->assertOk()
             ->assertJsonPath('safe_restart.pending', null);
+    }
+
+    public function test_restart_escalates_when_only_snapshot_queues_keep_the_system_busy(): void
+    {
+        $service = app(SafeWorkerRestartService::class);
+        $snapshotOnly = [
+            ['type' => 'job', 'label' => '6 job sedang diproses di snapshots-parallel', 'queue' => 'snapshots-parallel'],
+            ['type' => 'queue', 'label' => '26 job menunggu di snapshots-priority', 'queue' => 'snapshots-priority'],
+        ];
+
+        $this->assertFalse($service->shouldEscalate(['requested_at' => time() - 60], $snapshotOnly));
+        $this->assertTrue($service->shouldEscalate(['requested_at' => time() - 21 * 60], $snapshotOnly));
+    }
+
+    public function test_restart_never_escalates_over_imports_or_managed_pipelines(): void
+    {
+        $service = app(SafeWorkerRestartService::class);
+        $old = ['requested_at' => time() - 3600];
+
+        $this->assertFalse($service->shouldEscalate($old, [['type' => 'import', 'label' => 'Import #12 (processing)']]));
+        $this->assertFalse($service->shouldEscalate($old, [['type' => 'job', 'label' => '1 job sedang diproses di imports-high', 'queue' => 'imports-high']]));
+        $this->assertFalse($service->shouldEscalate($old, [['type' => 'snapshot', 'label' => 'Snapshot rebuild X (running)']]));
+        $this->assertFalse($service->shouldEscalate($old, [['type' => 'unknown', 'label' => 'Status tidak terbaca']]));
     }
 }

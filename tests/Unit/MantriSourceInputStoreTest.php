@@ -8,6 +8,7 @@ use App\Support\DashboardHarianSnapshotDirtyPeriodQueue;
 use App\Support\DashboardHarianSnapshotService;
 use App\Support\Lw321DailyLoanSyncService;
 use App\Support\MantriSourceInputStore;
+use App\Support\MicroSameAccountTopupDetector;
 use App\Support\PartitionMaintenanceService;
 use App\Support\ReportCacheVersion;
 use App\Support\ReportDataSyncService;
@@ -37,6 +38,7 @@ class MantriSourceInputStoreTest extends TestCase
         DB::reconnect('sqlite');
         Cache::flush();
         $this->directory = storage_path('framework/testing/mantri-source-'.bin2hex(random_bytes(8)));
+        $this->topupDetector();
     }
 
     protected function tearDown(): void
@@ -124,6 +126,105 @@ class MantriSourceInputStoreTest extends TestCase
         $this->assertNull($saved['segmen_kinerja']);
         $this->assertNull($saved['produk_kinerja']);
         $this->assertSame(['blank_cif' => true, 'missing_booking_date' => true], $saved['quality']);
+    }
+
+    public function test_baseline_round_trip_preserves_legacy_eight_columns_and_optional_ninth_plafond(): void
+    {
+        $store = new MantriSourceInputStore($this->directory);
+        $legacy = ['123', 'CIF-123', '100.25', 'KREDIT MIKRO - KUR MIKRO BARU', 'MICRO', 'KURMIKRO', 'UNIT UJI', 'KC Madiun'];
+        $data = $this->data('2026-09-30');
+        $data['source']['source_kind'] = 'daily_loan_import';
+        $data['bookings'] = [];
+        $data['baseline_accounts'] = [$legacy];
+        $store->write('2026-09-30', $data);
+        $reopened = new MantriSourceInputStore($this->directory);
+        $saved = $reopened->read('2026-09-30');
+        $this->assertSame($legacy, $saved['baseline_accounts'][0]);
+        $this->assertArrayNotHasKey('plafon', iterator_to_array($reopened->baselineAccounts($saved))[0]);
+
+        $data['baseline_accounts'][0][] = '150.35';
+        $store->write('2026-09-30', $data);
+        $saved = $reopened->read('2026-09-30');
+        $this->assertSame($legacy, array_slice($saved['baseline_accounts'][0], 0, 8));
+        $this->assertSame('150.35', $saved['baseline_accounts'][0][8]);
+        $this->assertSame('150.35', iterator_to_array($reopened->baselineAccounts($saved))[0]['plafon']);
+        $before = $reopened->fingerprint('2026-10-19');
+        $data['baseline_accounts'][0][] = 'unrecognized';
+        try {
+            $store->write('2026-09-30', $data);
+            $this->fail('An ambiguous compact baseline must not replace valid inputs.');
+        } catch (InvalidArgumentException) {
+            $this->assertSame($before, $reopened->fingerprint('2026-10-19'));
+        }
+    }
+
+    public function test_same_account_booking_round_trip_preserves_effective_and_original_dates(): void
+    {
+        $data = $this->data();
+        $data['bookings'] = [];
+        $topup = array_replace($this->row(), [
+            'source_realization_date' => '2026-09-05',
+            'booking_kind' => 'same_account_topup',
+            'previous_plafon' => '125.00',
+        ]);
+        $data['same_account_bookings'] = [$topup];
+        (new MantriSourceInputStore($this->directory))->write('2026-10-19', $data);
+        $saved = (new MantriSourceInputStore($this->directory))->read('2026-10-19');
+        $this->assertSame([], $saved['bookings']);
+        $this->assertSame('2026-10-19', $saved['same_account_bookings'][0]['tgl_realisasi']);
+        $this->assertSame('2026-09-05', $saved['same_account_bookings'][0]['source_realization_date']);
+        $this->assertSame('same_account_topup', $saved['same_account_bookings'][0]['booking_kind']);
+        $this->assertSame('125.00', $saved['same_account_bookings'][0]['previous_plafon']);
+        $this->assertSame('150.00', $saved['same_account_bookings'][0]['plafon']);
+    }
+
+    public function test_unproven_or_conflicting_same_account_bookings_cannot_replace_valid_inputs(): void
+    {
+        $store = new MantriSourceInputStore($this->directory);
+        $store->write('2026-10-19', $this->data());
+        $before = $store->fingerprint('2026-10-19');
+        $valid = array_replace($this->row(), ['source_realization_date' => '2026-09-05']);
+        foreach ([
+            [array_replace($valid, ['cifno' => null])],
+            [array_replace($valid, ['plafon' => null])],
+            [array_replace($valid, ['source_realization_date' => null])],
+            [array_replace($valid, ['source_realization_date' => '2026-10-01'])],
+            [$valid, array_replace($valid, ['plafon' => 151])],
+        ] as $rows) {
+            $data = $this->data();
+            $data['same_account_bookings'] = $rows;
+            try {
+                $store->write('2026-10-19', $data);
+                $this->fail('Unproven or conflicting topup inputs must be rejected.');
+            } catch (InvalidArgumentException) {
+                $this->assertSame($before, $store->fingerprint('2026-10-19'));
+            }
+        }
+    }
+
+    public function test_same_account_archive_keeps_micro_kur_ritel_but_rejects_briguna_unknown_and_outside_area(): void
+    {
+        $data = $this->data();
+        $data['source']['source_kind'] = 'daily_loan_import';
+        $topup = array_replace($this->row(), [
+            'segmen_kinerja' => 'MICRO', 'produk_kinerja' => 'KURKECIL',
+            'description' => 'Kredit Mikro - KUR Ritel 2015', 'source_realization_date' => '2026-09-05',
+        ]);
+        $data['bookings'] = [$topup];
+        $data['presence'] = ['123', 'GBT', 'NONMICRO', 'UNKNOWN', 'OUTSIDE'];
+        $data['same_account_bookings'] = [
+            $topup,
+            array_replace($topup, ['nomor_rekening1' => 'GBT', 'produk_kinerja' => 'BRIGUNAMIKRO', 'description' => 'KREDIT MIKRO - GBT']),
+            array_replace($topup, ['nomor_rekening1' => 'NONMICRO', 'segmen_kinerja' => 'SMALL']),
+            array_replace($topup, ['nomor_rekening1' => 'UNKNOWN', 'segmen_kinerja' => null, 'produk_kinerja' => null]),
+            array_replace($topup, ['nomor_rekening1' => 'OUTSIDE', 'cabang1' => 'KC Jember']),
+        ];
+        $store = new MantriSourceInputStore($this->directory);
+        $store->write('2026-10-19', $data);
+        $saved = $store->read('2026-10-19');
+        $this->assertSame([], $saved['bookings']);
+        $this->assertSame(['123'], array_column($saved['same_account_bookings'], 'nomor_rekening1'));
+        $this->assertSame('KURKECIL', $saved['same_account_bookings'][0]['produk_kinerja']);
     }
 
     public function test_fingerprint_tracks_previous_month_and_observed_bookings_without_future_leakage(): void
@@ -318,6 +419,36 @@ class MantriSourceInputStoreTest extends TestCase
         $this->assertSame($before, DB::table('daily_loan_dinamis')->orderBy('nomor_rekening1')->get()->toJson());
     }
 
+    public function test_native_capture_persists_proven_old_dated_topup_without_making_it_an_ordinary_booking(): void
+    {
+        $this->createNativeFixture();
+        DB::table('daily_loan_dinamis')->insert($this->nativeRow('123', ['tgl_realisasi' => '2026-09-05']));
+        $topup = array_replace($this->nativeRow('123'), [
+            'tgl_realisasi' => '2026-11-19', 'source_realization_date' => '2026-09-05',
+        ]);
+        $detector = $this->topupDetector([$topup]);
+        $saved = (new MantriSourceInputStore($this->directory))->captureDailyLoanPeriod('2026-11-19');
+        $this->assertSame([['native', '2026-11-19']], $detector->calls);
+        $this->assertSame([], $saved['bookings']);
+        $this->assertSame('150.00', $saved['same_account_bookings'][0]['plafon']);
+        $this->assertSame('2026-09-05', $saved['same_account_bookings'][0]['source_realization_date']);
+        $this->assertSame('2026-09-05', DB::table('daily_loan_dinamis')->value('tgl_realisasi'));
+    }
+
+    public function test_lw_capture_persists_proven_old_dated_topup_and_keeps_original_source_unchanged(): void
+    {
+        $this->createMaterializationFixture();
+        DB::table('lw321pn')->update(['tgl_realisasi' => '2026-09-05']);
+        $topup = array_replace($this->row(), ['source_realization_date' => '2026-09-05']);
+        $detector = $this->topupDetector([$topup]);
+        $saved = (new MantriSourceInputStore($this->directory))->captureLw321Period('2026-10-19');
+        $this->assertSame([['lw321', '2026-10-19']], $detector->calls);
+        $this->assertSame([], $saved['bookings']);
+        $this->assertSame('150.00', $saved['same_account_bookings'][0]['plafon']);
+        $this->assertSame('2026-09-05', $saved['same_account_bookings'][0]['source_realization_date']);
+        $this->assertSame('2026-09-05', DB::table('lw321pn')->value('tgl_realisasi'));
+    }
+
     public function test_native_capture_skips_materialization_and_excludes_stale_lw_rows_when_native_exists(): void
     {
         $this->createNativeFixture();
@@ -422,7 +553,7 @@ class MantriSourceInputStoreTest extends TestCase
         DB::table('daily_loan_dinamis')->insert([
             $this->nativeRow('MICRO', $end + ['baki_debet1' => 50]),
             $this->nativeRow('GBT', $end + ['baki_debet1' => 20, 'produk_kinerja' => 'BRIGUNA MIKRO', 'unit1' => 'KC MADIUN']),
-            $this->nativeRow('UNKNOWN-UNIT', $end + ['baki_debet1' => 30, 'segmen_kinerja' => null, 'produk_kinerja' => null]),
+            $this->nativeRow('UNKNOWN-UNIT', $end + ['baki_debet1' => 30, 'segmen_kinerja' => null, 'produk_kinerja' => null, 'plafon' => null]),
             $this->nativeRow('UNKNOWN-KC', $end + ['baki_debet1' => 37, 'segmen_kinerja' => null, 'produk_kinerja' => null, 'unit1' => 'KC MADIUN']),
             $this->nativeRow('SME', $end + ['segmen_kinerja' => 'SMALL', 'produk_kinerja' => 'KMK']),
             $this->nativeRow('KUR-RITEL', $end + ['produk_kinerja' => 'KURRITEL']),
@@ -431,10 +562,13 @@ class MantriSourceInputStoreTest extends TestCase
         ]);
         $store = new MantriSourceInputStore($this->directory);
         $saved = $store->captureDailyLoanPeriod('2026-11-30');
-        $this->assertSame(['GBT', 'MICRO', 'UNKNOWN-UNIT', 'ZERO'], array_column($saved['baseline_accounts'], 0));
-        $this->assertSame(['20.00', '50.00', '30.00', '0.00'], array_column($saved['baseline_accounts'], 2));
+        $this->assertSame(['GBT', 'KUR-RITEL', 'MICRO', 'UNKNOWN-UNIT', 'ZERO'], array_column($saved['baseline_accounts'], 0));
+        $this->assertSame(['20.00', '100.00', '50.00', '30.00', '0.00'], array_column($saved['baseline_accounts'], 2));
         $this->assertSame('BRIGUNAMIKRO', $saved['baseline_accounts'][0][5]);
         $this->assertSame('baki_debet1', $saved['source']['baseline_columns'][2]);
+        $this->assertSame('plafon', $saved['source']['baseline_columns'][8]);
+        $this->assertSame('150.00', $saved['baseline_accounts'][2][8]);
+        $this->assertCount(8, $saved['baseline_accounts'][3]);
         $this->assertSame([], $saved['bookings']);
         $decemberFingerprint = $store->fingerprint('2026-12-05');
 
@@ -453,20 +587,23 @@ class MantriSourceInputStoreTest extends TestCase
         DB::table('lw321pn')->delete();
         $base = [
             'periode' => '2026-11-30', 'tgl_realisasi' => '2026-10-01', 'cifno' => 'CIF-BASE',
-            'kanca' => 'KC Madiun', 'uker' => 'UNIT UJI', 'balance_dalam_idr' => 30,
+            'kanca' => 'KC Madiun', 'uker' => 'UNIT UJI', 'balance_dalam_idr' => 30, 'plafon' => null,
         ];
         DB::table('lw321pn')->insert([
-            $base + ['no_rekening' => 'KNOWN', 'description' => 'KREDIT MIKRO - KUPEDES'],
-            array_replace($base, ['no_rekening' => 'GBT', 'description' => 'KREDIT MIKRO - GBT', 'uker' => 'KC MADIUN', 'balance_dalam_idr' => 20]),
+            array_replace($base, ['no_rekening' => 'KNOWN', 'description' => 'KREDIT MIKRO - KUPEDES', 'plafon' => 75.55]),
+            array_replace($base, ['no_rekening' => 'GBT', 'description' => 'KREDIT MIKRO - GBT', 'uker' => 'KC MADIUN', 'balance_dalam_idr' => 20, 'plafon' => 0]),
             $base + ['no_rekening' => 'UNKNOWN-UNIT', 'description' => null],
             array_replace($base, ['no_rekening' => 'UNKNOWN-KC', 'description' => null, 'uker' => 'KC MADIUN']),
             $base + ['no_rekening' => 'RITEL', 'description' => 'Kredit Mikro - KUR Ritel 2015'],
         ]);
         $saved = (new MantriSourceInputStore($this->directory))->captureLw321Period('2026-11-30');
-        $this->assertSame(['GBT', 'KNOWN', 'UNKNOWN-UNIT'], array_column($saved['baseline_accounts'], 0));
-        $this->assertSame(['20.00', '30.00', '30.00'], array_column($saved['baseline_accounts'], 2));
-        $this->assertNull($saved['baseline_accounts'][2][4]);
-        $this->assertNull($saved['baseline_accounts'][2][5]);
+        $this->assertSame(['GBT', 'KNOWN', 'RITEL', 'UNKNOWN-UNIT'], array_column($saved['baseline_accounts'], 0));
+        $this->assertSame(['20.00', '30.00', '30.00', '30.00'], array_column($saved['baseline_accounts'], 2));
+        $this->assertNull($saved['baseline_accounts'][3][4]);
+        $this->assertNull($saved['baseline_accounts'][3][5]);
+        $this->assertSame('0.00', $saved['baseline_accounts'][0][8]);
+        $this->assertSame('75.55', $saved['baseline_accounts'][1][8]);
+        $this->assertCount(8, $saved['baseline_accounts'][3]);
         $this->assertSame('lw321_import', $saved['source']['source_kind']);
         $this->assertContains('UNKNOWN-KC', $saved['presence']);
         $this->assertContains('RITEL', $saved['presence']);
@@ -533,6 +670,7 @@ class MantriSourceInputStoreTest extends TestCase
         $this->assertFalse($removed['complete_presence']);
         $this->assertSame([], $removed['bookings']);
         $this->assertSame([], $removed['baseline_accounts']);
+        $this->assertSame([], $removed['same_account_bookings']);
         $this->assertSame([], $removed['unclassified_accounts']);
         $this->assertSame($saved['owner_evidence'], $removed['owner_evidence']);
         $this->assertNotContains('2026-11-19', $store->periods());
@@ -627,6 +765,33 @@ class MantriSourceInputStoreTest extends TestCase
         DB::table('daily_loan_dinamis')->update(['baki_debet1' => 0]);
         $service->syncImportedTable('daily_loan_dinamis', '2026-11-19', null, 'native-import-retry');
         $this->assertSame('0.00', $store->read('2026-11-19')['bookings'][0]['baki_debet1']);
+    }
+
+    private function topupDetector(array $rows = []): object
+    {
+        $detector = new class($rows)
+        {
+            public array $calls = [];
+
+            public function __construct(private array $rows) {}
+
+            public function captureNativePeriod(string $period): array
+            {
+                $this->calls[] = ['native', $period];
+
+                return $this->rows;
+            }
+
+            public function captureLwPeriod(string $period): array
+            {
+                $this->calls[] = ['lw321', $period];
+
+                return $this->rows;
+            }
+        };
+        app()->instance(MicroSameAccountTopupDetector::class, $detector);
+
+        return $detector;
     }
 
     private function createNativeFixture(): void

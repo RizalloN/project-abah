@@ -6,12 +6,12 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Kind | Count |
 | --- | ---: |
-| file | 10 |
+| file | 11 |
 | method | 225 |
 | unresolved_symbol | 1 |
 | class | 7 |
 | trait | 1 |
-| view | 2 |
+| view | 3 |
 
 ## Main Hubs
 
@@ -66,6 +66,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 - `presentation` - `resources/views/presentation.blade.php`
 - `presentation._executive-slides` - `resources/views/presentation/_executive-slides.blade.php`
+- `presentation.keynote` - `resources/views/presentation/keynote.blade.php`
 
 ## Cross-Domain Links
 
@@ -74,8 +75,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | presentation -> core (calls) | 60 |
 | presentation -> core (accepts) | 24 |
 | presentation -> core (instantiates) | 16 |
+| presentation -> dashboard-simpanan (references_route) | 15 |
 | jobs-snapshots -> presentation (calls) | 9 |
-| presentation -> dashboard-simpanan (references_route) | 8 |
 | dashboard-simpanan -> presentation (accepts) | 4 |
 | access-control -> presentation (calls) | 4 |
 | presentation -> import (reads_table) | 4 |
@@ -86,7 +87,6 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | input-management -> presentation (uses_trait) | 2 |
 | presentation -> access-control (contains) | 2 |
 | dashboard-simpanan -> presentation (calls) | 1 |
-| dashboard-simpanan -> presentation (renders) | 1 |
 | presentation -> input-management (injects) | 1 |
 | presentation -> dashboard-pinjaman (injects) | 1 |
 | presentation -> core (injects) | 1 |

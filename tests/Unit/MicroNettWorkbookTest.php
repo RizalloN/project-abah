@@ -11,12 +11,12 @@ class MicroNettWorkbookTest extends TestCase
     {
         $cases = [
             'pt' => [
-                [-50_000_000, 'extreme_low'], [0, 'extreme_low'], [1, 'extreme_low'],
+                [-50_000_000, 'extreme_low'], [0, 'none'], [1, 'extreme_low'],
                 [399_999_999, 'extreme_low'], [400_000_000, 'low'], [800_000_000, 'low'],
                 [800_000_001, 'mid'], [1_000_000_000, 'mid'], [1_000_000_001, 'high'],
             ],
             'contract' => [
-                [-20_000_000, 'extreme_low'], [0, 'extreme_low'], [1, 'extreme_low'],
+                [-20_000_000, 'extreme_low'], [0, 'none'], [1, 'extreme_low'],
                 [174_999_999, 'extreme_low'], [175_000_000, 'low'], [350_000_000, 'low'],
                 [350_000_001, 'mid'], [450_000_000, 'mid'], [450_000_001, 'high'],
             ],
@@ -45,7 +45,7 @@ class MicroNettWorkbookTest extends TestCase
         }
         foreach (['pt', 'contract'] as $category) {
             $buckets = collect($result['total']['tiers'][$category]['buckets'])->keyBy('key');
-            $this->assertSame(['none' => 0, 'extreme_low' => 4, 'low' => 2, 'mid' => 2, 'high' => 1], $buckets->map(fn (array $bucket): int => $bucket['mantri'])->all());
+            $this->assertSame(['none' => 1, 'extreme_low' => 3, 'low' => 2, 'mid' => 2, 'high' => 1], $buckets->map(fn (array $bucket): int => $bucket['mantri'])->all());
             $this->assertEqualsWithDelta(100, $buckets->sum('share'), 0.00001);
         }
     }
@@ -78,7 +78,7 @@ class MicroNettWorkbookTest extends TestCase
         $this->assertSame('1002', $unitB['branch_code']);
         $this->assertSame('MBM B', $unitB['mbm']);
         $this->assertSame(1, $unitB['headcount']['unknown']);
-        $this->assertSame(1, collect($unitB['tiers']['contract']['buckets'])->firstWhere('key', 'extreme_low')['mantri']);
+        $this->assertSame(1, collect($unitB['tiers']['contract']['buckets'])->firstWhere('key', 'none')['mantri']);
         $this->assertSame(0.0, $unitB['net_disbursement']['amount']);
     }
 }

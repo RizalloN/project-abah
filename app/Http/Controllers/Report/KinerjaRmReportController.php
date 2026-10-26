@@ -7,6 +7,7 @@ use App\Jobs\SyncImportedReportJob;
 use App\Support\ConsumerKanwilReference;
 use App\Support\LandingConsumerOperationalService;
 use App\Support\LoanQualityBucketMapper;
+use App\Support\ProductivitySourceQuality;
 use App\Support\ReportCacheVersion;
 use App\Support\RkaLookupService;
 use App\Support\SmallRmRealizationCalculator;
@@ -953,6 +954,12 @@ class KinerjaRmReportController extends Controller
             'performanceTotal' => $retailPerformance['total'],
             'performanceMeta' => $retailPerformance['meta'],
             'qualitySeries' => $qualitySeries,
+            'sourceQuality' => app(ProductivitySourceQuality::class)->summarize(
+                $selectedPeriod,
+                $selectedSegmen,
+                $selectedProduct !== null ? [$selectedProduct] : [],
+                $selectedCabang !== null ? [$selectedCabang] : []
+            ),
             'formatAmount' => fn ($value, int $decimals = 0) => $this->formatAmountInJuta($value, 0),
             'formatSignedAmount' => fn ($value, bool $showArrow = true, int $decimals = 0) => $this->formatSignedAmountInJuta($value, $showArrow, 0),
             'formatCount' => fn ($value) => $this->formatCount($value),

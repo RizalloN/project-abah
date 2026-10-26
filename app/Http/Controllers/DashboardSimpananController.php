@@ -6142,7 +6142,11 @@ class DashboardSimpananController extends Controller
             $this->deferPresentationPayloadRefresh($period);
         }
 
-        return view('presentation', [
+        // The keynote is the default reading view; ?layout=slides keeps the 16:9 deck and ?layout=classic the previous scroll report.
+        $layout = (string) $request->query('layout', '');
+        $view = in_array($layout, ['slides', 'classic'], true) ? 'presentation' : 'presentation.keynote';
+
+        return view($view, [
             'selectedPeriod' => $period,
             'periods' => $periods,
             'presentationPayload' => is_array($payload)
@@ -8167,7 +8171,7 @@ class DashboardSimpananController extends Controller
         $cacheKey = implode(':', [
             'landing',
             'micro-rm-kur-productivity',
-            'v3-nett-distribution',
+            'v7-old-date-topup',
             ReportCacheVersion::composite(['pinjaman', 'brihc']),
             $period ?? 'none',
             $scopeKey,
@@ -8175,7 +8179,7 @@ class DashboardSimpananController extends Controller
         $durableKey = implode(':', [
             'landing',
             'micro-rm-kur-productivity',
-            'v3-nett-distribution',
+            'v7-old-date-topup',
             'last-valid',
             $period ?? 'none',
             $scopeKey,
@@ -8223,7 +8227,7 @@ class DashboardSimpananController extends Controller
     /** @param  array<string, mixed>|null  $branchScope */
     private function buildLandingRmKurProductivityFresh(?string $period, ?array $branchScope): array
     {
-        $payload = $this->invokeKinerjaRmMikroPayload('per_rm', $period, false, null, true);
+        $payload = $this->invokeKinerjaRmMikroPayload('per_rm', $period, false, null, true, true);
         $scopeBranch = strtoupper(trim((string) ($branchScope['upper_label'] ?? '')));
         $rows = collect($payload['rows'] ?? []);
 
@@ -8974,7 +8978,8 @@ class DashboardSimpananController extends Controller
         ?string $period,
         bool $mantri,
         ?string $extremeLowView = null,
-        bool $preferBrihcRoster = false
+        bool $preferBrihcRoster = false,
+        bool $nettKur = false
     ): array
     {
         if (!$period) {
@@ -8983,7 +8988,7 @@ class DashboardSimpananController extends Controller
 
         try {
             return app(\App\Http\Controllers\Report\KinerjaRmMikroReportController::class)
-                ->buildEmbeddedPayload($category, $period, $mantri, $extremeLowView, $preferBrihcRoster);
+                ->buildEmbeddedPayload($category, $period, $mantri, $extremeLowView, $preferBrihcRoster, $nettKur);
         } catch (Throwable $e) {
             Log::warning('Payload presentasi Kinerja RM Mikro gagal dibaca.', [
                 'category' => $category,

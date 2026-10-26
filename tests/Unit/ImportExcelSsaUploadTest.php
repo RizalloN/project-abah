@@ -29,6 +29,7 @@ class ImportExcelSsaUploadTest extends TestCase
         DB::table('nama_report')->insert([
             ['id_report' => 101, 'nama_report' => 'SSA Simpanan', 'table_name' => 'ssa_simpanan'],
             ['id_report' => 102, 'nama_report' => 'SSA Pinjaman', 'table_name' => 'ssa_pinjaman'],
+            ['id_report' => 103, 'nama_report' => 'SSA Almafacts', 'table_name' => 'ssa_almafacts'],
         ]);
         $user = new User;
         $user->id = 1;
@@ -94,6 +95,42 @@ class ImportExcelSsaUploadTest extends TestCase
         } else {
             $this->assertSame(['1', 'Y', '0.00', '0', '0'], array_slice($second, 9));
         }
+        $this->assertCount(1, Storage::files('excel_imports'));
+    }
+
+    public function test_almafacts_crosstab_excel_reaches_the_existing_almafacts_csv_preview(): void
+    {
+        $book = new Spreadsheet;
+        $sheet = $book->getActiveSheet();
+        $sheet->fromArray([
+            ['SSA Almafacts'],
+            ['Month, Day, Year of 00. Posisi', '03. Kanca Konsolidasi', '05. Kode Unit Kerja', '04. Unit Kerja', 'Keterangan', null],
+            ['January 31, 2023', 'KC Madiun', '3212', 'UNIT DOLOPO MADIUN', '01. Pendapatan Bunga', 990745525],
+            [null, null, null, null, '17. Rasio (%)', 0.0955653],
+        ], null, 'A1', true);
+        foreach (['A', 'B', 'C', 'D'] as $column) {
+            $sheet->mergeCells($column.'3:'.$column.'4');
+        }
+        $path = tempnam(sys_get_temp_dir(), 'ssa_alma_');
+        (new Xlsx($book))->save($path);
+        $book->disconnectWorksheets();
+        $source = file_get_contents($path);
+        @unlink($path);
+
+        $controller = app(ImportExcelController::class);
+        $response = $controller->uploadExcel(Request::create('/', 'POST', ['id_report' => 103], [], [
+            'file' => UploadedFile::fake()->createWithContent('almafacts.xlsx', $source),
+        ], ['HTTP_ACCEPT' => 'application/json']));
+
+        $this->assertSame(200, $response->getStatusCode(), $response->getContent());
+        $relative = session('excel_path');
+        $this->assertStringEndsWith('.csv', $relative);
+        $preview = (new \ReflectionMethod(ImportExcelController::class, 'prepareSsaAlmafactsCsvPreviewFastPath'))
+            ->invoke($controller, Storage::path($relative));
+        $this->assertSame(['month_day_year_of_posisi', 'kanca_konsolidasi', 'kode_unit_kerja', 'unit_kerja', 'keterangan', 'saldo'], $preview['headers']);
+        $this->assertSame(['January 31, 2023', 'KC Madiun', '3212', 'UNIT DOLOPO MADIUN', '17. Rasio (%)', '0.0955653'], $preview['preview'][1]);
+        $notice = \App\Services\Import\Crosstab\CrosstabNormalizationNotice::forPath($relative);
+        $this->assertSame('merge', $notice['mode']);
         $this->assertCount(1, Storage::files('excel_imports'));
     }
 
