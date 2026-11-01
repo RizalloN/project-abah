@@ -27,6 +27,7 @@ use App\Support\DashboardDanaService;
 use App\Support\CrasMappingService;
 use App\Support\HourlyDpkDashboardService;
 use App\Support\LandingConsumerOperationalService;
+use App\Support\InstitutionMarketShareSheet;
 use App\Support\LandingMicroPerformanceService;
 use App\Support\LandingMicroPipelineService;
 use App\Support\LandingLoanAnalyticsService;
@@ -2657,7 +2658,7 @@ class DashboardSimpananController extends Controller
 
     public function marketShareInstansiIndex(Request $request): View
     {
-        $sheetName = 'DATA INSTANSI';
+        $sheetName = 'DATA INTANSI';
         $branchOptions = $this->marketShareInstansiBranchOptions();
         $userBranchScope = UserBranchScope::current();
 
@@ -2743,7 +2744,7 @@ class DashboardSimpananController extends Controller
 
     public function marketShareInstansiData(Request $request): \Illuminate\Http\JsonResponse
     {
-        $sheetName = 'DATA INSTANSI';
+        $sheetName = 'DATA INTANSI';
         $branchOptions = $this->marketShareInstansiBranchOptions();
         $userBranchScope = UserBranchScope::current();
         if ($userBranchScope !== null) {
@@ -2757,14 +2758,14 @@ class DashboardSimpananController extends Controller
 
         $selectedOption = $branchOptions[$selectedBranch];
         if ($selectedBranch === 'area6') {
-            $cacheKey = 'marketshare_instansi_data:v2:area6';
+            $cacheKey = 'marketshare_instansi_data:v3:area6';
             $payload = Cache::get($cacheKey);
             if (is_array($payload)) {
                 if ($this->remotePayloadIsStale($payload)) {
                     $this->queueMarketShareInstansiRefresh();
                 }
 
-                return response()->json($payload);
+                return response()->json(InstitutionMarketShareSheet::forDisplay($payload, $selectedBranch));
             }
 
             $this->queueMarketShareInstansiRefresh();
@@ -2787,7 +2788,7 @@ class DashboardSimpananController extends Controller
             ], 422);
         }
 
-        $cacheKey = 'marketshare_instansi_data:v1:' . $selectedBranch . ':' . md5($csvUrl);
+        $cacheKey = 'marketshare_instansi_data:v3:' . $selectedBranch . ':' . md5($csvUrl);
 
         $payload = Cache::get($cacheKey);
         if (is_array($payload)) {
@@ -2795,7 +2796,7 @@ class DashboardSimpananController extends Controller
                 $this->queueMarketShareInstansiRefresh();
             }
 
-            return response()->json($payload);
+            return response()->json(InstitutionMarketShareSheet::forDisplay($payload, $selectedBranch));
         }
 
         $this->queueMarketShareInstansiRefresh();
@@ -2810,10 +2811,9 @@ class DashboardSimpananController extends Controller
 
     public function refreshMarketShareInstansiSources(): array
     {
-        $sheetName = 'DATA INSTANSI';
+        $sheetName = 'DATA INTANSI';
         $branchOptions = $this->marketShareInstansiBranchOptions();
-        $areaColumns = [];
-        $areaRows = [];
+        $branchPayloads = [];
         $refreshed = 0;
         $errors = [];
 
@@ -2823,16 +2823,20 @@ class DashboardSimpananController extends Controller
             }
 
             $csvUrl = $this->googleSpreadsheetSheetCsvUrl($branchOption['url'], $sheetName);
-            $cacheKey = 'marketshare_instansi_data:v1:' . $branchKey . ':' . md5($csvUrl);
+            $cacheKey = 'marketshare_instansi_data:v3:' . $branchKey . ':' . md5($csvUrl);
 
             try {
                 $sheetPayload = $this->readMarketShareInstansiSheet($branchOption['url'], $branchOption['label'], $sheetName);
+                // Validate display columns before replacing last-good source data.
+                InstitutionMarketShareSheet::forDisplay($sheetPayload, $branchKey);
                 $payload = [
                     'ready' => true,
                     'message' => 'OK',
                     'branch' => $branchOption['label'],
                     'sheet' => $sheetName,
                     'columns' => $sheetPayload['columns'],
+                    'column_keys' => $sheetPayload['column_keys'],
+                    'period' => $sheetPayload['period'],
                     'rows' => $sheetPayload['rows'],
                     'rowCount' => count($sheetPayload['rows']),
                     'columnCount' => count($sheetPayload['columns']),
@@ -2845,28 +2849,28 @@ class DashboardSimpananController extends Controller
                 $payload = Cache::get($cacheKey);
             }
 
-            if (!is_array($payload ?? null) || empty($payload['ready'])) {
+            if (!is_array($payload ?? null) || empty($payload['ready']) || empty($payload['column_keys'])) {
                 continue;
             }
 
-            if ($areaColumns === []) {
-                $areaColumns = array_merge(['Cabang'], (array) $payload['columns']);
-            }
-            foreach ((array) $payload['rows'] as $row) {
-                $areaRows[] = array_merge([$branchOption['label']], (array) $row);
-            }
+            $branchPayloads[$branchOption['label']] = $payload;
         }
 
-        if ($areaColumns !== []) {
-            Cache::forever('marketshare_instansi_data:v2:area6', [
+        // Never replace a complete consolidation with an incomplete set of branches.
+        if (count($branchPayloads) === count($branchOptions) - 1) {
+            $area = InstitutionMarketShareSheet::consolidate($branchPayloads);
+            Cache::forever('marketshare_instansi_data:v3:area6', [
                 'ready' => true,
                 'message' => 'OK',
                 'branch' => 'Area 6 Konsolidasi',
                 'sheet' => $sheetName,
-                'columns' => $areaColumns,
-                'rows' => $areaRows,
-                'rowCount' => count($areaRows),
-                'columnCount' => count($areaColumns),
+                'columns' => $area['columns'],
+                'column_keys' => $area['column_keys'],
+                'rows' => $area['rows'],
+                'rowCount' => count($area['rows']),
+                'columnCount' => count($area['columns']),
+                'sourcePeriods' => array_map(fn ($payload) => $payload['period'] ?? null, $branchPayloads),
+                'sourceFetchedAt' => array_map(fn ($payload) => $payload['fetchedAt'] ?? null, $branchPayloads),
                 'fetchedAt' => now()->toDateTimeString(),
             ]);
         }
@@ -2942,34 +2946,7 @@ class DashboardSimpananController extends Controller
             throw new \RuntimeException("Google Sheet {$branchLabel} mengembalikan status " . $response->status());
         }
 
-        $parsedRows = $this->parseCsvText((string) $response->body());
-        $parsedRows = array_values(array_filter($parsedRows, function (array $row): bool {
-            return collect($row)->contains(fn ($value): bool => trim((string) $value) !== '');
-        }));
-
-        $columns = array_values(array_map(
-            fn ($value): string => trim((string) $value),
-            $parsedRows[0] ?? []
-        ));
-        if ($columns === []) {
-            throw new \RuntimeException("Sheet {$sheetName} {$branchLabel} kosong atau belum terbaca.");
-        }
-
-        $rows = array_slice($parsedRows, 1);
-        $columnCount = count($columns);
-        $rows = array_map(function (array $row) use ($columnCount): array {
-            $row = array_values($row);
-            if (count($row) < $columnCount) {
-                $row = array_pad($row, $columnCount, '');
-            }
-
-            return array_slice($row, 0, $columnCount);
-        }, $rows);
-
-        return [
-            'columns' => $columns,
-            'rows' => $rows,
-        ];
+        return InstitutionMarketShareSheet::parse((string) $response->body());
     }
 
     /**
@@ -5745,10 +5722,11 @@ class DashboardSimpananController extends Controller
 
         return 'https://docs.google.com/spreadsheets/d/'
             . rawurlencode((string) $matches[1])
-            . '/gviz/tq?'
+            . '/export?'
             . http_build_query([
-                'tqx' => 'out:csv',
-                'sheet' => $sheetName,
+                'format' => 'csv',
+                // Verified DATA INTANSI tab ID in all four branch source workbooks.
+                'gid' => '1224308739',
             ], '', '&', PHP_QUERY_RFC3986);
     }
 
@@ -6176,7 +6154,7 @@ class DashboardSimpananController extends Controller
         $scope = $segments->resolveScope($request->query('scope'));
 
         $payload = Cache::remember(
-            'presentation_segments:v2:' . ($period ?: 'latest') . ':' . $scope,
+            'presentation_segments:v3-data-ph:' . ($period ?: 'latest') . ':' . $scope,
             now()->addMinutes(15),
             fn (): array => $segments->build($period ?: null, $scope)
         );

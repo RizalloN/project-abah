@@ -2,7 +2,7 @@ import { h, count, money, percent } from './format.js';
 import { table } from './charts.js';
 import { BRANCH_LABELS, mix } from './territory-data.js';
 import { choicePanel, bindChoicePanel } from './choice-panel.js';
-import { subsectorReference } from './subsector-coverage.js';
+import { subsectorReference, subsectorUnitCoverage } from './subsector-coverage.js';
 import { sectorMetrics } from './sector-model.js';
 
 export const subsectorPanel = () => `
@@ -16,7 +16,7 @@ export const subsectorPanel = () => `
         </form>
         <p class="sg-note" role="status" data-cras-status>Rincian akan dimuat saat bagian ini dibuka.</p>
         <div class="sg-grid sg-grid--1" data-cras-results></div>
-        <p class="sg-note" data-cras-reference>Rasio subsektor memakai potensi kategori sektor induk pada desa kelolaan UKER, dari kolom F spreadsheet. Intra adalah debitur aktif dan ekstra adalah debitur PH. Tampilan dinormalisasi maksimum 100%; jumlah sumber dan rasio aslinya tetap tersimpan.</p>
+        <p class="sg-note" data-cras-reference>Rasio subsektor memakai potensi kategori sektor induk pada desa kelolaan UKER, dari kolom F spreadsheet. Intra adalah debitur aktif dan ekstra adalah debitur PH. Debitur dicocokkan ke sektor usaha BPS di desa UKER sehingga cakupan tidak melampaui pelaku usaha; jumlah dan rasio sesuai kode SSA tetap tersimpan.</p>
     </section>`;
 
 /** Existing CRAS service owns normalization, dependent options and server-side branch enforcement. */
@@ -30,10 +30,10 @@ export const bindSubsectors = (root, ctx, studio) => {
     const results = host.querySelector('[data-cras-results]');
     const button = form.querySelector('[data-cras-retry]');
     const selection = ctx.selection;
-    const branchKey = ctx.scope.key === 'area6' ? (selection?.branchKey || 'all') : ctx.scope.key;
+    const branchKey = ctx.scope.key === 'area6' ? (selection?.branchKey && selection.branchKey !== 'area6' ? selection.branchKey : 'all') : ctx.scope.key;
     const selectedUnits = new Set((selection?.unitCodes?.length ? selection.unitCodes : (selection?.unitCode ? [selection.unitCode] : [])).map(String));
     const restrictUnits = selection?.level === 'unit' || selection?.level === 'district';
-    const areaRows = ctx.scope.key === 'area6' && !selection;
+    const areaRows = ctx.scope.key === 'area6' && (!selection || selection.branchKey === 'area6');
     const geographyLabel = selection && selection.level !== 'branch' ? `${BRANCH_LABELS[selection.branchKey]} / ${selection.label}` : selection?.label || ctx.scope.label;
     const saved = ctx.presentationState?.cras;
     const state = saved?.branchKey === branchKey ? saved : { branchKey, sektor: 'all', sub_sektor: 'all' };
@@ -71,16 +71,19 @@ export const bindSubsectors = (root, ctx, studio) => {
         const entities = areaRows
             ? Object.entries(BRANCH_LABELS).map(([key, label]) => {
                 const values = units.filter((unit) => unit.branch_key === key).reduce((sum, unit) => {
-                for (const metric of Object.keys(sum)) sum[metric] += Number(unit.values?.[metric]) || 0;
+                for (const metric of Object.keys(sum)) sum[metric] += Number(unit.values?.[metric] ?? (metric === 'jumlah_debitur_normalized' ? unit.values?.jumlah_debitur : 0)) || 0;
                 return sum;
-                }, { jumlah_debitur: 0, intra: 0, extra: 0, jumlah_rekening: 0, baki_debet: 0, credit_extra: 0 });
-                const population = payload.sector_potential?.branches?.find((branch) => branch.key === key)?.values?.[reference.group?.key]?.potential ?? null;
-                return { label, ...values, parentCoverage: sectorMetrics(population, values.jumlah_debitur) };
+                }, { jumlah_debitur: 0, jumlah_debitur_normalized: 0, intra: 0, extra: 0, jumlah_rekening: 0, baki_debet: 0, credit_extra: 0 });
+                const parent = payload.sector_potential?.branches?.find((branch) => branch.key === key);
+                const population = parent?.values?.[reference.group?.key]?.potential ?? null;
+                return { label, ...values, potential_partial: parent?.potential_partial, parentCoverage: sectorMetrics(population, values.jumlah_debitur_normalized, values.jumlah_debitur) };
             })
-            : units.map((unit) => ({ label: unit.name, ...unit.values, parentCoverage: unit.sector_parent_coverage || sectorMetrics(null, Number(unit.values?.jumlah_debitur) || 0) }));
+            : units.map((unit) => ({ label: unit.name, ...unit.values, potential_partial: unit.potential_partial,
+                parentCoverage: subsectorUnitCoverage(payload, unit, reference.group) }));
+        const allSectors = reference.group?.key === 'total';
         const coverageCell = (row) => {
             const coverage = row.parentCoverage;
-            return `<span title="Rasio sumber ${h(percent(coverage?.penetration_raw, 2))}">${percent(coverage?.penetration, 2)}</span>${coverage?.normalization_applied ? '<small>Dinormalisasi maksimum 100%</small>' : ''}`;
+            return `<span title="Rasio sesuai kode SSA ${h(percent(coverage?.penetration_raw, 2))}">${percent(coverage?.penetration, 2)}</span>${coverage?.normalization_applied ? `<small>Kode SSA ${h(percent(coverage?.penetration_raw, 1))}</small>` : ''}`;
         };
         results.innerHTML = `<section class="sg-tile sg-tile--wide"><header class="sg-tile__head"><h3>${h(title)}</h3><span>SSA CRAS, ${h(payload.updated_at)}</span></header>
             ${table({ caption: `${title} per ${areaRows ? 'cabang' : 'unit'} — ${geographyLabel}`, columns: [
@@ -91,13 +94,13 @@ export const bindSubsectors = (root, ctx, studio) => {
                 { label: 'Rekening', align: 'end', cell: (row) => count(row.jumlah_rekening) },
                 { label: 'Kredit intra', align: 'end', cell: (row) => h(money(row.baki_debet)) },
                 { label: 'Kredit ekstra · PH', align: 'end', cell: (row) => h(money(row.credit_extra)) },
-                { label: 'Potensi sektor induk', align: 'end', cell: (row) => count(row.parentCoverage?.potential) },
-                { label: 'Penetrasi terhadap sektor induk', align: 'end', cell: coverageCell },
-            ], rows: entities, footer: { label: 'Total cakupan unik', ...totals, parentCoverage: reference.total } })}
+                { label: allSectors ? 'Potensi seluruh sektor' : 'Potensi sektor induk', align: 'end', cell: (row) => `${count(row.parentCoverage?.potential)}${row.potential_partial ? '<small>Data desa belum lengkap</small>' : ''}` },
+                { label: allSectors ? 'Penetrasi seluruh sektor' : 'Penetrasi terhadap sektor induk', align: 'end', cell: coverageCell },
+            ], rows: entities, footer: { label: 'Total cakupan unik', ...totals, potential_partial: reference.potential_partial, parentCoverage: reference.total } })}
             <div class="sg-cras__map-actions"><button type="button" class="kn-button" data-cras-map>Lihat peta subsektor</button></div>
         </section>`;
         host.querySelector('[data-cras-reference]').textContent = reference.group
-            ? `Acuan: ${reference.group.label}. Pembagi adalah jumlah pelaku usaha kategori induk pada desa kelolaan UKER. Total cakupan memakai gabungan desa unik. Intra = AKTIF, ekstra = PH; Consumer/Konsumer dikeluarkan. Rasio dinormalisasi maksimum 100%; nilai sumber dipertahankan.${reference.potential_partial ? ` ${count(reference.missing_population_village_count)} desa belum memiliki data potensi; rasio memakai desa yang sudah tersedia.` : ''}`
+            ? `Acuan: ${reference.group.label}. Pembagi adalah jumlah pelaku usaha ${allSectors ? 'seluruh kategori sektor' : 'kategori induk'} pada desa kelolaan UKER.${allSectors ? ' Pilih sektor atau subsektor untuk memakai potensi kategori induknya.' : ''} Total cakupan memakai gabungan desa unik. Intra = AKTIF, ekstra = PH; Consumer/Konsumer dikeluarkan. Debitur dicocokkan ke sektor usaha BPS di desa UKER (kode umum, PH tanpa sektor, dan kelebihan di atas potensi dibagi mengikuti komposisi pelaku usaha BPS), sehingga cakupan tidak melampaui pelaku usaha; rasio sesuai kode SSA tetap ditampilkan.${reference.potential_partial ? ` ${count(reference.missing_population_village_count)} desa belum memiliki data potensi; rasio memakai desa yang sudah tersedia.` : ''}`
             : 'Pilih sektor dan subsektor agar kategori sektor induk dapat dicocokkan. Pembagi memakai jumlah pelaku usaha kategori induk pada desa kelolaan UKER; potensi khusus subsektor belum tersedia.';
         const mapped = units.filter((unit) => unit.district_codes?.length);
         status.textContent = `SSA CRAS posisi ${payload.updated_at}, ${geographyLabel}: ${units.length} UKER pada hasil filter, ${mapped.length} memiliki polygon. ${count(totals.intra)} aktif + ${count(totals.extra)} PH = ${count(totals.jumlah_debitur)} debitur BRI. Data kinerja memakai periode tersendiri.`;

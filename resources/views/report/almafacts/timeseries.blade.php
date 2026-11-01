@@ -1,19 +1,39 @@
 @extends('layouts.admin')
 
-@section('title', 'Timeseries Laba Rugi')
+@section('title', 'Timeseries Almafact')
 
 @section('styles')
 <style>
-    :root {
-        --filter-card-bg: #ffffff;
-        --chart-card-bg: #ffffff;
-        --accent-dark: #0f172a;
-    }
-
     .dashboard-timeseries {
+        --ts-ink: var(--app-ink, #0b1f3a);
+        --ts-muted: var(--app-muted, #526987);
+        --ts-surface: var(--app-surface, #ffffff);
+        --ts-soft: var(--app-surface-soft, #f7faff);
+        --ts-line: var(--app-line, #d8e5f7);
+        --ts-line-strong: var(--app-line-strong, #b9cfee);
+        --ts-accent: #0857c3;
+        --ts-accent-soft: rgba(8, 87, 195, 0.09);
+        --ts-up: #0f7a4f;
+        --ts-up-soft: rgba(15, 122, 79, 0.1);
+        --ts-down: #b4232a;
+        --ts-down-soft: rgba(180, 35, 42, 0.09);
+        --ts-shadow: 0 1px 2px rgba(11, 31, 58, 0.04), 0 12px 28px -22px rgba(8, 62, 140, 0.38);
+        --ts-radius: 16px;
+        --ts-radius-sm: 10px;
         padding-bottom: 2rem;
         min-width: 0;
         overflow-x: clip;
+        color: var(--ts-ink);
+    }
+
+    html[data-theme="dark"] .dashboard-timeseries {
+        --ts-accent: #5899f3;
+        --ts-accent-soft: rgba(88, 153, 243, 0.14);
+        --ts-up: #5fd3a0;
+        --ts-up-soft: rgba(95, 211, 160, 0.13);
+        --ts-down: #ff8a8f;
+        --ts-down-soft: rgba(255, 138, 143, 0.12);
+        --ts-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 16px 32px -24px rgba(0, 0, 0, 0.7);
     }
 
     .dashboard-timeseries *,
@@ -22,232 +42,243 @@
         box-sizing: border-box;
     }
 
-    .timeseries-hero {
+    /* Header */
+    .ts-head {
         position: relative;
         isolation: isolate;
         overflow: hidden;
-        background: linear-gradient(135deg, #003b75 0%, #00529c 100%);
-        border-bottom: 1px solid rgba(219, 229, 239, 0.92);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1.25rem;
+        padding: 1.2rem 1.4rem;
+        margin-bottom: 1rem;
+        border-radius: var(--ts-radius);
+        background: linear-gradient(135deg, #053b82 0%, #0857c3 55%, #2f7ddf 100%);
+        box-shadow: 0 18px 36px -26px rgba(5, 59, 130, 0.75);
         color: #ffffff;
     }
 
-    .timeseries-hero > div:first-child {
+    .ts-head::after {
+        content: '';
+        position: absolute;
+        inset: auto -8% -60% auto;
+        width: 340px;
+        height: 340px;
+        z-index: -1;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(255, 255, 255, 0.14), transparent 68%);
+    }
+
+    .ts-head-copy {
         min-width: 0;
     }
 
-    .timeseries-hero::before {
-        content: '';
-        position: absolute;
-        inset: 0;
-        z-index: -1;
-        background: linear-gradient(120deg, rgba(255, 255, 255, 0.05), transparent 40%);
-        opacity: 0.72;
+    .ts-eyebrow {
+        display: block;
+        margin-bottom: 0.3rem;
+        color: #9fd3ef;
+        font-size: 0.7rem;
+        font-weight: 800;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
     }
 
     .timeseries-title {
         margin: 0;
-        font-size: 1.75rem;
-        font-weight: 900;
         color: #ffffff;
-        letter-spacing: 0.035em;
-        line-height: 1.08;
-        text-transform: uppercase;
-        text-shadow: 0 10px 26px rgba(0, 18, 50, 0.28);
+        font-size: 1.55rem;
+        font-weight: 800;
+        letter-spacing: -0.01em;
+        line-height: 1.15;
     }
 
-    .timeseries-title::after {
-        content: '';
-        display: block;
-        width: min(130px, 38vw);
-        height: 3px;
-        margin: 0.7rem 0 0;
-        border-radius: 999px;
-        background: linear-gradient(90deg, #ff671f, #f9b233, rgba(255, 255, 255, 0.9));
-        box-shadow: 0 8px 18px rgba(255, 103, 31, 0.28);
-    }
-
-    .timeseries-hero-actions {
+    .ts-context {
         display: flex;
-        align-items: center;
-        justify-content: flex-end;
-        gap: 0.75rem;
         flex-wrap: wrap;
-        padding-top: 2.15rem;
-        min-width: 0;
+        align-items: center;
+        gap: 0.35rem 0.5rem;
+        margin: 0.45rem 0 0;
+        color: rgba(255, 255, 255, 0.86);
+        font-size: 0.86rem;
+        font-weight: 500;
     }
 
-    .timeseries-hero .btn-export-all {
-        min-height: 32px;
-        border-radius: 10px;
-        border: 1px solid rgba(255, 255, 255, 0.45);
+    .ts-context strong {
+        color: #ffffff;
+        font-weight: 700;
+    }
+
+    .ts-context-sep {
+        width: 4px;
+        height: 4px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.5);
+    }
+
+    .ts-head .btn-export-all {
+        flex: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        min-height: 40px;
+        padding: 0 1rem;
+        border-radius: var(--ts-radius-sm);
+        border: 1px solid rgba(255, 255, 255, 0.38);
         background: rgba(255, 255, 255, 0.12);
         color: #ffffff;
-        font-weight: 800;
-        letter-spacing: 0.025em;
-        font-size: 0.68rem;
-        padding: 0.34rem 0.72rem !important;
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+        font-size: 0.8rem;
+        font-weight: 700;
+        transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
     }
 
-    .timeseries-hero .btn-export-all:hover {
-        background: rgba(255, 255, 255, 0.2);
+    .ts-head .btn-export-all:hover {
+        background: rgba(255, 255, 255, 0.22);
+        border-color: rgba(255, 255, 255, 0.7);
         color: #ffffff;
-        border-color: rgba(255, 255, 255, 0.68);
     }
 
-    /* Filter Card Styling */
+    .ts-head .btn-export-all:active {
+        transform: translateY(1px);
+    }
+
+    .ts-head .btn-export-all:focus-visible {
+        outline: 2px solid #ffffff;
+        outline-offset: 2px;
+    }
+
+    /* Filter bar */
     .filter-card {
-        background:
-            linear-gradient(180deg, rgba(235, 243, 255, 0.98) 0%, rgba(255, 255, 255, 0.98) 76%),
-            var(--filter-card-bg);
-        border: 1px solid rgba(8, 87, 195, 0.14);
-        border-radius: 1.25rem;
-        box-shadow: 0 18px 38px -28px rgba(8, 87, 195, 0.32);
-        margin-bottom: 1rem;
-        overflow: visible !important;
         position: relative;
         z-index: 100;
+        margin-bottom: 1rem;
+        padding: 0.9rem 1rem 1rem;
+        background: var(--ts-surface);
+        border: 1px solid var(--ts-line);
+        border-radius: var(--ts-radius);
+        box-shadow: var(--ts-shadow);
     }
 
-    .filter-card::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 1rem;
-        right: 1rem;
-        height: 3px;
-        border-radius: 999px;
-        background: linear-gradient(90deg, #00529c, #3b82f6, #ffb15c);
+    .ts-filter-grid {
+        display: grid;
+        grid-template-columns: minmax(170px, 1fr) minmax(190px, 1.15fr) minmax(250px, 1.75fr) minmax(120px, 0.6fr);
+        gap: 0.75rem;
+        align-items: end;
     }
 
-    .filter-card .card-body {
-        padding: 1rem 1rem 0.95rem !important;
-        overflow: visible !important;
+    .ts-field {
+        min-width: 0;
     }
 
     .filter-label {
-        font-size: 0.72rem;
-        font-weight: 700;
-        text-transform: uppercase;
-        color: #4b6285;
-        letter-spacing: 0.05em;
-        margin-bottom: 0.5rem;
         display: block;
-    }
-
-    .category-selector {
-        display: flex;
-        gap: 0.5rem;
-        flex-wrap: wrap;
-        min-width: 0;
-    }
-
-    .category-btn {
-        padding: 0.6rem 1.2rem;
-        border-radius: 1rem;
-        border: 1px solid #e2e8f0;
-        background: rgba(255, 255, 255, 0.82);
-        color: #475569;
+        margin-bottom: 0.38rem;
+        color: var(--ts-muted);
+        font-size: 0.74rem;
         font-weight: 600;
-        font-size: 0.85rem;
-        transition: all 0.2s ease;
+        letter-spacing: 0.01em;
+    }
+
+    .branch-filter-dropdown,
+    .metric-dropdown-shell {
+        position: relative;
+        width: 100%;
+    }
+
+    .branch-dropdown-toggle,
+    .metric-dropdown-toggle {
+        width: 100%;
+        min-height: 44px;
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        padding: 0 0.85rem;
+        background: var(--ts-soft);
+        border: 1px solid var(--ts-line);
+        border-radius: var(--ts-radius-sm);
+        color: var(--ts-ink);
+        text-align: left;
         cursor: pointer;
-        min-width: 0;
-        overflow-wrap: anywhere;
+        transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+    }
+
+    .branch-dropdown-toggle:hover,
+    .metric-dropdown-toggle:hover {
+        border-color: var(--ts-line-strong);
+        background: var(--ts-surface);
+    }
+
+    .branch-dropdown-toggle[aria-expanded="true"],
+    .metric-dropdown-toggle[aria-expanded="true"] {
+        border-color: var(--ts-accent);
+        background: var(--ts-surface);
+        box-shadow: 0 0 0 3px var(--ts-accent-soft);
+    }
+
+    .branch-dropdown-toggle:focus-visible,
+    .metric-dropdown-toggle:focus-visible {
+        outline: none;
+        border-color: var(--ts-accent);
+        box-shadow: 0 0 0 3px var(--ts-accent-soft);
+    }
+
+    .ts-field-icon {
+        flex: none;
+        width: 16px;
+        color: var(--ts-accent);
+        font-size: 0.82rem;
         text-align: center;
     }
 
-    .category-btn:hover {
-        background: #ffffff;
-        border-color: rgba(8, 87, 195, 0.25);
-    }
-
-    .category-btn.active {
-        background: linear-gradient(135deg, #0857c3 0%, #307fe2 100%);
-        color: white;
-        border-color: #0857c3;
-        box-shadow: 0 8px 20px -8px rgba(8, 87, 195, 0.5);
-    }
-
-    .metric-select-input {
-        min-height: 42px;
-        padding: 0.6rem 1rem;
-        background: rgba(255, 255, 255, 0.86);
-        border: 1px solid #dbe5ef;
-        border-radius: 0.75rem;
-        color: #1e293b;
-        font-size: 0.88rem;
-        font-weight: 600;
-        transition: all 0.2s ease;
-        width: 100%;
-        cursor: pointer;
-    }
-
-    .metric-select-input:focus, .metric-select-input.active-select {
-        outline: none;
-        border-color: #0857c3;
-        background: #ffffff;
-        box-shadow: 0 0 0 3px rgba(8, 87, 195, 0.12);
-    }
-
-    .metric-dropdown-shell {
-        min-width: 220px;
-        max-width: 280px;
-        position: relative;
-        flex: 1 1 240px;
-    }
-
-    .metric-dropdown-toggle {
-        width: 100%;
-        min-height: 42px;
-        padding: 0.58rem 0.78rem 0.58rem 0.92rem;
-        background: rgba(255, 255, 255, 0.92);
-        border: 1px solid #dbe5ef;
-        border-radius: 0.9rem;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 0.75rem;
-        cursor: pointer;
-        transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
-    }
-
-    .metric-dropdown-toggle:hover,
-    .metric-dropdown-toggle.is-open {
-        border-color: rgba(8, 87, 195, 0.45);
-        background: #ffffff;
-        box-shadow: 0 12px 24px -20px rgba(8, 87, 195, 0.5);
-    }
-
+    .branch-dropdown-label,
     .metric-dropdown-label {
-        color: #1e293b;
-        font-size: 0.86rem;
-        font-weight: 750;
+        flex: 1;
+        min-width: 0;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+        font-size: 0.88rem;
+        font-weight: 600;
     }
 
-    .metric-dropdown-label.placeholder {
-        color: #64748b;
+    .ts-caret {
+        flex: none;
+        color: var(--ts-muted);
+        font-size: 0.7rem;
+        transition: transform 0.18s ease;
     }
 
+    [aria-expanded="true"] > .ts-caret {
+        transform: rotate(180deg);
+    }
+
+    .branch-dropdown-toggle:disabled {
+        cursor: not-allowed;
+        opacity: 0.6;
+    }
+
+    .branch-dropdown-menu,
     .metric-dropdown-menu {
         position: absolute;
         top: calc(100% + 6px);
         left: 0;
-        right: 0;
-        z-index: 10020;
+        z-index: 1050;
         display: none;
+        min-width: 100%;
+        max-width: min(440px, calc(100vw - 2rem));
         overflow: hidden;
-        background: #ffffff;
-        border: 1px solid #dbeafe;
-        border-radius: 1rem;
-        box-shadow: 0 22px 42px -18px rgba(8, 87, 195, 0.28);
-        animation: slideDown 0.18s ease-out;
-        max-width: min(420px, calc(100vw - 2rem));
+        background: var(--ts-surface);
+        border: 1px solid var(--ts-line);
+        border-radius: 12px;
+        box-shadow: 0 24px 48px -24px rgba(8, 40, 90, 0.45);
+        animation: tsMenuIn 0.16s ease-out;
     }
 
+    .metric-dropdown-menu {
+        width: max(100%, 360px);
+    }
+
+    .branch-dropdown-menu.show,
     .metric-dropdown-menu.show {
         display: block;
     }
@@ -256,14 +287,10 @@
         display: flex;
         align-items: center;
         gap: 0.55rem;
-        padding: 0.62rem 0.72rem;
-        border-bottom: 1px solid #eef2f7;
-        background: #f8fbff;
-    }
-
-    .metric-dropdown-search i {
-        color: #64748b;
-        font-size: 0.8rem;
+        padding: 0.65rem 0.8rem;
+        border-bottom: 1px solid var(--ts-line);
+        background: var(--ts-soft);
+        color: var(--ts-muted);
     }
 
     .metric-dropdown-search input {
@@ -271,110 +298,294 @@
         border: 0;
         outline: none;
         background: transparent;
-        color: #0f172a;
-        font-size: 0.84rem;
-        font-weight: 650;
+        color: var(--ts-ink);
+        font-size: 0.86rem;
+        font-weight: 500;
     }
 
+    .options-container,
     .metric-options {
-        max-height: 255px;
+        max-height: 320px;
         overflow-y: auto;
-        padding: 0.45rem;
+        padding: 0.35rem;
+        overscroll-behavior: contain;
     }
 
-    .metric-option {
-        display: flex;
-        align-items: center;
-        gap: 0.62rem;
-        padding: 0.55rem 0.62rem;
-        border-radius: 0.72rem;
-        color: #334155;
-        cursor: pointer;
-        font-size: 0.84rem;
-        font-weight: 650;
-        transition: background 0.16s ease, color 0.16s ease;
-    }
-
-    .metric-option:hover {
-        background: #eef6ff;
-        color: #0857c3;
-    }
-
-    .metric-option.selected {
-        background: #e7f0ff;
-        color: #0857c3;
-        font-weight: 850;
-    }
-
-    .metric-option-check {
-        width: 17px;
-        height: 17px;
-        border-radius: 0.36rem;
-        border: 1px solid #cbd5e1;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        flex: 0 0 auto;
-    }
-
-    .metric-option.selected .metric-option-check {
-        background: #0857c3;
-        border-color: #0857c3;
-        color: #ffffff;
-    }
-
-    .metric-option-check i {
-        display: none;
-        font-size: 0.58rem;
-    }
-
-    .metric-option.selected .metric-option-check i {
-        display: inline-block;
-    }
-
-    /* Chart Card Styling */
-    .chart-card {
-        background: var(--chart-card-bg);
-        border: 1px solid rgba(8, 87, 195, 0.08);
-        border-radius: 1rem;
-        box-shadow: 0 4px 20px -10px rgba(0, 0, 0, 0.05);
-        transition: transform 0.3s ease, box-shadow 0.3s ease;
-        height: 100%;
-        display: flex;
-        flex-direction: column;
-        min-height: 0;
-        overflow: hidden;
-    }
-
-    .chart-card:hover {
-        transform: translateY(-4px);
-        box-shadow: 0 20px 40px -20px rgba(8, 87, 195, 0.2);
-    }
-
-    .chart-header {
-        padding: 0.9rem 1rem;
-        border-bottom: 1px solid #f1f5f9;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        flex-shrink: 0;
-    }
-
-    .chart-title {
-        font-size: 0.95rem;
+    .metric-group-title {
+        padding: 0.6rem 0.6rem 0.3rem;
+        color: var(--ts-muted);
+        font-size: 0.68rem;
         font-weight: 700;
-        color: #1e293b;
-        margin: 0;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+    }
+
+    .metric-empty {
+        display: none;
+        padding: 1rem 0.75rem;
+        color: var(--ts-muted);
+        font-size: 0.84rem;
+        text-align: center;
+    }
+
+    .branch-option,
+    .metric-option {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        padding: 0.52rem 0.6rem;
+        border: 0;
+        border-radius: 8px;
+        background: transparent;
+        color: var(--ts-ink);
+        font-size: 0.86rem;
+        font-weight: 500;
+        text-align: left;
+        cursor: pointer;
+        user-select: none;
+        transition: background 0.14s ease, color 0.14s ease;
+    }
+
+    .branch-option:hover,
+    .metric-option:hover,
+    .branch-option:focus-visible,
+    .metric-option:focus-visible {
+        outline: none;
+        background: var(--ts-accent-soft);
+    }
+
+    .branch-option.selected,
+    .metric-option.selected {
+        color: var(--ts-accent);
+        font-weight: 700;
+    }
+
+    .branch-checkbox-ui,
+    .metric-option-check {
+        flex: none;
+        width: 16px;
+        display: flex;
+        justify-content: center;
+        color: var(--ts-accent);
+        font-size: 0.72rem;
+        visibility: hidden;
+    }
+
+    .branch-option.selected .branch-checkbox-ui,
+    .metric-option.selected .metric-option-check {
+        visibility: visible;
+    }
+
+    .branch-option-label {
         min-width: 0;
         overflow-wrap: anywhere;
     }
 
-    .chart-body {
-        padding: 1.25rem 1.75rem 2.1rem 1.9rem;
-        flex: 0 0 auto;
-        position: relative;
+    .metric-option-num {
+        flex: none;
+        min-width: 1.6rem;
+        color: var(--ts-muted);
+        font-variant-numeric: tabular-nums;
+        font-weight: 600;
+    }
+
+    .metric-option.selected .metric-option-num {
+        color: var(--ts-accent);
+    }
+
+    @keyframes tsMenuIn {
+        from { opacity: 0; transform: translateY(-4px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* KPI strip */
+    .ts-kpis {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0.75rem;
+        margin-bottom: 1rem;
+    }
+
+    .ts-kpi {
+        min-width: 0;
+        padding: 0.85rem 1rem;
+        background: var(--ts-surface);
+        border: 1px solid var(--ts-line);
+        border-radius: 14px;
+        box-shadow: var(--ts-shadow);
+    }
+
+    .ts-kpi-label {
+        display: block;
+        color: var(--ts-muted);
+        font-size: 0.74rem;
+        font-weight: 600;
+    }
+
+    .ts-kpi-value {
+        display: block;
+        margin-top: 0.3rem;
+        color: var(--ts-ink);
+        font-size: 1.32rem;
+        font-weight: 800;
+        letter-spacing: -0.01em;
+        line-height: 1.15;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
         overflow: hidden;
-        box-sizing: border-box;
+        text-overflow: ellipsis;
+    }
+
+    .ts-kpi-value small {
+        margin-left: 0.2rem;
+        color: var(--ts-muted);
+        font-size: 0.72rem;
+        font-weight: 600;
+    }
+
+    .ts-kpi-note {
+        display: block;
+        margin-top: 0.3rem;
+        color: var(--ts-muted);
+        font-size: 0.74rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .ts-kpi[data-tone="up"] .ts-kpi-value { color: var(--ts-up); }
+    .ts-kpi[data-tone="down"] .ts-kpi-value { color: var(--ts-down); }
+
+    .ts-kpi.is-loading .ts-kpi-value {
+        color: transparent;
+        border-radius: 6px;
+        background: linear-gradient(90deg, var(--ts-soft), var(--ts-line), var(--ts-soft));
+        background-size: 200% 100%;
+        animation: tsShimmer 1.1s linear infinite;
+    }
+
+    @keyframes tsShimmer {
+        from { background-position: 100% 0; }
+        to { background-position: -100% 0; }
+    }
+
+    /* Charts */
+    #timeseriesCaptureArea {
+        background: transparent;
+    }
+
+    .ts-chart-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.75rem;
+    }
+
+    .ts-chart-grid > .is-full {
+        grid-column: 1 / -1;
+    }
+
+    .chart-card {
+        height: 100%;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        background: var(--ts-surface);
+        border: 1px solid var(--ts-line);
+        border-radius: var(--ts-radius);
+        box-shadow: var(--ts-shadow);
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .chart-card:hover {
+        border-color: var(--ts-line-strong);
+    }
+
+    .summary-chart-card {
+        margin-bottom: 0.75rem;
+    }
+
+    .chart-header {
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        padding: 0.85rem 1rem 0.35rem;
+    }
+
+    .chart-heading {
+        min-width: 0;
+    }
+
+    .chart-title {
+        margin: 0;
+        color: var(--ts-ink);
+        font-size: 0.98rem;
+        font-weight: 700;
+        line-height: 1.3;
+        overflow-wrap: anywhere;
+    }
+
+    .chart-subtitle {
+        display: block;
+        margin-top: 0.12rem;
+        color: var(--ts-muted);
+        font-size: 0.76rem;
+    }
+
+    .chart-meta {
+        flex: none;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .chart-stat {
+        color: var(--ts-ink);
+        font-size: 0.95rem;
+        font-weight: 800;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+    }
+
+    .ts-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        padding: 0.16rem 0.48rem;
+        border-radius: 6px;
+        background: var(--ts-accent-soft);
+        color: var(--ts-accent);
+        font-size: 0.72rem;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+    }
+
+    .ts-chip[data-tone="up"] { background: var(--ts-up-soft); color: var(--ts-up); }
+    .ts-chip[data-tone="down"] { background: var(--ts-down-soft); color: var(--ts-down); }
+
+    .unit-badge {
+        max-width: 100%;
+        padding: 0.18rem 0.5rem;
+        border-radius: 6px;
+        background: var(--ts-soft);
+        border: 1px solid var(--ts-line);
+        color: var(--ts-muted);
+        font-size: 0.7rem;
+        font-weight: 600;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .chart-body {
+        position: relative;
+        flex: 1 1 auto;
+        padding: 0.25rem 0.85rem 0.85rem 0.6rem;
+        overflow: hidden;
     }
 
     .chart-canvas-frame {
@@ -383,147 +594,46 @@
         height: 100%;
         min-width: 0;
         min-height: 0;
-        overflow: hidden;
-    }
-
-    .summary-chart-body {
-        height: 330px !important;
-        max-height: none !important;
-        padding: 0.35rem 1.25rem 1rem 1.35rem;
-        overflow: hidden;
-    }
-
-    .branch-chart-body {
-        height: 280px !important;
-        max-height: 280px !important;
-    }
-
-    .branch-chart-body.tall {
-        height: 400px !important;
-        max-height: 400px !important;
     }
 
     .chart-canvas-frame canvas {
+        display: block !important;
         width: 100% !important;
         height: 100% !important;
-        display: block !important;
     }
 
-    .summary-chart-card {
-        border: 1px solid rgba(8, 87, 195, 0.2);
-        background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
-        min-height: 390px;
+    .summary-chart-body {
+        height: 340px;
     }
 
-    .summary-chart-card:hover {
-        transform: none;
+    .branch-chart-body {
+        height: 250px;
     }
 
-    .loading-overlay {
-        position: absolute;
-        inset: 0;
-        background: rgba(255, 255, 255, 0.8);
-        backdrop-filter: blur(4px);
-        display: none;
-        align-items: center;
-        justify-content: center;
-        z-index: 10;
-        border-radius: 1.5rem;
+    .branch-chart-body.tall {
+        height: 360px;
     }
 
     .loading-spinner {
-        width: 40px;
-        height: 40px;
-        border: 4px solid #f3f3f3;
-        border-top: 4px solid #0857c3;
+        width: 18px;
+        height: 18px;
+        border: 2px solid var(--ts-line);
+        border-top-color: var(--ts-accent);
         border-radius: 50%;
-        animation: spin 1s linear infinite;
+        animation: tsSpin 0.8s linear infinite;
     }
 
-    @keyframes spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
-    }
-
-    .unit-badge {
-        font-size: 0.65rem;
-        padding: 0.25rem 0.6rem;
-        border-radius: 2rem;
-        background: rgba(8, 87, 195, 0.1);
-        color: #0857c3;
-        font-weight: 700;
-        text-transform: uppercase;
-        max-width: 100%;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-    }
-
-    .btn-export-jpg {
-        width: 32px;
-        height: 32px;
-        border-radius: 8px;
-        border: 1px solid #e2e8f0;
-        background: #ffffff;
-        color: #64748b;
-        display: flex;
+    .ts-loading {
+        display: none;
         align-items: center;
-        justify-content: center;
-        transition: all 0.2s ease;
-        padding: 0;
-        cursor: pointer;
-        margin-left: 0.75rem;
-    }
-
-    .btn-export-jpg:hover {
-        background: #f8fbff;
-        border-color: #0857c3;
-        color: #0857c3;
-        transform: translateY(-1px);
-        box-shadow: 0 4px 10px rgba(8, 87, 195, 0.15);
-    }
-
-    .btn-export-jpg i {
-        font-size: 0.85rem;
-    }
-
-    /* Capture Status Modal Premium Styles */
-    .capture-status-modal .modal-content {
-        border-radius: 24px;
-        border: none;
-        box-shadow: 0 25px 50px -12px rgba(4, 42, 95, 0.2);
-        overflow: hidden;
-    }
-
-    .capture-status-modal .modal-body {
-        padding: 3rem 2rem;
-    }
-
-    .capture-status-modal-icon {
-        width: 80px;
-        height: 80px;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        margin: 0 auto 1.5rem;
-        font-size: 2.5rem;
-    }
-
-    .icon-loading { background: rgba(8, 87, 195, 0.1); color: #0857c3; }
-    .icon-error { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
-    .icon-success { background: rgba(34, 197, 94, 0.1); color: #22c55e; }
-
-    .capture-status-modal .btn-primary {
-        border-radius: 12px;
-        padding: 0.6rem 1.5rem;
+        gap: 0.4rem;
+        color: var(--ts-muted);
+        font-size: 0.74rem;
         font-weight: 600;
-        letter-spacing: 0.5px;
     }
 
-    .modal-backdrop.show {
-        backdrop-filter: none;
-        background-color: rgba(15, 23, 42, 0.12);
+    @keyframes tsSpin {
+        to { transform: rotate(360deg); }
     }
 
     .empty-state {
@@ -531,401 +641,154 @@
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        padding: 4rem 2rem;
-        color: #94a3b8;
+        gap: 0.4rem;
+        padding: 3rem 1.5rem;
+        border: 1px dashed var(--ts-line-strong);
+        border-radius: var(--ts-radius);
+        background: var(--ts-surface);
+        color: var(--ts-muted);
+        text-align: center;
     }
 
     .empty-state i {
-        font-size: 4rem;
-        margin-bottom: 1.5rem;
-        opacity: 0.3;
+        margin-bottom: 0.4rem;
+        color: var(--ts-accent);
+        font-size: 1.8rem;
+        opacity: 0.55;
     }
 
-    /* Custom Premium Dropdown */
-    .branch-filter-dropdown {
-        position: relative;
-        width: 100%;
+    .empty-state h4 {
+        margin: 0;
+        color: var(--ts-ink);
+        font-size: 1rem;
+        font-weight: 700;
     }
 
-    .branch-dropdown-toggle {
-        width: 100%;
-        min-height: 42px;
-        padding: 0.6rem 1rem;
-        background: rgba(255, 255, 255, 0.86);
-        border: 1px solid #dbe5ef;
-        border-radius: 0.75rem;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        cursor: pointer;
-        transition: all 0.2s ease;
+    .empty-state p {
+        margin: 0;
+        font-size: 0.86rem;
     }
 
-    .branch-dropdown-toggle:hover {
-        border-color: #0857c3;
-        background: #fff;
-        box-shadow: 0 10px 24px -22px rgba(8, 87, 195, 0.42);
-    }
-
-    #applyFilters {
-        min-height: 42px;
+    /* Capture status modal */
+    .capture-status-modal .modal-content {
+        overflow: hidden;
         border: none;
-        border-radius: 0.85rem;
-        background: linear-gradient(135deg, #00529c 0%, #1d4ed8 100%);
-        font-weight: 800;
-        letter-spacing: 0.02em;
-        box-shadow: 0 14px 24px -18px rgba(8, 87, 195, 0.72);
+        border-radius: 20px;
+        box-shadow: 0 25px 50px -12px rgba(4, 42, 95, 0.25);
     }
 
-    #applyFilters:hover {
-        filter: saturate(1.08);
-        transform: translateY(-1px);
+    .capture-status-modal .modal-body {
+        padding: 2.5rem 2rem;
     }
 
-    .branch-dropdown-label {
-        font-size: 0.88rem;
-        font-weight: 600;
-        color: #1e293b;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        padding-right: 1.25rem;
-    }
-
-    .branch-dropdown-menu {
-        position: absolute;
-        top: calc(100% + 4px);
-        left: 0;
-        right: 0;
-        background: #fff;
-        border: 1px solid #e2e8f0;
-        border-radius: 1rem;
-        box-shadow: 0 15px 35px -10px rgba(8, 87, 195, 0.2);
-        z-index: 9999 !important;
-        display: none;
-        overflow: hidden;
-        animation: slideDown 0.2s ease-out;
-        max-width: min(420px, calc(100vw - 2rem));
-    }
-
-    .branch-dropdown-menu.show {
-        display: block !important;
-    }
-
-    .options-container {
-        max-height: 280px;
-        overflow-y: auto;
-        padding: 0.5rem;
-    }
-
-    .options-container::-webkit-scrollbar {
-        width: 5px;
-    }
-
-    .options-container::-webkit-scrollbar-thumb {
-        background: #e2e8f0;
-        border-radius: 10px;
-    }
-
-    .branch-option {
-        display: flex;
-        align-items: center;
-        padding: 0.6rem 0.75rem;
-        border-radius: 0.5rem;
-        cursor: pointer;
-        transition: background 0.2s;
-        gap: 0.75rem;
-        user-select: none;
-    }
-
-    .branch-option:hover {
-        background: #f1f5f9;
-    }
-
-    .branch-option input {
-        display: none;
-    }
-
-    .branch-checkbox-ui {
-        width: 18px;
-        height: 18px;
-        border: 2px solid #cbd5e1;
-        border-radius: 4px;
+    .capture-status-modal-icon {
+        width: 72px;
+        height: 72px;
         display: flex;
         align-items: center;
         justify-content: center;
-        transition: all 0.2s;
-        flex-shrink: 0;
+        margin: 0 auto 1.25rem;
+        border-radius: 50%;
+        font-size: 2.1rem;
     }
 
-    .branch-option.selected .branch-checkbox-ui {
-        background: #0857c3;
-        border-color: #0857c3;
+    .icon-loading { background: rgba(8, 87, 195, 0.1); color: #0857c3; }
+    .icon-error { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
+    .icon-success { background: rgba(34, 197, 94, 0.1); color: #22c55e; }
+
+    .capture-status-modal .btn-primary {
+        padding: 0.55rem 1.4rem;
+        border-radius: 10px;
+        font-weight: 600;
     }
 
-    .branch-checkbox-ui i {
-        color: white;
-        font-size: 10px;
-        display: none;
+    .modal-backdrop.show {
+        background-color: rgba(15, 23, 42, 0.18);
     }
 
-    .branch-option.selected .branch-checkbox-ui i {
-        display: block;
+    @media (prefers-reduced-motion: reduce) {
+        .dashboard-timeseries *,
+        .dashboard-timeseries *::before,
+        .dashboard-timeseries *::after {
+            animation-duration: 0.01ms !important;
+            transition-duration: 0.01ms !important;
+        }
     }
 
-    .branch-option-label {
-        font-size: 0.88rem;
-        font-weight: 500;
-        color: #334155;
-    }
+    @media (max-width: 1180px) {
+        .ts-filter-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
 
-    .branch-option.selected .branch-option-label {
-        font-weight: 700;
-        color: #0857c3;
-    }
+        .ts-kpis {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
 
-    @keyframes slideDown {
-        from { opacity: 0; transform: translateY(-8px); }
-        to { opacity: 1; transform: translateY(0); }
+        .summary-chart-body {
+            height: 300px;
+        }
+
+        .branch-chart-body {
+            height: 240px;
+        }
     }
 
     @media (max-width: 767.98px) {
-        .dashboard-timeseries > .d-flex,
-        .dashboard-timeseries > .timeseries-hero {
-            align-items: flex-start !important;
+        .ts-head {
             flex-direction: column;
-            gap: 0.75rem;
-        }
-
-        .timeseries-hero {
-            padding: 1.15rem 1rem;
-            margin-inline: 0;
+            align-items: stretch;
+            padding: 1rem;
         }
 
         .timeseries-title {
-            font-size: 1.08rem;
-            line-height: 1.15;
-            letter-spacing: 0.02em;
+            font-size: 1.25rem;
         }
 
-        .timeseries-hero-actions {
-            width: 100%;
-            justify-content: flex-start;
-            padding-top: 0.35rem;
-        }
-
-        .timeseries-hero .btn-export-all {
-            width: 100%;
+        .ts-head .btn-export-all {
             justify-content: center;
         }
 
-        .timeseries-title::after {
-            margin-left: 0;
-        }
-
-        .category-selector {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            width: 100%;
-        }
-
-        .category-btn {
-            width: 100%;
-            padding-inline: 0.75rem;
-            min-height: 42px;
-            font-size: 0.76rem;
-            line-height: 1.2;
-        }
-
-        .metric-dropdown-shell {
-            width: 100%;
-            min-width: 0;
-            max-width: none;
-        }
-
-        .branch-dropdown-toggle,
-        .metric-dropdown-toggle,
-        #applyFilters {
-            min-height: 40px;
-            border-radius: 0.7rem;
-        }
-
-        .branch-dropdown-label,
-        .metric-dropdown-label {
-            font-size: 0.8rem;
-        }
-
-        .chart-body {
-            overflow-x: auto;
-            overflow-y: hidden;
-            padding: 0.75rem;
-        }
-
-        .summary-chart-body {
-            height: 300px !important;
-            max-height: none !important;
-            padding: 0.45rem 0.55rem 0.8rem 0.55rem;
-        }
-
-        .branch-chart-body {
-            height: 245px !important;
-            max-height: 245px !important;
-        }
-
-        .summary-chart-body .chart-canvas-frame,
-        .branch-chart-body .chart-canvas-frame {
-            min-width: min(520px, calc(100vw - 2.5rem));
+        .ts-chart-grid {
+            grid-template-columns: minmax(0, 1fr);
         }
 
         .chart-header {
-            align-items: flex-start;
-            flex-direction: column;
-            gap: 0.5rem;
-        }
-
-        .unit-badge {
-            white-space: normal;
-        }
-    }
-
-    @media (min-width: 768px) and (max-width: 1180px) {
-        .timeseries-hero {
-            align-items: flex-start !important;
-            padding: 1rem 1.15rem !important;
-        }
-
-        .timeseries-title {
-            font-size: 1.25rem !important;
-            line-height: 1.15;
-        }
-
-        .timeseries-hero-actions {
-            padding-top: 0.4rem;
-        }
-
-        .filter-card {
-            border-radius: 1rem;
-        }
-
-        .filter-card .card-body {
-            padding: 0.9rem !important;
-        }
-
-        .category-selector {
-            display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-            width: 100%;
-        }
-
-        .category-btn {
-            width: 100%;
-            padding: 0.55rem 0.65rem;
-            border-radius: 0.75rem;
-            font-size: 0.78rem;
-            line-height: 1.2;
-        }
-
-        .metric-dropdown-shell {
-            width: 100%;
-            max-width: none;
-        }
-
-        .branch-dropdown-toggle,
-        .metric-dropdown-toggle,
-        #applyFilters {
-            min-height: 40px;
-        }
-
-        .summary-chart-card {
-            min-height: 350px;
+            flex-wrap: wrap;
         }
 
         .summary-chart-body {
-            height: 300px !important;
-            padding: 0.5rem 0.8rem 1rem 0.9rem;
+            height: 270px;
         }
 
-        .branch-chart-body {
-            height: 260px !important;
-            max-height: 260px !important;
-        }
-
+        .branch-chart-body,
         .branch-chart-body.tall {
-            height: 340px !important;
-            max-height: 340px !important;
+            height: 230px;
         }
     }
 
     @media (max-width: 575.98px) {
+        .ts-filter-grid {
+            grid-template-columns: minmax(0, 1fr);
+        }
+
         .filter-card {
-            border-radius: 0.85rem;
-            margin-bottom: 0.75rem;
+            padding: 0.8rem;
         }
 
-        .filter-card .card-body {
-            padding: 0.75rem !important;
+        .ts-kpi {
+            padding: 0.7rem 0.8rem;
         }
 
-        .filter-label {
-            font-size: 0.66rem;
-            margin-bottom: 0.35rem;
+        .ts-kpi-value {
+            font-size: 1.08rem;
         }
 
-        .category-selector {
-            grid-template-columns: 1fr;
-            gap: 0.4rem;
+        .metric-dropdown-menu {
+            width: 100%;
         }
 
-        .category-btn {
-            min-height: 38px;
-            padding: 0.48rem 0.6rem;
-        }
-
-        .chart-card {
-            border-radius: 0.75rem;
-        }
-
-        .chart-card:hover {
-            transform: none;
-        }
-
-        .chart-header {
-            padding: 0.7rem 0.75rem;
-        }
-
-        .chart-title {
-            font-size: 0.82rem;
-            line-height: 1.25;
-        }
-
-        .summary-chart-card {
-            min-height: 310px;
-        }
-
-        .summary-chart-body {
-            height: 255px !important;
-        }
-
-        .branch-chart-body {
-            height: 225px !important;
-            max-height: 225px !important;
-        }
-    }
-
-    @media (max-width: 991.98px) {
-        #timeseriesCaptureArea {
-            padding: 1rem 0.35rem !important;
-            border-radius: 14px !important;
-        }
-
-        .metric-dropdown-menu,
-        .branch-dropdown-menu {
-            max-height: min(360px, calc(100dvh - 160px));
-        }
-
-        .options-container,
-        .metric-options {
-            max-height: min(260px, calc(100dvh - 220px));
+        .chart-body {
+            padding: 0.2rem 0.4rem 0.6rem 0.2rem;
         }
     }
 </style>
@@ -933,163 +796,199 @@
 
 @section('content')
 @php
-    $quickMetrics = [
-        '15. Laba Setelah Pajak' => 'Laba Setelah Pajak',
-        '13. Laba Sebelum Pajak' => 'Laba Sebelum Pajak',
-        '10. PPOP' => 'PPOP',
-        '01. Pendapatan Bunga' => 'Pendapatan Bunga',
-        '04. Beban Bunga' => 'Beban Bunga',
-        '09. Overhead Cost' => 'Overhead Cost',
+    // Shortcuts pinned at the top of the keterangan list.
+    $primaryMetrics = [
+        '15. Laba Setelah Pajak',
+        '13. Laba Sebelum Pajak',
+        '10. PPOP',
+        '01. Pendapatan Bunga',
+        '04. Beban Bunga',
+        '09. Overhead Cost',
     ];
-    $isCustomMetric = !array_key_exists($selectedMetric, $quickMetrics);
+    $metricGroups = [
+        'Utama' => array_values(array_filter($primaryMetrics, fn ($metric) => in_array($metric, $metrics, true))),
+        'Laba rugi & volume' => [],
+        'Rasio (%)' => [],
+    ];
+    foreach ($metrics as $metric) {
+        if (in_array($metric, $primaryMetrics, true)) {
+            continue;
+        }
+        $metricGroups[str_contains((string) $metric, '(%)') ? 'Rasio (%)' : 'Laba rugi & volume'][] = $metric;
+    }
+    $splitMetric = static function (string $metric): array {
+        return preg_match('/^(\d+)\.\s*(.+)$/', $metric, $parts) === 1 ? [$parts[1], $parts[2]] : ['', $metric];
+    };
+    $selectedUnitLabel = 'Semua Unit Kerja';
+    foreach ($units as $unitOption) {
+        if ($unitOption['value'] === $selectedUnit && $unitOption['kanca_value'] === $selectedBranch) {
+            $selectedUnitLabel = $unitOption['label'];
+        }
+    }
 @endphp
 <div class="dashboard-timeseries">
-    <!-- Header -->
-    <div class="timeseries-hero px-4 py-3 d-flex align-items-center justify-content-between">
-        <div class="d-flex align-items-center">
-            <h1 class="timeseries-title m-0">TIMESERIES LABA RUGI</h1>
+    <header class="ts-head">
+        <div class="ts-head-copy">
+            <span class="ts-eyebrow">Dashboard Almafacts</span>
+            <h1 class="timeseries-title">Timeseries Almafact</h1>
+            <p class="ts-context" id="tsContext" aria-live="polite">
+                <strong data-ts-context="metric">{{ $selectedMetric }}</strong>
+                <span class="ts-context-sep" aria-hidden="true"></span>
+                <span data-ts-context="scope">{{ $selectedBranchLabel }}{{ $selectedUnit !== 'all' ? ' · ' . $selectedUnitLabel : '' }}</span>
+                <span class="ts-context-sep" aria-hidden="true"></span>
+                <span data-ts-context="year">Tahun {{ $selectedYear }}</span>
+            </p>
         </div>
-        <div class="d-flex align-items-center gap-2">
-            <button id="captureAllBtn" class="btn btn-sm btn-export-all">
-                <i class="fas fa-file-image mr-1"></i> EXPORT A4
-            </button>
-        </div>
-    </div>
+        <button id="captureAllBtn" type="button" class="btn-export-all">
+            <i class="fas fa-file-image" aria-hidden="true"></i> Export A4
+        </button>
+    </header>
 
-    <!-- Filters -->
-    <div class="card filter-card">
-        <div class="card-body p-4">
-            <!-- Row 1: Metrik Quick Buttons & Dropdown selector -->
-            <div class="row mb-4">
-                <div class="col-12">
-                    <label class="filter-label" style="font-weight: 700; color: #475569; margin-bottom: 0.5rem; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;">Kategori Metrik</label>
-                    <div class="d-flex flex-wrap gap-2 align-items-center">
-                        <div class="category-selector" id="categorySelector">
-                            @foreach($quickMetrics as $value => $label)
-                                <button type="button" class="category-btn {{ $selectedMetric === $value ? 'active' : '' }}" data-value="{{ $value }}">{{ $label }}</button>
+    <section class="filter-card" aria-label="Filter timeseries">
+        <div class="ts-filter-grid">
+            <div class="ts-field">
+                <span class="filter-label" id="kancaFieldLabel">Kantor cabang</span>
+                <div class="branch-filter-dropdown" id="kancaDropdownShell">
+                    <button type="button" class="branch-dropdown-toggle" id="kancaDropdown" aria-haspopup="listbox" aria-expanded="false" aria-labelledby="kancaFieldLabel kancaLabel">
+                        <i class="fas fa-building ts-field-icon" aria-hidden="true"></i>
+                        <span class="branch-dropdown-label" id="kancaLabel">{{ $selectedBranchLabel }}</span>
+                        <i class="fas fa-chevron-down ts-caret" aria-hidden="true"></i>
+                    </button>
+                    <div class="branch-dropdown-menu" id="kancaMenu">
+                        <input type="hidden" id="kancaInput" value="{{ $selectedBranch }}">
+                        <div class="options-container" id="kancaOptionsList" role="listbox" aria-labelledby="kancaFieldLabel">
+                            @foreach($branchOptions as $val => $lbl)
+                                <button type="button" role="option" class="branch-option {{ $selectedBranch === $val ? 'selected' : '' }}" aria-selected="{{ $selectedBranch === $val ? 'true' : 'false' }}" data-value="{{ $val }}" data-label="{{ $lbl }}">
+                                    <span class="branch-checkbox-ui"><i class="fas fa-check"></i></span>
+                                    <span class="branch-option-label">{{ $lbl }}</span>
+                                </button>
                             @endforeach
                         </div>
-                        <div class="metric-dropdown-shell" id="metricDropdownShell">
-                            <button type="button" class="metric-dropdown-toggle {{ $isCustomMetric ? 'active-select' : '' }}" id="metricDropdownToggle">
-                                <span class="metric-dropdown-label {{ $isCustomMetric ? '' : 'placeholder' }}" id="metricDropdownLabel">
-                                    {{ $isCustomMetric ? $selectedMetric : '-- Metrik Lainnya --' }}
-                                </span>
-                                <i class="fas fa-chevron-down text-muted small"></i>
-                            </button>
-                            <div class="metric-dropdown-menu" id="metricDropdownMenu">
-                                <div class="metric-dropdown-search">
-                                    <i class="fas fa-search"></i>
-                                    <input type="text" id="metricDropdownSearch" placeholder="Cari metrik...">
-                                </div>
-                                <div class="metric-options" id="metricOptionsList">
-                                    @foreach($metrics as $met)
-                                        @if(!array_key_exists($met, $quickMetrics))
-                                            <div class="metric-option {{ $selectedMetric === $met ? 'selected' : '' }}" data-value="{{ $met }}" data-label="{{ $met }}">
-                                                <span class="metric-option-check"><i class="fas fa-check"></i></span>
-                                                <span>{{ $met }}</span>
-                                            </div>
-                                        @endif
-                                    @endforeach
-                                </div>
-                            </div>
-                        </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Row 2: Branch, Unit, Year, and Update Button -->
-            <div class="row align-items-end">
-                <div class="col-lg-4 col-md-6 mb-3 mb-lg-0">
-                    <label class="filter-label">Kantor Cabang</label>
-                    <div class="branch-filter-dropdown" id="kancaDropdownShell">
-                        <div class="branch-dropdown-toggle" id="kancaDropdown">
-                            <span class="branch-dropdown-label" id="kancaLabel">{{ $selectedBranchLabel }}</span>
-                            <i class="fas fa-chevron-down text-muted small"></i>
-                        </div>
-                        <div class="branch-dropdown-menu" id="kancaMenu">
-                            <input type="hidden" id="kancaInput" value="{{ $selectedBranch }}">
-                            <div class="options-container" id="kancaOptionsList">
-                                @foreach($branchOptions as $val => $lbl)
-                                    <div class="branch-option {{ $selectedBranch === $val ? 'selected' : '' }}" data-value="{{ $val }}" data-label="{{ $lbl }}">
-                                        <div class="branch-checkbox-ui"><i class="fas fa-check"></i></div>
-                                        <span class="branch-option-label">{{ $lbl }}</span>
-                                    </div>
-                                @endforeach
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-lg-3 col-md-6 mb-3 mb-lg-0">
-                    <label class="filter-label">Unit Kerja</label>
-                    <div class="branch-filter-dropdown" id="unitDropdownShell">
-                        <div class="branch-dropdown-toggle" id="unitDropdown">
-                            <span class="branch-dropdown-label" id="unitLabel">Semua Unit Kerja</span>
-                            <i class="fas fa-chevron-down text-muted small"></i>
-                        </div>
-                        <div class="branch-dropdown-menu" id="unitMenu">
-                            <input type="hidden" id="unitInput" value="{{ $selectedUnit }}">
-                            <div class="options-container" id="unitOptions">
-                                {{-- Will be populated dynamically by JS --}}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-lg-3 col-md-6 mb-3 mb-lg-0">
-                    <label class="filter-label">Tahun Analisis</label>
-                    <div class="branch-filter-dropdown" id="yearDropdownShell">
-                        <div class="branch-dropdown-toggle" id="yearDropdown">
-                            <span class="branch-dropdown-label" id="yearLabel">{{ $selectedYear }}</span>
-                            <i class="fas fa-chevron-down text-muted small"></i>
-                        </div>
-                        <div class="branch-dropdown-menu" id="yearMenu">
-                            <input type="hidden" id="yearInput" value="{{ $selectedYear }}">
-                            <div class="options-container" id="yearOptions">
-                                @foreach($years as $yr)
-                                    <div class="branch-option {{ $selectedYear === (int)$yr ? 'selected' : '' }}" data-value="{{ $yr }}" data-label="{{ $yr }}">
-                                        <div class="branch-checkbox-ui"><i class="fas fa-check"></i></div>
-                                        <span class="branch-option-label">{{ $yr }}</span>
-                                    </div>
-                                @endforeach
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-lg-2">
-                    <button id="applyFilters" class="btn btn-primary btn-block shadow-sm">
-                        <i class="fas fa-sync-alt mr-2"></i> Update
+            <div class="ts-field">
+                <span class="filter-label" id="unitFieldLabel">Unit kerja</span>
+                <div class="branch-filter-dropdown" id="unitDropdownShell">
+                    <button type="button" class="branch-dropdown-toggle" id="unitDropdown" aria-haspopup="listbox" aria-expanded="false" aria-labelledby="unitFieldLabel unitLabel">
+                        <i class="fas fa-store ts-field-icon" aria-hidden="true"></i>
+                        <span class="branch-dropdown-label" id="unitLabel">{{ $selectedUnitLabel }}</span>
+                        <i class="fas fa-chevron-down ts-caret" aria-hidden="true"></i>
                     </button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Capture Target Area -->
-    <div id="timeseriesCaptureArea" style="background: #fdfdfe; padding: 1.5rem 0.5rem; border-radius: 20px;">
-        <!-- Summary Chart Container -->
-        <div class="row mb-3" id="summaryChartContainer">
-            <div class="col-12">
-                <div class="card chart-card summary-chart-card">
-                    <div class="chart-header">
-                        <h5 class="chart-title" id="summaryChartTitle"><i class="fas fa-chart-area mr-2 text-primary"></i>Area 6 - Konsolidasi</h5>
-                        <div class="d-flex align-items-center">
-                            <div class="unit-badge" id="summaryChartBadge">Total Konsolidasi Area 6</div>
-                            <div class="loading-overlay" id="summaryLoading" style="position: static; width: auto; height: auto; background: transparent; backdrop-filter: none; display: none; margin-left: 0.75rem;">
-                                <div class="loading-spinner" style="width: 20px; height: 20px; border-width: 2px;"></div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="chart-body summary-chart-body">
-                        <div class="chart-canvas-frame">
-                            <canvas id="summaryChart"></canvas>
+                    <div class="branch-dropdown-menu" id="unitMenu">
+                        <input type="hidden" id="unitInput" value="{{ $selectedUnit }}">
+                        <div class="options-container" id="unitOptions" role="listbox" aria-labelledby="unitFieldLabel">
+                            {{-- Populated by JS from the selected kantor cabang --}}
                         </div>
                     </div>
                 </div>
             </div>
+
+            <div class="ts-field">
+                <span class="filter-label" id="metricFieldLabel">Keterangan</span>
+                <div class="metric-dropdown-shell" id="metricDropdownShell">
+                    <button type="button" class="metric-dropdown-toggle" id="metricDropdownToggle" aria-haspopup="listbox" aria-expanded="false" aria-labelledby="metricFieldLabel metricDropdownLabel">
+                        <i class="fas fa-list-ul ts-field-icon" aria-hidden="true"></i>
+                        <span class="metric-dropdown-label" id="metricDropdownLabel">{{ $selectedMetric }}</span>
+                        <i class="fas fa-chevron-down ts-caret" aria-hidden="true"></i>
+                    </button>
+                    <div class="metric-dropdown-menu" id="metricDropdownMenu">
+                        <label class="metric-dropdown-search">
+                            <i class="fas fa-search" aria-hidden="true"></i>
+                            <span class="sr-only">Cari keterangan</span>
+                            <input type="search" id="metricDropdownSearch" placeholder="Cari keterangan, mis. NIM atau laba" autocomplete="off">
+                        </label>
+                        <div class="metric-options" id="metricOptionsList" role="listbox" aria-labelledby="metricFieldLabel">
+                            @foreach($metricGroups as $groupLabel => $groupMetrics)
+                                @if($groupMetrics !== [])
+                                    <div class="metric-group" data-metric-group>
+                                        <div class="metric-group-title">{{ $groupLabel }}</div>
+                                        @foreach($groupMetrics as $met)
+                                            @php [$metricNumber, $metricName] = $splitMetric((string) $met); @endphp
+                                            <button type="button" role="option" class="metric-option {{ $selectedMetric === $met ? 'selected' : '' }}" aria-selected="{{ $selectedMetric === $met ? 'true' : 'false' }}" data-value="{{ $met }}" data-label="{{ $met }}">
+                                                <span class="metric-option-check"><i class="fas fa-check"></i></span>
+                                                <span class="metric-option-num">{{ $metricNumber }}</span>
+                                                <span>{{ $metricName }}</span>
+                                            </button>
+                                        @endforeach
+                                    </div>
+                                @endif
+                            @endforeach
+                            <div class="metric-empty" id="metricEmpty">Keterangan tidak ditemukan.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="ts-field">
+                <span class="filter-label" id="yearFieldLabel">Tahun</span>
+                <div class="branch-filter-dropdown" id="yearDropdownShell">
+                    <button type="button" class="branch-dropdown-toggle" id="yearDropdown" aria-haspopup="listbox" aria-expanded="false" aria-labelledby="yearFieldLabel yearLabel">
+                        <i class="fas fa-calendar-alt ts-field-icon" aria-hidden="true"></i>
+                        <span class="branch-dropdown-label" id="yearLabel">{{ $selectedYear }}</span>
+                        <i class="fas fa-chevron-down ts-caret" aria-hidden="true"></i>
+                    </button>
+                    <div class="branch-dropdown-menu" id="yearMenu">
+                        <input type="hidden" id="yearInput" value="{{ $selectedYear }}">
+                        <div class="options-container" id="yearOptions" role="listbox" aria-labelledby="yearFieldLabel">
+                            @foreach($years as $yr)
+                                <button type="button" role="option" class="branch-option {{ $selectedYear === (int) $yr ? 'selected' : '' }}" aria-selected="{{ $selectedYear === (int) $yr ? 'true' : 'false' }}" data-value="{{ $yr }}" data-label="{{ $yr }}">
+                                    <span class="branch-checkbox-ui"><i class="fas fa-check"></i></span>
+                                    <span class="branch-option-label">{{ $yr }}</span>
+                                </button>
+                            @endforeach
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="ts-kpis" id="tsKpis" aria-label="Ringkasan">
+        <div class="ts-kpi" data-kpi="latest">
+            <span class="ts-kpi-label" data-kpi-label>Realisasi terakhir</span>
+            <span class="ts-kpi-value" data-kpi-value>–</span>
+            <span class="ts-kpi-note" data-kpi-note>&nbsp;</span>
+        </div>
+        <div class="ts-kpi" data-kpi="rka">
+            <span class="ts-kpi-label" data-kpi-label>Capaian RKA</span>
+            <span class="ts-kpi-value" data-kpi-value>–</span>
+            <span class="ts-kpi-note" data-kpi-note>&nbsp;</span>
+        </div>
+        <div class="ts-kpi" data-kpi="yoy">
+            <span class="ts-kpi-label" data-kpi-label>Dibanding tahun lalu</span>
+            <span class="ts-kpi-value" data-kpi-value>–</span>
+            <span class="ts-kpi-note" data-kpi-note>&nbsp;</span>
+        </div>
+        <div class="ts-kpi" data-kpi="mom">
+            <span class="ts-kpi-label" data-kpi-label>Perubahan dari bulan sebelumnya</span>
+            <span class="ts-kpi-value" data-kpi-value>–</span>
+            <span class="ts-kpi-note" data-kpi-note>&nbsp;</span>
+        </div>
+    </section>
+
+    <div id="timeseriesCaptureArea">
+        <div class="card chart-card summary-chart-card" id="summaryChartContainer">
+            <div class="chart-header">
+                <div class="chart-heading">
+                    <h5 class="chart-title" id="summaryChartTitle">{{ $selectedMetric }}</h5>
+                    <span class="chart-subtitle" id="summaryChartSubtitle">Tren bulanan realisasi dan tahun sebelumnya</span>
+                </div>
+                <div class="chart-meta">
+                    <span class="ts-loading" id="summaryLoading" role="status"><span class="loading-spinner" aria-hidden="true"></span>Memuat</span>
+                    <span class="unit-badge" id="summaryChartBadge">Konsolidasi Area 6</span>
+                </div>
+            </div>
+            <div class="chart-body summary-chart-body">
+                <div class="chart-canvas-frame">
+                    <canvas id="summaryChart" role="img" aria-label="Grafik tren bulanan"></canvas>
+                </div>
+            </div>
         </div>
 
-        <!-- Sub Charts Container (Branches or Units) -->
-        <div class="row" id="individualChartsContainer">
-            {{-- Will be populated dynamically by JS --}}
+        <div class="ts-chart-grid" id="individualChartsContainer">
+            {{-- Populated by JS: one card per cabang or unit kerja --}}
         </div>
     </div>
 
@@ -1160,7 +1059,7 @@
         };
 
         function init() {
-            // Dropdown DOM Elements
+            // --- Filter DOM ---
             const kancaToggle = document.getElementById('kancaDropdown');
             const kancaMenu = document.getElementById('kancaMenu');
             const kancaLabel = document.getElementById('kancaLabel');
@@ -1179,227 +1078,211 @@
             const yearInput = document.getElementById('yearInput');
             const yearOptions = document.getElementById('yearOptions');
 
-            const applyBtn = document.getElementById('applyFilters');
-            const summaryLoading = document.getElementById('summaryLoading');
             const metricToggle = document.getElementById('metricDropdownToggle');
             const metricMenu = document.getElementById('metricDropdownMenu');
             const metricLabel = document.getElementById('metricDropdownLabel');
             const metricSearch = document.getElementById('metricDropdownSearch');
             const metricOptionsList = document.getElementById('metricOptionsList');
+            const metricEmpty = document.getElementById('metricEmpty');
 
-            // --- Dropdown Toggling & Outside Clicks ---
+            const summaryLoading = document.getElementById('summaryLoading');
+            const kpiStrip = document.getElementById('tsKpis');
+            const pageRoot = document.querySelector('.dashboard-timeseries');
+            let lastRenderedData = null;
+
+            const dropdowns = [
+                { toggle: kancaToggle, menu: kancaMenu },
+                { toggle: unitToggle, menu: unitMenu },
+                { toggle: metricToggle, menu: metricMenu, onOpen: openMetricMenu },
+                { toggle: yearToggle, menu: yearMenu },
+            ].filter(entry => entry.toggle && entry.menu);
+
             function closeAllDropdowns() {
-                if (kancaMenu) kancaMenu.classList.remove('show');
-                if (unitMenu) unitMenu.classList.remove('show');
-                if (yearMenu) yearMenu.classList.remove('show');
-                if (metricMenu) metricMenu.classList.remove('show');
-                if (metricToggle) metricToggle.classList.remove('is-open');
-
-                const kancaShell = document.getElementById('kancaDropdownShell');
-                const unitShell = document.getElementById('unitDropdownShell');
-                const yearShell = document.getElementById('yearDropdownShell');
-                const metricShell = document.getElementById('metricDropdownShell');
-
-                if (kancaShell) kancaShell.style.zIndex = '';
-                if (unitShell) unitShell.style.zIndex = '';
-                if (yearShell) yearShell.style.zIndex = '';
-                if (metricShell) metricShell.style.zIndex = '';
+                dropdowns.forEach(({ toggle, menu }) => {
+                    menu.classList.remove('show');
+                    toggle.setAttribute('aria-expanded', 'false');
+                });
             }
+
+            dropdowns.forEach(entry => {
+                entry.menu.addEventListener('click', event => event.stopPropagation());
+                entry.toggle.addEventListener('click', event => {
+                    event.stopPropagation();
+                    if (entry.toggle.disabled) return;
+                    const wasOpen = entry.menu.classList.contains('show');
+                    closeAllDropdowns();
+                    if (wasOpen) return;
+                    entry.menu.classList.add('show');
+                    entry.toggle.setAttribute('aria-expanded', 'true');
+                    if (entry.onOpen) {
+                        entry.onOpen();
+                    } else {
+                        const selected = entry.menu.querySelector('.selected') || entry.menu.querySelector('[role="option"]');
+                        if (selected) selected.focus({ preventScroll: true });
+                    }
+                });
+            });
 
             document.addEventListener('click', closeAllDropdowns);
+            document.addEventListener('keydown', event => {
+                if (event.key !== 'Escape') return;
+                const open = dropdowns.find(entry => entry.menu.classList.contains('show'));
+                if (!open) return;
+                closeAllDropdowns();
+                open.toggle.focus();
+            });
 
-            if (kancaToggle) {
-                kancaToggle.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    const wasOpen = kancaMenu.classList.contains('show');
-                    closeAllDropdowns();
-                    if (!wasOpen) {
-                        kancaMenu.classList.add('show');
-                        const shell = document.getElementById('kancaDropdownShell');
-                        if (shell) shell.style.zIndex = '1001';
-                    }
+            // Arrow keys move between options inside an open list.
+            dropdowns.forEach(({ menu }) => {
+                menu.addEventListener('keydown', event => {
+                    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+                    const options = Array.from(menu.querySelectorAll('[role="option"]')).filter(opt => opt.offsetParent !== null);
+                    if (options.length === 0) return;
+                    event.preventDefault();
+                    const index = options.indexOf(document.activeElement);
+                    const next = event.key === 'ArrowDown'
+                        ? options[Math.min(options.length - 1, index + 1)]
+                        : (index <= 0 ? (metricSearch && menu === metricMenu ? metricSearch : options[0]) : options[index - 1]);
+                    next.focus();
+                });
+            });
+
+            function markSelected(container, value) {
+                if (!container) return;
+                container.querySelectorAll('[role="option"]').forEach(opt => {
+                    const selected = opt.getAttribute('data-value') === String(value);
+                    opt.classList.toggle('selected', selected);
+                    opt.setAttribute('aria-selected', selected ? 'true' : 'false');
                 });
             }
 
-            if (unitToggle) {
-                unitToggle.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    const wasOpen = unitMenu.classList.contains('show');
-                    closeAllDropdowns();
-                    if (!wasOpen) {
-                        unitMenu.classList.add('show');
-                        const shell = document.getElementById('unitDropdownShell');
-                        if (shell) shell.style.zIndex = '1001';
-                    }
-                });
-            }
-
-            if (yearToggle) {
-                yearToggle.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    const wasOpen = yearMenu.classList.contains('show');
-                    closeAllDropdowns();
-                    if (!wasOpen) {
-                        yearMenu.classList.add('show');
-                        const shell = document.getElementById('yearDropdownShell');
-                        if (shell) shell.style.zIndex = '1001';
-                    }
-                });
-            }
-
-            if (metricToggle) {
-                metricToggle.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    const wasOpen = metricMenu && metricMenu.classList.contains('show');
-                    closeAllDropdowns();
-                    if (!wasOpen && metricMenu) {
-                        metricMenu.classList.add('show');
-                        metricToggle.classList.add('is-open');
-                        const shell = document.getElementById('metricDropdownShell');
-                        if (shell) shell.style.zIndex = '1002';
-                        if (metricSearch) {
-                            metricSearch.value = '';
-                            filterMetricOptions('');
-                            setTimeout(() => metricSearch.focus(), 0);
-                        }
-                    }
-                });
-            }
-
-            // --- Dropdown Select Handlers ---
+            // --- Kantor cabang ---
             if (kancaOptions) {
                 kancaOptions.querySelectorAll('.branch-option').forEach(opt => {
                     opt.addEventListener('click', () => {
                         const val = opt.getAttribute('data-value');
-                        const label = opt.getAttribute('data-label');
-                        
-                        if (kancaInput) kancaInput.value = val;
-                        if (kancaLabel) kancaLabel.textContent = label;
-                        
-                        kancaOptions.querySelectorAll('.branch-option').forEach(o => o.classList.remove('selected'));
-                        opt.classList.add('selected');
-                        
+                        closeAllDropdowns();
+                        kancaToggle.focus();
+                        if (val === currentBranch) return;
+                        kancaInput.value = val;
+                        kancaLabel.textContent = opt.getAttribute('data-label');
+                        markSelected(kancaOptions, val);
                         currentBranch = val;
                         rebuildUnitOptions();
-                        closeAllDropdowns();
+                        fetchData();
                     });
                 });
             }
 
+            // --- Keterangan ---
             function filterMetricOptions(term) {
                 if (!metricOptionsList) return;
                 const needle = String(term || '').trim().toLowerCase();
-                metricOptionsList.querySelectorAll('.metric-option').forEach(opt => {
-                    const label = (opt.getAttribute('data-label') || opt.textContent || '').toLowerCase();
-                    opt.style.display = !needle || label.includes(needle) ? '' : 'none';
+                let visible = 0;
+                metricOptionsList.querySelectorAll('[data-metric-group]').forEach(group => {
+                    let groupVisible = 0;
+                    group.querySelectorAll('.metric-option').forEach(opt => {
+                        const match = !needle || (opt.getAttribute('data-label') || '').toLowerCase().includes(needle);
+                        opt.hidden = !match;
+                        groupVisible += match ? 1 : 0;
+                    });
+                    group.hidden = groupVisible === 0;
+                    visible += groupVisible;
                 });
+                if (metricEmpty) metricEmpty.style.display = visible === 0 ? 'block' : 'none';
             }
 
-            function selectCustomMetric(value, label) {
-                currentMetric = value;
-                quickMetricBtns.forEach(b => b.classList.remove('active'));
-                if (metricLabel) {
-                    metricLabel.textContent = label || value;
-                    metricLabel.classList.remove('placeholder');
-                }
-                if (metricToggle) {
-                    metricToggle.classList.add('active-select');
-                }
-                if (metricOptionsList) {
-                    metricOptionsList.querySelectorAll('.metric-option').forEach(opt => {
-                        opt.classList.toggle('selected', opt.getAttribute('data-value') === value);
-                    });
-                }
+            function openMetricMenu() {
+                if (!metricSearch) return;
+                metricSearch.value = '';
+                filterMetricOptions('');
+                const selected = metricOptionsList ? metricOptionsList.querySelector('.metric-option.selected') : null;
+                if (selected) selected.scrollIntoView({ block: 'nearest' });
+                setTimeout(() => metricSearch.focus(), 0);
+            }
+
+            function selectMetric(value) {
                 closeAllDropdowns();
+                metricToggle.focus();
+                if (value === currentMetric) return;
+                currentMetric = value;
+                if (metricLabel) metricLabel.textContent = value;
+                markSelected(metricOptionsList, value);
                 fetchData();
             }
 
             if (metricSearch) {
-                metricSearch.addEventListener('click', e => e.stopPropagation());
                 metricSearch.addEventListener('input', () => filterMetricOptions(metricSearch.value));
+                metricSearch.addEventListener('keydown', event => {
+                    if (event.key === 'ArrowDown') {
+                        event.preventDefault();
+                        const first = Array.from(metricOptionsList.querySelectorAll('.metric-option')).find(opt => !opt.hidden);
+                        if (first) first.focus();
+                    } else if (event.key === 'Enter') {
+                        event.preventDefault();
+                        const first = Array.from(metricOptionsList.querySelectorAll('.metric-option')).find(opt => !opt.hidden && opt.offsetParent !== null);
+                        if (first) selectMetric(first.getAttribute('data-value'));
+                    }
+                });
             }
 
             if (metricOptionsList) {
                 metricOptionsList.querySelectorAll('.metric-option').forEach(opt => {
-                    opt.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        selectCustomMetric(opt.getAttribute('data-value'), opt.getAttribute('data-label'));
-                    });
+                    opt.addEventListener('click', () => selectMetric(opt.getAttribute('data-value')));
                 });
             }
 
+            // --- Tahun ---
             if (yearOptions) {
                 yearOptions.querySelectorAll('.branch-option').forEach(opt => {
                     opt.addEventListener('click', () => {
                         const val = opt.getAttribute('data-value');
-                        const label = opt.getAttribute('data-label');
-                        
-                        if (yearInput) yearInput.value = val;
-                        if (yearLabel) yearLabel.textContent = label;
-                        
-                        yearOptions.querySelectorAll('.branch-option').forEach(o => o.classList.remove('selected'));
-                        opt.classList.add('selected');
-                        
-                        currentYear = Number(val);
                         closeAllDropdowns();
+                        yearToggle.focus();
+                        if (Number(val) === Number(currentYear)) return;
+                        yearInput.value = val;
+                        yearLabel.textContent = opt.getAttribute('data-label');
+                        markSelected(yearOptions, val);
+                        currentYear = Number(val);
+                        fetchData();
                     });
                 });
             }
 
-            // --- Unit Dropdown Logic ---
+            // --- Unit kerja (depends on kantor cabang) ---
             function rebuildUnitOptions() {
                 if (!unitOptionsContainer) return;
-                
-                const selectedVal = kancaInput ? kancaInput.value : 'area6';
-                const currentUnitVal = unitInput ? unitInput.value : 'all';
-                let foundCurrentUnit = currentUnitVal === 'all';
-                let currentUnitLabel = 'Semua Unit Kerja';
 
-                unitOptionsContainer.innerHTML = `
-                    <div class="branch-option ${currentUnitVal === 'all' ? 'selected' : ''}" data-value="all">
-                        <div class="branch-checkbox-ui"><i class="fas fa-check"></i></div>
-                        <span class="branch-option-label">Semua Unit Kerja</span>
-                    </div>
-                `;
+                const selectedBranch = kancaInput ? kancaInput.value : 'area6';
+                const branchUnits = selectedBranch === 'area6'
+                    ? []
+                    : allUnitsData.filter(unit => unit.kanca_value === selectedBranch);
+                const options = [{ value: 'all', label: 'Semua Unit Kerja' }].concat(branchUnits);
+                const current = options.find(option => option.value === (unitInput ? unitInput.value : 'all')) || options[0];
 
-                if (selectedVal !== 'area6') {
-                    allUnitsData.forEach(unit => {
-                        if (unit.kanca_value === selectedVal) {
-                            const opt = document.createElement('div');
-                            opt.className = `branch-option ${unit.value === currentUnitVal ? 'selected' : ''}`;
-                            opt.setAttribute('data-value', unit.value);
-                            opt.setAttribute('data-label', unit.label);
-                            opt.innerHTML = `
-                                <div class="branch-checkbox-ui"><i class="fas fa-check"></i></div>
-                                <span class="branch-option-label">${escapeHtml(unit.label)}</span>
-                            `;
-                            
-                            if (unit.value === currentUnitVal) {
-                                foundCurrentUnit = true;
-                                currentUnitLabel = unit.label;
-                            }
-
-                            opt.addEventListener('click', (e) => {
-                                e.stopPropagation();
-                                selectUnit(unit.value, unit.label);
-                            });
-                            unitOptionsContainer.appendChild(opt);
-                        }
+                unitOptionsContainer.innerHTML = '';
+                options.forEach(option => {
+                    const button = document.createElement('button');
+                    button.type = 'button';
+                    button.className = 'branch-option';
+                    button.setAttribute('role', 'option');
+                    button.setAttribute('data-value', option.value);
+                    button.setAttribute('data-label', option.label);
+                    button.innerHTML = `<span class="branch-checkbox-ui"><i class="fas fa-check"></i></span><span class="branch-option-label">${escapeHtml(option.label)}</span>`;
+                    button.addEventListener('click', () => {
+                        closeAllDropdowns();
+                        unitToggle.focus();
+                        if (option.value === currentUnit) return;
+                        selectUnit(option.value, option.label);
+                        fetchData();
                     });
-                }
+                    unitOptionsContainer.appendChild(button);
+                });
 
-                const allOpt = unitOptionsContainer.querySelector('[data-value="all"]');
-                if (allOpt) {
-                    allOpt.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        selectUnit('all', 'Semua Unit Kerja');
-                    });
-                }
-
-                if (!foundCurrentUnit) {
-                    selectUnit('all', 'Semua Unit Kerja');
-                } else {
-                    if (unitLabel) unitLabel.textContent = currentUnitLabel;
+                selectUnit(current.value, current.label);
+                if (unitToggle) {
+                    unitToggle.disabled = branchUnits.length === 0;
+                    unitToggle.title = branchUnits.length === 0 ? 'Pilih kantor cabang untuk melihat unit kerja' : '';
                 }
             }
 
@@ -1407,47 +1290,197 @@
                 if (unitInput) unitInput.value = value;
                 if (unitLabel) unitLabel.textContent = label;
                 currentUnit = value;
-                closeAllDropdowns();
-                
-                if (unitOptionsContainer) {
-                    unitOptionsContainer.querySelectorAll('.branch-option').forEach(o => {
-                        o.classList.toggle('selected', o.getAttribute('data-value') === value);
-                    });
+                markSelected(unitOptionsContainer, value);
+            }
+
+            // --- Labels & formatting ---
+            function isPercentMetric() {
+                return /\(%\)/.test(String(currentMetric));
+            }
+
+            function branchDisplayLabel() {
+                return (kancaLabel && kancaLabel.textContent.trim()) || branchOptionsMap[currentBranch] || currentBranch;
+            }
+
+            function scopeDisplayLabel() {
+                if (currentUnit && currentUnit !== 'all') {
+                    return `${branchDisplayLabel()} · ${unitLabel ? unitLabel.textContent.trim() : currentUnit}`;
+                }
+                return branchDisplayLabel();
+            }
+
+            function updateContext() {
+                const set = (key, text) => {
+                    const el = document.querySelector(`[data-ts-context="${key}"]`);
+                    if (el) el.textContent = text;
+                };
+                set('metric', currentMetric);
+                set('scope', scopeDisplayLabel());
+                set('year', `Tahun ${currentYear}`);
+            }
+
+            function syncUrl() {
+                if (!window.history || !window.history.replaceState) return;
+                const params = new URLSearchParams(window.location.search);
+                params.set('metric', currentMetric);
+                params.set('cabang', currentBranch);
+                params.set('unit_kerja', currentUnit);
+                params.set('year', String(currentYear));
+                window.history.replaceState(null, '', `${window.location.pathname}?${params.toString()}`);
+            }
+
+            const numberFormat = (value, digits) => new Intl.NumberFormat('id-ID', {
+                minimumFractionDigits: digits,
+                maximumFractionDigits: digits,
+            }).format(value);
+
+            function formatAmount(value) {
+                if (!Number.isFinite(value)) return '–';
+                if (isPercentMetric()) return `${numberFormat(value, 2)}%`;
+                const abs = Math.abs(value);
+                const sign = value < 0 ? '-' : '';
+                // Source values are in Rp juta.
+                if (abs >= 1000000) return `${sign}Rp${numberFormat(abs / 1000000, 2)} T`;
+                if (abs >= 1000) return `${sign}Rp${numberFormat(abs / 1000, 2)} M`;
+                return `${sign}Rp${numberFormat(abs, 0)} Jt`;
+            }
+
+            function formatSignedAmount(value) {
+                if (!Number.isFinite(value)) return '–';
+                if (isPercentMetric()) return `${value > 0 ? '+' : ''}${numberFormat(value, 2)} pp`;
+                return `${value > 0 ? '+' : ''}${formatAmount(value)}`;
+            }
+
+            function formatPercent(value, signed = false) {
+                if (!Number.isFinite(value)) return '–';
+                return `${signed && value > 0 ? '+' : ''}${numberFormat(value, 1)}%`;
+            }
+
+            function toneOf(value) {
+                if (!Number.isFinite(value) || Math.abs(value) < 1e-9) return '';
+                return value > 0 ? 'up' : 'down';
+            }
+
+            // --- Series helpers (Realisasi / RKA / tahun lalu) ---
+            function datasetRole(label) {
+                if (String(label).includes('RKA')) return 'rka';
+                if (String(label).includes(String(currentYear - 1))) return 'prev';
+                return 'current';
+            }
+
+            function seriesSnapshot(labels, datasets) {
+                const byRole = { current: null, rka: null, prev: null };
+                (datasets || []).forEach(dataset => {
+                    const role = datasetRole(dataset.label);
+                    if (!byRole[role]) byRole[role] = dataset;
+                });
+                const values = role => (byRole[role] && Array.isArray(byRole[role].data) ? byRole[role].data : [])
+                    .map(value => (value === null || value === '' ? NaN : Number(value)));
+                const current = values('current');
+                let last = -1;
+                current.forEach((value, index) => { if (Number.isFinite(value)) last = index; });
+                // Compare with the latest earlier month that has data (a month can be missing at the source).
+                let previous = -1;
+                for (let index = last - 1; index >= 0; index--) {
+                    if (Number.isFinite(current[index])) { previous = index; break; }
+                }
+
+                return {
+                    last,
+                    month: last >= 0 ? (labels[last] || '') : '',
+                    prevMonth: previous >= 0 ? (labels[previous] || '') : '',
+                    current: last >= 0 ? current[last] : NaN,
+                    previousMonth: previous >= 0 ? current[previous] : NaN,
+                    rka: last >= 0 ? values('rka')[last] : NaN,
+                    lastYear: last >= 0 ? values('prev')[last] : NaN,
+                    hasRka: Boolean(byRole.rka),
+                };
+            }
+
+            function setKpi(key, value, note, tone = '') {
+                if (!kpiStrip) return;
+                const card = kpiStrip.querySelector(`[data-kpi="${key}"]`);
+                if (!card) return;
+                card.querySelector('[data-kpi-value]').textContent = value;
+                card.querySelector('[data-kpi-note]').textContent = note || ' ';
+                if (tone) card.setAttribute('data-tone', tone); else card.removeAttribute('data-tone');
+            }
+
+            function renderKpis(data) {
+                const snap = seriesSnapshot(data.labels || [], data.summary ? data.summary.datasets : []);
+                if (snap.last < 0) {
+                    resetKpis('Belum ada realisasi');
+                    return;
+                }
+
+                const position = `Posisi ${snap.month} ${currentYear}`;
+                setKpi('latest', formatAmount(snap.current), position);
+
+                if (snap.hasRka && Number.isFinite(snap.rka) && snap.rka > 0) {
+                    const achievement = (snap.current / snap.rka) * 100;
+                    setKpi('rka', formatPercent(achievement), `Target ${formatAmount(snap.rka)}`, achievement >= 100 ? 'up' : 'down');
+                } else {
+                    setKpi('rka', '–', snap.hasRka ? 'Target RKA belum tersedia' : 'RKA hanya untuk Laba Setelah Pajak');
+                }
+
+                if (Number.isFinite(snap.lastYear)) {
+                    if (isPercentMetric()) {
+                        const delta = snap.current - snap.lastYear;
+                        setKpi('yoy', formatSignedAmount(delta), `${snap.month} ${currentYear - 1}: ${formatAmount(snap.lastYear)}`, toneOf(delta));
+                    } else if (snap.lastYear !== 0) {
+                        const growth = ((snap.current - snap.lastYear) / Math.abs(snap.lastYear)) * 100;
+                        setKpi('yoy', formatPercent(growth, true), `${snap.month} ${currentYear - 1}: ${formatAmount(snap.lastYear)}`, toneOf(growth));
+                    } else {
+                        setKpi('yoy', '–', `${snap.month} ${currentYear - 1}: ${formatAmount(snap.lastYear)}`);
+                    }
+                } else {
+                    setKpi('yoy', '–', `Data ${currentYear - 1} tidak tersedia`);
+                }
+
+                if (Number.isFinite(snap.previousMonth)) {
+                    const delta = snap.current - snap.previousMonth;
+                    setKpi('mom', formatSignedAmount(delta), `${snap.prevMonth} → ${snap.month}`, toneOf(delta));
+                } else {
+                    setKpi('mom', '–', 'Belum ada bulan pembanding');
                 }
             }
 
-            // --- Core Fetching Logic ---
-            async function fetchData() {
-                const metric = currentMetric;
-                const branch = kancaInput ? kancaInput.value : 'area6';
-                const unit = unitInput ? unitInput.value : 'all';
-                const year = yearInput ? yearInput.value : '';
-                const requestId = ++activeRequestId;
+            function resetKpis(note = ' ') {
+                ['latest', 'rka', 'yoy', 'mom'].forEach(key => setKpi(key, '–', note));
+            }
 
+            // --- Data ---
+            async function fetchData() {
+                const requestId = ++activeRequestId;
+                updateContext();
+                syncUrl();
                 setLoadingState(true);
 
                 try {
                     const queryParams = new URLSearchParams({
-                        metric: metric,
-                        cabang: branch,
-                        unit_kerja: unit,
-                        year: year
+                        metric: currentMetric,
+                        cabang: kancaInput ? kancaInput.value : 'area6',
+                        unit_kerja: unitInput ? unitInput.value : 'all',
+                        year: yearInput ? yearInput.value : String(currentYear),
                     });
 
-                    const response = await fetch(`${routes.data}?${queryParams.toString()}`);
-                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                    const response = await fetch(`${routes.data}?${queryParams.toString()}`, {
+                        headers: { Accept: 'application/json' },
+                    });
+                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
                     const data = await response.json();
                     if (requestId !== activeRequestId) return;
 
                     if (!hasTimeseriesData(data)) {
-                        renderEmptyChart();
+                        renderEmptyChart('Tidak ada data untuk filter terpilih', 'Coba keterangan, kantor cabang, atau tahun lain.');
                         return;
                     }
 
                     renderCharts(data);
                 } catch (error) {
+                    if (requestId !== activeRequestId) return;
                     console.error('Failed to fetch timeseries data:', error);
-                    renderEmptyChart();
+                    renderEmptyChart('Data gagal dimuat', 'Koneksi ke server terputus atau sedang sibuk. Pilih ulang filter untuk mencoba lagi.');
                 } finally {
                     if (requestId === activeRequestId) {
                         setLoadingState(false);
@@ -1456,8 +1489,10 @@
             }
 
             function setLoadingState(isLoading) {
-                if (summaryLoading) {
-                    summaryLoading.style.display = isLoading ? 'flex' : 'none';
+                if (summaryLoading) summaryLoading.style.display = isLoading ? 'inline-flex' : 'none';
+                if (kpiStrip) {
+                    kpiStrip.setAttribute('aria-busy', isLoading ? 'true' : 'false');
+                    kpiStrip.querySelectorAll('.ts-kpi').forEach(card => card.classList.toggle('is-loading', isLoading));
                 }
             }
 
@@ -1465,100 +1500,145 @@
                 return Boolean(data && data.summary && Array.isArray(data.summary.datasets) && data.summary.datasets.length > 0);
             }
 
-            function renderEmptyChart() {
-                Object.values(charts).forEach(c => { try { c.destroy(); } catch(e) {} });
+            function renderEmptyChart(title = 'Tidak ada data untuk filter terpilih', message = 'Coba keterangan, kantor cabang, atau tahun lain.') {
+                Object.values(charts).forEach(c => { try { c.destroy(); } catch (e) {} });
                 charts = {};
+                lastRenderedData = null;
+                resetKpis();
                 const summaryCanvas = document.getElementById('summaryChart');
                 if (summaryCanvas) {
-                    const ctx = summaryCanvas.getContext('2d');
-                    ctx.clearRect(0, 0, summaryCanvas.width, summaryCanvas.height);
+                    summaryCanvas.getContext('2d').clearRect(0, 0, summaryCanvas.width, summaryCanvas.height);
                 }
                 const container = document.getElementById('individualChartsContainer');
                 if (container) {
                     container.innerHTML = `
-                        <div class="col-12 text-center py-5">
+                        <div class="is-full">
                             <div class="empty-state">
-                                <i class="fas fa-chart-line"></i>
-                                <h4>Tidak ada data untuk filter terpilih</h4>
-                                <p>Silakan sesuaikan filter atau pilih kantor cabang lain.</p>
+                                <i class="fas fa-chart-line" aria-hidden="true"></i>
+                                <h4>${escapeHtml(title)}</h4>
+                                <p>${escapeHtml(message)}</p>
                             </div>
                         </div>
                     `;
                 }
             }
 
+            // --- Chart styling ---
             const monthColors = [
-                { border: '#004ea8', bg: 'rgba(0, 78, 168, 0.075)' }, // Selected Year
-                { border: '#f59e0b', bg: 'rgba(245, 158, 11, 0.04)' }, // RKA
-                { border: '#64748b', bg: 'rgba(100, 116, 139, 0.03)' }, // Prev Year
+                { border: '#0857c3', bg: 'rgba(8, 87, 195, 0.12)' }, // Selected year
+                { border: '#d97706', bg: 'rgba(217, 119, 6, 0.04)' }, // RKA
+                { border: '#7b8aa0', bg: 'rgba(123, 138, 160, 0.03)' }, // Previous year
             ];
 
-            function resolveYAxisBounds(datasets, isSummary = false) {
+            function themeColors() {
+                const styles = getComputedStyle(pageRoot || document.documentElement);
+                const read = (name, fallback) => (styles.getPropertyValue(name) || '').trim() || fallback;
+                const dark = document.documentElement.getAttribute('data-theme') === 'dark';
+                return {
+                    ink: read('--ts-ink', '#0b1f3a'),
+                    muted: read('--ts-muted', '#526987'),
+                    line: read('--ts-line', '#d8e5f7'),
+                    surface: read('--ts-surface', '#ffffff'),
+                    current: dark ? '#5899f3' : '#0857c3',
+                    currentRgb: dark ? '88, 153, 243' : '8, 87, 195',
+                    rka: dark ? '#f5a524' : '#d97706',
+                    prev: dark ? '#93a3b8' : '#7b8aa0',
+                    grid: dark ? 'rgba(226, 236, 247, 0.07)' : 'rgba(11, 31, 58, 0.06)',
+                };
+            }
+
+            function niceStep(range, intervals) {
+                const raw = range / Math.max(1, intervals);
+                if (!Number.isFinite(raw) || raw <= 0) return 1;
+                const magnitude = Math.pow(10, Math.floor(Math.log10(raw)));
+                const normalized = raw / magnitude;
+                const nice = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 2.5 ? 2.5 : normalized <= 5 ? 5 : 10;
+                return nice * magnitude;
+            }
+
+            // Round the y-axis to readable steps instead of raw min/max values.
+            function resolveYAxisBounds(datasets, isSummary = false, intervals = 5) {
                 const values = datasets
                     .flatMap(dataset => Array.isArray(dataset.data) ? dataset.data : [])
                     .filter(value => value !== null && value !== undefined && value !== '')
-                    .map(value => typeof value === 'number' ? value : Number(value))
+                    .map(value => Number(value))
                     .filter(value => Number.isFinite(value));
 
                 if (values.length === 0) {
                     return {};
                 }
 
-                const min = Math.min(...values);
-                const max = Math.max(...values);
-                const naturalSpread = max - min;
-                const minRange = Math.max(Math.abs(max) * (isSummary ? 0.025 : 0.015), 5);
-                const effectiveSpread = Math.max(naturalSpread, minRange);
-                const center = (min + max) / 2;
-                const pad = effectiveSpread * 0.12;
-                const rawMin = naturalSpread < minRange ? center - (minRange / 2) - pad : min - pad;
-                const rawMax = naturalSpread < minRange ? center + (minRange / 2) + pad : max + pad;
+                let min = Math.min(...values);
+                let max = Math.max(...values);
+                if (max - min < Math.max(Math.abs(max), 1) * 0.02) {
+                    const pad = Math.max(Math.abs(max) * 0.05, isPercentMetric() ? 0.5 : 5);
+                    min -= pad;
+                    max += pad;
+                }
 
+                const step = niceStep(max - min, intervals);
                 return {
-                    min: rawMin,
-                    max: rawMax,
+                    min: Math.floor(min / step) * step,
+                    max: Math.ceil(max / step) * step,
+                    stepSize: step,
                 };
             }
 
+            function tickFormatter(stepSize) {
+                const step = Number(stepSize) || 1;
+                const digits = step >= 1 ? 0 : (step >= 0.1 ? 1 : 2);
+                return value => isPercentMetric()
+                    ? `${numberFormat(value, digits)}%`
+                    : numberFormat(value, 0);
+            }
+
             function createChartConfig(title, labels, datasets, isSummary = false) {
-                const yAxisBounds = resolveYAxisBounds(datasets, isSummary);
                 const isPhone = window.matchMedia('(max-width: 575.98px)').matches;
                 const isCompact = window.matchMedia('(max-width: 767.98px)').matches;
-                const isTablet = window.matchMedia('(min-width: 768px) and (max-width: 1180px)').matches;
-                const latestBorderWidth = isPhone ? 2.2 : (isCompact || isTablet ? 2.7 : 3.25);
-                const otherBorderWidth = isPhone ? 1.4 : (isCompact || isTablet ? 1.7 : 2);
-                const latestPointRadius = isPhone ? 2.4 : (isCompact || isTablet ? 3 : 4);
-                const otherPointRadius = isPhone ? 1.8 : (isCompact || isTablet ? 2.2 : 2.5);
-                const tickSize = isPhone ? 8 : (isCompact || isTablet ? 9 : 10);
-                const legendSize = isPhone ? 8 : (isCompact || isTablet ? 9 : 10);
+                const intervals = isCompact ? 4 : (isSummary ? 6 : 4);
+                const yAxisBounds = resolveYAxisBounds(datasets, isSummary, intervals);
+                const colors = themeColors();
+                const tickSize = isPhone ? 9 : (isCompact ? 10 : 11);
+                const latestBorderWidth = isPhone ? 2.2 : (isSummary ? 3 : 2.5);
+                const otherBorderWidth = isPhone ? 1.4 : 1.8;
+                const percent = isPercentMetric();
 
                 return {
                     type: 'line',
                     data: {
                         labels: labels,
-                        datasets: datasets.map((d, i) => {
-                            const isRka = d.label.includes('RKA');
-                            const isPrev = d.label.includes(String(currentYear - 1));
-                            const isLatest = !isRka && !isPrev;
+                        datasets: datasets.map(d => {
+                            const role = datasetRole(d.label);
+                            const isLatest = role === 'current';
+                            const color = isLatest ? colors.current : (role === 'rka' ? colors.rka : colors.prev);
 
                             return {
                                 type: 'line',
                                 label: d.label,
                                 data: d.data,
                                 yAxisID: 'y',
-                                borderColor: isLatest ? monthColors[0].border : (isRka ? monthColors[1].border : monthColors[2].border),
-                                backgroundColor: isLatest ? monthColors[0].bg : (isRka ? monthColors[1].bg : monthColors[2].bg),
+                                borderColor: color,
+                                backgroundColor: isLatest
+                                    ? (context => {
+                                        const area = context.chart.chartArea;
+                                        if (!area) return `rgba(${colors.currentRgb}, 0.1)`;
+                                        const gradient = context.chart.ctx.createLinearGradient(0, area.top, 0, area.bottom);
+                                        gradient.addColorStop(0, `rgba(${colors.currentRgb}, 0.2)`);
+                                        gradient.addColorStop(1, `rgba(${colors.currentRgb}, 0)`);
+                                        return gradient;
+                                    })
+                                    : 'transparent',
                                 borderWidth: isLatest ? latestBorderWidth : otherBorderWidth,
-                                pointRadius: isLatest ? latestPointRadius : otherPointRadius,
-                                pointHoverRadius: isLatest ? latestPointRadius + 1.5 : otherPointRadius + 1.2,
-                                pointBackgroundColor: '#ffffff',
-                                pointBorderColor: isLatest ? monthColors[0].border : (isRka ? monthColors[1].border : monthColors[2].border),
-                                pointBorderWidth: isLatest ? 2 : 1.5,
-                                tension: 0.28,
-                                fill: isLatest,
+                                pointRadius: isLatest ? (isPhone ? 2.2 : 3) : 0,
+                                pointHoverRadius: isLatest ? 5 : 4,
+                                pointBackgroundColor: colors.surface,
+                                pointBorderColor: color,
+                                pointBorderWidth: 2,
+                                tension: 0.3,
+                                fill: isLatest ? 'start' : false,
                                 clip: false,
                                 spanGaps: true,
-                                borderDash: isRka ? [5, 5] : (isPrev ? [3, 3] : []),
+                                borderDash: role === 'rka' ? [6, 5] : (role === 'prev' ? [2, 4] : []),
                                 borderCapStyle: 'round',
                                 borderJoinStyle: 'round',
                                 order: isLatest ? 1 : 2,
@@ -1568,44 +1648,38 @@
                     options: {
                         responsive: true,
                         maintainAspectRatio: false,
-                        devicePixelRatio: isPhone ? 1.75 : 2.5,
-                        layout: {
-                            padding: {
-                                top: isCompact ? 8 : (isSummary ? 16 : 24),
-                                right: isCompact ? 8 : (isSummary ? 16 : 26),
-                                bottom: isCompact ? 16 : (isSummary ? 36 : 30),
-                                left: isCompact ? 4 : 12
-                            }
-                        },
+                        devicePixelRatio: isPhone ? 1.75 : 2,
+                        animation: { duration: 450 },
+                        layout: { padding: { top: 4, right: isCompact ? 6 : 12, bottom: 0, left: 0 } },
                         interaction: { intersect: false, mode: 'index' },
                         plugins: {
                             legend: {
                                 position: 'top',
+                                align: 'end',
                                 labels: {
                                     usePointStyle: true,
                                     pointStyle: 'line',
-                                    boxWidth: isCompact ? 18 : 28,
-                                    boxHeight: 8,
-                                    color: '#475569',
+                                    boxWidth: isCompact ? 18 : 24,
+                                    boxHeight: 6,
+                                    color: colors.muted,
                                     padding: isCompact ? 8 : 14,
-                                    font: { weight: '600', size: legendSize }
+                                    font: { weight: '600', size: tickSize }
                                 }
                             },
                             tooltip: {
-                                backgroundColor: 'rgba(15, 23, 42, 0.95)',
-                                padding: 12,
-                                titleFont: { size: 13, weight: 'bold' },
+                                backgroundColor: 'rgba(11, 31, 58, 0.94)',
+                                padding: 10,
+                                cornerRadius: 8,
+                                titleFont: { size: 12, weight: '700' },
                                 bodyFont: { size: 12 },
+                                boxPadding: 4,
                                 callbacks: {
                                     label: function(context) {
-                                        let label = context.dataset.label || '';
-                                        if (label) { label += ': '; }
-                                        if (context.parsed.y !== null) {
-                                            label += new Intl.NumberFormat('id-ID', {
-                                                maximumFractionDigits: 2
-                                            }).format(context.parsed.y) + ' Rp Juta';
-                                        }
-                                        return label;
+                                        const label = context.dataset.label ? `${context.dataset.label}: ` : '';
+                                        if (context.parsed.y === null) return label + '–';
+                                        return label + (percent
+                                            ? `${numberFormat(context.parsed.y, 2)}%`
+                                            : `${numberFormat(context.parsed.y, 2)} Rp Juta`);
                                     }
                                 }
                             }
@@ -1616,36 +1690,30 @@
                                 beginAtZero: false,
                                 min: yAxisBounds.min,
                                 max: yAxisBounds.max,
-                                border: { display: true, color: '#cbd5e1' },
+                                border: { display: false },
                                 title: {
-                                    display: true,
-                                    text: 'Nilai (Rp Juta)',
-                                    color: '#475569',
+                                    display: !isPhone,
+                                    text: percent ? 'Persen (%)' : 'Nilai (Rp Juta)',
+                                    color: colors.muted,
                                     font: { weight: '600', size: tickSize }
                                 },
-                                grid: { color: 'rgba(15, 23, 42, 0.055)', drawTicks: true },
+                                grid: { color: colors.grid, drawTicks: false },
                                 ticks: {
-                                    maxTicksLimit: isCompact ? 5 : (isSummary ? 7 : 6),
-                                    padding: isCompact ? 6 : 10,
-                                    display: true,
-                                    color: '#64748b',
+                                    stepSize: yAxisBounds.stepSize,
+                                    padding: 8,
+                                    color: colors.muted,
                                     font: { size: tickSize, weight: '500' },
-                                    callback: function(value) {
-                                        return new Intl.NumberFormat('id-ID', { 
-                                            maximumFractionDigits: 0
-                                        }).format(value);
-                                    }
+                                    callback: tickFormatter(yAxisBounds.stepSize)
                                 }
                             },
                             x: {
                                 display: true,
-                                border: { display: true, color: '#cbd5e1' },
-                                grid: { display: false, drawTicks: true },
+                                border: { display: true, color: colors.line },
+                                grid: { display: false },
                                 ticks: {
-                                    display: true,
-                                    padding: isCompact ? 6 : 10,
-                                    color: '#64748b',
-                                    maxRotation: isPhone ? 0 : 30,
+                                    padding: 6,
+                                    color: colors.muted,
+                                    maxRotation: 0,
                                     autoSkip: true,
                                     maxTicksLimit: isPhone ? 6 : 12,
                                     font: { size: tickSize, weight: '500' }
@@ -1657,65 +1725,74 @@
             }
 
             function renderCharts(data) {
-                // Destroy old charts
-                Object.values(charts).forEach(c => { try { c.destroy(); } catch(e) {} });
+                Object.values(charts).forEach(c => { try { c.destroy(); } catch (e) {} });
                 charts = {};
+                lastRenderedData = data;
 
-                // 1. Render Summary Chart
+                updateContext();
+                renderKpis(data);
+
                 const summaryCanvas = document.getElementById('summaryChart');
                 if (summaryCanvas) {
-                    const summaryCtx = summaryCanvas.getContext('2d');
-                    charts['summary'] = new Chart(summaryCtx, createChartConfig('Total Analytics', data.labels, data.summary.datasets, true));
-                    
+                    charts['summary'] = new Chart(summaryCanvas.getContext('2d'), createChartConfig('Total Analytics', data.labels, data.summary.datasets, true));
+
                     const badge = document.getElementById('summaryChartBadge');
                     if (badge) {
-                        const selectedVal = kancaInput ? kancaInput.value : 'area6';
-                        const selectedUnitVal = unitInput ? unitInput.value : 'all';
-                        if (selectedVal === 'area6') {
-                            badge.textContent = 'Konsolidasi Area 6';
-                        } else if (selectedUnitVal === 'all') {
-                            badge.textContent = `Konsolidasi ${selectedVal}`;
-                        } else {
-                            const unitName = allUnitsData.find(u => u.value === selectedUnitVal)?.label || selectedUnitVal;
-                            badge.textContent = `${unitName}`;
-                        }
+                        badge.textContent = currentBranch === 'area6'
+                            ? 'Konsolidasi Area 6'
+                            : (currentUnit === 'all' ? `Konsolidasi ${branchDisplayLabel()}` : scopeDisplayLabel());
                     }
 
                     const titleEl = document.getElementById('summaryChartTitle');
-                    if (titleEl) {
-                        titleEl.innerHTML = `<i class="fas fa-chart-area mr-2 text-primary"></i>${escapeHtml(currentMetric)} - Trend Analysis`;
+                    if (titleEl) titleEl.textContent = currentMetric;
+                    const subtitleEl = document.getElementById('summaryChartSubtitle');
+                    if (subtitleEl) {
+                        const hasRka = (data.summary.datasets || []).some(dataset => datasetRole(dataset.label) === 'rka');
+                        subtitleEl.textContent = hasRka
+                            ? 'Tren bulanan realisasi, RKA, dan tahun sebelumnya'
+                            : 'Tren bulanan realisasi dan tahun sebelumnya';
                     }
                 }
 
-                // 2. Render Sub Charts Grid
                 const container = document.getElementById('individualChartsContainer');
                 if (container) {
                     container.innerHTML = '';
                     const seriesKeys = Object.keys(data.series || {}).sort();
-
-                    if (seriesKeys.length === 0) {
-                        return;
-                    }
-
                     const isFullWidth = seriesKeys.length === 1;
 
                     seriesKeys.forEach(key => {
+                        const datasets = data.series[key].datasets;
+                        const snap = seriesSnapshot(data.labels || [], datasets);
+                        let chip = '';
+                        if (snap.last >= 0 && Number.isFinite(snap.lastYear)) {
+                            const delta = isPercentMetric()
+                                ? snap.current - snap.lastYear
+                                : (snap.lastYear !== 0 ? ((snap.current - snap.lastYear) / Math.abs(snap.lastYear)) * 100 : NaN);
+                            if (Number.isFinite(delta)) {
+                                const text = isPercentMetric() ? formatSignedAmount(delta) : formatPercent(delta, true);
+                                chip = `<span class="ts-chip" data-tone="${toneOf(delta)}" title="Dibanding ${escapeHtml(snap.month)} ${currentYear - 1}">${escapeHtml(text)} YoY</span>`;
+                            }
+                        }
+
                         const col = document.createElement('div');
-                        col.className = isFullWidth ? 'col-12 mb-4' : 'col-lg-6 mb-3';
+                        col.className = isFullWidth ? 'is-full' : '';
                         const canvasId = `chart_${key.replace(/[^\w-]/g, '_')}`;
-                        const displayTitle = `${key}`;
-                        
                         col.innerHTML = `
                             <div class="card chart-card">
                                 <div class="chart-header">
-                                    <h5 class="chart-title">${escapeHtml(displayTitle)}</h5>
-                                    <div class="d-flex align-items-center">
-                                        <span class="unit-badge">Trend Bulanan</span>
+                                    <div class="chart-heading">
+                                        <h5 class="chart-title">${escapeHtml(key)}</h5>
+                                        <span class="chart-subtitle">${snap.last >= 0 ? `Posisi ${escapeHtml(snap.month)} ${currentYear}` : 'Belum ada realisasi'}</span>
+                                    </div>
+                                    <div class="chart-meta">
+                                        <span class="chart-stat">${escapeHtml(snap.last >= 0 ? formatAmount(snap.current) : '–')}</span>
+                                        ${chip}
+                                        <span class="unit-badge sr-only">Trend Bulanan</span>
                                     </div>
                                 </div>
                                 <div class="chart-body branch-chart-body ${isFullWidth ? 'tall' : ''}">
                                     <div class="chart-canvas-frame">
-                                        <canvas id="${canvasId}"></canvas>
+                                        <canvas id="${canvasId}" role="img" aria-label="Grafik tren bulanan ${escapeHtml(key)}"></canvas>
                                     </div>
                                 </div>
                             </div>
@@ -1723,7 +1800,6 @@
                         container.appendChild(col);
 
                         const ctx = document.getElementById(canvasId).getContext('2d');
-                        const datasets = data.series[key].datasets;
                         charts[key] = new Chart(ctx, createChartConfig(key, data.labels, datasets, false));
                     });
                 }
@@ -1751,31 +1827,10 @@
             window.addEventListener('resize', scheduleChartResize);
             window.addEventListener('orientationchange', scheduleChartResize);
 
-            // --- Metric Select Handler ---
-            const quickMetricBtns = document.querySelectorAll('#categorySelector .category-btn');
-
-            quickMetricBtns.forEach(btn => {
-                btn.addEventListener('click', function() {
-                    quickMetricBtns.forEach(b => b.classList.remove('active'));
-                    this.classList.add('active');
-                    if (metricToggle) {
-                        metricToggle.classList.remove('active-select');
-                    }
-                    if (metricLabel) {
-                        metricLabel.textContent = '-- Metrik Lainnya --';
-                        metricLabel.classList.add('placeholder');
-                    }
-                    if (metricOptionsList) {
-                        metricOptionsList.querySelectorAll('.metric-option').forEach(opt => opt.classList.remove('selected'));
-                    }
-                    currentMetric = this.getAttribute('data-value');
-                    fetchData();
-                });
-            });
-
-            if (applyBtn) {
-                applyBtn.addEventListener('click', fetchData);
-            }
+            // Re-draw with the new palette when the theme toggles.
+            new MutationObserver(() => {
+                if (lastRenderedData) renderCharts(lastRenderedData);
+            }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
             // --- Capture A4 Page Layout Composer ---
             const captureBtn = document.getElementById('captureAllBtn');
@@ -1898,7 +1953,7 @@
                             border: { display: true, color: '#cbd5e1' },
                             title: {
                                 display: true,
-                                text: 'Nilai (Rp Juta)',
+                                text: originalScales.y?.title?.text || 'Nilai (Rp Juta)',
                                 color: '#334155',
                                 font: { weight: '600', size: Math.round(23 * fontScale) }
                             },
@@ -1909,6 +1964,7 @@
                                 display: true,
                                 color: '#475569',
                                 font: { size: Math.round(22 * fontScale), weight: '500' },
+                                stepSize: originalScales.y?.ticks?.stepSize,
                                 callback: yTicksCallback
                             }
                         },
@@ -1986,11 +2042,11 @@
 
                 ctx.fillStyle = '#0f172a';
                 ctx.font = 'bold 64px "Inter", "Segoe UI", Arial, sans-serif';
-                ctx.fillText('Timeseries Analytics Laba Rugi', marginX, marginY + 35);
+                ctx.fillText('Timeseries Almafact', marginX, marginY + 35);
 
                 ctx.fillStyle = '#475569';
                 ctx.font = '600 30px "Inter", "Segoe UI", Arial, sans-serif';
-                drawTextEllipsis(ctx, `Metrik: ${metric}   |   Tahun Analisis: ${currentYear}`, marginX, marginY + 92, width - (marginX * 2));
+                drawTextEllipsis(ctx, `Keterangan: ${metric}   |   Tahun: ${currentYear}`, marginX, marginY + 92, width - (marginX * 2));
                 drawTextEllipsis(ctx, `Cabang: ${branch}   |   Unit: ${unitName}`, marginX, marginY + 138, width - (marginX * 2) - 220);
 
                 ctx.fillStyle = '#eaf2ff';
@@ -2140,7 +2196,7 @@
                         drawExportFooter(ctx);
 
                         const link = document.createElement('a');
-                        link.download = `Timeseries-Laba-Rugi-A4-${category}-${timestamp}.jpg`;
+                        link.download = `Timeseries-Almafact-A4-${category}-${timestamp}.jpg`;
                         link.href = pageCanvas.toDataURL('image/jpeg', 0.95);
                         link.click();
 
@@ -2163,7 +2219,7 @@
             // Initial view state setup
             rebuildUnitOptions();
             if (!window.Chart) {
-                console.error('Chart.js belum termuat untuk Timeseries Laba Rugi.');
+                console.error('Chart.js belum termuat untuk Timeseries Almafact.');
                 renderEmptyChart();
                 setLoadingState(false);
             } else if (hasTimeseriesData(initialTimeseriesData)) {

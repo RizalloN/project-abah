@@ -7,7 +7,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Kind | Count |
 | --- | ---: |
 | file | 14 |
-| method | 257 |
+| method | 262 |
 | unresolved_symbol | 1 |
 | class | 9 |
 | trait | 1 |
@@ -20,8 +20,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `NativeOpenXmlPowerPointRenderer` | class | 71 | `app/Services/Presentation/NativeOpenXmlPowerPointRenderer.php:9` |
 | `PresentationScopeDataService` | class | 50 | `app/Services/Presentation/PresentationScopeDataService.php:14` |
 | `PresentationFundingStrategyService` | class | 41 | `app/Services/Presentation/PresentationFundingStrategyService.php:16` |
+| `PresentationSegmentDataService` | class | 37 | `app/Services/Presentation/PresentationSegmentDataService.php:23` |
 | `PresentationDeckDataService` | class | 35 | `app/Services/Presentation/PresentationDeckDataService.php:10` |
-| `PresentationSegmentDataService` | class | 32 | `app/Services/Presentation/PresentationSegmentDataService.php:21` |
 | `PresentationExportManager` | class | 23 | `app/Services/Presentation/PresentationExportManager.php:11` |
 | `footer` | method | 23 | `app/Services/Presentation/NativeOpenXmlPowerPointRenderer.php:2316` |
 | `header` | method | 22 | `app/Services/Presentation/NativeOpenXmlPowerPointRenderer.php:2300` |
@@ -31,7 +31,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `slide` | method | 21 | `app/Services/Presentation/NativeOpenXmlPowerPointRenderer.php:2648` |
 | `callout` | method | 20 | `app/Services/Presentation/NativeOpenXmlPowerPointRenderer.php:2635` |
 | `PresentationNarrativeService` | class | 19 | `app/Services/Presentation/PresentationNarrativeService.php:5` |
-| `build` | method | 19 | `app/Services/Presentation/PresentationSegmentDataService.php:57` |
+| `build` | method | 19 | `app/Services/Presentation/PresentationSegmentDataService.php:59` |
 | `table` | method | 19 | `app/Services/Presentation/NativeOpenXmlPowerPointRenderer.php:2454` |
 | `buildSlides` | method | 18 | `app/Services/Presentation/NativeOpenXmlPowerPointRenderer.php:81` |
 | `formatAmount` | method | 18 | `app/Services/Presentation/NativeOpenXmlPowerPointRenderer.php:3061` |
@@ -75,15 +75,15 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Direction | Count |
 | --- | ---: |
-| presentation -> core (calls) | 66 |
+| presentation -> core (calls) | 69 |
 | presentation -> core (accepts) | 29 |
 | presentation -> dashboard-simpanan (references_route) | 20 |
 | presentation -> core (instantiates) | 16 |
 | jobs-snapshots -> presentation (calls) | 9 |
 | dashboard-simpanan -> presentation (accepts) | 6 |
+| presentation -> import (reads_table) | 5 |
 | dashboard-simpanan -> presentation (calls) | 4 |
 | access-control -> presentation (calls) | 4 |
-| presentation -> import (reads_table) | 4 |
 | presentation -> core (checks_table) | 3 |
 | jobs-snapshots -> presentation (uses_trait) | 3 |
 | jobs-snapshots -> presentation (accepts) | 2 |
@@ -99,7 +99,9 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | presentation -> dashboard-pinjaman (calls) | 1 |
 | presentation -> core (reads_table) | 1 |
 | presentation -> access-control (calls) | 1 |
+| presentation -> import (checks_table) | 1 |
+| presentation -> dashboard-pinjaman (checks_table) | 1 |
+| presentation -> dashboard-pinjaman (reads_table) | 1 |
 | marketshare -> presentation (calls) | 1 |
 | import -> presentation (uses_trait) | 1 |
 | access-control -> presentation (uses_trait) | 1 |
-| presentation -> jobs-snapshots (contains) | 1 |

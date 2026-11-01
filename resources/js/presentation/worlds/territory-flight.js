@@ -6,7 +6,7 @@ const smooth = (from, to, value) => {
 };
 const lerp = (from, to, t) => from + (to - from) * t;
 
-export function territoryFlight(stage, invalidate) {
+export function territoryFlight(stage, invalidate, { assetBase = null } = {}) {
     const { THREE, scene, host } = stage;
     const group = new THREE.Group();
     scene.add(group);
@@ -14,12 +14,12 @@ export function territoryFlight(stage, invalidate) {
     let ready = false;
     let failed = false;
     let radius = 300;
-    const base = new URL(window.__PRESENTATION_CONFIG__?.serviceWorkerUrl || '/', `${window.location.origin}/`);
+    const base = assetBase ? null : new URL(window.__PRESENTATION_CONFIG__?.serviceWorkerUrl || '/', `${window.location.origin}/`);
     const textures = [];
     const loaded = new Set();
     const loadTexture = (file, color = true) => {
         let texture;
-        texture = new THREE.TextureLoader().load(new URL(`vendor/earth/${file}`, base).href, () => {
+        texture = new THREE.TextureLoader().load(assetBase ? new URL(file, assetBase).href : new URL(`vendor/earth/${file}`, base).href, () => {
             if (disposed) { texture?.dispose(); return; }
             loaded.add(file);
             // The complete material arrives together, keeping the fallback intact while textures load.

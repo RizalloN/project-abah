@@ -37,6 +37,7 @@ final class LandingConsumerOperationalService
             'label' => 'KC Madiun',
             'spreadsheet_id' => '1_HRbgKXKy6Rv9gi56x0rpKaJEQgXbOlkeupqAa_XACo',
             'sheet' => 'DATA INTANSI',
+            'gid' => '1224308739',
         ],
         'caruban' => [
             'branch_key' => 'madiun',
@@ -51,6 +52,7 @@ final class LandingConsumerOperationalService
             'label' => 'KC Magetan',
             'spreadsheet_id' => '1uTvCIxznFkqbzgfJdLbCUUtUOTrURkqaiCxiJWFLbQ8',
             'sheet' => 'DATA INTANSI',
+            'gid' => '1224308739',
         ],
         'ngawi' => [
             'branch_key' => 'ngawi',
@@ -272,7 +274,9 @@ final class LandingConsumerOperationalService
      */
     public function parseInstitutionCsv(string $csv, array $source): array
     {
-        $matrix = $this->csvMatrix($csv);
+        $sheet = InstitutionMarketShareSheet::parse($csv);
+        $sheet = InstitutionMarketShareSheet::forDisplay($sheet, (string) ($source['key'] ?? $source['branch_key'] ?? ''));
+        $matrix = array_merge([$sheet['columns']], $sheet['rows']);
         $headerIndex = collect($matrix)->search(function (array $row): bool {
             $labels = array_map(fn ($value): string => $this->normaliseLabel((string) $value), $row);
 
@@ -290,14 +294,15 @@ final class LandingConsumerOperationalService
             'leader' => $this->findColumn($header, ['KEPALA INSTANSI']),
             'rm_1' => $this->findColumn($header, ['RM PIC 1']),
             'rm_2' => $this->findColumn($header, ['RM PIC 2']),
-            'employees' => $this->findColumn($header, ['TOTAL PEGAWAI']),
+            'employees' => $this->findColumn($header, ['TOTAL PEGAWAI', 'PEGAWAI']),
             'potential' => $this->findColumnStartingWith($header, 'POTENSI BRIG'),
             'served' => $this->findColumn($header, ['SUDAH TERLAYANI']),
             'payroll' => $this->findColumn($header, ['PAYROLL']),
             'salary' => $this->findColumn($header, ['GAJI INSTANSI']),
             'mtd_debtors' => $this->findColumn($header, ['MTD DEB']),
         ];
-        $latestOutstanding = $this->lastColumnBefore($header, ['OUTSTANDING', 'OS'], $columns['potential']);
+        $latestOutstanding = $sheet['period'] === null ? -1 : array_search($sheet['period'].':outstanding', $sheet['column_keys'], true);
+        $latestOutstanding = $latestOutstanding === false ? -1 : $latestOutstanding;
 
         $rows = collect(array_slice($matrix, (int) $headerIndex + 1))
             ->map(function (array $row) use ($columns, $latestOutstanding): array {
@@ -1490,6 +1495,11 @@ final class LandingConsumerOperationalService
     /** @param array<string, mixed> $source */
     private function csvUrl(array $source): string
     {
+        if (isset($source['gid'])) {
+            return 'https://docs.google.com/spreadsheets/d/'.$source['spreadsheet_id']
+                .'/export?format=csv&gid='.rawurlencode((string) $source['gid']);
+        }
+
         return 'https://docs.google.com/spreadsheets/d/'
             .$source['spreadsheet_id']
             .'/gviz/tq?tqx=out:csv&sheet='
@@ -1504,7 +1514,11 @@ final class LandingConsumerOperationalService
 
     private function cacheKey(string $key): string
     {
-        return self::CACHE_PREFIX.':'.$key;
+        return self::CACHE_PREFIX.':'.$key.match ($key) {
+            'madiun' => ':schema-v3',
+            'magetan' => ':schema-v3-visible-opportunity',
+            default => '',
+        };
     }
 
     private function stableCacheKey(string $key): string

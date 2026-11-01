@@ -19,6 +19,12 @@ const reduceMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)')
 const finePointer = () => window.matchMedia('(hover: hover) and (pointer: fine)').matches;
 const clamp01 = (value) => Math.min(1, Math.max(0, value));
 const damp = (current, target, lambda, dt) => current + (target - current) * (1 - Math.exp(-lambda * dt));
+const smoothstep = (from, to, value) => { const t = clamp01((value - from) / (to - from)); return t * t * (3 - 2 * t); };
+const FLIGHT_SPEC = () => ({
+    journey: [{ until: 1, focus: null, heights: () => ({ lift: 0.16, color: 0x9db5d2, roughness: 0.38 }) }],
+    dark: 1,
+    fx: { beams: false, flow: 0, speed: 0.8, color: 0x7fa6e8 },
+});
 const escapeText = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
 
 const supportsWebGL = () => {
@@ -67,6 +73,12 @@ export class TerritoryStudio {
         this.swoopDirection = 1;
         this.blur = 0;
         this.introStart = null;
+        this.focusWait = null;
+        this.flightP = null;
+        this.handoff = null;
+        this.clip = null;
+        this.lastPose = null;
+        this.arrival = null;
         this.ready = new Promise((resolve) => { this.resolveReady = resolve; });
     }
 
@@ -117,7 +129,9 @@ export class TerritoryStudio {
         } catch (error) {
             console.warn('Territory relief fell back to its poster.', error);
             this.resolveReady(this.features);
+            this.webgl = false;
             document.documentElement.classList.replace('sg-relief-on', 'sg-relief-off');
+            this.kick();
         }
     }
 
@@ -149,7 +163,163 @@ export class TerritoryStudio {
     scan() {
         this.slots = Array.from(document.querySelectorAll('[data-territory]'));
         this.paintPosters();
+        this.slots.forEach((slot) => this.framePoster(slot, this.overrides.get(slot.dataset.territory)));
+        if (this.activeSlot && !this.activeSlot.isConnected) this.releaseSurface();
         this.kick();
+    }
+
+    /* The flight: the same scene and camera, from orbit down into the first room's slot. */
+    canFly() { return Boolean(this.scene); }
+
+    beginFlight() {
+        if (!this.scene) return false;
+        const assets = new URL('../vendor/earth/', new URL(this.geographyUrl, window.location.href));
+        this.flightHandle = this.scene.beginFlight(assets);
+        this.flightP = 0;
+        this.handoff = null;
+        this.introStart = Number.NEGATIVE_INFINITY;
+        this.registerFlightState();
+        this.scan();
+        return true;
+    }
+
+    /** The deck rebuild clears every state; the flight's own state has to outlive it. */
+    registerFlightState() {
+        if (this.flightP !== null) this.register('flight', FLIGHT_SPEC());
+    }
+
+    flightReady() { return Boolean(this.flightHandle?.ready); }
+
+    setFlightProgress(progress) {
+        this.flightP = progress;
+        this.kick();
+    }
+
+    /** The full-screen slot leaves; the frame and the camera glide on into the room below it. */
+    handOffFlight(slot) {
+        slot?.remove();
+        this.handoff = { until: performance.now() + 1500 };
+        this.scan();
+    }
+
+    endFlight() {
+        if (this.flightP === null) return;
+        this.flightP = null;
+        this.flightHandle = null;
+        this.scene?.endFlight();
+        this.states.delete('flight');
+        this.appliedKey = null;
+        this.kick();
+    }
+
+    /** A room change: swing the way the reader travels, while the new figures rise from the floor. */
+    seam(direction = 1, { assemble = 0.14 } = {}) {
+        if (reduceMotion()) return;
+        this.swoop = 1.3;
+        this.swoopDirection = direction < 0 ? -1 : 1;
+        this.arrival = { start: null, assemble };
+        this.kick();
+    }
+
+    /** Release viewport state when a panel/deck leaves; the actual scene stays alive. */
+    releaseSurface() {
+        this.cancelFocusWait();
+        this.activeSlot = null;
+        this.appliedKey = null;
+        this.rect = null;
+        this.blur = 0;
+        this.swoop = 0;
+        this.velocity = 0;
+        this.lastScrollY = null;
+        this.pointer.free = false;
+        this.tap = null;
+        this.clip = null;
+        this.lastPose = null;
+        this.drag.active = false;
+        this.drag.yaw = 0;
+        this.drag.pitch = 0;
+        document.documentElement.classList.remove('sg-dragging', 'sg-relief-hot');
+        this.scene?.setHovered?.(null);
+        this.layer?.classList.remove('is-visible');
+        if (this.layer) { this.layer.style.clipPath = ''; this.layer.style.setProperty('--sg-blur', '0px'); }
+        this.tip?.classList.remove('is-on');
+        this.labels.forEach((element) => this.hideLabel(element));
+        this.labelItems = [];
+    }
+
+    /** Resolve only after this focus has reached a visible frame, or false when its owner leaves. */
+    waitForFocus(key, { signal, minimum = 650, maximum = 2400 } = {}) {
+        this.cancelFocusWait();
+        if (signal?.aborted || !this.states.has(key) || document.hidden) return Promise.resolve(false);
+        const duration = Number.isFinite(maximum) ? Math.max(1, maximum) : 2400;
+        const hold = Math.min(duration, Number.isFinite(minimum) ? Math.max(0, minimum) : 650);
+        return new Promise((resolve) => {
+            const wait = { key, signal, resolve, minimum: hold, startedAt: performance.now(), stable: 0,
+                override: this.focusSignature(this.overrides.get(key)), timer: null, abort: null };
+            wait.abort = () => this.finishFocusWait(wait, false);
+            this.focusWait = wait;
+            wait.timer = setTimeout(() => this.finishFocusWait(wait, false), duration);
+            signal?.addEventListener('abort', wait.abort, { once: true });
+            this.kick();
+        });
+    }
+
+    focusSignature(codes) {
+        return codes ? [...codes].map(String).sort().join(',') : null;
+    }
+
+    finishFocusWait(wait, completed) {
+        if (this.focusWait !== wait) return;
+        this.focusWait = null;
+        clearTimeout(wait.timer);
+        wait.signal?.removeEventListener('abort', wait.abort);
+        wait.resolve(completed);
+    }
+
+    cancelFocusWait() {
+        if (this.focusWait) this.finishFocusWait(this.focusWait, false);
+    }
+
+    /** Called by the existing render clock; no second camera loop or synthetic completion timer. */
+    checkFocusFrame({ key, slot, still, rendered = false, target = null, now = performance.now() }) {
+        const wait = this.focusWait;
+        if (!wait) return;
+        if (document.hidden || wait.signal?.aborted || key !== wait.key || !slot?.isConnected || slot.closest('[hidden]')
+            || this.focusSignature(this.overrides.get(key)) !== wait.override) {
+            this.finishFocusWait(wait, false);
+            return;
+        }
+        const inert = slot.closest('[inert]');
+        const temporary = inert?.classList.contains('sg-opener') && slot.closest('.is-panel-transition');
+        if (inert && !temporary) { this.finishFocusWait(wait, false); return; }
+        if (!this.scene) {
+            // A still-loading WebGL scene is not a completed SVG fallback.
+            if (this.webgl !== false) return;
+            this.framePoster(slot, this.overrides.get(key));
+            const box = slot.querySelector('[data-territory-poster] svg')?.viewBox?.baseVal;
+            if (box && [box.x, box.y, box.width, box.height].every(Number.isFinite) && box.width > 0 && box.height > 0) this.finishFocusWait(wait, true);
+            return;
+        }
+        const appliedFocus = this.overrides.has(key) ? [...this.overrides.get(key)].join(',') : '';
+        if (!rendered || this.activeSlot !== slot || !this.appliedKey?.startsWith(`${key}|`) || this.appliedKey.split('|')[2] !== appliedFocus) return;
+        const view = this.scene.view;
+        const goal = this.scene.viewGoal;
+        const arrangement = this.scene.arrangement;
+        const arrangementGoal = this.scene.arrangementTarget;
+        const carried = goal?.branch && goal.branch === arrangement?.levitateBranch ? this.scene.branchOffsets?.get(goal.branch) : null;
+        const values = [view?.x, view?.z, view?.radius, goal?.x, goal?.z, goal?.radius, this.scene.zooming, this.blur,
+            carried?.x ?? 0, carried?.z ?? 0,
+            ...['x', 'y', 'w', 'h'].flatMap((side) => [this.rect?.[side], target?.[side]])];
+        if (!values.every(Number.isFinite) || goal.radius <= 0 || this.rect.w <= 0 || this.rect.h <= 0) { wait.stable = 0; return; }
+        const travel = Math.hypot(goal.x + (carried?.x || 0) - view.x, goal.z + (carried?.z || 0) - view.z) + Math.abs(goal.radius - view.radius);
+        const rectSettled = ['x', 'y', 'w', 'h'].every((side) => Math.abs(this.rect[side] - target[side]) <= .5);
+        const arrangementSettled = arrangement && arrangementGoal && arrangement.levitateBranch === arrangementGoal.levitateBranch
+            && ['explode', 'spread', 'levitate', 'grow', 'wave'].every((name) => Number.isFinite(arrangement[name]) && Number.isFinite(arrangementGoal[name])
+                && Math.abs(arrangement[name] - arrangementGoal[name]) <= .015);
+        const settled = travel / goal.radius <= .015 && this.scene.zooming <= .03 && this.blur <= .18
+            && rectSettled && arrangementSettled && !this.drag.active && this.swoop <= .01;
+        wait.stable = settled ? wait.stable + 1 : 0;
+        if (still && settled || wait.stable >= 3 && now - wait.startedAt >= wait.minimum) this.finishFocusWait(wait, true);
     }
 
     setInteractiveTargets(key, items) {
@@ -165,26 +335,31 @@ export class TerritoryStudio {
         if (codes && !codes.size) codes = null;
         if (codes) this.overrides.set(key, codes);
         else this.overrides.delete(key);
-        this.slots.filter((slot) => slot.dataset.territory === key).forEach((slot) => {
-            const svg = slot.querySelector('[data-territory-poster] svg');
-            if (!svg) return;
-            const boxes = [];
-            svg.querySelectorAll('[data-code]').forEach((path) => {
-                const focused = Boolean(codes?.has(path.dataset.code));
-                path.classList.toggle('is-focused', focused);
-                path.classList.toggle('is-outside', Boolean(codes && !focused));
-                if (focused) boxes.push(path.getBBox());
-            });
-            if (boxes.length) {
-                const x = Math.min(...boxes.map((box) => box.x));
-                const y = Math.min(...boxes.map((box) => box.y));
-                const right = Math.max(...boxes.map((box) => box.x + box.width));
-                const bottom = Math.max(...boxes.map((box) => box.y + box.height));
-                svg.setAttribute('viewBox', `${x - 12} ${y - 12} ${right - x + 24} ${bottom - y + 24}`);
-            } else svg.setAttribute('viewBox', '0 0 600 560');
-        });
+        this.slots.filter((slot) => slot.dataset.territory === key).forEach((slot) => this.framePoster(slot, codes));
         this.appliedKey = null;
         this.kick();
+    }
+
+    framePoster(slot, codes) {
+        const svg = slot.querySelector('[data-territory-poster] svg');
+        if (!svg || !slot.isConnected || slot.closest('[hidden]') || !slot.getClientRects().length) return;
+        const boxes = [];
+        svg.querySelectorAll('[data-code]').forEach((path) => {
+            const focused = Boolean(codes?.has(path.dataset.code));
+            path.classList.toggle('is-focused', focused);
+            path.classList.toggle('is-outside', Boolean(codes && !focused));
+            if (focused) {
+                const box = path.getBBox();
+                if ([box.x, box.y, box.width, box.height].every(Number.isFinite) && box.width > 0 && box.height > 0) boxes.push(box);
+            }
+        });
+        if (boxes.length) {
+            const x = Math.min(...boxes.map((box) => box.x));
+            const y = Math.min(...boxes.map((box) => box.y));
+            const right = Math.max(...boxes.map((box) => box.x + box.width));
+            const bottom = Math.max(...boxes.map((box) => box.y + box.height));
+            svg.setAttribute('viewBox', `${x - 12} ${y - 12} ${right - x + 24} ${bottom - y + 24}`);
+        } else if (!codes) svg.setAttribute('viewBox', '0 0 600 560');
     }
 
     paintPosters() {
@@ -345,14 +520,23 @@ export class TerritoryStudio {
         let best = null;
         let bestArea = 0;
         this.slots.forEach((slot) => {
-            if (!slot.isConnected || !this.states.has(slot.dataset.territory)) return;
+            const inert = slot.closest('[inert]');
+            const temporary = inert?.classList.contains('sg-opener') && slot.closest('.is-panel-transition');
+            if (!slot.isConnected || slot.closest('[hidden]') || (inert && !temporary) || !this.states.has(slot.dataset.territory)) return;
             const rect = slot.getBoundingClientRect();
             const visible = Math.min(rect.bottom, viewport) - Math.max(rect.top, 0);
-            if (visible <= viewport * 0.08 || rect.width < 40) return;
+            const width = Math.min(rect.right, window.innerWidth) - Math.max(rect.left, 0);
+            if (![rect.top, rect.left, rect.width, rect.height].every(Number.isFinite) || visible <= viewport * 0.08 || width < 40 || rect.height < 40 || getComputedStyle(slot).visibility === 'hidden') return;
             // An opaque sheet sliding over the slot hides it while it is still in the viewport.
             const cover = slot.closest('[data-territory-track]')?.nextElementSibling;
-            const covered = cover?.classList.contains('sg-sheet') && !cover.hidden ? Math.max(0, viewport - Math.max(0, cover.getBoundingClientRect().top)) : 0;
-            const area = (visible - Math.min(visible, covered)) * rect.width;
+            let covered = 0;
+            if (cover?.classList.contains('sg-sheet') && !cover.hidden && !slot.closest('.is-panel-transition')) {
+                const box = cover.getBoundingClientRect();
+                const overlapWidth = Math.max(0, Math.min(rect.right, box.right, window.innerWidth) - Math.max(rect.left, box.left, 0));
+                const overlapHeight = Math.max(0, Math.min(rect.bottom, box.bottom, viewport) - Math.max(rect.top, box.top, 0));
+                covered = overlapWidth * overlapHeight;
+            }
+            const area = visible * width - covered;
             if (area > bestArea) {
                 bestArea = area;
                 best = slot;
@@ -399,10 +583,17 @@ export class TerritoryStudio {
         this.activeSlot?.dispatchEvent(new CustomEvent('territorystop', { bubbles: true, detail: { key, index: stop.index, caption: stop.caption } }));
     }
 
+    /** A figure from the previous state must never linger over the next one: only entrances are staged. */
+    hideLabel(element) {
+        element.style.transition = 'none';
+        element.style.opacity = '0';
+        element.inert = true;
+    }
+
     updateLabels(items) {
         const keep = new Set(items.map((item) => item.id));
         this.labels.forEach((element, id) => {
-            if (!keep.has(id)) { element.style.opacity = '0'; element.inert = true; }
+            if (!keep.has(id)) this.hideLabel(element);
         });
         items.forEach((item) => {
             let element = this.labels.get(item.id);
@@ -420,6 +611,7 @@ export class TerritoryStudio {
             element.inert = false;
             element._w = 0;
             element._h = 0;
+            element.style.setProperty('--sg-label-i', String(items.indexOf(item)));
         });
         this.labelItems = items;
     }
@@ -431,7 +623,7 @@ export class TerritoryStudio {
             const element = this.labels.get(item.id);
             const anchor = element && this.scene.anchorOf(item.codes);
             if (!anchor || !show) {
-                if (element) { element.style.opacity = '0'; element.inert = true; }
+                if (element) this.hideLabel(element);
                 return;
             }
             const point = this.scene.screenOf(anchor);
@@ -448,7 +640,8 @@ export class TerritoryStudio {
                 if (Math.abs(label.x - other.x) < (label.element._w + other.element._w) / 2 + 8 && label.y > other.y - other.element._h - 10) label.y = other.y - other.element._h - 10;
             }
         });
-        const ceiling = document.querySelector('.sg-nav')?.getBoundingClientRect().bottom || 0;
+        const ceiling = Math.max(document.querySelector('.sg-nav')?.getBoundingClientRect().bottom || 0,
+            this.activeSlot?.closest('.sg-performance-chapter') ? document.querySelector('.sg-room-head:not([hidden])')?.getBoundingClientRect().bottom || 0 : 0);
         const actions = placed.filter((label) => label.element._action && label.inside);
         if (actions.length) {
             const highest = Math.min(...actions.map((label) => label.y - label.element._h - 14));
@@ -458,18 +651,57 @@ export class TerritoryStudio {
                 label.x = Math.max(label.element._w / 2 + 12, Math.min(window.innerWidth - label.element._w / 2 - 12, label.x));
             });
         }
+        // Clamping projected KC labels to a narrow viewport can reintroduce overlap.
+        // Pack the financial gateway targets after that clamp; stems retain their map anchors.
+        if (actions.length > 1 && window.innerWidth <= 760 && this.activeSlot?.closest('.sg-performance-chapter, .sg-polygon-chapter')) {
+            const ordered = [...actions].sort((a, b) => b.y - a.y);
+            ordered.forEach((label, index) => {
+                for (let j = 0; j < index; j += 1) {
+                    const other = ordered[j];
+                    if (Math.abs(label.x - other.x) < (label.element._w + other.element._w) / 2 + 8
+                        && label.y > other.y - other.element._h - 10) label.y = other.y - other.element._h - 10;
+                }
+            });
+            const top = Math.max(ceiling, this.rect.y) + 10;
+            const bottom = Math.min(window.innerHeight, this.rect.y + this.rect.h) - 12;
+            const totalHeight = actions.reduce((sum, label) => sum + label.element._h, 0);
+            if (totalHeight + (actions.length - 1) * 6 <= bottom - top) {
+                const gap = Math.min(10, (bottom - top - totalHeight) / (actions.length - 1));
+                const span = totalHeight + gap * (actions.length - 1);
+                const ascending = [...ordered].reverse();
+                let cursor = Math.max(top, Math.min(ascending[0].y - ascending[0].element._h - 14, bottom - span));
+                ascending.forEach((label) => { label.y = cursor + label.element._h + 14; cursor += label.element._h + gap; });
+            }
+        }
+        // A short landscape viewport must keep every KC hit target separate below the rail.
+        if (actions.length > 1 && window.innerHeight <= 500 && window.innerWidth > 760 && window.innerWidth <= 960
+            && this.activeSlot?.closest('.sg-polygon-chapter') && this.labelItems.every((item) => item.id.startsWith('pick-'))) {
+            const rail = this.activeSlot.closest('[data-sg-deck]')?.querySelector('.sg-story-rail:not([hidden])');
+            const top = Math.max(ceiling, rail?.getBoundingClientRect().bottom || 0) + 8;
+            const bottom = window.innerHeight - 12;
+            const totalHeight = actions.reduce((sum, label) => sum + label.element._h, 0);
+            if (totalHeight <= bottom - top) {
+                const gap = Math.min(10, (bottom - top - totalHeight) / (actions.length - 1));
+                const ordered = [...actions].sort((a, b) => a.y - b.y);
+                const span = totalHeight + gap * (actions.length - 1);
+                let cursor = Math.max(top, Math.min(ordered[0].y - ordered[0].element._h - 14, bottom - span));
+                ordered.forEach((label) => { label.y = cursor + label.element._h + 14; cursor += label.element._h + gap; });
+            }
+        }
         placed.forEach((label) => {
-            const visible = label.inside && label.y - label.element._h - 14 > ceiling + 6;
+            const labelCeiling = window.innerWidth <= 760 && this.activeSlot?.closest('.sg-performance-chapter, .sg-polygon-chapter')
+                ? Math.max(ceiling + 6, this.rect.y + 6) : ceiling + 6;
+            const visible = label.inside && label.y - label.element._h - 14 > labelCeiling;
             label.element.style.setProperty('--sg-stem', `${(14 + Math.max(0, label.anchorY - label.y)).toFixed(1)}px`);
             label.element.style.transform = `translate3d(${label.x.toFixed(1)}px, ${label.y.toFixed(1)}px, 0)`;
-            label.element.style.opacity = visible ? '1' : '0';
-            label.element.inert = !visible;
+            if (visible) { label.element.style.transition = ''; label.element.style.opacity = '1'; label.element.inert = false; }
+            else this.hideLabel(label.element);
         });
     }
 
     tick(time) {
         this.frame = null;
-        if (document.hidden) return;
+        if (document.hidden) { this.cancelFocusWait(); return; }
         const still = reduceMotion();
         const dt = this.lastTime === null ? 1 / 60 : Math.min(0.05, Math.max(0, (time - this.lastTime) / 1000));
         const elapsed = this.lastTime === null ? dt : Math.min(0.25, (time - this.lastTime) / 1000);
@@ -488,46 +720,63 @@ export class TerritoryStudio {
             this.drag.yaw = damp(this.drag.yaw, 0, 1.4, dt);
             this.drag.pitch = damp(this.drag.pitch, 0, 1.4, dt);
         }
-        this.swoop = damp(this.swoop, 0, 2.4, dt);
+        this.swoop = still ? 0 : damp(this.swoop, 0, 2.4, dt);
 
         const slot = this.pickSlot();
         this.layer.classList.toggle('is-visible', Boolean(slot && this.scene));
         if (!slot) {
-            this.labels.forEach((element) => { element.style.opacity = '0'; element.inert = true; });
-            this.tip.classList.remove('is-on');
-            this.rect = null;
+            this.releaseSurface();
             return;
         }
         const key = slot.dataset.territory;
         const spec = this.states.get(key);
         if (slot !== this.activeSlot) {
-            if (this.activeSlot && !still) {
+            if (this.activeSlot && !still && this.flightP === null) {
                 this.swoop = 1;
                 this.swoopDirection *= -1;
             }
             this.activeSlot = slot;
-            this.rect = null;
+            if (!this.handoff) this.rect = null;
         }
         const dark = spec.dark > 0.5;
         this.layer.classList.toggle('is-dark', dark);
         this.labelLayer.classList.toggle('is-dark', dark);
-        if (!this.scene) return;
+        if (!this.scene) {
+            this.checkFocusFrame({ key, slot, still });
+            return;
+        }
 
         const progress = still ? 0.5 : this.progressOf(slot);
         // Without motion the camera holds the overview: the first stop, not whichever stop sits mid-way.
         const stop = this.stopFor(spec, key, still ? 0 : progress);
         this.applyState(key, spec, stop);
-        this.scene.setArrangement(spec.arrangement?.(progress, still) || { explode: 0, spread: 0, levitate: 0, levitateBranch: null, grow: 1, wave: 0 });
+        const arrangement = { ...(spec.arrangement?.(progress, still) || { explode: 0, spread: 0, levitate: 0, levitateBranch: null, grow: 1, wave: 0 }) };
+        // Arrival: the new room's figures rise out of the floor and its pieces close up.
+        let settledIn = 1;
+        if (this.arrival && !still) {
+            if (this.arrival.start === null) {
+                this.arrival.start = time;
+                Object.assign(this.scene.arrangement, { grow: 0.1, explode: Math.max(arrangement.explode || 0, this.arrival.assemble) });
+            }
+            settledIn = clamp01((time - this.arrival.start) / 1400);
+            const rise = 1 - ((1 - settledIn) ** 3);
+            arrangement.grow = (arrangement.grow ?? 1) * (0.1 + 0.9 * rise);
+            arrangement.explode = Math.max(arrangement.explode || 0, this.arrival.assemble * (1 - rise));
+            if (settledIn >= 1) this.arrival = null;
+        } else if (still) this.arrival = null;
+        this.scene.setArrangement(arrangement);
 
         const bounds = slot.getBoundingClientRect();
-        // On stacked phone layouts, outside-branch context must not cover the reading below the map.
-        this.layer.style.clipPath = window.innerWidth <= 960
-            ? `inset(${Math.max(0, bounds.top).toFixed(1)}px 0 ${Math.max(0, window.innerHeight - bounds.bottom).toFixed(1)}px 0)`
-            : '';
+        // The camera owns this reserved visual frame, never the surrounding financial reading.
+        const clip = { top: Math.max(0, bounds.top), right: Math.max(0, window.innerWidth - bounds.right), bottom: Math.max(0, window.innerHeight - bounds.bottom), left: Math.max(0, bounds.left) };
+        // During a hand-off the frame itself travels, so a full-screen flight lands inside the slot.
+        if (this.handoff && !still && this.clip) ['top', 'right', 'bottom', 'left'].forEach((side) => { this.clip[side] = damp(this.clip[side], clip[side], 5, dt); });
+        else this.clip = clip;
+        this.layer.style.clipPath = `inset(${this.clip.top.toFixed(1)}px ${this.clip.right.toFixed(1)}px ${this.clip.bottom.toFixed(1)}px ${this.clip.left.toFixed(1)}px)`;
         const headroom = Math.min(64, bounds.height * 0.14);
         const target = { x: bounds.left, y: bounds.top + headroom, w: bounds.width, h: bounds.height - headroom };
         if (!this.rect || still) this.rect = { ...target };
-        else ['x', 'y', 'w', 'h'].forEach((side) => { this.rect[side] = damp(this.rect[side], target[side], 9, dt); });
+        else ['x', 'y', 'w', 'h'].forEach((side) => { this.rect[side] = damp(this.rect[side], target[side], this.handoff ? 5 : 9, dt); });
 
         const pose = { ...(POSES[slot.dataset.territoryPose] || POSES.lead)(still ? 0.5 : progress) };
         if (this.introStart === null && !still && document.documentElement.classList.contains('sg-ready')) this.introStart = time;
@@ -537,6 +786,19 @@ export class TerritoryStudio {
         pose.pitch += -(1 - introEase) * 12 - this.swoop * 8 + this.drag.pitch;
         pose.fill *= (0.86 + introEase * 0.14) * (1 - this.swoop * 0.1);
         if (intro < 1) this.kick();
+        if (this.flightP !== null) {
+            // territoryFlight arrives overhead; the slot's own pose is reached from that same angle.
+            const overhead = 1 - smoothstep(0.49, 0.8, this.flightP);
+            pose.yaw += (0 - pose.yaw) * overhead;
+            pose.pitch += (89.8 - pose.pitch) * overhead;
+        }
+        if (this.handoff && !still && this.lastPose) {
+            pose.yaw = damp(this.lastPose.yaw, pose.yaw, 4, dt);
+            pose.pitch = damp(this.lastPose.pitch, pose.pitch, 4, dt);
+            pose.fill = damp(this.lastPose.fill, pose.fill, 4, dt);
+        }
+        this.lastPose = pose;
+        if (this.handoff && performance.now() > this.handoff.until) this.handoff = null;
 
         const settling = this.scene.render({
             dt: still ? 1 : dt,
@@ -548,6 +810,7 @@ export class TerritoryStudio {
             light: still ? 0.12 : 0.12 + this.time * 0.016,
             time: this.time,
             intro,
+            flight: this.flightP ?? undefined,
             velocity: still ? 0 : this.velocity,
             direction: 1,
             px: 0,
@@ -559,10 +822,13 @@ export class TerritoryStudio {
         this.blur = still ? 0 : damp(this.blur, blur, blur > this.blur ? 14 : 5, dt);
         this.layer.style.setProperty('--sg-blur', `${this.blur.toFixed(2)}px`);
 
-        this.placeLabels(!this.scene.zooming || this.scene.zooming < 0.25);
+        this.checkFocusFrame({ key, slot, still, rendered: true, target });
+        if (this.focusWait) this.kick();
+
+        this.placeLabels((!this.scene.zooming || this.scene.zooming < 0.25) && settledIn > 0.55 && !this.handoff && this.flightP === null);
         if (!still) this.updateHover(spec);
         const moving = ['x', 'y', 'w', 'h'].some((side) => Math.abs(this.rect[side] - target[side]) > 0.5) || this.blur > 0.05;
-        if (!still && (settling || moving || this.swoop > 0.01 || this.drag.active || Math.abs(this.drag.yaw) > 0.05 || this.pointer.seen)) this.kick();
+        if (!still && (settling || moving || this.swoop > 0.01 || this.arrival || this.handoff || this.flightP !== null || this.drag.active || Math.abs(this.drag.yaw) > 0.05 || this.pointer.seen)) this.kick();
         else if (!still) window.setTimeout(() => this.kick(), 120);
     }
 }

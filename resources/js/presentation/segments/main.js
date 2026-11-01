@@ -12,8 +12,10 @@
 import '../vendor/scrollcraft.js';
 import { TerritoryStudio } from '../worlds/territory-studio.js';
 import { SegmentMotion } from './motion.js';
-import { bindMapControls } from './map-controls.js';
+import { PresentationCinema, seamDirection } from './cinema.js';
 import { PolygonJourney } from './polygon-journey.js';
+import { PerformanceJourney, PERFORMANCE_KEYS } from './performance-journey.js';
+import { PresentationRoom, topicContext } from './presentation-room.js';
 import { TerritoryIndex, withVillageTerritory } from './territory-data.js';
 import { bindDonuts, bindTimeseries, disposeCharts } from './charts.js';
 import { h } from './format.js';
@@ -100,6 +102,7 @@ const loadWilayah = () => {
 
 const studio = new TerritoryStudio({ geographyUrl: config.geographyUrl });
 const motion = new SegmentMotion({ nav });
+const cinema = new PresentationCinema({ studio, labels: LABELS });
 let index = null;
 let built = null;
 let building = false;
@@ -108,6 +111,25 @@ let lastCoverScope = null;
 let nudgeTimer = null;
 let touchStartY = null;
 let scrollCraftInstance = null;
+let navigationId = 0;
+let pendingRoomContext = null;
+const rooms = new PresentationRoom({ main: document.querySelector('.sg-main'), deck, launcher, nav, labels: LABELS,
+    onNavigate: (key, options) => navigateRoom(key, options), onBack: () => backFromRoom(),
+    onLauncher: (options) => openLauncher(options), onLeave: (key) => {
+        built?.journey?.cancelTransition();
+        built?.performance?.cancelTransition();
+        const chapter = key && document.getElementById(`sg-${key}`);
+        if (chapter) motion.release(chapter);
+        studio.releaseSurface();
+    }, onArrive: (chapter, view, direction) => cinema.arrive(chapter, view, direction), onArriveCancel: () => cinema.cancelArrival(),
+    onFinale: () => {
+        // The last gesture: every piece of the territory closes up and holds.
+        studio.scan();
+        studio.seam(1, { assemble: 0.55 });
+        cinema.arrive(document.getElementById('sg-close'), 'finale', 1);
+        const title = document.querySelector('#sg-close .sg-close__title');
+        if (title) { title.tabIndex = -1; title.focus({ preventScroll: true }); }
+    } });
 
 const launcherLimit = () => {
     if (!launcher) return 0;
@@ -126,8 +148,11 @@ const clearNudge = () => {
 };
 
 const setStartBusy = (busy) => {
+    startButton?.setAttribute('aria-busy', String(busy));
+    const label = startButton?.querySelector('[data-sg-start-label]');
+    if (label) label.textContent = busy ? 'Menyiapkan presentasi…' : 'Mulai presentasi';
     if (!startIcon) return;
-    startIcon.className = busy ? 'fas fa-circle-notch fa-spin' : 'fas fa-arrow-down';
+    startIcon.className = busy ? 'fas fa-circle-notch fa-spin' : 'fas fa-arrow-right';
 };
 
 const setDeckOpen = (open) => {
@@ -144,9 +169,11 @@ const setDeckOpen = (open) => {
         button.hidden = !deckUnlocked;
     });
     if (!deckUnlocked) {
+        built?.journey?.suspend();
+        built?.performance?.suspend();
+        motion.release(deck);
         nav?.querySelector('[data-sg-progress]')?.style.setProperty('--kn-read', '0');
-        studio.activeSlot = null;
-        studio.appliedKey = null;
+        studio.releaseSurface();
         studio.kick();
     }
 };
@@ -172,7 +199,7 @@ const writeChoice = (choice) => {
     else url.searchParams.delete('segmen');
     url.searchParams.set('scope', choice.scope);
     if (config.period) url.searchParams.set('periode', config.period);
-    window.history.replaceState(null, '', url.toString());
+    window.history.replaceState(window.history.state, '', url.toString());
     try {
         if (choice.segments.length) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(choice));
         else window.localStorage.removeItem(STORAGE_KEY);
@@ -187,29 +214,34 @@ const formChoice = () => ({
     scope: form.querySelector('input[name="scope"]:checked')?.value || config.scope,
 });
 
-/** The cover and the close are the same neutral relief: floating apart at the cover, landing at the close. */
+/** The territory on the launcher closes up and rises as the agenda is composed: 0 picks, parted; all picks, whole. */
+let agendaShare = 0;
 const registerFrame = (choice) => {
-    const neutral = () => ({ lift: 0.16, color: 0xc8cacf, roughness: 0.3 });
+    const neutral = () => ({ lift: 0.1 + agendaShare * 0.1, color: 0x9db5d2, roughness: 0.38 });
     const focus = index?.scopeCodes(choice.scope) || null;
     studio.register('cover', {
         journey: [{ until: 1, focus, heights: neutral }],
         dark: 1,
+        version: agendaShare,
         fx: { beams: false, flow: 0, speed: 0.8, color: 0x7fa6e8 },
-        arrangement: (p, still) => ({ explode: still ? 0 : 1 - Math.min(1, p / 0.8), spread: 0, levitate: 0, levitateBranch: null, grow: 1, wave: 0 }),
+        arrangement: (p, still) => ({ explode: still ? 0 : Math.max(.16 * (1 - Math.min(1, p / 0.8)), .2 * (1 - agendaShare)), spread: 0, levitate: 0, levitateBranch: null, grow: 1, wave: 0 }),
     });
+    studio.registerFlightState();
     studio.register('close', {
         journey: [{ until: 1, focus, heights: neutral }],
         dark: 1,
         fx: { beams: false, flow: 0, speed: 0.7, color: 0x7fa6e8 },
-        arrangement: (p, still) => ({ explode: still ? 0 : 0.4 * (1 - Math.min(1, p / 0.7)), spread: 0, levitate: 0, levitateBranch: null, grow: 1, wave: 0 }),
+        arrangement: () => ({ explode: 0, spread: 0, levitate: 0, levitateBranch: null, grow: 1, wave: 0 }),
     });
 };
 
 const syncCoverScope = (choice) => {
     const scope = (config.scopes || []).find((item) => item.key === choice.scope) || config.scopes?.[0];
     nav?.querySelectorAll('[data-sg-scope-label]').forEach((node) => { node.textContent = scope?.label || ''; });
-    if (index && lastCoverScope !== choice.scope) {
+    const share = ORDER.length ? choice.segments.length / ORDER.length : 0;
+    if (index && (lastCoverScope !== choice.scope || share !== agendaShare)) {
         lastCoverScope = choice.scope;
+        agendaShare = share;
         studio.allowedCodes = index.scopeCodes(choice.scope);
         registerFrame(choice);
     }
@@ -231,10 +263,21 @@ const summarize = () => {
         activeChoice: built?.choice || null,
     });
     if (summaryNode) summaryNode.textContent = state.summary;
+    const agenda = launcher.querySelector('[data-sg-agenda]');
+    if (agenda) agenda.innerHTML = choice.segments.map((key, i) => `<span><small>${String(i + 1).padStart(2, '0')}</small>${h(LABELS[key].replace('Kinerja ', ''))}</span>`).join('') || '<span>Pilih materi untuk menyusun agenda.</span>';
+    const agendaCount = launcher.querySelector('[data-sg-agenda-count]');
+    if (agendaCount) agendaCount.textContent = choice.segments.length;
+    const coverScope = launcher.querySelector('[data-sg-cover-scope]');
+    if (coverScope) coverScope.textContent = scope?.label || '';
     if (startButton) startButton.disabled = building || !state.canStart;
+    form.classList.toggle('has-agenda', choice.segments.length > 0);
     form.querySelectorAll('[data-sg-toggle-group]').forEach((button) => {
         const boxes = form.querySelectorAll(`[data-sg-group="${button.dataset.sgToggleGroup}"] input[name="segmen"]`);
-        button.textContent = Array.from(boxes).every((box) => box.checked) ? 'Kosongkan' : 'Pilih semua';
+        const selected = Array.from(boxes).filter((box) => box.checked).length;
+        button.textContent = selected === boxes.length ? 'Kosongkan' : 'Pilih semua';
+        button.setAttribute('aria-label', `${button.textContent} materi ${button.dataset.sgToggleGroup === 'wilayah' ? 'Wilayah' : 'Kinerja'}`);
+        const count = form.querySelector(`[data-sg-group-count="${button.dataset.sgToggleGroup}"]`);
+        if (count) count.textContent = `${selected} / ${boxes.length}`;
     });
     syncCoverScope(choice);
 };
@@ -268,6 +311,7 @@ const rescan = (host) => {
     bindDonuts(host);
     bindTimeseries(host);
     motion.scan(host);
+    cinema.scan(host);
     host.querySelectorAll('[role="tablist"]:not([data-tabs-bound])').forEach((list) => {
         list.dataset.tabsBound = '1';
         const tabs = Array.from(list.querySelectorAll('[role="tab"]'));
@@ -325,12 +369,16 @@ const buildDeck = async (choice) => {
     });
     built?.parts.forEach((part) => part.dispose?.());
     built?.journey?.destroy();
+    built?.performance?.destroy();
+    motion.release(deck);
     studio.states.clear();
     studio.overrides.clear();
     studio.allowedCodes = index.scopeCodes(scope.key);
     disposeCharts(deck);
     deck.innerHTML = parts.map((part) => part.html).join('') + closing(choice, scope);
     built = { choice, parts };
+    rooms.mount(choice.segments, scope);
+    rooms.activate(choice.segments[0]);
     lastCoverScope = choice.scope;
     setDeckOpen(true);
 
@@ -347,14 +395,14 @@ const buildDeck = async (choice) => {
         }
     });
     registerFrame(choice);
-    bindMapControls({ deck, scope, index, studio, segments });
-    const renderSelection = (key, selection) => {
+    const renderSelection = (key, selection, performanceData = null) => {
         const part = parts.find((item) => item.key === key);
         const chapter = document.getElementById(`sg-${key}`);
-        const next = RENDERERS[key]({ ...ctx, selection });
+        const next = RENDERERS[key]({ ...ctx, selection, ...(PERFORMANCE_KEYS.includes(key) ? { segments: performanceData || segments, overviewSegments: segments } : {}) });
         const template = document.createElement('template');
         template.innerHTML = next.html;
         part.dispose?.();
+        motion.release(chapter);
         disposeCharts(chapter);
         const previousFigure = chapter.querySelector('.sg-opener__copy .sg-figure__value')?.textContent.trim();
         chapter.querySelector('.sg-opener__copy').innerHTML = template.content.querySelector('.sg-opener__copy').innerHTML;
@@ -364,7 +412,10 @@ const buildDeck = async (choice) => {
         rescan(chapter);
         if (previousFigure) motion.morph(chapter.querySelector('.sg-opener__copy .sg-figure__value'), previousFigure);
     };
-    built.journey = new PolygonJourney({ deck, scope, index, studio, renderSelection, rescan }).init();
+    const areaNavigation = { allowArea: (config.scopes || []).some(item => item.key === 'area6'), onArea: openAreaRoom };
+    built.journey = new PolygonJourney({ deck, scope, index, studio, renderSelection, rescan, room: rooms, ...areaNavigation }).init();
+    built.performance = new PerformanceJourney({ deck, scope, index, studio, renderSelection, rescan, room: rooms,
+        overview: segments, load: loadSegments, presentationState: ctx.presentationState, ...areaNavigation }).init();
     rescan(deck);
     progress(100, 'Siap');
 };
@@ -372,6 +423,87 @@ const buildDeck = async (choice) => {
 /* ------------------------------------------------------------------- wiring -- */
 
 const scrollTo = (element) => element?.scrollIntoView({ behavior: reduceMotion() ? 'auto' : 'smooth', block: 'start' });
+
+function openLauncher({ history = 'push' } = {}) {
+    navigationId++;
+    pendingRoomContext = null;
+    rooms.showLauncher(history);
+    setDeckOpen(false);
+    window.scrollTo({ top: 0, behavior: 'instant' });
+    summarize();
+    studio.scan();
+    const heading = form.querySelector('[data-sg-compose-title]');
+    heading?.scrollIntoView({ behavior: 'instant', block: 'start' });
+    heading?.focus({ preventScroll: true });
+}
+
+function backFromRoom() {
+    navigationId++;
+    pendingRoomContext = null;
+    const journey = PERFORMANCE_KEYS.includes(rooms.activeKey) ? built?.performance : built?.journey;
+    const record = journey?.records.get(rooms.activeKey);
+    if (record && journey.pending) { journey.cancelTransition(); journey.finishRoom(record, 'map', 'replace'); }
+    else if (record && (record.view === 'detail' || journey.transition)) journey.showMap(record, { history: 'replace' });
+    else openLauncher();
+}
+
+async function openAreaRoom(key) {
+    if (building || !built || !(config.scopes || []).some(item => item.key === 'area6')) return;
+    rooms.initial = { key, view: 'map' };
+    paintForm({ ...built.choice, scope: 'area6' });
+    await start();
+    if (!built || built.choice.scope !== 'area6' || rooms.activeKey !== key) return;
+    const journey = PERFORMANCE_KEYS.includes(key) ? built.performance : built.journey;
+    const record = journey?.records.get(key);
+    if (record) await journey.choose(record, { scopeKey: 'area6' });
+}
+
+async function navigateRoom(key, { restore = null, history = 'push' } = {}) {
+    if (!built || !built.choice.segments.includes(key)) return;
+    // A loading map is temporary; retain the requested KC while its owner is current.
+    const context = pendingRoomContext && built.performance?.pending && pendingRoomContext.requestId === built.performance.requestId
+        ? pendingRoomContext.state : rooms.state;
+    restore ||= topicContext(context, key, built.choice.segments);
+    pendingRoomContext = null;
+    const ticket = ++navigationId;
+    const journey = PERFORMANCE_KEYS.includes(key) ? built.performance : built.journey;
+    const record = journey?.records.get(key);
+    const requested = restore?.view || (PERFORMANCE_KEYS.includes(key) ? record?.view || 'map'
+        : record?.selection && rooms.state?.view === 'detail' ? 'detail' : record?.view || 'report');
+    if (key === rooms.activeKey && record && requested === 'map' && record.view === 'detail') {
+        await journey.showMap(record, { history });
+        return;
+    }
+    setDeckOpen(true);
+    rooms.activate(key);
+    if (rooms.previousKey && rooms.previousKey !== key) cinema.seam(seamDirection(built.choice.segments, rooms.previousKey, key));
+    if (record) {
+        if (PERFORMANCE_KEYS.includes(key) && restore?.view === 'detail') {
+            journey.setView(record, 'map');
+            journey.prepareRoomMap(record);
+            rooms.commit({ key, view: 'map', context: rooms.scope.label }, 'none');
+        }
+        const restoration = restore && requested === 'detail' ? journey.restoreSelection(record, restore) : null;
+        const requestOwner = journey.requestId;
+        if (restoration && PERFORMANCE_KEYS.includes(key)) pendingRoomContext = { ticket, requestId: requestOwner, state: restore };
+        const restored = restoration ? await restoration : true;
+        if (pendingRoomContext?.ticket === ticket) pendingRoomContext = null;
+        if (ticket !== navigationId || rooms.activeKey !== key
+            || restoration && PERFORMANCE_KEYS.includes(key) && requestOwner !== journey.requestId) return;
+        const view = requested === 'detail' && restored && record.selection ? 'detail' : 'map';
+        journey.setView(record, view);
+        if (view === 'map') journey.prepareRoomMap(record);
+        rooms.commit({ key, view, selection: view === 'detail' ? record.selection : null,
+            context: view === 'detail' ? record.branchLabel : built.choice.scope === 'area6' ? 'Pilih kantor cabang pada peta' : rooms.scope.label }, history);
+        journey.enforce();
+    } else rooms.commit({ key, view: 'report', context: rooms.scope.label }, history);
+    studio.scan();
+    rescan(document.getElementById(`sg-${key}`));
+    let heading = document.getElementById(`sg-${key}`).querySelector(record?.view === 'detail' ? '.sg-detail-head__title' : '.sg-opener__title, h2');
+    if (!heading?.getClientRects().length) heading = rooms.head.querySelector('[data-room-title]');
+    if (heading) { heading.tabIndex = -1; heading.focus({ preventScroll: true }); }
+    rooms.animateArrival();
+}
 
 const start = async (event) => {
     event?.preventDefault();
@@ -384,6 +516,12 @@ const start = async (event) => {
     }
     writeChoice(choice);
     const same = built && isSameChoice(built.choice, choice);
+    const flying = cinema.beginFlight({
+        scopeLabel: (config.scopes || []).find((item) => item.key === choice.scope)?.label || '',
+        periodLabel: config.periodLabel || '',
+        agenda: choice.segments.map((key) => (LABELS[key] || key).replace('Kinerja ', '')),
+        onUncover: () => cinema.arrive(document.querySelector('[data-sg-segment][data-room-active="true"]'), rooms.state?.view, 1),
+    });
     if (!same) {
         building = true;
         let failed = false;
@@ -395,7 +533,8 @@ const start = async (event) => {
             await buildDeck(choice);
         } catch (error) {
             console.warn('Presentation could not be refreshed.', error);
-            setDeckOpen(false);
+            cinema.abortFlight();
+            openLauncher({ history: 'replace' });
             failed = true;
         } finally {
             building = false;
@@ -412,25 +551,59 @@ const start = async (event) => {
         setDeckOpen(true);
         if (index) studio.allowedCodes = index.scopeCodes(choice.scope);
         studio.scan();
-        motion.measure();
+        motion.scan(deck);
         built.journey?.enforce();
+        built.performance?.enforce();
         summarize();
     }
     scrollCraftInstance?.destroy?.();
     scrollCraftInstance = window.ScrollCraft?.mount?.(document.body) || null;
-    scrollTo(document.getElementById(`sg-${choice.segments[0]}`));
+    const initial = rooms.initial && choice.segments.includes(rooms.initial.key) ? rooms.initial : null;
+    rooms.initial = null;
+    await navigateRoom(initial?.key || choice.segments[0], { restore: initial, history: 'push' });
+    if (flying) await cinema.land();
+    else cinema.arrive(document.querySelector('[data-sg-segment][data-room-active="true"]'), rooms.state?.view, 1);
 };
 
 const init = async () => {
     if (!reduceMotion()) root.classList.add('sg-motion');
+    rooms.init();
     setDeckOpen(false);
     studio.init();
     motion.init();
+    cinema.init();
+    const fullscreen = document.querySelector('[data-sg-fullscreen]');
+    const displayStatus = document.querySelector('[data-sg-display-status]');
+    if (fullscreen && document.fullscreenEnabled && root.requestFullscreen) {
+        fullscreen.hidden = false;
+        const syncFullscreen = () => {
+            const active = Boolean(document.fullscreenElement);
+            fullscreen.setAttribute('aria-pressed', String(active));
+            fullscreen.setAttribute('aria-label', active ? 'Keluar layar penuh' : 'Masuk layar penuh');
+            fullscreen.querySelector('span').textContent = active ? 'Keluar layar penuh' : 'Layar penuh';
+            fullscreen.querySelector('i').className = `fas fa-${active ? 'compress' : 'expand'}`;
+        };
+        document.addEventListener('fullscreenchange', syncFullscreen);
+        fullscreen.addEventListener('click', async () => {
+            fullscreen.disabled = true;
+            try {
+                if (document.fullscreenElement) await document.exitFullscreen();
+                else await root.requestFullscreen();
+                displayStatus.textContent = document.fullscreenElement ? 'Layar penuh aktif. Tekan Escape untuk keluar.' : 'Layar penuh ditutup.';
+            } catch { displayStatus.textContent = 'Layar penuh tidak tersedia pada browser ini. Presentasi tetap dapat digunakan.'; }
+            finally { fullscreen.disabled = false; syncFullscreen(); }
+        });
+    }
     const choice = readChoice();
     paintForm(choice);
     progress(20, 'Memuat peta wilayah');
 
     form.addEventListener('change', summarize);
+    document.querySelector('[data-sg-compose]')?.addEventListener('click', () => {
+        const heading = form.querySelector('[data-sg-compose-title]');
+        heading?.scrollIntoView({ behavior: reduceMotion() ? 'instant' : 'smooth', block: 'start' });
+        heading?.focus({ preventScroll: true });
+    });
     form.addEventListener('submit', start);
     form.addEventListener('click', (event) => {
         const toggle = event.target.closest('[data-sg-toggle-group]');
@@ -462,13 +635,9 @@ const init = async () => {
         if (atLauncherBottom()) nudgeLauncher();
     });
     document.addEventListener('click', (event) => {
-        if (event.target.closest('[data-sg-open-launcher]')) {
+        if (event.target.closest('[data-sg-open-launcher], a[href="#sg-launcher"]')) {
             event.preventDefault();
-            setDeckOpen(false);
-            window.scrollTo({ top: Math.min(window.scrollY, launcherLimit()), behavior: 'instant' });
-            summarize();
-            scrollTo(launcher);
-            form.querySelector('input[name="segmen"]:checked, input[name="segmen"]')?.focus({ preventScroll: true });
+            openLauncher();
             return;
         }
         if (!deckUnlocked) {

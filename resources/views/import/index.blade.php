@@ -1612,6 +1612,28 @@
             return stageUploadFile(getActiveFileInput());
         }
 
+        // Teks CSV/TXT besar (mis. LW325 PH ±33 MB) terkompresi ±5x, sehingga
+        // transfer upload lewat tunnel tidak lagi mendominasi waktu menuju preview.
+        async function compressUploadForTransfer(file) {
+            if (!file || typeof CompressionStream !== 'function' || typeof file.stream !== 'function') {
+                return null;
+            }
+
+            if (!['csv', 'txt'].includes(getFileExtension(file.name)) || file.size < 1024 * 1024) {
+                return null;
+            }
+
+            const compressedBlob = await new Response(file.stream().pipeThrough(new CompressionStream('gzip'))).blob();
+            if (compressedBlob.size >= file.size * 0.9) {
+                return null;
+            }
+
+            return new File([compressedBlob], file.name + '.gz', {
+                type: 'application/gzip',
+                lastModified: file.lastModified,
+            });
+        }
+
         function getActiveUploadDescriptor() {
             if (formImport.dataset.uploadKind === 'link') {
                 return {
@@ -1851,6 +1873,7 @@
             formImport.dataset.preparePreviewUrl = '';
             formImport.dataset.directRedirect = '';
             formImport.dataset.chunkedUpload = '';
+            formImport.dataset.gzipUpload = '';
             formImport.dataset.chunkInitUrl = '';
             formImport.dataset.chunkUploadUrl = '';
             formImport.dataset.chunkFinalizeUrl = '';
@@ -2070,6 +2093,7 @@
                 inputCsv.setAttribute('accept', '.csv,.txt,.xlsx,.xls');
                 formImport.action = "{{ route('import.reportph.upload') }}";
                 formImport.dataset.preparePreviewUrl = "{{ route('import.reportph.prepare-preview') }}";
+                formImport.dataset.gzipUpload = '1';
                 csvLabel.innerHTML = '<i class="fas fa-file-upload mr-1"></i> Upload File Report PH (.csv, .txt, .xlsx, .xls)';
                 csvHelp.textContent = 'File CSV atau Excel akan masuk ke flow khusus LW325 PH, termasuk staging Excel dan Polars Fastpath (LOAD DATA INFILE).';
                 applyButtonState('csv', '<i class="fas fa-file-upload"></i> Upload File');
@@ -2976,7 +3000,27 @@
                         resetSubmitButton();
                     });
 
-                    uploadRequest.send(formData);
+                    let uploadBodyReady = Promise.resolve(formData);
+                    if (formImport.dataset.gzipUpload === '1' && selectedFile) {
+                        updateProgressSurface(3, 'Mengompres file sebelum upload...', null, null, null, '', 'upload');
+                        uploadBodyReady = compressUploadForTransfer(selectedFile).then(function (compressedFile) {
+                            if (compressedFile) {
+                                formData.set('file', compressedFile, compressedFile.name);
+                                formData.set('file_encoding', 'gzip');
+                                formData.set('original_name', selectedFile.name);
+                                formData.set('original_size', String(selectedFile.size));
+                            }
+
+                            return formData;
+                        }).catch(function () {
+                            // Kompresi hanya optimasi; file asli tetap dikirim bila gagal.
+                            return formData;
+                        });
+                    }
+
+                    uploadBodyReady.then(function (uploadBody) {
+                        uploadRequest.send(uploadBody);
+                    });
 
                     function resetSubmitButton() {
                         if (btnSubmit) {

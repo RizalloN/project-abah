@@ -52,8 +52,8 @@ to a displayed total. Do not silently drop them to force a two-segment chart.
   required; use the upstream generation workflow only if that output is requested.
 
 Choose the rhythm around the financial reading task. A map can hold a geographic
-focus, a donut can reveal composition, a line can reveal time, and a table can
-settle row by row. Let a presenter jump to a chosen chapter; avoid mandatory
+focus, a donut can reveal composition, a line can reveal time, and a table holds
+the exact detail on a stable plane. Let a presenter jump to a chosen chapter; avoid mandatory
 long cinematic sequences between working controls.
 
 ## Premium motion with readable figures
@@ -65,16 +65,40 @@ on the map canvas during movement, never on financial text or controls. Remove
 it once the camera settles. Geographic shapes and identities come from the
 actual GeoJSON and unit mapping; derive feature counts rather than hardcoding them.
 
-Give donuts visible depth, tables a controlled 3D entrance, and timeseries a
-legible drawing transition. Preserve exact formatted values, units, legends,
-and access to data; depth must not conceal a row or distort the meaning of a
-comparison. Re-scan and rebind newly rendered content after asynchronous updates.
+Keep financial surfaces, text, axes, rows and cells flat, visible and stable.
+Confine dimensional movement to a chart's internal material inside its visual
+bounds: glass/fill, prism faces, centered sphere material, donut walls or a source
+line path. Keep the exact source text visible throughout; do not roll reading
+figures through temporary values. Entry settles monotonically per component and
+stays complete on reverse scroll until that DOM is replaced. Decorative passage
+can reverse independently. Scope settled selectors to the actual chart kind so
+a parent section cannot complete its child charts. Measure only current visible
+layout, without transformed-box feedback or hidden/inert/detached bounds reads.
+Re-scan and rebind content after asynchronous updates; see the reading contract
+in [architecture.md](references/architecture.md#reading-motion).
+
+When the user asks for abundant expressive motion, use a visible timed material
+assembly as well as the scroll clock. A large wheel jump must not skip the whole
+effect. `ExpressiveMotion` stages shell depth, local faces, fill and lighting for
+roughly 1-2 seconds, with a capped stagger and one cancellable owner per actual
+DOM object. Restore the exact settled CSS projection before releasing handles.
+Keep 3D grouping containers free of flattening filters; put shadows on the outer
+stage. Repeated scans do not replay entry, while explicit source interactions
+can replace the old owner and replay their own material. Pause hidden work and
+adopt reduced motion immediately. Data text and coordinates remain exact.
 
 Marketshare, Mapping Wilayah, and Penetrasi Sektoral use direct polygon selection
 instead of geographic dropdowns. The first activation always selects and names
 the KC, including in branch-scoped presentations. Zoom to that branch, show its
 identity on the map, and carry it through Marketshare, Mapping, and Sektoral.
-Use a sticky three-point reading rail and inline scroll details, without modals.
+Each geographic chapter has two stable views: map and financial detail. After
+the explicit KC zoom, slide the map/copy left as the detail enters from the
+right; returning to the map reverses that movement. The selected three-point
+rail and chapter navigation can open detail directly. Detail reads vertically
+in normal document flow, without modals or a second visible map behind it.
+Keep the live financial nodes, filters, and callbacks intact across view changes.
+Use one cancellable transition owner; see the lifecycle contract in
+[architecture.md](references/architecture.md#scene-integration).
 Further polygon activations can drill into districts and explicit unit pins;
 keep the parent KC visible. Sector/subsector filters use searchable inline
 choices, never native selects. Automatic camera stops cannot choose a branch.
@@ -88,6 +112,18 @@ labels, source-period context, and loading/empty/error states. Reduced motion
 shows the same figures and functional selections with instant camera changes
 and flat, stable charts. With unavailable WebGL, retain selectable SVG polygons,
 tables, and reset. Other financial chapters retain their existing controls.
+
+## The finishing film
+
+`segments/cinema.js` owns the decoration around the rooms, on one camera: a
+skippable descent from the real Earth into the first room (once per page, full
+tier only), a directional seam between rooms, a staged arrival of each room's
+copy, scroll-driven atmosphere and act titles behind a report, and a closing
+room after the last topic. It never writes source text. A label from the previous
+state is cut, never faded: a stale figure must not linger over the next room.
+Decoration stays out of the reading area: anything fixed over a report lives in
+the page gutter, measured against its tiles. Keep this film free of Blade changes
+where possible, because Blade is live before `npm run build` ships its bundle.
 
 ## Financial and geography precision
 
@@ -118,6 +154,15 @@ precision rather than adjusting money to rounded workbook benchmarks. Keep the
 generic CRAS units/metrics contract and use its additive sector reference cohort
 for presentation. Keep exact counts and `penetration_raw`; the user
 requested presented coverage bounded to 0–100%, with normalization disclosed.
+Sector normalization (user decision, 28 Okt 2026): SSA codes loan purpose, BPS
+(ST2023/SE2016) codes KBLI business activity. Per UKER, PH/OTHER debtors,
+catch-all purpose codes (`Jasa Kegiatan Lainnya`, `Perdagangan Ekspor Hasil
+Tanaman`) and debtors above a sector's population are pooled and spread by the
+BPS business mix of the UKER villages, never above a sector's population
+(`SectorPotentialService::normalizeSectors`). Non-business credit stays OTHER;
+sectors with zero population keep their debtors. UKER totals never change;
+`existing_source`/`penetration_raw` keep the SSA-coded ratio, and the CRAS
+explorer uses the same `keep_ratio`/`pool_share` via `normalizedRowDebtors`.
 For a CRAS subsector, the user chose its parent sector's population in the UKER
 owned villages as denominator. Label it coverage against the parent sector,
 retain exact fine-subsector potential as unavailable, and never invent a finer

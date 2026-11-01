@@ -27,15 +27,17 @@ export const renderSector = (ctx) => {
     const metric = (figures) => noPotential ? `${count(figures.existing)} debitur` : percent(figures.penetration, 1);
     const figureLabel = (sector) => noPotential
         ? `Debitur BRI ${sector.label}, ${label}. SSA CRAS ${source.period_label}`
-        : `${view.districtLevel ? 'Estimasi penetrasi' : 'Penetrasi debitur aktif + PH'} ${sector.label}, ${label}. Normalisasi maksimum 100%. SSA CRAS ${source.period_label}`;
-    const notes = `${source.note || ''} ${source.district_note || ''}`;
+        : `${view.districtLevel ? 'Estimasi penetrasi' : 'Penetrasi debitur aktif + PH'} ${sector.label}, ${label}. Dicocokkan ke sektor usaha BPS. SSA CRAS ${source.period_label}`;
+    const fromSheet = source.coverage?.numerator_source === 'sheet_desa';
+    const estimatedExtra = !fromSheet && (source.coverage?.extra_sector_estimated || 0) > 0;
+    const notes = `${source.note || ''} ${estimatedExtra ? `${source.extra_sector_note || ''} ` : ''}${source.district_note || ''}`;
     const entityTable = (key) => table({ caption: `${selected(key).label} per ${view.headLabel.toLowerCase()}, ${label}`, columns: [
         { label: view.headLabel, cell: (row) => h(row.label) },
         { label: 'Potensi desa kelolaan', align: 'end', cell: (row) => `${count(row.potential)}${row.potential_partial ? '<small>Data desa belum lengkap</small>' : ''}` },
         { label: 'Intra · Aktif', align: 'end', cell: (row) => count(row.intra) },
-        { label: 'Ekstra · PH', align: 'end', cell: (row) => count(row.extra) },
+        { label: 'Ekstra · PH', align: 'end', cell: (row) => `${count(row.extra)}${key !== 'total' && estimatedExtra && row.extra_estimated > 0 ? '<small>Estimasi sektor</small>' : ''}` },
         { label: 'Total debitur BRI', align: 'end', cell: (row) => count(row.existing) },
-        { label: 'Penetrasi normalisasi', align: 'end', cell: (row) => `<span title="Rasio sumber ${h(percent(row.penetration_raw, 2))}">${percent(row.penetration, 1)}</span>${row.normalization_applied ? '<small>Dibatasi pada 100%</small>' : ''}` },
+        { label: 'Penetrasi normalisasi', align: 'end', cell: (row) => `<span title="Rasio sesuai kode SSA ${h(percent(row.penetration_raw, 2))}">${percent(row.penetration, 1)}</span>${row.normalization_applied ? `<small>Kode SSA ${h(percent(row.penetration_raw, 1))}</small>` : ''}` },
     ], rows: view.rowValues(key) });
     const ledgerHtml = (key) => {
         if (noPotential) return table({ caption: `Debitur per kelompok usaha, ${label}`, columns: [
@@ -55,7 +57,7 @@ export const renderSector = (ctx) => {
         return { ...sector, potential: !values.length || values.some((value) => value === null || value === undefined || !Number.isFinite(Number(value)))
             ? null : values.reduce((sum, value) => sum + Number(value), 0) };
     }) });
-    const period = `Debitur BRI: SSA CRAS ${source.period_label}. Potensi: ${source.source?.label || 'Spreadsheet pelaku usaha'}, kolom F. Kelolaan desa: ${source.ownership_source?.label || 'Mapping Wilayah Desa Area 6'}.`;
+    const period = `Debitur BRI: ${fromSheet ? 'sheet olahan per desa (intra dan ekstra)' : `SSA CRAS ${source.period_label}`}. Potensi: ${source.source?.label || 'Spreadsheet pelaku usaha'}, kolom F. Kelolaan desa: ${source.ownership_source?.label || 'Mapping Wilayah Desa Area 6'}.`;
     const coverageLabel = view.branch ? view.branches[0]?.label || ctx.scope.label : ctx.scope.label;
     const unowned = (source.unmapped_units || []).filter((unit) => !view.branch || unit.branch === view.branch);
     const unownedTotals = aggregateSectorValues(unowned);
@@ -68,7 +70,9 @@ export const renderSector = (ctx) => {
         { label: 'Total debitur BRI', align: 'end', cell: (row) => count(row.values?.total?.existing) },
     ], rows: unowned }) : '';
     const unclassified = view.totals('unclassified');
-    const unclassifiedNote = `OTHER / tanpa sektor: ${count(unclassified.intra)} debitur aktif + ${count(unclassified.extra)} debitur PH = ${count(unclassified.existing)}. Tetap termasuk total debitur BRI; rasio khusus OTHER tidak dihitung karena tidak memiliki kategori potensi sepadan.`;
+    const totalFigures = view.totals();
+    const reallocated = source.coverage?.reallocated_debtors || 0;
+    const unclassifiedNote = `${estimatedExtra ? `${count(reallocated)} debitur dicocokkan ulang ke sektor usaha BPS: ${count(source.coverage?.catch_all_debtors || 0)} berkode umum (Jasa Kegiatan Lainnya, Perdagangan Ekspor Hasil Tanaman), debitur PH yang tidak bersektor di SSA CRAS, dan kelebihan di atas jumlah pelaku usaha sektornya. Pembagian mengikuti komposisi pelaku usaha BPS di desa kelolaan UKER (estimasi) dan total debitur UKER tidak berubah. ` : ''}OTHER / tanpa sektor: ${count(unclassified.intra)} debitur aktif + ${count(unclassified.extra)} debitur PH = ${count(unclassified.existing)}. Tetap termasuk total debitur BRI; rasio khusus OTHER tidak dihitung karena tidak memiliki kategori potensi sepadan.`;
     const first = selected();
     const total = view.totals();
     const comparison = noPotential
@@ -93,7 +97,7 @@ export const renderSector = (ctx) => {
             fx: { beams: false, flow: 0, speed: 0.9, color: 0x4c9dff },
             describe: (code) => {
                 const row = byDistrict.get(code);
-                return row ? `<strong>${h(ctx.index.nameOf(code).district)}</strong><em>${h(sector.label)}</em><span>Potensi ${count(row.potential)}, estimasi debitur BRI ${count(row.existing)}</span><small>Debitur dialokasikan dari unit layanan.</small>` : '';
+                return row ? `<strong>${h(ctx.index.nameOf(code).district)}</strong><em>${h(sector.label)}</em><span>Potensi ${count(row.potential)} &middot; intra ${count(row.intra)} + ekstra ${count(row.extra)} = ${count(row.existing)}</span><small>${fromSheet ? 'Debitur dari sheet olahan per desa.' : 'Debitur unit dialokasikan menurut porsi potensi desa kelolaan.'}</small>` : '';
             }, pick: (code) => new Set([code]), labelsFor,
             captionFor: () => `<strong>${h(label)}</strong><span>${h(sector.label)} · ${h(metric(sector))}</span>`,
             arrangement: () => ({ explode: 0, spread: 0, levitate: 0, levitateBranch: null, grow: 1, wave: 0 }),
@@ -105,7 +109,7 @@ export const renderSector = (ctx) => {
         lede: view.unitLevel ? `${label}. Potensi berasal dari desa yang dikelola UKER ini. Intra adalah debitur aktif, ekstra adalah debitur PH. Consumer/Konsumer dikeluarkan dari perbandingan usaha.` : `${label}. Potensi dihitung per desa kelolaan UKER. 17 kategori KBLI dipadankan menjadi 14 kelompok usaha; total aktif + PH tetap mencakup OTHER / tanpa sektor.`,
         aside: `<div class="sg-sector-context"><p data-sector-current>${h(first.label)}</p><button type="button" class="kn-button" data-sector="total">Seluruh sektor</button><a class="kn-link" href="#sg-sector-comparison">Pilih kelompok usaha</a></div>`,
         ground: 'dark', anchor: 'lead', pose: 'map', span: 240,
-        sheet: `${block({ title: 'Potensi dan nasabah, berdampingan.', lede: noPotential ? 'Panjang batang menunjukkan jumlah debitur. Potensi wilayah layanan belum dapat dicocokkan seluruhnya.' : `${period} Tinggi prisma adalah potensi pelaku usaha; isinya adalah penetrasi yang dinormalisasi maksimum 100%. Angka sumber tetap tersimpan.`, body: `<div id="sg-sector-comparison" data-sg-sector-comparison>${comparison}</div>` })}
+        sheet: `${block({ title: 'Potensi dan nasabah, berdampingan.', lede: noPotential ? 'Panjang batang menunjukkan jumlah debitur. Potensi wilayah layanan belum dapat dicocokkan seluruhnya.' : `${period} Tinggi prisma adalah potensi pelaku usaha; isinya adalah penetrasi setelah debitur dicocokkan ke sektor usaha BPS. Rasio sesuai kode SSA tetap tersedia pada tabel.`, body: `<div id="sg-sector-comparison" data-sg-sector-comparison>${comparison}</div>` })}
             ${block({ title: view.unitLevel ? 'Peluang pada unit terpilih.' : `Peluang menurut ${view.headLabel.toLowerCase()} dan sektor.`, lede: 'Potensi mengikuti desa kelolaan. Tabel memakai debitur UKER utuh; peta memakai estimasi alokasi kecamatan. Klik judul kolom untuk menyorot sektor.', body: `<div data-sg-ledger>${tile({ className: 'sg-tile--atlas sg-tile--ledger', body: ledgerHtml(state.sector) })}</div><p class="sg-note" data-sector-unclassified>${h(unclassifiedNote)}</p>` })}
             ${disclosure('Lihat angka dan sumber sektoral', `<div data-sg-sector-table>${entityTable(state.sector)}</div><p class="sg-note">${h(period)} ${h(notes)}</p><p class="sg-note" data-sector-coverage>${h(coverageNote)}</p>${originalTable()}${unownedTable}<p class="sg-note"><a href="${h(source.source?.url || '')}" target="_blank" rel="noopener">Sumber potensi usaha</a> · <a href="${h(source.ownership_source?.url || '')}" target="_blank" rel="noopener">Acuan desa kelolaan UKER</a>. ${count(source.source?.village_count)} desa populasi, ${count(source.ownership_source?.unique_village_count)} desa kelolaan unik.</p>`)}
             ${subsectorPanel()}` }), territory: register,

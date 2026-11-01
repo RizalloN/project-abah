@@ -1,9 +1,13 @@
 <?php
 
+use App\Http\Controllers\DashboardSimpananController;
 use App\Services\Presentation\PresentationSegmentDataService;
 use App\Services\Presentation\PresentationWilayahDataService;
+use App\Support\DashboardHarianSnapshotService;
 use App\Support\UserBranchScope;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -55,7 +59,7 @@ beforeEach(function (): void {
         foreach ([[$madiun, 'kc-madiun', 'KC Madiun'], [$ngawi, 'kc-ngawi', 'KC Ngawi']] as [$outlets, $key, $label]) {
             $branch = ['snapshot_period' => $period, 'kanca_key' => $key, 'kanca_label' => $label, 'unit_key' => $key, 'unit_label' => $label];
             foreach (array_keys($outlets[0]) as $column) {
-                if (!isset($branch[$column])) {
+                if (! isset($branch[$column])) {
                     $branch[$column] = array_sum(array_column($outlets, $column));
                 }
             }
@@ -63,6 +67,19 @@ beforeEach(function (): void {
         }
     }
     DB::table('dashboard_harian_snapshots')->insert($rows);
+
+    Schema::create('lw325_ph', function (Blueprint $table): void {
+        foreach (['periode', 'acctno', 'kanca', 'unit', 'segmen_dashboard', 'produk_dashboard', 'flag_klaim'] as $column) {
+            $table->string($column)->nullable();
+        }
+        $table->decimal('pokok', 20, 2)->nullable();
+        $table->decimal('clmamt', 20, 2)->nullable();
+    });
+    foreach (['2026-08-31' => [10e9, 20e9, 5e9], '2026-09-30' => [9.5e9, 19e9, 4.75e9], '2026-10-25' => [8.5e9, 17e9, 4.25e9]] as $period => $amounts) {
+        foreach ([['1', 'KC Madiun', 'KC Madiun'], ['2', 'KC Madiun', 'UNIT Dolopo Madiun'], ['3', 'KC Ngawi', 'UNIT Kedunggalar Ngawi']] as $index => [$account, $branch, $unit]) {
+            DB::table('lw325_ph')->insert(['periode' => $period, 'acctno' => $account, 'kanca' => $branch, 'unit' => $unit, 'segmen_dashboard' => 'Micro', 'produk_dashboard' => 'Kupedes', 'flag_klaim' => 'N', 'pokok' => $amounts[$index], 'clmamt' => 0]);
+        }
+    }
 });
 
 afterEach(function (): void {
@@ -104,6 +121,131 @@ it('breaks a branch down per outlet and keeps the branch total', function (): vo
         ->and(collect($data['kualitas']['rows'])->firstWhere('key', 'unit-dolopo-madiun')['npl_ratio']['formatted'])->toBe('3,00%');
 });
 
+it('includes nominal YoY YtD and MtD changes for each unit without replacing the legacy MtD field', function (): void {
+    $rows = DB::table('dashboard_harian_snapshots')->where('snapshot_period', '2026-09-30')->get();
+    foreach (['2025-10-25' => 0.5, '2025-12-31' => 0.8] as $period => $factor) {
+        foreach ($rows as $row) {
+            $copy = (array) $row;
+            $copy['snapshot_period'] = $period;
+            $copy['total_simpanan'] *= $factor;
+            $copy['total_os_non_commercial'] *= $factor;
+            DB::table('dashboard_harian_snapshots')->insert($copy);
+        }
+    }
+    $data = UserBranchScope::runAs(null, fn () => app(PresentationSegmentDataService::class)->build('2026-10-25', 'madiun'));
+    $savings = collect($data['simpanan']['rows'])->firstWhere('key', 'unit-dolopo-madiun')['values']['total'];
+    $loans = collect($data['pinjaman']['rows'])->firstWhere('key', 'unit-dolopo-madiun')['values']['total'];
+
+    expect($savings['deltas']['mtd']['value'])->toEqual(10e9)
+        ->and($savings['deltas']['ytd']['value'])->toEqual(30e9)
+        ->and($savings['deltas']['yoy']['value'])->toEqual(60e9)
+        ->and($savings['mtd'])->toBe($savings['deltas']['mtd'])
+        ->and($loans['deltas']['mtd']['value'])->toEqual(0)
+        ->and($loans['deltas']['ytd']['value'])->toEqual(60e9)
+        ->and($loans['deltas']['yoy']['value'])->toEqual(150e9);
+});
+
+it('retains actual previous-month SML and NPL ratios and percentage-point changes at every quality level', function (): void {
+    DB::table('dashboard_harian_snapshots')->where('snapshot_period', '2026-09-30')->where('unit_key', 'unit-dolopo-madiun')->update(['total_npl_abs_non_commercial' => 6e9, 'total_sml_abs_non_commercial' => 3e9, 'kupedes_npl' => 3.6e9]);
+    $data = UserBranchScope::runAs(null, fn () => app(PresentationSegmentDataService::class)->build('2026-10-25', 'madiun'));
+    $unit = collect($data['kualitas']['rows'])->firstWhere('key', 'unit-dolopo-madiun');
+    $product = collect($data['kualitas']['products'])->firstWhere('key', 'mikro')['products'][0];
+
+    expect($unit['npl_ratio']['value'])->toBe(3.0)
+        ->and($unit['npl_ratio']['previous']['mtd']['value'])->toBe(2.0)
+        ->and($unit['npl_ratio']['deltas']['mtd']['value'])->toBe(1.0)
+        ->and($unit['sml_ratio']['value'])->toBe(6.0)
+        ->and($unit['sml_ratio']['previous']['mtd']['value'])->toBe(1.0)
+        ->and($unit['sml_ratio']['deltas']['mtd']['value'])->toBe(5.0)
+        ->and($unit['npl_ratio']['previous']['yoy']['value'])->toBeNull()
+        ->and($product['npl_ratio']['previous']['mtd']['value'])->toBe(2.5333)
+        ->and($data['kualitas']['total']['npl_ratio']['previous']['mtd']['value'])->toBe(2.0)
+        ->and($data['kualitas']['total']['npl_ratio']['value'])->toBe(2.6);
+});
+
+it('uses Data PH principal movements with Consumer claims and global account matching instead of GI405 snapshots', function (): void {
+    DB::table('lw325_ph')->delete();
+    $row = fn (string $period, string $account, string $unit, string $segment, string $product, float $principal, string $flag = 'N', float $claim = 0, string $branch = 'KC Madiun'): array => ['periode' => $period, 'acctno' => $account, 'kanca' => $branch, 'unit' => $unit, 'segmen_dashboard' => $segment, 'produk_dashboard' => $product, 'pokok' => $principal, 'flag_klaim' => $flag, 'clmamt' => $claim];
+    DB::table('lw325_ph')->insert([
+        $row('2026-09-30', '0001', 'UNIT Dolopo Madiun', 'Micro', 'Kupedes', 100),
+        $row('2026-09-30', '0002', 'KC Madiun', 'Consumer', 'Briguna', 500),
+        $row('2026-09-30', '0003', 'KC Madiun', 'Konsumer', 'KPR', 200),
+        $row('2026-09-30', '0004', 'UNIT Dolopo Madiun', 'Small', 'KMK', 80, 'Y'),
+        $row('2026-09-30', '0005', 'UNIT Dolopo Madiun', 'Micro', 'Kupedes', 100),
+        $row('2026-09-30', '0006', 'UNIT Dolopo Madiun', 'Consumer', 'KKB', 90),
+        $row('2026-10-25', '1', '03888 -- UNIT Dolopo Madiun', 'Micro', 'Kupedes', 70, 'Y', 50),
+        $row('2026-10-25', '2', 'KC Madiun', 'Consumer', 'Briguna', 400),
+        $row('2026-10-25', '4', 'UNIT Dolopo Madiun', 'Small', 'KMK', 50, 'Y'),
+        $row('2026-10-25', '00005', 'UNIT Kedunggalar Ngawi', 'Micro', 'Kupedes', 100, 'N', 0, 'KC Ngawi'),
+        $row('2026-10-25', '7', 'KC Madiun', 'Consumer', 'Briguna', 70, 'Y', 45),
+    ]);
+    $data = UserBranchScope::runAs(null, fn () => app(PresentationSegmentDataService::class)->build('2026-10-26', 'madiun'));
+    $segments = collect($data['recovery']['segments'])->keyBy('key');
+    $units = collect($data['recovery']['rows'])->keyBy('key');
+
+    expect($data['recovery']['source']['label'])->toBe('Data PH')
+        ->and($data['recovery']['source']['table'])->toBe('lw325_ph')
+        ->and($data['recovery']['source']['period'])->toBe('2026-10-25')
+        ->and($data['recovery']['source']['baseline_period'])->toBe('2026-09-30')
+        ->and($data['recovery']['total']['value'])->toBe(405.0)
+        ->and($segments['mikro']['value'])->toBe(30.0)
+        ->and($segments['kecil']['value'])->toBe(30.0)
+        ->and($segments['konsumer']['value'])->toBe(345.0)
+        ->and($units['unit-dolopo-madiun']['values']['total']['value'])->toBe(60.0)
+        ->and($units['kc-madiun-detail']['values']['konsumer']['value'])->toBe(345.0);
+
+    $ngawi = UserBranchScope::runAs(UserBranchScope::forKey('ngawi'), fn () => app(PresentationSegmentDataService::class)->build('2026-10-26', 'madiun'));
+    expect($ngawi['scope']['key'])->toBe('ngawi')
+        ->and($ngawi['recovery']['total']['value'])->toBe(0.0)
+        ->and(array_column($ngawi['recovery']['rows'], 'key'))->toBe(['unit-kedunggalar-ngawi']);
+});
+
+it('uses Cognos fallback like Data PH and never fills missing PH data with snapshot GI405 values', function (): void {
+    Schema::create('cognos_recovery', function (Blueprint $table): void {
+        foreach (['periode', 'cabang', 'unit_kerja', 'segmen_2', 'produk'] as $column) {
+            $table->string($column);
+        }
+        $table->decimal('total_recovery', 20, 2);
+    });
+    DB::table('lw325_ph')->where('periode', '2026-09-30')->delete();
+    DB::table('cognos_recovery')->insert(['periode' => '2026-10-25', 'cabang' => 'KC Madiun', 'unit_kerja' => 'KC Madiun', 'segmen_2' => 'Consumer', 'produk' => 'Lainnya', 'total_recovery' => 125]);
+    $data = UserBranchScope::runAs(null, fn () => app(PresentationSegmentDataService::class)->build('2026-10-25', 'madiun'));
+    expect($data['recovery']['source']['table'])->toBe('cognos_recovery')
+        ->and($data['recovery']['total']['value'])->toBe(125.0)
+        ->and(collect($data['recovery']['segments'])->firstWhere('key', 'konsumer')['value'])->toBe(125.0);
+
+    Schema::drop('lw325_ph');
+    Schema::drop('cognos_recovery');
+    $missing = UserBranchScope::runAs(null, fn () => app(PresentationSegmentDataService::class)->build('2026-10-25', 'madiun'));
+    expect($missing['recovery']['total']['value'])->toBeNull()
+        ->and($missing['recovery']['period'])->toBeNull()
+        ->and($missing['recovery']['rows'])->toBe([]);
+});
+
+it('keeps the Data PH exact month-end and PH-first YoY comparison periods', function (): void {
+    DB::table('lw325_ph')->insert(['periode' => '2025-04-30', 'acctno' => 'old-source', 'kanca' => 'KC Madiun', 'unit' => 'KC Madiun', 'segmen_dashboard' => 'Micro', 'produk_dashboard' => 'Kupedes', 'pokok' => 100]);
+    Schema::create('cognos_recovery', function (Blueprint $table): void {
+        foreach (['periode', 'cabang', 'unit_kerja', 'segmen_2', 'produk'] as $column) {
+            $table->string($column);
+        }
+        $table->decimal('total_recovery', 20, 2);
+    });
+    foreach (['2025-04-30' => 10, '2025-09-30' => 99, '2025-12-31' => 20] as $period => $amount) {
+        DB::table('cognos_recovery')->insert(['periode' => $period, 'cabang' => 'KC Madiun', 'unit_kerja' => 'KC Madiun', 'segmen_2' => 'Micro', 'produk' => 'Kupedes', 'total_recovery' => $amount]);
+    }
+    $data = UserBranchScope::runAs(null, fn () => app(PresentationSegmentDataService::class)->build('2026-10-25', 'madiun'));
+    expect($data['recovery']['compare']['mtd']['period'])->toBe('2026-09-30')
+        ->and($data['recovery']['compare']['ytd']['period'])->toBe('2025-12-31')
+        ->and($data['recovery']['compare']['yoy']['period'])->toBe('2025-04-30')
+        ->and($data['recovery']['total']['deltas']['yoy']['value'])->toBe(2999999990.0);
+
+    DB::table('lw325_ph')->where('periode', '2026-09-30')->update(['periode' => '2026-09-29']);
+    $notMonthEnd = UserBranchScope::runAs(null, fn () => app(PresentationSegmentDataService::class)->build('2026-10-25', 'madiun'));
+    expect($notMonthEnd['recovery']['compare']['mtd']['period'])->toBeNull()
+        ->and($notMonthEnd['recovery']['total']['deltas']['mtd'])->toBeNull()
+        ->and($notMonthEnd['recovery']['source']['baseline_period'])->toBe('2026-09-29');
+});
+
 it('never lets a branch user open another scope', function (): void {
     $service = app(PresentationSegmentDataService::class);
     $ngawi = UserBranchScope::forKey('ngawi');
@@ -116,30 +258,54 @@ it('never lets a branch user open another scope', function (): void {
 });
 
 it('replaces cached scope choices with the current callers allowed branches', function (): void {
-    $this->mock(\App\Support\DashboardHarianSnapshotService::class)
+    $this->mock(DashboardHarianSnapshotService::class)
         ->shouldReceive('fetchPeriods')->once()->andReturn(collect(['2026-10-25']));
     $originalCache = Config::get('cache.default');
     Config::set('cache.default', 'array');
-    $cacheKey = 'presentation_segments:v2:2026-10-25:madiun';
-    \Illuminate\Support\Facades\Cache::put($cacheKey, [
+    $cacheKey = 'presentation_segments:v3-data-ph:2026-10-25:madiun';
+    Cache::put($cacheKey, [
         'available' => true,
         'scope' => ['key' => 'madiun'],
         'scopes' => [['key' => 'area6'], ['key' => 'madiun'], ['key' => 'ngawi']],
         'entities' => [['key' => 'unit-dolopo-madiun']],
     ], 60);
     try {
-        $response = UserBranchScope::runAs(UserBranchScope::forKey('madiun'), fn () =>
-            app(\App\Http\Controllers\DashboardSimpananController::class)->presentationSegmentData(
-                \Illuminate\Http\Request::create('/dashboard/presentation-data/segments', 'GET', ['periode' => '2026-10-25', 'scope' => 'ngawi']),
-                app(PresentationSegmentDataService::class)
-            )
+        $response = UserBranchScope::runAs(UserBranchScope::forKey('madiun'), fn () => app(DashboardSimpananController::class)->presentationSegmentData(
+            Request::create('/dashboard/presentation-data/segments', 'GET', ['periode' => '2026-10-25', 'scope' => 'ngawi']),
+            app(PresentationSegmentDataService::class)
+        )
         );
         $payload = $response->getData(true);
         expect(array_column($payload['scopes'], 'key'))->toBe(['madiun'])
             ->and($payload['scope']['key'])->toBe('madiun')
             ->and(array_column($payload['entities'], 'key'))->toBe(['unit-dolopo-madiun']);
     } finally {
-        \Illuminate\Support\Facades\Cache::forget($cacheKey);
+        Cache::forget($cacheKey);
+        Config::set('cache.default', $originalCache);
+    }
+});
+
+it('does not serve the legacy GI405 snapshot recovery cache after the Data PH source change', function (): void {
+    $this->mock(DashboardHarianSnapshotService::class)
+        ->shouldReceive('fetchPeriods')->once()->andReturn(collect(['2026-10-25']));
+    $originalCache = Config::get('cache.default');
+    Config::set('cache.default', 'array');
+    $oldKey = 'presentation_segments:v2:2026-10-25:madiun';
+    $currentKey = 'presentation_segments:v3-data-ph:2026-10-25:madiun';
+    Cache::forget($currentKey);
+    Cache::put($oldKey, ['recovery' => ['total' => ['value' => 999], 'source' => ['label' => 'GI405']]], 60);
+    try {
+        $response = UserBranchScope::runAs(UserBranchScope::forKey('madiun'), fn () => app(DashboardSimpananController::class)->presentationSegmentData(
+            Request::create('/dashboard/presentation-data/segments', 'GET', ['periode' => '2026-10-25', 'scope' => 'madiun']),
+            app(PresentationSegmentDataService::class)
+        ));
+        $data = $response->getData(true);
+        expect($data['recovery']['source']['label'])->toBe('Data PH')
+            ->and($data['recovery']['source']['table'])->toBe('lw325_ph')
+            ->and($data['recovery']['total']['value'])->toEqual(3e9);
+    } finally {
+        Cache::forget($oldKey);
+        Cache::forget($currentKey);
         Config::set('cache.default', $originalCache);
     }
 });
@@ -153,7 +319,7 @@ it('reshapes market share rows and limits them to a branch', function (): void {
             ['branch' => 'Area 6', 'total' => true, 'values' => ['13,502', '13,646', '14,140', '3.6%', '34,423', '35,427', '36,461', '2.9%', '', '', '', '', '39.2%', '38.5%', '38.8%', '(0.44%)', '0.26%']],
         ],
     ];
-    $service = new PresentationWilayahDataService();
+    $service = new PresentationWilayahDataService;
 
     $area = $service->marketShare(['dpk' => $segment], ['unit' => 'Rp dalam Miliar']);
     $branch = $service->marketShare(['dpk' => $segment], [], 'madiun');
@@ -224,11 +390,8 @@ it('ignores structurally absent optional columns while retaining actual null com
 });
 
 it('keeps a missing comparison unavailable and does not fabricate a decline', function (): void {
-    DB::table('dashboard_harian_snapshots')
-        ->where('snapshot_period', '2026-09-30')
-        ->where('kanca_key', 'kc-madiun')
-        ->whereColumn('unit_key', '<>', 'kanca_key')
-        ->update(['rec_dh_total' => null]);
+    // September has no preceding PH month; the GI405-derived snapshot must not fill that gap.
+    DB::table('lw325_ph')->where('periode', '2026-08-31')->delete();
 
     $data = UserBranchScope::runAs(null, fn () => app(PresentationSegmentDataService::class)->build('2026-10-25', 'madiun'));
 
@@ -255,7 +418,7 @@ it('keeps market amounts when their source share is absent and avoids inventing 
             ['branch' => 'KC Ngawi', 'values' => [2 => '0', 6 => '0', 14 => '0.0%']],
         ],
     ];
-    $data = (new PresentationWilayahDataService())->marketShare(['dpk' => $segment], []);
+    $data = (new PresentationWilayahDataService)->marketShare(['dpk' => $segment], []);
     $rows = collect($data['groups']['simpanan'][0]['rows'])->keyBy('key');
 
     expect($data['available'])->toBeTrue()

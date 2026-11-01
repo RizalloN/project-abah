@@ -26,7 +26,7 @@ class SectorPotentialServiceTest extends TestCase
         Cache::flush();
         Schema::create('cras', function (Blueprint $table): void {
             $table->date('cras_periode');
-            foreach (['ket_kanca', 'br_number', 'ket_unit_kerja', 'sektor_ekonomi', 'jumlah_debitur', 'status_rekening', 'segmen', 'jumlah_rekening', 'baki_debet', 'saldo_ph'] as $column) {
+            foreach (['ket_kanca', 'br_number', 'ket_unit_kerja', 'sektor_ekonomi', 'sub_sektor_ekonomi', 'jumlah_debitur', 'status_rekening', 'segmen', 'jumlah_rekening', 'baki_debet', 'saldo_ph'] as $column) {
                 $table->string($column)->nullable();
             }
         });
@@ -81,11 +81,20 @@ class SectorPotentialServiceTest extends TestCase
         $this->assertSame(182.0, $payload['coverage']['eligible_debtors']);
         $this->assertSame(65.0, $payload['coverage']['unclassified_debtors']);
         $this->assertSame(2.0, $payload['coverage']['nonbusiness_debtors']);
-        $this->assertSame(100.0, $payload['totals']['trade']['existing']);
-        $this->assertSame(15.0, $payload['totals']['utilities']['existing']);
+        // Coded counts stay as the source; the 65 sector-less debtors follow the BPS mix (3,400
+        // businesses, trade 200 of them: 65 x 200/3,400 = 3.8 -> 4). Non-business credit stays OTHER.
+        $this->assertSame(100.0, $payload['totals']['trade']['existing_source']);
+        $this->assertSame(104.0, $payload['totals']['trade']['existing']);
+        $this->assertSame(15.0, $payload['totals']['utilities']['existing_source']);
         $this->assertSame(400.0, $payload['totals']['utilities']['potential']);
         $this->assertSame(182.0, $payload['totals']['total']['existing']);
-        $this->assertSame(67.0, $payload['totals']['unclassified']['existing']);
+        $this->assertSame(2.0, $payload['totals']['unclassified']['existing']);
+        $this->assertSame(67.0, $payload['totals']['unclassified']['existing_source']);
+        $sectors = array_diff_key($payload['totals'], array_flip(['total', 'unclassified']));
+        $this->assertSame(180.0, array_sum(array_column($sectors, 'existing')));
+        foreach ($sectors as $sector) {
+            $this->assertLessThanOrEqual($sector['potential'], $sector['existing']);
+        }
         $this->assertCount(16, $payload['comparison_groups']); // Total, 14 comparable groups and OTHER; source retains 17.
         $this->assertCount(17, $payload['source_sectors']);
     }
@@ -126,11 +135,15 @@ class SectorPotentialServiceTest extends TestCase
         $this->assertSame(1, $unit['missing_population_village_count']);
         $this->assertTrue($unit['potential_partial']);
         $this->assertSame(200.0, $unit['values']['trade']['potential']);
-        $this->assertSame(240.0, $unit['values']['trade']['existing']);
+        // 240 coded to trade against 200 businesses: trade holds 200, the 40 above it move to other sectors.
+        $this->assertSame(240.0, $unit['values']['trade']['existing_source']);
+        $this->assertSame(200.0, $unit['values']['trade']['existing']);
         $this->assertSame(120.0, $unit['values']['trade']['penetration_raw']);
         $this->assertSame(100.0, $unit['values']['trade']['penetration']);
         $this->assertSame(20.0, $unit['values']['trade']['penetration_excess']);
         $this->assertTrue($unit['values']['trade']['normalization_applied']);
+        $this->assertSame(240.0, $unit['values']['total']['existing']);
+        $this->assertSame(0.8333333333333334, $unit['normalization']['keep_ratio']['trade']);
 
         $this->assertSame(1, $payload['coverage']['missing_population_village_count']);
         $this->assertTrue($payload['branches'][0]['potential_partial']);
@@ -196,7 +209,21 @@ class SectorPotentialServiceTest extends TestCase
         $this->assertSame(1020.25, $value['credit_intra']);
         $this->assertSame(100.75, $value['credit_extra']);
         $this->assertSame(1121.0, $value['credit_total']);
-        $this->assertSame(9.0, $payload['totals']['unclassified']['existing']);
+        // SSA leaves PH (7) and 2 AKTIF without a sector: they follow the BPS business mix of the
+        // UKER villages, in whole debtors, and the totals do not move.
+        $this->assertSame(0.0, $payload['totals']['unclassified']['existing']);
+        $this->assertSame(9.0, $payload['totals']['unclassified']['existing_source']);
+        $sectors = array_diff_key($payload['totals'], array_flip(['total', 'unclassified']));
+        $this->assertSame(7.0, array_sum(array_column($sectors, 'extra')));
+        $this->assertSame(7.0, array_sum(array_column($sectors, 'extra_estimated')));
+        $this->assertSame(19.0, array_sum(array_column($sectors, 'existing')));
+        // Each sector's credit is rounded to the cent; 14 sectors may drift a few cents from the exact total row.
+        $this->assertEqualsWithDelta(1121.0, array_sum(array_column($sectors, 'credit_total')), 0.1);
+        foreach ($sectors as $sector) {
+            $this->assertSame(floor($sector['existing']), $sector['existing']);
+        }
+        $this->assertSame(10.0, $payload['totals']['trade']['existing_source']);
+        $this->assertSame(7.0, $payload['coverage']['extra_sector_estimated']);
         $this->assertNull($payload['totals']['unclassified']['penetration']);
         $this->assertSame(300.0, $payload['coverage']['excluded_consumer_debtors']);
         $this->assertSame(50.0, $payload['coverage']['excluded_status_debtors']);
@@ -368,6 +395,135 @@ class SectorPotentialServiceTest extends TestCase
                 unlink($path);
             }
         }
+    }
+
+    public function test_sectorless_and_catch_all_debtors_follow_the_bps_business_mix_in_whole_debtors(): void
+    {
+        $this->insert('2026-09-30', 'KC Madiun', 'PERDAGANGAN BESAR DAN ECERAN', 3);
+        $this->insert('2026-09-30', 'KC Madiun', 'INDUSTRI PENGOLAHAN', 1);
+        $this->insert('2026-09-30', 'KC Madiun', '', 5, '09999', ['status_rekening' => 'PH']);
+        // A catch-all purpose code: KUR micro loans, not real R-U businesses.
+        $this->insert('2026-09-30', 'KC Madiun', 'JASA KEMASYARAKATAN SOSIAL BUDAYA HIBURAN DAN PERORANGAN LAINNYA', 34, '09999', ['sub_sektor_ekonomi' => 'Jasa Kegiatan Lainnya']);
+        $this->insert('2026-09-30', 'KC Ngawi', '', 4, '08888', ['status_rekening' => 'PH']);
+        $payload = $this->service()->payload();
+        $units = collect($payload['units'])->keyBy('code');
+        $unit = $units['09999']['values'];
+
+        // 39 pooled debtors over 3,400 businesses (17 categories x 200): R-U (200) receives 39 x 200/3,400 = 2.3 -> 2.
+        $this->assertSame(34.0, $unit['other_services']['existing_source']);
+        $this->assertSame(2.0, $unit['other_services']['existing']);
+        $this->assertSame(1.0, $unit['other_services']['penetration']);
+        $this->assertSame(17.0, $unit['other_services']['penetration_raw']);
+        $this->assertSame(43.0, $unit['total']['existing']);
+        $sectors = array_diff_key($unit, array_flip(['total', 'unclassified']));
+        $this->assertSame(43.0, array_sum(array_column($sectors, 'existing')));
+        $this->assertSame(5.0, array_sum(array_column($sectors, 'extra')));
+        $this->assertSame(43.0, $payload['coverage']['reallocated_debtors']); // 39 Madiun + 4 Ngawi
+        $this->assertSame(34.0, $payload['coverage']['catch_all_debtors']);
+        // Ngawi has no AKTIF sector at all: its PH still follows the BPS mix of its own villages.
+        $this->assertSame(0.0, $units['08888']['values']['unclassified']['existing']);
+        $this->assertSame(9.0, $payload['totals']['total']['extra']);
+    }
+
+    public function test_cras_rows_use_the_same_sector_normalization_as_the_penetration_chapter(): void
+    {
+        $service = new SectorPotentialService;
+        $unit = ['normalization' => ['keep_ratio' => ['trade' => 0.8, 'agriculture' => 1.0], 'pool_share' => ['trade' => 0.0, 'agriculture' => 0.25]]];
+        $row = fn (string $sector, string $sub, float $count) => ['sektor_ekonomi' => $sector, 'sub_sektor_ekonomi' => $sub, 'existing' => $count];
+
+        // Coded to the sector: only the kept fraction counts.
+        $this->assertSame(80.0, $service->normalizedRowDebtors($row('PERDAGANGAN BESAR DAN ECERAN', 'Perdagangan Eceran', 100), $unit, 'trade'));
+        // A catch-all purpose code follows the redistribution share, even under its own coded sector.
+        $this->assertSame(0.0, $service->normalizedRowDebtors($row('PERDAGANGAN BESAR DAN ECERAN', 'Perdagangan Ekspor Hasil Tanaman', 100), $unit, 'trade'));
+        $this->assertSame(25.0, $service->normalizedRowDebtors($row('PERDAGANGAN BESAR DAN ECERAN', 'Perdagangan Ekspor Hasil Tanaman', 100), $unit, 'agriculture'));
+        // Trade overflow (20%) lands in agriculture by the same share; non-business credit never does.
+        $this->assertEqualsWithDelta(5.0, $service->normalizedRowDebtors($row('PERDAGANGAN BESAR DAN ECERAN', 'Perdagangan Eceran', 100), $unit, 'agriculture'), 1e-9);
+        $this->assertSame(0.0, $service->normalizedRowDebtors($row('PENERIMA KREDIT BUKAN LAPANGAN USAHA', '', 100), $unit, 'agriculture'));
+        // The all-sector total is never altered.
+        $this->assertSame(100.0, $service->normalizedRowDebtors($row('PERDAGANGAN BESAR DAN ECERAN', 'Perdagangan Eceran', 100), $unit, 'total'));
+    }
+
+    public function test_map_districts_receive_unit_debtors_by_owned_population_of_the_same_group(): void
+    {
+        $reference = $this->reference();
+        $reference['villages'][1]['source_values']['G'] = 300.0;
+        $reference['source']['data_sha256'] = $this->hashOf($reference);
+        $this->insert('2026-09-30', 'KC Madiun', 'PERDAGANGAN BESAR DAN ECERAN', 8);
+        $payload = $this->serviceWith($reference)->payload('madiun');
+        $districts = collect($payload['districts'])->keyBy('name');
+
+        // Kebonsari holds 100 of the unit's trade population, Manguharjo 300: 2 and 6, not 4 and 4.
+        $this->assertSame(2.0, $districts['Kebonsari']['values']['trade']['existing']);
+        $this->assertSame(6.0, $districts['Manguharjo']['values']['trade']['existing']);
+        $this->assertSame('ssa_uker_potential_weighted_owned_district_allocation', $districts['Kebonsari']['numerator_grain']);
+    }
+
+    public function test_processed_workbook_debtor_columns_are_parsed_per_village_and_category(): void
+    {
+        $stream = fopen('php://temp', 'r+');
+        fputcsv($stream, ['Desa/Kelurahan', 'Kecamatan', 'Kabupaten/Kota', 'Keterangan', 'Deskripsi', 'Jumlah', 'Debitur Intra', 'Debitur Ekstra'], ',', '"', '');
+        foreach (self::CATEGORIES as $key) {
+            fputcsv($stream, ['Desa Satu', 'Kebonsari', 'Kabupaten Madiun', $key, $key, $key === 'G' ? '1,234' : '0', $key === 'G' ? '1,000' : '', $key === 'G' ? '20' : '0'], ',', '"', '');
+        }
+        rewind($stream);
+        $payload = (new SectorPotentialService)->referenceFromCsv(stream_get_contents($stream));
+
+        $this->assertTrue($payload['source']['debtor_columns']);
+        $this->assertSame(1000.0, $payload['villages'][0]['source_debtors']['intra']['G']);
+        $this->assertSame(20.0, $payload['villages'][0]['source_debtors']['extra']['G']);
+        $this->assertSame(0.0, $payload['villages'][0]['source_debtors']['intra']['A']);
+        $this->assertFalse((new SectorPotentialService)->referenceFromCsv($this->csv())['source']['debtor_columns']);
+    }
+
+    public function test_one_debtor_column_without_its_pair_is_rejected(): void
+    {
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('bersamaan');
+        (new SectorPotentialService)->referenceFromCsv("Desa/Kelurahan,Kecamatan,Kabupaten/Kota,Keterangan,Deskripsi,Jumlah,Debitur Intra\nDesa,Kebonsari,Kabupaten Madiun,A,A,1,1\n");
+    }
+
+    public function test_workbook_debtors_replace_ssa_counts_inside_the_ratio_and_stay_exact_on_the_map(): void
+    {
+        $reference = $this->reference();
+        $reference['source']['debtor_columns'] = true;
+        foreach ($reference['villages'] as $index => &$village) {
+            $village['source_debtors'] = ['intra' => array_fill_keys(self::CATEGORIES, 0.0), 'extra' => array_fill_keys(self::CATEGORIES, 0.0)];
+            $village['source_debtors']['intra']['G'] = [30.0, 10.0, 5.0][$index];
+            $village['source_debtors']['extra']['G'] = [6.0, 4.0, 1.0][$index];
+        }
+        unset($village);
+        $reference['source']['data_sha256'] = $this->hashOf($reference);
+        $this->insert('2026-09-30', 'KC Madiun', 'PERDAGANGAN BESAR DAN ECERAN', 999);
+        $payload = $this->serviceWith($reference)->payload('madiun');
+        $unit = collect($payload['units'])->firstWhere('code', '09999');
+        $districts = collect($payload['districts'])->keyBy('name');
+
+        $this->assertSame('sheet_desa', $payload['coverage']['numerator_source']);
+        $this->assertSame(40.0, $unit['values']['trade']['intra']);
+        $this->assertSame(10.0, $unit['values']['trade']['extra']);
+        $this->assertSame(25.0, round($unit['values']['trade']['penetration_raw'], 6));
+        $this->assertSame(36.0, $districts['Kebonsari']['values']['trade']['existing']);
+        $this->assertSame(14.0, $districts['Manguharjo']['values']['trade']['existing']);
+        $this->assertFalse($districts['Kebonsari']['allocation_estimate']);
+        $this->assertSame(0, $payload['coverage']['extra_sector_estimated']);
+    }
+
+    private function serviceWith(array $reference): SectorPotentialService
+    {
+        return new class($reference) extends SectorPotentialService
+        {
+            public function __construct(private array $fixture) {}
+
+            public function reference(): ?array
+            {
+                return $this->fixture;
+            }
+        };
+    }
+
+    private function hashOf(array $reference): string
+    {
+        return hash('sha256', json_encode([$reference['source_sectors'], $reference['districts'], $reference['villages']], JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION | JSON_THROW_ON_ERROR));
     }
 
     private function service(): SectorPotentialService

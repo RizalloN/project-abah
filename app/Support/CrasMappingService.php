@@ -133,14 +133,15 @@ class CrasMappingService
         $referenceReady = !empty($sectorPotential['ready']) && ($sectorPotential['period'] ?? null) === $period;
         $referenceRows = [];
         if ($referenceReady) {
-            $referenceRows = Cache::remember('cras_mapping:reference_cohort_rows:v1:'.md5(json_encode($selected)), now()->addMinutes(5), function () use ($selected, $potentialService): array {
+            $referenceRows = Cache::remember('cras_mapping:reference_cohort_rows:v2:'.md5(json_encode($selected)), now()->addMinutes(5), function () use ($selected, $potentialService): array {
                 $query = DB::table(self::TABLE)->where('cras_periode', $selected['periode']);
                 $this->applyFilters($query, $selected);
                 return $potentialService->referenceRows($query);
             });
         }
-        $sectorReferenceUnits = $potentialService->referenceUnitsForRows($referenceRows, $sectorPotential);
         $parentGroup = $this->parentComparisonGroup($selected, $potentialService, $referenceRows, $sectorPotential);
+        // Same sector normalization as Penetrasi Sektoral: coverage uses debtors attributed to the parent sector.
+        $sectorReferenceUnits = $potentialService->referenceUnitsForRows($referenceRows, $sectorPotential, $parentGroup['key'] ?? null);
         $referenceUnits = [];
         foreach ($sectorPotential['units'] as $unit) {
             $referenceUnits[$unit['branch'].'|'.$unit['code']] = $unit;
@@ -151,13 +152,13 @@ class CrasMappingService
 
             return [...$unit,
                 'sector_parent_potential' => $potential,
-                'sector_parent_coverage' => $potentialService->coverage((float) $unit['values']['jumlah_debitur'], $potential),
+                'sector_parent_coverage' => $potentialService->coverage((float) ($unit['values']['jumlah_debitur_normalized'] ?? $unit['values']['jumlah_debitur']), $potential, (float) $unit['values']['jumlah_debitur']),
                 'denominator_basis' => 'potensi_kategori_sektor_induk_desa_milik_uker',
             ];
         };
         $units = array_map($withParent, $computed['units']);
         $sectorReferenceUnits = array_map($withParent, $sectorReferenceUnits);
-        $referenceMetrics = array_fill_keys(['jumlah_debitur', 'intra', 'extra', 'jumlah_rekening', 'baki_debet', 'credit_extra', 'credit_total'], $referenceReady ? 0.0 : null);
+        $referenceMetrics = array_fill_keys(['jumlah_debitur', 'jumlah_debitur_normalized', 'intra', 'extra', 'jumlah_rekening', 'baki_debet', 'credit_extra', 'credit_total'], $referenceReady ? 0.0 : null);
         foreach ($sectorReferenceUnits as $unit) foreach (array_keys($referenceMetrics) as $metric) $referenceMetrics[$metric] += $unit['values'][$metric] ?? 0;
         foreach (['baki_debet', 'credit_extra', 'credit_total'] as $metric) if ($referenceMetrics[$metric] !== null) $referenceMetrics[$metric] = round($referenceMetrics[$metric], 2);
         $parentPotential = !$referenceReady || $parentGroup === null ? null : ($sectorPotential['totals'][$parentGroup['key']]['potential'] ?? null);
@@ -197,12 +198,12 @@ class CrasMappingService
                     'subsector_penetration' => null,
                     'parent_group' => $parentGroup,
                     'reference_scope' => $selected['wilayah'],
-                    'subsector_parent_coverage' => $potentialService->coverage($referenceMetrics['jumlah_debitur'], $parentPotential),
+                    'subsector_parent_coverage' => $potentialService->coverage($referenceMetrics['jumlah_debitur_normalized'], $parentPotential, $referenceMetrics['jumlah_debitur']),
                     'reference_ready' => $referenceReady,
                     'numerator_basis' => 'uker_berdesa_aktif_dan_ph_tanpa_consumer',
                     'denominator_basis' => 'potensi_kategori_sektor_induk_di_wilayah_terpilih',
                     'unit_potential_basis' => 'Jumlah pelaku usaha kategori sektor induk hanya pada desa milik UKER menurut mapping desa.',
-                    'note' => $referenceReady ? 'Cakupan subsektor memakai debitur Intra/AKTIF dan Ekstra/PH tanpa Consumer pada UKER pemilik desa, dibagi potensi kategori sektor induk desa milik UKER. Ekstra tetap merupakan BRI PH.' : 'Referensi sektor mengikuti SSA September 2026. Periode report pilihan berbeda atau data referensi belum tersedia; cakupan referensi tidak dihitung.',
+                    'note' => $referenceReady ? 'Cakupan subsektor memakai debitur Intra/AKTIF dan Ekstra/PH tanpa Consumer pada UKER pemilik desa, dibagi potensi kategori sektor induk desa milik UKER. Ekstra tetap merupakan BRI PH. Debitur dinormalisasi ke sektor usaha BPS seperti Penetrasi Sektoral; kode umum (Jasa Kegiatan Lainnya, Perdagangan Ekspor Hasil Tanaman) tidak dihitung penuh pada sektor induknya.' : 'Referensi sektor mengikuti SSA September 2026. Periode report pilihan berbeda atau data referensi belum tersedia; cakupan referensi tidak dihitung.',
                 ],
             ],
             'source' => [

@@ -7,10 +7,12 @@ use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 
 /**
  * Kinerja segments of the segmented presentation (Simpanan, Pinjaman, Kualitas,
- * Recovery DH) for one scope, read from dashboard_harian_snapshots.
+ * Recovery DH) for one scope. Balances/quality use dashboard_harian_snapshots;
+ * Recovery DH follows the Data PH report's LW325/Cognos source and own period.
  *
  * The snapshot keeps one row per outlet (KC detail, KCP, Unit) plus one branch
  * row whose kanca_key equals its unit_key; outlet rows sum exactly to the
@@ -65,7 +67,7 @@ class PresentationSegmentDataService
             'entity_level' => $isArea ? 'branch' : 'unit',
         ];
 
-        if (!Schema::hasTable(self::TABLE)) {
+        if (! Schema::hasTable(self::TABLE)) {
             return $this->unavailable($scope);
         }
 
@@ -120,7 +122,7 @@ class PresentationSegmentDataService
             'simpanan' => $this->simpanan($context),
             'pinjaman' => $this->pinjaman($context),
             'kualitas' => $this->kualitas($context),
-            'recovery' => $this->recovery($context),
+            'recovery' => $this->recoveryFromDataPh($current, $scopeKey, $entities),
         ];
     }
 
@@ -204,6 +206,9 @@ class PresentationSegmentDataService
             $smlValue = $this->sum($values, $sml['columns']);
             $nplValue = $this->sum($values, $npl['columns']);
 
+            $entityContext = ['now' => ['total' => $values], 'then' => collect($context['then'])->map(fn (array $snapshot): array => ['total' => $snapshot['entities'][$entity['key']] ?? []])->all()];
+            $quality = $this->qualityItem($entityContext, $entity['key'], $entity['label'], $os['columns'], $sml['columns'], $npl['columns']);
+
             return [
                 'key' => $entity['key'],
                 'label' => $entity['label'],
@@ -211,8 +216,8 @@ class PresentationSegmentDataService
                 'os' => $this->money($base),
                 'sml' => $this->money($smlValue),
                 'npl' => $this->money($nplValue),
-                'sml_ratio' => $this->ratio($smlValue, $base),
-                'npl_ratio' => $this->ratio($nplValue, $base),
+                'sml_ratio' => $quality['sml_ratio'],
+                'npl_ratio' => $quality['npl_ratio'],
             ];
         })->values()->all();
 
@@ -227,9 +232,9 @@ class PresentationSegmentDataService
                         $context,
                         $product['key'],
                         $product['label'],
-                        [$product['prefix'] . '_os'],
-                        [$product['prefix'] . '_sml'],
-                        [$product['prefix'] . '_npl']
+                        [$product['prefix'].'_os'],
+                        [$product['prefix'].'_sml'],
+                        [$product['prefix'].'_npl']
                     ))
                     ->filter(fn (array $item): bool => $item['os']['value'] != 0.0)
                     ->values()
@@ -262,6 +267,195 @@ class PresentationSegmentDataService
         ];
     }
 
+    /** Recovery follows the Data PH report, not the GI405-derived dashboard columns. */
+    private function recoveryFromDataPh(string $dashboardPeriod, string $scopeKey, array $snapshotEntities): array
+    {
+        $isArea = $scopeKey === UserBranchScope::AREA_SCOPE;
+        $branches = $isArea ? array_column(self::BRANCHES, 'label') : [self::BRANCHES[$scopeKey]['label']];
+        $periodsFor = function (string $table, string $branchColumn) use ($branches): Collection {
+            return Schema::hasTable($table)
+                ? DB::table($table)->whereIn($branchColumn, $branches)->distinct()->orderBy('periode')->pluck('periode')->map(fn ($date): string => substr((string) $date, 0, 10))
+                : collect();
+        };
+        $phPeriods = $periodsFor('lw325_ph', 'kanca');
+        $cognosPeriods = $periodsFor('cognos_recovery', 'cabang');
+        $available = $phPeriods->isNotEmpty() ? $phPeriods : $cognosPeriods;
+        $current = $this->onOrBefore($available, $dashboardPeriod);
+        $comparisonPeriods = $phPeriods->merge($cognosPeriods)->unique()->sort()->values();
+        $compare = $current ? $this->comparePeriods($comparisonPeriods, $current) : array_fill_keys(['dtd', 'mtd', 'ytd', 'yoy'], ['period' => null]);
+        if ($current) {
+            // Data PH's MtD and YtD baselines are calendar month/year ends, never an older position.
+            foreach (['mtd' => Carbon::parse($current)->startOfMonth()->subDay()->toDateString(), 'ytd' => Carbon::parse($current)->startOfYear()->subDay()->toDateString()] as $key => $target) {
+                $compare[$key]['period'] = $comparisonPeriods->contains($target) ? $target : null;
+            }
+            $yearAgo = Carbon::parse($current)->subYearNoOverflow()->toDateString();
+            $compare['yoy']['period'] = $this->onOrBefore($available, $yearAgo) ?? $this->onOrBefore($comparisonPeriods, $yearAgo);
+        }
+        $months = $current ? $this->monthEnds($available, $current) : [];
+        $needed = collect([$current])->merge(collect($compare)->pluck('period'))->merge($months)->filter()->unique();
+        $knownKeys = [];
+        foreach ($snapshotEntities as $entity) {
+            $label = preg_replace('/ \(kantor cabang\)$/', '', $entity['label']);
+            $knownKeys[$this->phUnitName($label)] = $entity;
+        }
+        $snapshots = [];
+        $sourcePeriods = [];
+        foreach ($needed as $period) {
+            $source = $this->dataPhRecoveryRows($period, $branches);
+            $sourcePeriods[$period] = ['table' => $source['table'], 'baseline_period' => $source['baseline_period'], 'available' => $source['available']];
+            $entities = [];
+            $totals = [];
+            $definitions = [];
+            foreach ($source['rows'] as $row) {
+                $branchKey = array_search($row['branch'], array_column(self::BRANCHES, 'label', 'kanca_key'), true);
+                if ($branchKey === false) {
+                    continue;
+                }
+                $unitName = $this->phUnitName($row['unit']);
+                $key = $isArea ? $branchKey : ($knownKeys[$unitName]['key'] ?? (Str::slug($unitName) === $branchKey ? $branchKey.'-detail' : Str::slug($unitName)));
+                $entities[$key] ??= array_fill_keys(['rec_dh_total', 'rec_dh_small', 'rec_dh_consumer', 'rec_dh_micro'], 0.0);
+                $entities[$key]['rec_dh_total'] += $row['total'];
+                $entities[$key]['rec_dh_small'] += $row['small'];
+                $entities[$key]['rec_dh_consumer'] += $row['consumer_briguna'] + $row['consumer_kpr'];
+                $entities[$key]['rec_dh_micro'] += $row['micro'];
+                $kind = $isArea ? 'branch' : (str_starts_with($unitName, 'UNIT ') ? 'unit' : (str_starts_with($unitName, 'KCP ') ? 'kcp' : 'kc'));
+                $definitions[$key] = ['key' => $key, 'label' => $isArea ? $row['branch'] : ($knownKeys[$unitName]['label'] ?? $unitName), 'kind' => $kind];
+            }
+            foreach ($entities as $values) {
+                foreach ($values as $column => $value) {
+                    $totals[$column] = ($totals[$column] ?? 0.0) + $value;
+                }
+            }
+            $snapshots[$period] = ['total' => $totals, 'entities' => $entities, 'definitions' => array_values($definitions)];
+        }
+        $now = $snapshots[$current] ?? ['total' => [], 'entities' => [], 'definitions' => []];
+        $context = ['now' => $now,
+            'then' => collect($compare)->map(fn (array $item): array => $snapshots[$item['period']] ?? [])->all(),
+            'entities' => $now['definitions'],
+            'series' => collect($months)->mapWithKeys(fn (string $period): array => [$period => $snapshots[$period]['total']])->all()];
+        $result = $this->recovery($context);
+        $result['available'] = $sourcePeriods[$current]['available'] ?? false;
+        $result['period'] = $current;
+        $result['period_label'] = $current ? $this->formatDate($current) : '-';
+        $result['compare'] = collect($compare)->map(fn (array $item): array => ['period' => $item['period'], 'label' => $item['period'] ? $this->formatDate($item['period']) : '-'])->all();
+        $result['timeseries_labels'] = array_map(fn (string $period): string => Carbon::parse($period)->translatedFormat('M y'), $months);
+        $result['source'] = ['label' => 'Data PH', 'table' => $sourcePeriods[$current]['table'] ?? null,
+            'period' => $current, 'period_label' => $result['period_label'], 'basis' => 'recovery_bulanan_data_ph',
+            'baseline_period' => $sourcePeriods[$current]['baseline_period'] ?? null, 'periods' => $sourcePeriods,
+            'note' => 'Pergerakan pokok LW325 PH terhadap posisi terakhir bulan sebelumnya, termasuk klaim baru; Cognos menjadi fallback seperti laporan Data PH. Konsumer mencakup Briguna dan KPR sesuai klasifikasi laporan.'];
+
+        return $result;
+    }
+
+    /** Same account normalization, previous-month attribution and claim share (100%) as Data PH. */
+    private function dataPhRecoveryRows(string $period, array $branches): array
+    {
+        $metrics = [];
+        $baseline = null;
+        $phAvailable = false;
+        if (Schema::hasTable('lw325_ph')) {
+            $query = DB::table('lw325_ph')->where('periode', $period)->whereNotNull('acctno')->where('acctno', '<>', '');
+            $phAvailable = $query->exists();
+            $baseline = DB::table('lw325_ph')->whereBetween('periode', [Carbon::parse($period)->startOfMonth()->subMonth()->toDateString(), Carbon::parse($period)->startOfMonth()->subDay()->toDateString()])->max('periode');
+            if ($phAvailable && $baseline) {
+                $account = fn (string $alias): string => DB::connection()->getDriverName() === 'sqlite'
+                    ? "LTRIM(TRIM(COALESCE({$alias}.acctno, '')), '0')"
+                    : "TRIM(LEADING '0' FROM TRIM(COALESCE({$alias}.acctno, '')))";
+                $currentKey = $account('n');
+                $previousKey = $account('o');
+                $flag = Schema::hasColumn('lw325_ph', 'flag_klaim') ? "CASE WHEN UPPER(TRIM(COALESCE(o.flag_klaim, ''))) = 'Y' THEN 'Y' ELSE 'N' END" : "'N'";
+                // Current and old-account existence are global: transferring KC/unit is not repayment.
+                $currentRows = DB::table('lw325_ph as n')->where('n.periode', $period)->whereNotNull('n.acctno')->where('n.acctno', '<>', '')
+                    ->selectRaw("{$currentKey} as account_key, SUM(COALESCE(n.pokok, 0)) as current_pokok")->groupByRaw($currentKey);
+                $previousRows = DB::table('lw325_ph as o')->where('o.periode', $baseline)->whereIn('o.kanca', $branches)->whereNotNull('o.acctno')->where('o.acctno', '<>', '')
+                    ->selectRaw("{$previousKey} as account_key, o.kanca, o.unit, o.segmen_dashboard, o.produk_dashboard, {$flag} as flag_klaim, SUM(COALESCE(o.pokok, 0)) as old_pokok")
+                    ->groupByRaw("{$previousKey}, o.kanca, o.unit, o.segmen_dashboard, o.produk_dashboard, {$flag}");
+                $movements = DB::query()->fromSub($previousRows, 'o')->leftJoinSub($currentRows, 'n', fn ($join) => $join->on('o.account_key', '=', 'n.account_key'))
+                    ->select('o.kanca', 'o.unit', 'o.segmen_dashboard', 'o.produk_dashboard')
+                    ->selectRaw('SUM(CASE WHEN n.account_key IS NULL THEN o.old_pokok WHEN o.old_pokok > COALESCE(n.current_pokok,0) THEN o.old_pokok - n.current_pokok ELSE 0 END) as recovery')
+                    ->groupBy('o.kanca', 'o.unit', 'o.segmen_dashboard', 'o.produk_dashboard')->get();
+                foreach ($movements as $row) {
+                    $this->addPhRecovery($metrics, $row->kanca, $row->unit, $this->phSegment($row->segmen_dashboard, $row->produk_dashboard), (float) $row->recovery);
+                }
+                foreach (DB::table('lw325_ph')->where('periode', $period)->whereIn('kanca', $branches)->whereNotNull('unit')->where('unit', '<>', '')->distinct()->get(['kanca', 'unit']) as $row) {
+                    $this->addPhRecovery($metrics, $row->kanca, $row->unit, null, 0.0);
+                }
+                if (Schema::hasColumn('lw325_ph', 'flag_klaim') && Schema::hasColumn('lw325_ph', 'clmamt')) {
+                    $newClaims = DB::table('lw325_ph as n')->where('n.periode', $period)->whereIn('n.kanca', $branches)->whereNotNull('n.acctno')->where('n.acctno', '<>', '')
+                        ->whereRaw("UPPER(TRIM(COALESCE(n.flag_klaim, ''))) = 'Y'")
+                        ->selectRaw("{$currentKey} as account_key, n.kanca, n.unit, n.segmen_dashboard, n.produk_dashboard, SUM(COALESCE(n.clmamt,0)) as claim")
+                        ->groupByRaw("{$currentKey}, n.kanca, n.unit, n.segmen_dashboard, n.produk_dashboard");
+                    $oldAccounts = DB::table('lw325_ph as o')->where('o.periode', $baseline)->whereNotNull('o.acctno')->where('o.acctno', '<>', '')->selectRaw("DISTINCT {$previousKey} as account_key");
+                    $claims = DB::query()->fromSub($newClaims, 'n')->leftJoinSub($oldAccounts, 'o', fn ($join) => $join->on('o.account_key', '=', 'n.account_key'))
+                        ->whereNull('o.account_key')->select('n.kanca', 'n.unit', 'n.segmen_dashboard', 'n.produk_dashboard')->selectRaw('SUM(n.claim) as claim')
+                        ->groupBy('n.kanca', 'n.unit', 'n.segmen_dashboard', 'n.produk_dashboard')->get();
+                    foreach ($claims as $row) {
+                        if ((float) $row->claim > 0) {
+                            $this->addPhRecovery($metrics, $row->kanca, $row->unit, $this->phSegment($row->segmen_dashboard, $row->produk_dashboard), (float) $row->claim);
+                        }
+                    }
+                }
+            }
+        }
+        $hasRecovery = collect($metrics)->contains(fn (array $row): bool => collect(['total', 'micro', 'small', 'consumer_briguna', 'consumer_kpr'])->contains(fn (string $key): bool => abs($row[$key]) > 0.0001));
+        if (! $hasRecovery && Schema::hasTable('cognos_recovery')) {
+            $cognos = DB::table('cognos_recovery')->where('periode', $period)->whereIn('cabang', $branches)
+                ->select('cabang', 'unit_kerja', 'segmen_2', 'produk')->selectRaw('SUM(COALESCE(total_recovery,0)) as recovery')->groupBy('cabang', 'unit_kerja', 'segmen_2', 'produk')->get();
+            if ($cognos->isNotEmpty()) {
+                $metrics = [];
+                foreach ($cognos as $row) {
+                    $segment = $this->phSegment($row->segmen_2, $row->produk);
+                    $token = strtoupper((string) $row->segmen_2);
+                    if ($segment === null && (str_contains($token, 'CONSUMER') || str_contains($token, 'KONSUMER'))) {
+                        $segment = 'consumer_briguna';
+                    }
+                    $this->addPhRecovery($metrics, $row->cabang, $row->unit_kerja, $segment, (float) $row->recovery);
+                }
+
+                return ['rows' => array_values($metrics), 'table' => 'cognos_recovery', 'baseline_period' => null, 'available' => true];
+            }
+        }
+
+        return ['rows' => array_values($metrics), 'table' => 'lw325_ph', 'baseline_period' => $baseline, 'available' => $phAvailable && $baseline !== null];
+    }
+
+    private function phUnitName(string $unit): string
+    {
+        return trim(strtoupper(preg_replace('/^\d+\s*--\s*/', '', $unit) ?? $unit));
+    }
+
+    private function phSegment(?string $segment, ?string $product): ?string
+    {
+        $segment = preg_replace('/[^A-Z0-9]/', '', strtoupper(trim((string) $segment))) ?? '';
+        $product = preg_replace('/[^A-Z0-9]/', '', strtoupper(trim((string) $product))) ?? '';
+        if (str_contains($segment, 'MICRO') || str_contains($segment, 'MIKRO')) {
+            return 'micro';
+        }
+        if (str_contains($segment, 'SMALL') || str_contains($segment, 'KECIL')) {
+            return 'small';
+        }
+        $consumer = str_contains($segment, 'CONSUMER') || str_contains($segment, 'KONSUMER');
+        if (($consumer && str_contains($product, 'BRIGUNA')) || str_contains($product, 'BRIGUNAKONSUMER') || str_contains($product, 'BRIGUNACONSUMER')) {
+            return 'consumer_briguna';
+        }
+        if ($consumer && str_contains($product, 'KPR')) {
+            return 'consumer_kpr';
+        }
+
+        return null;
+    }
+
+    private function addPhRecovery(array &$metrics, string $branch, ?string $unit, ?string $segment, float $amount): void
+    {
+        $key = strtoupper(trim($branch)).'|'.$this->phUnitName((string) $unit);
+        $metrics[$key] ??= ['branch' => $branch, 'unit' => (string) $unit, 'total' => 0.0, 'micro' => 0.0, 'small' => 0.0, 'consumer_briguna' => 0.0, 'consumer_kpr' => 0.0];
+        if ($segment === null) {
+            return;
+        }
+        $metrics[$key][$segment] += $amount;
+        $metrics[$key]['total'] += $amount;
+    }
+
     /* ----------------------------------------------------------------- shaping -- */
 
     private function productDefinitions(): array
@@ -291,7 +485,7 @@ class PresentationSegmentDataService
     {
         return collect($this->productDefinitions())->map(function (array $group) use ($context, $metric, $total): array {
             $products = collect($group['products'])
-                ->mapWithKeys(fn (array $product): array => [$product['key'] => ['label' => $product['label'], 'columns' => [$product['prefix'] . '_' . $metric]]])
+                ->mapWithKeys(fn (array $product): array => [$product['key'] => ['label' => $product['label'], 'columns' => [$product['prefix'].'_'.$metric]]])
                 ->all();
 
             return [
@@ -308,8 +502,8 @@ class PresentationSegmentDataService
         return collect($definitions)
             ->map(fn (array $definition, string $key): array => ['key' => $key] + $this->metric($context, $definition, $shareOf))
             ->filter(function (array $item) use ($dropEmpty, $definitions, $context): bool {
-                if (!$dropEmpty || $item['value'] !== null) {
-                    return !$dropEmpty || $item['value'] != 0.0;
+                if (! $dropEmpty || $item['value'] !== null) {
+                    return ! $dropEmpty || $item['value'] != 0.0;
                 }
 
                 // Retain an unknown source category so composition cannot normalize the remaining ones to 100%.
@@ -365,32 +559,43 @@ class PresentationSegmentDataService
             return $deltas;
         };
 
+        $previous = function (array $columns) use ($context, $os): array {
+            return collect($context['then'])->map(fn (array $snapshot): array => $this->ratio(
+                $this->sum($snapshot['total'] ?? [], $columns),
+                $this->sum($snapshot['total'] ?? [], $os)
+            ))->all();
+        };
+
         return [
             'key' => $key,
             'label' => $label,
             'os' => $this->money($base),
             'sml' => $this->money($smlValue),
             'npl' => $this->money($nplValue),
-            'sml_ratio' => $this->ratio($smlValue, $base) + ['deltas' => $ratioDelta($sml)],
-            'npl_ratio' => $this->ratio($nplValue, $base) + ['deltas' => $ratioDelta($npl)],
+            'sml_ratio' => $this->ratio($smlValue, $base) + ['deltas' => $ratioDelta($sml), 'previous' => $previous($sml)],
+            'npl_ratio' => $this->ratio($nplValue, $base) + ['deltas' => $ratioDelta($npl), 'previous' => $previous($npl)],
         ];
     }
 
-    /** One row per entity (branch or outlet) with every metric, its share of the scope, and its MtD change. */
+    /** One row per entity with its share and changes against every available comparison. */
     private function entityRows(array $context, array $definitions): array
     {
         $scopeTotals = collect($definitions)->map(fn (array $definition): ?float => $this->sum($context['now']['total'], $definition['columns']))->all();
 
         return collect($context['entities'])->map(function (array $entity) use ($context, $definitions, $scopeTotals): array {
             $now = $context['now']['entities'][$entity['key']] ?? [];
-            $mtd = $context['then']['mtd']['entities'][$entity['key']] ?? null;
             $values = [];
             foreach ($definitions as $key => $definition) {
                 $value = $this->sum($now, $definition['columns']);
-                $previous = $mtd === null ? null : $this->sum($mtd, $definition['columns']);
+                $deltas = collect($context['then'])->map(function (array $snapshot) use ($entity, $definition, $value): ?array {
+                    $previous = $this->sum($snapshot['entities'][$entity['key']] ?? [], $definition['columns']);
+
+                    return $value === null || $previous === null ? null : $this->money($value - $previous, true);
+                })->all();
                 $values[$key] = $this->money($value) + [
                     'share' => $this->ratio($value, $scopeTotals[$key])['value'],
-                    'mtd' => $value === null || $previous === null ? null : $this->money($value - $previous, true),
+                    'mtd' => $deltas['mtd'] ?? null,
+                    'deltas' => $deltas,
                 ];
             }
 
@@ -492,7 +697,7 @@ class PresentationSegmentDataService
                 ->all();
             $entities[$key] = $values;
             foreach ($values as $column => $value) {
-                if (!array_key_exists($column, $total)) {
+                if (! array_key_exists($column, $total)) {
                     $total[$column] = $value;
                 } elseif ($total[$column] !== null && $value !== null) {
                     $total[$column] += $value;
@@ -516,12 +721,12 @@ class PresentationSegmentDataService
 
                 return [
                     'key' => $key,
-                    'label' => $kind === 'kc' ? $label . ' (kantor cabang)' : $label,
+                    'label' => $kind === 'kc' ? $label.' (kantor cabang)' : $label,
                     'kind' => $kind,
                     'order' => ['branch' => 0, 'kc' => 0, 'kcp' => 1, 'unit' => 2][$kind],
                 ];
             })
-            ->sortBy(fn (array $entity): string => $entity['order'] . '|' . $entity['label'])
+            ->sortBy(fn (array $entity): string => $entity['order'].'|'.$entity['label'])
             ->map(fn (array $entity): array => array_diff_key($entity, ['order' => true]))
             ->values()
             ->all();
@@ -541,7 +746,7 @@ class PresentationSegmentDataService
                 'sme_os', 'consumer_os', 'micro_os', 'sme_sml', 'consumer_sml', 'micro_sml', 'sme_npl', 'consumer_npl', 'micro_npl',
                 'rec_dh_total', 'rec_dh_small', 'rec_dh_consumer', 'rec_dh_micro',
             ],
-            collect($products)->flatMap(fn (string $prefix): array => [$prefix . '_os', $prefix . '_sml', $prefix . '_npl'])->all()
+            collect($products)->flatMap(fn (string $prefix): array => [$prefix.'_os', $prefix.'_sml', $prefix.'_npl'])->all()
         );
     }
 
@@ -558,7 +763,7 @@ class PresentationSegmentDataService
         $total = 0.0;
         foreach ($columns as $column) {
             // Older schemas may omit optional products; a present NULL is missing source data.
-            if (!array_key_exists($column, $values)) {
+            if (! array_key_exists($column, $values)) {
                 continue;
             }
             if ($values[$column] === null) {
@@ -583,10 +788,10 @@ class PresentationSegmentDataService
             $absolute >= 1e6 => [1e6, ' Jt', 2],
             default => [1, '', 0],
         };
-        $text = 'Rp' . number_format($absolute / $divisor, $decimals, ',', '.') . $suffix;
+        $text = 'Rp'.number_format($absolute / $divisor, $decimals, ',', '.').$suffix;
         $sign = $value < 0 ? '-' : ($signed && $value > 0 ? '+' : '');
 
-        return ['value' => round($value, 2), 'formatted' => $sign . $text];
+        return ['value' => round($value, 2), 'formatted' => $sign.$text];
     }
 
     private function ratio(?float $value, ?float $base): array
@@ -596,12 +801,12 @@ class PresentationSegmentDataService
         }
         $ratio = $value / $base * 100;
 
-        return ['value' => round($ratio, 4), 'formatted' => number_format($ratio, 2, ',', '.') . '%'];
+        return ['value' => round($ratio, 4), 'formatted' => number_format($ratio, 2, ',', '.').'%'];
     }
 
     private function points(float $value): array
     {
-        return ['value' => round($value, 4), 'formatted' => ($value > 0 ? '+' : ($value < 0 ? '-' : '')) . number_format(abs($value), 2, ',', '.') . ' pp'];
+        return ['value' => round($value, 4), 'formatted' => ($value > 0 ? '+' : ($value < 0 ? '-' : '')).number_format(abs($value), 2, ',', '.').' pp'];
     }
 
     private function formatDate(string $period): string

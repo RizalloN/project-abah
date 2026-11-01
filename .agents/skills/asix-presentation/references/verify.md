@@ -11,11 +11,19 @@ php -d max_execution_time=0 vendor/bin/pest tests/Unit/PresentationSegmentDataSe
 php -d max_execution_time=0 vendor/bin/pest tests/Feature/CrasMappingDashboardTest.php
 node --test tests/Frontend/asix-presentation.test.mjs
 node --test tests/Frontend/presentation-polygon.test.mjs
+node --test tests/Frontend/presentation-panel-transition.test.mjs
+node --test tests/Frontend/presentation-reading-motion.test.mjs
+node --test tests/Frontend/presentation-expressive-motion.test.mjs
+node --test tests/Frontend/presentation-cinema.test.mjs
 node --check resources/js/presentation/segments/main.js
 node --check resources/js/presentation/segments/render-wilayah.js
 node --check resources/js/presentation/segments/map-controls.js
 node --check resources/js/presentation/segments/cras-subsectors.js
 node --check resources/js/presentation/segments/choice-panel.js
+node --check resources/js/presentation/segments/panel-transition.js
+node --check resources/js/presentation/segments/polygon-journey.js
+node --check resources/js/presentation/segments/reading-clock.js
+node --check resources/js/presentation/segments/expressive-motion.js
 node --test tests/Frontend/presentation-sector-model.test.mjs tests/Frontend/presentation-subsector-coverage.test.mjs tests/Frontend/presentation-atlas.test.mjs
 php -d max_execution_time=0 vendor/bin/pest tests/Unit/SectorPotentialServiceTest.php
 git diff --check
@@ -60,6 +68,11 @@ including reduced motion, no WebGL, and a failed/empty data response:
 
 - The user can select one, several, or all chapters, and cannot start an empty
   selection. Scope/period survive a return to the launcher and a shared URL.
+  On phones, verify that an empty agenda's disabled action does not cover the
+  form, the topic chooser remains visible, and returning from a room reveals
+  the focused configuration heading. Use the measured room-header offset for
+  anchor targets. Check chooser arrows/Home/End move focus without activation,
+  Enter/Space activate explicitly, and Escape returns focus to its trigger.
 - Area presents branch rows; a branch presents only its outlets. All source
   totals and the effective source period match their tables, charts, and labels.
 - A branch user's server responses exclude other branches even when the URL is
@@ -77,6 +90,18 @@ including reduced motion, no WebGL, and a failed/empty data response:
   scroll points, synchronized branch data, rapid branch/district selection,
   reverse scroll, and reset. There are no modals or native selects. Searchable
   CRAS choices preserve exact source values and return-to-map preserves filters.
+- Each geographic chapter has exactly one stable map/detail view. Explicit KC
+  selection names and zooms the branch before the map exits left and detail
+  enters from the right. The back action reverses it; selected rail/top-nav
+  links open detail directly. Verify the live summary nodes retain their exact
+  values and return to the map instead of duplicating or losing callbacks.
+- Interrupt both transition directions with another chapter, reset, a new
+  selection, the launcher, and a deck rebuild. There must be one transition
+  owner, no delayed re-entry, no animation fills or busy/absolute-height state
+  left behind, and no stale world/labels on detail. Hidden or detached map slots
+  must not reach bounding-box/projection code. A long detail must not change
+  the outgoing map's framing during the handoff. Check desktop, short landscape,
+  phone, keyboard, reduced motion and the selectable SVG fallback.
 - CRAS sector/subsector choices use real endpoint options; parent changes reset
   dependent selection; rapid changes cannot apply an older response. Missing
   fine-subsector potential stays unavailable. Derived coverage uses the approved
@@ -92,12 +117,37 @@ including reduced motion, no WebGL, and a failed/empty data response:
 - Donut legends and timeseries choices respond, null periods remain gaps, and
   table headers/rows remain readable. Check horizontal overflow, clipped numbers,
   nested scroll containers, runtime/WebGL errors, and loading/error recovery.
+- Compare the same reading positions after downward and upward scroll. Exact
+  numeric text, table row/cell rectangles, axes, bubble centers/hit targets and
+  source chart proportions must agree. Entry remains complete after settling;
+  only decorative passage reverses. Financial cards, rows and cells have no
+  perspective or independent transforms. Parent sections settling cannot finish
+  child material early. Verify local visual bounds without clipping glass rims,
+  source labels, focus outlines or expanded exact-data disclosures.
+- Exercise focused charts, reduced motion, hidden/inert panels, replacement
+  filter results and disclosure opening. Hidden/detached/transitioning content
+  is not measured; visible replacement content receives fresh measurements and
+  its own entry latch. Check for transformed-geometry feedback during scrolling
+  and for old motion selectors reapplying time-based fades or row transforms.
 - Rebuilding the deck, reversing scroll, and changing chapters leave one current
   map scene with no duplicate handlers or detached content receiving updates.
+
+For the finishing film, shoot the flight through its hand-off, sample visible
+label text on every frame of a room change (only the new room's figures may
+appear), measure that the act rail overlaps no tile at any scroll depth, and check
+a real wheel notch passes through intermediate positions. Skip the flight early
+and late, reach the closing room, and use browser back and forward from it.
 
 Capture opening, middle, and settled frames for map transitions plus representative
 chart/table states. Read the screenshots; a success JSON alone cannot establish
 visual quality. Repeat interaction checks after the final changes.
+
+For expressive material, include a large real wheel jump that takes reading
+entry directly to 1. The timed assembly must remain visible for roughly 1-2
+seconds. Capture with Web Animations allowed (do not fast-forward them using a
+screenshot's animations-disabled option). Check real donut wall/fan depth as
+well as matrices, flat unchanged source labels/axes/cells, rapid replay ownership,
+offscreen/disposal cancellation and dynamic reduced motion.
 
 If browser navigation redirects to login, record that limitation. An offline
 render proves the fixture behavior; it does not prove an authenticated live page,

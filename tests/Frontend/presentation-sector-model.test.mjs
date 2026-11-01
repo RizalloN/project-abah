@@ -101,3 +101,19 @@ test('active and PH counts remain separate, including OTHER in the supplied tota
     const view = sectorView({ ...ctx(), wilayah: { sektoral: { ...payload, comparison_groups: [...payload.comparison_groups, { key: 'unclassified' }] } } });
     assert.deepEqual(view.groups.map((group) => group.key), ['trade']);
 });
+
+test('normalized debtors drive the penetration while the SSA-coded count stays the source ratio', () => {
+    const values = sectorMetrics(100, 50, 141);
+    assert.equal(values.existing, 50);
+    assert.equal(values.existing_source, 141);
+    assert.equal(values.penetration, 50);
+    assert.equal(values.penetration_raw, 141);
+    assert.equal(values.penetration_excess, 41);
+    assert.equal(values.normalization_applied, true);
+    const summed = aggregateSectorValues([
+        { values: { trade: { potential: 100, existing: 50, existing_source: 141 } } },
+        { values: { trade: { potential: 300, existing: 90, existing_source: 60 } } },
+    ], 'trade');
+    assert.equal(summed.penetration, 35);
+    assert.equal(Math.round(summed.penetration_raw * 100) / 100, 50.25);
+});

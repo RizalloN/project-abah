@@ -2655,6 +2655,10 @@ class AlmafactsDashboardController extends Controller
 
     private function getTimeseriesPayload(string $metric, string $branch, string $unit, int $year): array
     {
+        if (self::isRatioMetric($metric)) {
+            return $this->getRatioTimeseriesPayload($metric, $branch, $unit, $year);
+        }
+
         $prevYear = $year - 1;
         $branches = $branch === self::AREA_KEY ? self::AREA_BRANCHES : [$branch];
 
@@ -2931,5 +2935,178 @@ class AlmafactsDashboardController extends Controller
             ],
             'series' => $series,
         ];
+    }
+
+    private static function isRatioMetric(string $metric): bool
+    {
+        return str_contains($metric, '(%)');
+    }
+
+    /**
+     * Ratios cannot be summed across units. Each scope and month is computed
+     * from summed components with the same formulas as Financial Highlight;
+     * ratios without a component formula use a loan-weighted average of the
+     * unit ratios (the convention already used for DPK/NPL/LAR). Values are
+     * returned in percent.
+     */
+    private function getRatioTimeseriesPayload(string $metric, string $branch, string $unit, int $year): array
+    {
+        $prevYear = $year - 1;
+        $branches = $branch === self::AREA_KEY ? self::AREA_BRANCHES : [$branch];
+        $formulaPath = $this->ratioFormulaPath($metric);
+        $labels = array_values(array_unique(array_merge(
+            array_values(self::FINANCIAL_CALCULATION_LABELS),
+            array_values(self::FINANCIAL_ASSET_QUALITY_SOURCE_LABELS),
+            [$metric]
+        )));
+        $calculationKeys = array_flip(self::FINANCIAL_CALCULATION_LABELS);
+        $qualityKeys = array_flip(self::FINANCIAL_ASSET_QUALITY_SOURCE_LABELS);
+
+        $rows = DB::table('ssa_almafacts')
+            ->whereIn('keterangan', $labels)
+            ->whereIn('kanca_konsolidasi', $branches)
+            ->whereBetween('month_day_year_of_posisi', ["{$prevYear}-01-01", "{$year}-12-31"])
+            ->get(['month_day_year_of_posisi', 'kanca_konsolidasi', 'kode_unit_kerja', 'unit_kerja', 'keterangan', 'saldo']);
+
+        // unit key => ['branch' => ..., 'name' => ..., 'values' => ["Y-n" => [label => saldo]]]
+        $units = [];
+        foreach ($rows as $row) {
+            $date = Carbon::parse($row->month_day_year_of_posisi);
+            $unitKey = $this->unitKey((string) $row->kanca_konsolidasi, $row->kode_unit_kerja, $row->unit_kerja);
+            $units[$unitKey]['branch'] = (string) $row->kanca_konsolidasi;
+            $units[$unitKey]['name'] = (string) $row->unit_kerja;
+            $periodKey = $date->format('Y') . '-' . $date->format('n');
+            $label = (string) $row->keterangan;
+            $units[$unitKey]['values'][$periodKey][$label] = ($units[$unitKey]['values'][$periodKey][$label] ?? 0.0) + (float) $row->saldo;
+        }
+
+        $ratioFor = function (array $unitKeys, int $ratioYear, int $month) use ($units, $formulaPath, $metric, $calculationKeys, $qualityKeys): ?float {
+            $periodKey = $ratioYear . '-' . $month;
+            $current = [];
+            $qualityByUnit = [];
+            $weighted = 0.0;
+            $weight = 0.0;
+            $rawValues = [];
+
+            foreach ($unitKeys as $unitKey) {
+                $values = $units[$unitKey]['values'][$periodKey] ?? null;
+                if ($values === null) {
+                    continue;
+                }
+                foreach ($values as $label => $saldo) {
+                    if (isset($calculationKeys[$label])) {
+                        $current[$calculationKeys[$label]] = ($current[$calculationKeys[$label]] ?? 0.0) + $saldo;
+                    }
+                    if (isset($qualityKeys[$label])) {
+                        $qualityByUnit[$unitKey][$qualityKeys[$label]] = $saldo;
+                    }
+                }
+                if (array_key_exists($metric, $values)) {
+                    $rawValues[] = $values[$metric];
+                    $loan = (float) ($values[self::FINANCIAL_CALCULATION_LABELS['loans']] ?? 0.0);
+                    if ($loan > 0) {
+                        $weighted += $values[$metric] * $loan;
+                        $weight += $loan;
+                    }
+                }
+            }
+
+            if ($current === [] && $rawValues === []) {
+                return null;
+            }
+
+            if ($formulaPath !== null) {
+                $quality = ['dpk_weighted_numerator' => null, 'dpk_weight' => null, 'npl_nominal' => null, 'lar_nominal' => null];
+                foreach ($qualityByUnit as $metrics) {
+                    $loan = $metrics['loans'] ?? null;
+                    if ($loan === null || $loan <= 0) {
+                        continue;
+                    }
+                    $savings = $metrics['savings'] ?? null;
+                    if (array_key_exists('dpk_ratio', $metrics) && $savings !== null && $savings > 0) {
+                        $quality['dpk_weighted_numerator'] = ($quality['dpk_weighted_numerator'] ?? 0.0) + (float) $metrics['dpk_ratio'] * $savings;
+                        $quality['dpk_weight'] = ($quality['dpk_weight'] ?? 0.0) + $savings;
+                    }
+                    if (array_key_exists('npl_ratio', $metrics)) {
+                        $quality['npl_nominal'] = ($quality['npl_nominal'] ?? 0.0) + max(0.0, (float) $metrics['npl_ratio']) * $loan;
+                    }
+                    if (array_key_exists('lar_ratio', $metrics)) {
+                        $quality['lar_nominal'] = ($quality['lar_nominal'] ?? 0.0) + max(0.0, (float) $metrics['lar_ratio']) * $loan;
+                    }
+                }
+
+                $ratios = $this->calculateFinancialRatios($current, $quality, 12 / $month);
+                $value = $ratios[$formulaPath[0]][$formulaPath[1]] ?? null;
+            } else {
+                $value = $weight > 0
+                    ? $weighted / $weight
+                    : (count($rawValues) === 1 ? $rawValues[0] : null);
+            }
+
+            return $value === null ? null : round($value * 100, 2);
+        };
+
+        $monthly = function (array $unitKeys, int $ratioYear) use ($ratioFor): array {
+            $values = [];
+            for ($month = 1; $month <= 12; $month++) {
+                $values[] = $ratioFor($unitKeys, $ratioYear, $month);
+            }
+
+            return $values;
+        };
+
+        $datasetsFor = static fn (array $unitKeys): array => [
+            ['label' => "Realisasi {$year}", 'data' => $monthly($unitKeys, $year)],
+            ['label' => "Realisasi {$prevYear}", 'data' => $monthly($unitKeys, $prevYear)],
+        ];
+
+        $unitsOf = static fn (string $branchName): array => array_keys(array_filter(
+            $units,
+            static fn (array $info): bool => $info['branch'] === $branchName
+        ));
+
+        $series = [];
+        if ($branch === self::AREA_KEY) {
+            foreach (self::AREA_BRANCHES as $areaBranch) {
+                $series[$areaBranch] = ['datasets' => $datasetsFor($unitsOf($areaBranch))];
+            }
+            $summaryKeys = array_keys($units);
+        } else {
+            $branchUnitKeys = $unitsOf($branch);
+            if ($unit !== 'all') {
+                $branchUnitKeys = array_values(array_filter($branchUnitKeys, static fn (string $key): bool => $key === $branch . '|' . $unit));
+            }
+            usort($branchUnitKeys, fn (string $a, string $b): int => strnatcasecmp($units[$a]['name'], $units[$b]['name']));
+            foreach ($branchUnitKeys as $unitKey) {
+                $series[$units[$unitKey]['name']] = ['datasets' => $datasetsFor([$unitKey])];
+            }
+            $summaryKeys = $branchUnitKeys;
+        }
+
+        return [
+            'labels' => ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agt', 'Sep', 'Okt', 'Nov', 'Des'],
+            'value_type' => 'percent',
+            'summary' => [
+                'datasets' => $datasetsFor($summaryKeys),
+            ],
+            'series' => $series,
+        ];
+    }
+
+    /** @return array{0: string, 1: string}|null */
+    private function ratioFormulaPath(string $metric): ?array
+    {
+        foreach ([
+            'profitability' => self::FINANCIAL_PROFITABILITY_LABELS,
+            'liquidity' => self::FINANCIAL_LIQUIDITY_LABELS,
+            'asset_quality' => self::FINANCIAL_ASSET_QUALITY_LABELS,
+        ] as $group => $map) {
+            $key = array_search($metric, $map, true);
+            if ($key !== false) {
+                return [$group, (string) $key];
+            }
+        }
+
+        return null;
     }
 }

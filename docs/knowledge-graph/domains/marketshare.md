@@ -7,10 +7,10 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Kind | Count |
 | --- | ---: |
 | command | 1 |
-| file | 7 |
-| method | 79 |
+| file | 8 |
+| method | 85 |
 | route | 4 |
-| class | 6 |
+| class | 7 |
 | table | 1 |
 
 ## Main Hubs
@@ -26,27 +26,27 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `CrasLpgReference` | class | 10 | `app/Support/CrasLpgReference.php:8` |
 | `MarketShareSektoralReport` | class | 10 | `app/Support/MarketShareSektoralReport.php:5` |
 | `mappedRows` | method | 10 | `app/Support/CrasLpgPortfolioService.php:119` |
-| `movementSeries` | method | 10 | `app/Support/CrasMappingService.php:261` |
+| `movementSeries` | method | 10 | `app/Support/CrasMappingService.php:262` |
 | `aggregateInPhp` | method | 9 | `app/Support/CrasLpgPortfolioService.php:207` |
-| `aggregateUnits` | method | 9 | `app/Support/CrasMappingService.php:572` |
+| `aggregateUnits` | method | 9 | `app/Support/CrasMappingService.php:573` |
 | `normalize` | method | 9 | `app/Support/CrasLpgReference.php:56` |
-| `aggregateUnitsInPhp` | method | 8 | `app/Support/CrasMappingService.php:649` |
+| `InstitutionMarketShareSheet` | class | 8 | `app/Support/InstitutionMarketShareSheet.php:8` |
+| `aggregateUnitsInPhp` | method | 8 | `app/Support/CrasMappingService.php:650` |
+| `forDisplay` | method | 8 | `app/Support/InstitutionMarketShareSheet.php:98` |
+| `parse` | method | 8 | `app/Support/InstitutionMarketShareSheet.php:11` |
 | `payload` | method | 8 | `app/Support/MarketShareArea6Report.php:119` |
 | `payload` | method | 8 | `app/Support/MarketShareSektoralReport.php:101` |
 | `MarketShareArea6Report` | class | 7 | `app/Support/MarketShareArea6Report.php:5` |
-| `aggregateUnitsWithSql` | method | 7 | `app/Support/CrasMappingService.php:623` |
-| `applyFilters` | method | 7 | `app/Support/CrasMappingService.php:730` |
-| `applyRegionFilter` | method | 7 | `app/Support/CrasMappingService.php:740` |
-| `parentComparisonGroup` | method | 7 | `app/Support/CrasMappingService.php:216` |
+| `aggregateUnitsWithSql` | method | 7 | `app/Support/CrasMappingService.php:624` |
+| `applyFilters` | method | 7 | `app/Support/CrasMappingService.php:731` |
+| `applyRegionFilter` | method | 7 | `app/Support/CrasMappingService.php:741` |
+| `parentComparisonGroup` | method | 7 | `app/Support/CrasMappingService.php:217` |
 | `insights` | method | 6 | `app/Support/MarketShareArea6Report.php:156` |
 | `marketShare` | method | 6 | `app/Http/Controllers/PublicWorkbookController.php:16` |
 | `marketShareMapping` | method | 6 | `app/Http/Controllers/PublicWorkbookController.php:27` |
 | `percentage` | method | 6 | `app/Support/CrasLpgPortfolioService.php:415` |
 | `resolve` | method | 6 | `app/Support/CrasLpgReference.php:29` |
 | `aggregateWithSql` | method | 5 | `app/Support/CrasLpgPortfolioService.php:183` |
-| `applyRegionFilter` | method | 5 | `app/Support/CrasLpgPortfolioService.php:432` |
-| `data` | method | 5 | `app/Support/CrasLpgReference.php:72` |
-| `decorateRow` | method | 5 | `app/Support/MarketShareSektoralReport.php:217` |
 
 ## Route Nodes
 
@@ -60,6 +60,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `CrasLpgPortfolioService` - `app/Support/CrasLpgPortfolioService.php`
 - `CrasLpgReference` - `app/Support/CrasLpgReference.php`
 - `CrasMappingService` - `app/Support/CrasMappingService.php`
+- `InstitutionMarketShareSheet` - `app/Support/InstitutionMarketShareSheet.php`
 - `MarketShareArea6Report` - `app/Support/MarketShareArea6Report.php`
 - `MarketShareSektoralReport` - `app/Support/MarketShareSektoralReport.php`
 - `SyncCrasLpgReferenceCommand` - `app/Console/Commands/SyncCrasLpgReferenceCommand.php`
@@ -76,13 +77,15 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Direction | Count |
 | --- | ---: |
-| marketshare -> core (calls) | 14 |
+| marketshare -> core (calls) | 16 |
+| dashboard-simpanan -> marketshare (calls) | 13 |
 | marketshare -> core (accepts) | 11 |
-| dashboard-simpanan -> marketshare (calls) | 9 |
 | marketshare -> access-control (protected_by) | 8 |
 | dashboard-simpanan -> marketshare (references_route) | 2 |
 | marketshare -> bank-pipeline (calls) | 2 |
 | marketshare -> access-control (calls) | 2 |
+| marketshare -> core (instantiates) | 2 |
+| core -> marketshare (calls) | 2 |
 | core -> marketshare (reads_table) | 2 |
 | bank-pipeline -> marketshare (contains) | 2 |
 | presentation -> marketshare (contains) | 2 |

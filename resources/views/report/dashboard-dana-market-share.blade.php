@@ -1706,11 +1706,12 @@
     @endphp
 
     @if(!empty($instansiNativeTable))
+        <p class="market-instansi-meta d-none" data-market-instansi-filter-note role="status"></p>
         <div
             class="market-instansi-table-shell"
             data-market-instansi-table-shell
             data-source-url="{{ $instansiDataUrl ?? '' }}"
-            data-storage-key="marketshare-instansi-hidden-columns-v2-{{ $selectedInstansiBranch ?? 'default' }}"
+            data-storage-key="marketshare-instansi-hidden-columns-v3-{{ $selectedInstansiBranch ?? 'default' }}"
         >
             <div class="market-instansi-state" data-market-instansi-state>
                 Memuat data DATA INSTANSI...
@@ -2762,6 +2763,8 @@
                     normalized = normalized.replace(/\./g, '').replace(',', '.');
                 } else if (normalized.includes(',')) {
                     normalized = normalized.replace(',', '.');
+                } else if (/^\d{1,3}(?:\.\d{3})+$/.test(normalized)) {
+                    normalized = normalized.replace(/\./g, '');
                 }
 
                 const numeric = Number(normalized);
@@ -3049,6 +3052,11 @@
 
                     columns = Array.isArray(payload.columns) ? payload.columns : [];
                     rows = Array.isArray(payload.rows) ? payload.rows : [];
+                    const filterNote = document.querySelector('[data-market-instansi-filter-note]');
+                    if (filterNote && Number(payload.hiddenRowCount) > 0) {
+                        filterNote.textContent = payload.hiddenRowCount + ' baris Magetan disembunyikan karena potensi atau total pegawai nol/kosong. Baris total tetap mengikuti sumber.';
+                        filterNote.classList.remove('d-none');
+                    }
                     if (columns.length === 0) {
                         throw new Error('Header DATA INSTANSI tidak terbaca.');
                     }

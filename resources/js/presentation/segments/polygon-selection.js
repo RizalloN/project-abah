@@ -3,8 +3,13 @@ import { BRANCH_LABELS } from './territory-data.js';
 export const POLYGON_CHAPTERS = new Set(['marketshare', 'mapping', 'sektoral']);
 
 /** Resolve identities from the source mapping, never by choosing the largest/first serving unit. */
-export const resolvePolygonSelection = ({ key, code, unitCode, current, scope, index }) => {
+export const resolvePolygonSelection = ({ key, code, unitCode, scopeKey, current, scope, index }) => {
     if (!POLYGON_CHAPTERS.has(key)) return null;
+    if (scopeKey === 'area6') {
+        if (scope.key !== 'area6') return null;
+        return { level: 'branch', branchKey: 'area6', unitCode: null, unitCodes: [], districtCode: null,
+            label: 'Area 6 Konsol', codes: new Set(Object.keys(BRANCH_LABELS).flatMap(branch => [...index.codesOfBranch(branch)])) };
+    }
     if (unitCode) {
         if (key === 'marketshare') return null;
         const unit = index.unitsInScope(scope.key).find((item) => item.code === unitCode);

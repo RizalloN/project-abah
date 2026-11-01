@@ -1,0 +1,227 @@
+/* Geography and its financial reading are two views of the same chapter. */
+.sg .sg-nav.is-on-dark {
+    background: rgba(12, 18, 28, .96);
+}
+
+.sg .sg-branch-story .sg-polygon-chapter[data-polygon-view] {
+    --sg-panel-top: calc(var(--kn-nav-h) + var(--sg-story-rail-height, 82px) + 34px);
+    position: relative;
+    min-width: 0;
+    overflow-anchor: none;
+}
+
+.sg .sg-branch-story .sg-polygon-chapter[data-polygon-view] > .sg-opener[hidden],
+.sg .sg-branch-story .sg-polygon-chapter[data-polygon-view] > .sg-sheet[hidden] {
+    display: none !important;
+}
+
+/* A map view occupies its natural viewport without leaving an empty pin track. */
+.sg .sg-branch-story .sg-polygon-chapter[data-polygon-view] > .sg-opener {
+    position: relative;
+    height: auto;
+    min-height: calc(100svh - var(--kn-nav-h));
+    margin: 0;
+}
+.sg .sg-branch-story .sg-polygon-chapter[data-polygon-view] > .sg-opener > .sg-opener__sticky {
+    position: relative;
+    top: auto;
+    height: auto;
+    min-height: calc(100svh - var(--kn-nav-h));
+}
+.sg .sg-branch-story .sg-polygon-chapter[data-polygon-view] > .sg-opener .sg-opener__copy {
+    transform: none;
+    opacity: 1;
+}
+
+/* Detail remains a normal document: tables and data objects keep their full reading width. */
+.sg .sg-branch-story .sg-polygon-chapter[data-polygon-view] > .sg-sheet {
+    position: relative;
+    min-height: calc(100svh - var(--kn-nav-h));
+    margin: 0;
+    padding-top: var(--sg-panel-top);
+    border-top: 0;
+    border-radius: 0;
+    background: var(--kn-ground);
+    box-shadow: none;
+    transform: none;
+    transform-origin: 50% 0;
+    transition: none;
+}
+
+/* WAAPI owns the slide. The temporary viewport clips the incoming report's full height. */
+.sg .sg-branch-story .sg-polygon-chapter[data-polygon-view].is-panel-transition {
+    height: var(--sg-panel-height, 100svh);
+    min-height: 0;
+    overflow: hidden;
+    overflow: clip;
+    pointer-events: none;
+}
+.sg .sg-branch-story .sg-polygon-chapter[data-polygon-view].is-panel-transition > .sg-opener,
+.sg .sg-branch-story .sg-polygon-chapter[data-polygon-view].is-panel-transition > .sg-sheet {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+}
+.sg .sg-branch-story .sg-polygon-chapter[data-polygon-view].is-panel-transition > .sg-sheet {
+    z-index: 4;
+    will-change: transform, opacity;
+}
+
+.sg .sg-detail-head {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 22px clamp(24px, 4vw, 56px);
+    min-width: 0;
+    margin-top: 0;
+    margin-bottom: clamp(36px, 5vw, 64px);
+    padding-bottom: clamp(24px, 3vw, 36px);
+    border-bottom: 1px solid var(--kn-line-strong);
+}
+.sg .sg-detail-head [data-polygon-back] {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    align-self: center;
+    justify-self: start;
+    min-height: 44px;
+    max-width: 100%;
+    padding: 11px 16px;
+    border: 1px solid var(--kn-line-strong);
+    border-radius: 12px;
+    background: var(--kn-paper);
+    color: var(--kn-ink);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, .08) inset;
+    font-size: .8125rem;
+    font-weight: 500;
+    line-height: 1.35;
+    text-align: left;
+    transform: none;
+    touch-action: manipulation;
+    transition: color 180ms var(--kn-ease), border-color 180ms var(--kn-ease), background-color 180ms var(--kn-ease);
+}
+.sg .sg-detail-head [data-polygon-back]::before {
+    content: "\2190";
+    flex: 0 0 auto;
+    color: var(--kn-accent);
+    font-size: 1.1rem;
+    line-height: 1;
+}
+.sg .sg-detail-head [data-polygon-back]:focus-visible {
+    outline: 2px solid var(--kn-accent);
+    outline-offset: 4px;
+}
+.sg .sg-detail-head__copy {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+}
+.sg .sg-detail-head__copy > small {
+    color: var(--kn-accent);
+    font-size: .8125rem;
+    font-weight: 500;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+}
+.sg .sg-detail-head__title {
+    margin: 0;
+    color: var(--kn-ink);
+    font-size: clamp(1.9rem, 3.8vw, 3.4rem);
+    font-weight: 600;
+    line-height: 1.06;
+    letter-spacing: -.045em;
+    text-wrap: balance;
+    overflow-wrap: anywhere;
+}
+.sg .sg-detail-head + * { margin-top: 0; }
+
+/* The same live headline figures travel with the reading; they are never copied. */
+.sg .sg-detail-summary {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 8px clamp(24px, 4vw, 56px);
+    min-width: 0;
+    margin-top: 2px;
+    padding-top: clamp(24px, 3vw, 34px);
+    border-top: 1px solid var(--kn-line);
+}
+.sg .sg-detail-summary .sg-figure {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    min-width: 0;
+    margin: 0;
+}
+.sg .sg-detail-summary .sg-figure__value {
+    font-size: clamp(2.8rem, 5.5vw, 5.2rem);
+    line-height: .98;
+    letter-spacing: -.055em;
+}
+.sg .sg-detail-summary .sg-figure__label {
+    grid-column: 2;
+    align-self: end;
+    max-width: 56ch;
+    margin: 0;
+    font-size: clamp(.9375rem, 1.35vw, 1.125rem);
+    line-height: 1.45;
+    letter-spacing: -.015em;
+    overflow-wrap: anywhere;
+}
+.sg .sg-detail-summary .sg-deltas {
+    grid-column: 2;
+    align-self: start;
+    gap: 8px;
+    margin: 0;
+}
+.sg .sg-detail-summary .sg-delta { min-height: 30px; padding: 5px 10px; font-size: .8125rem; }
+
+@media (hover: hover) and (pointer: fine) {
+    .sg .sg-detail-head [data-polygon-back]:hover {
+        border-color: var(--kn-accent);
+        background: var(--kn-accent-soft);
+        color: var(--kn-accent);
+        transform: none;
+    }
+}
+
+@media (max-width: 960px) {
+    .sg .sg-branch-story .sg-polygon-chapter[data-polygon-view][data-branch-selected] > .sg-opener > .sg-opener__sticky {
+        padding-top: calc(var(--kn-nav-h) + var(--sg-story-rail-height, 112px) + 20px);
+    }
+}
+
+@media (max-width: 760px) {
+    .sg .sg-branch-story .sg-polygon-chapter[data-polygon-view] {
+        --sg-panel-top: calc(var(--kn-nav-h) + var(--sg-story-rail-height, 112px) + 24px);
+    }
+    .sg .sg-detail-head {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 22px;
+        margin-bottom: 30px;
+        padding-bottom: 24px;
+    }
+    .sg .sg-detail-head [data-polygon-back] { padding-inline: 14px; }
+    .sg .sg-detail-head__copy { gap: 7px; }
+    .sg .sg-detail-head__title { font-size: clamp(1.8rem, 7.2vw, 2.4rem); }
+    .sg .sg-detail-head__copy > small { font-size: .75rem; }
+    .sg .sg-detail-summary { grid-template-columns: minmax(0, 1fr); gap: 12px; padding-top: 24px; }
+    .sg .sg-detail-summary .sg-figure { grid-column: 1; grid-row: auto; }
+    .sg .sg-detail-summary .sg-figure__value { font-size: clamp(2.8rem, 12.5vw, 4rem); }
+    .sg .sg-detail-summary .sg-figure__label,
+    .sg .sg-detail-summary .sg-deltas { grid-column: 1; }
+    .sg .sg-detail-summary .sg-deltas { margin-top: 2px; }
+}
+
+@media (max-height: 500px) and (min-width: 761px) {
+    .sg .sg-detail-head { gap: 20px; padding-bottom: 18px; margin-bottom: 26px; }
+    .sg .sg-detail-head__title { font-size: 1.9rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .sg .sg-detail-head [data-polygon-back] { transition: none; }
+}

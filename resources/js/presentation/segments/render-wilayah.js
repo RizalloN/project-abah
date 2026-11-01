@@ -71,17 +71,21 @@ export const marketshare = (ctx) => {
     if (!market?.available || (!deposit.length && !loan.length)) {
         return { html: chapter({ key: 'marketshare', group: 'Wilayah', title: 'Pangsa pasar.', lede: 'Data market share belum tersedia.', territory: false, span: 120 }) };
     }
-    const dpk = deposit[0];
-    const credit = loan[0];
-    const dpkRow = dpk ? scopeRow(dpk, scope) : null;
-    const creditRow = credit ? scopeRow(credit, scope) : null;
+    const dpk = deposit.find((segment) => segment.key === 'dpk');
+    const credit = loan.find((segment) => segment.key === 'pinjaman_total');
+    const categories = [
+        { key: 'simpanan', label: 'Simpanan', group: deposit, total: dpk, keys: ['tabungan', 'giro', 'deposito', 'casa'], color: BRI, note: 'CASA mencakup Giro dan Tabungan; angka produk disajikan masing-masing dan tidak dijumlahkan kembali ke Total DPK.' },
+        { key: 'pinjaman', label: 'Pinjaman', group: loan, total: credit, keys: ['umkm', 'konsumer', 'briguna', 'kpr'], color: LOAN, note: 'UMKM, Konsumer, BRIGUNA, dan KPR mengikuti klasifikasi laporan sumber; angka produk tidak dijumlahkan untuk membentuk Total Pinjaman.' },
+    ];
     const isArea = ctx.scope.key === 'area6';
     const period = dpk?.period_now || credit?.period_now || market.period;
     const previous = dpk?.period_prev || credit?.period_prev || '';
 
     // The whole: every product as a vessel, as tall as its industry, filled to BRI's share.
-    const productVessels = (group, label, color) => {
-        const items = group.map((segment) => {
+    const productVessels = (category) => {
+        const items = category.keys.map((key) => {
+            const segment = category.group.find((item) => item.key === key);
+            if (!segment) return null;
             const row = scopeRow(segment, scope);
             if (!row?.labels) return null;
             return {
@@ -93,15 +97,15 @@ export const marketshare = (ctx) => {
                 ratio: row.share,
                 ratioLabel: row.labels.share,
                 detail: `BRI ${row.labels.bri} dari industri ${row.labels.industry} (${market.unit}). ${previous} ${row.labels.share_prev}, perubahan ${ppLabel(row.share_ytd, row.labels.share_ytd)}.`,
-                color,
+                color: category.color,
             };
         }).filter(Boolean);
         return items.length ? tile({
-            title: label,
+            title: `${category.label} per produk`,
             meta: `${period}, ${market.unit}`,
-            className: 'sg-tile--atlas',
-            body: vessels({ items, caption: `${label}: pangsa BRI per produk`, ratioName: 'pangsa BRI' }),
-        }) : '';
+            className: 'sg-tile--atlas sg-market-products',
+            body: `${vessels({ items, caption: `${category.label}: pangsa BRI per produk`, ratioName: 'pangsa BRI' })}<p class="sg-note">${h(category.note)}</p>`,
+        }) : empty(`Rincian produk ${category.label.toLowerCase()} belum tersedia pada sumber.`);
     };
 
     // The movement: share in December against share now, one line per product.
@@ -115,16 +119,12 @@ export const marketshare = (ctx) => {
             caption: `Pergeseran pangsa ${label}`,
             items: group.map((segment) => {
                 const row = scopeRow(segment, scope);
-                return row?.labels ? { key: segment.key, label: segment.label.replace(/^Pinjaman /, ''), prev: row.share_prev, now: row.share, prevLabel: row.labels.share_prev, nowLabel: row.labels.share, deltaLabel: ppLabel(row.share_ytd, row.labels.share_ytd), color, total: segment === group[0] } : null;
+                return row?.labels ? { key: segment.key, label: segment.label.replace(/^Pinjaman /, ''), prev: row.share_prev, now: row.share, prevLabel: row.labels.share_prev, nowLabel: row.labels.share, deltaLabel: ppLabel(row.share_ytd, row.labels.share_ytd), color, total: ['dpk', 'pinjaman_total'].includes(segment.key) } : null;
             }).filter(Boolean),
         }),
     });
 
-    // The comparison: four branches as vessels for the product the reader picks.
-    const all = [...deposit, ...loan];
-    ctx.presentationState ||= {};
-    const state = ctx.presentationState.marketshare ||= {};
-    if (!all.some((segment) => segment.key === state.product)) state.product = all[0]?.key;
+    // The comparison follows the selected category's source total, without another product selector.
     const branchVessels = (segment) => vessels({
         caption: `${segment.label} per cabang`,
         ratioName: `pangsa ${segment.label}`,
@@ -142,12 +142,6 @@ export const marketshare = (ctx) => {
             dim: Boolean(ctx.selection?.branchKey) && row.key !== ctx.selection.branchKey,
         })),
     });
-    const picker = isArea ? `
-        <div class="sg-chips sg-chips--quiet" role="tablist" aria-label="Produk market share" data-sg-market-picker>
-            ${all.map((segment) => `<button type="button" role="tab" aria-selected="${segment.key === state.product}" data-market="${h(segment.key)}">${h(segment.label)}</button>`).join('')}
-        </div>
-        <div data-sg-market-matrix>${tile({ className: 'sg-tile--atlas', body: branchVessels(all.find((segment) => segment.key === state.product)) })}</div>` : '';
-
     const productTable = (group, label) => table({
         caption: `${label} per produk`,
         columns: [
@@ -161,6 +155,37 @@ export const marketshare = (ctx) => {
         rows: group.map((segment) => ({ segment: segment.label, ...scopeRow(segment, scope) })).filter((row) => row.labels),
     });
 
+    const categoryTotal = (category) => {
+        const row = category.total ? scopeRow(category.total, scope) : null;
+        if (!row?.labels) return empty(`Total ${category.label.toLowerCase()} belum tersedia pada sumber; tidak dihitung dari penjumlahan produk.`);
+        return `<div class="sg-market-total" data-market-total="${category.key}">
+            <div class="sg-market-total__share"><p>${h(category.total.label)} · ${h(scope.label)}</p><strong>${h(row.labels.share)}</strong><span>Pangsa BRI terhadap industri</span></div>
+            <dl><div><dt>BRI</dt><dd>${h(row.labels.bri)}</dd></div><div><dt>Industri</dt><dd>${h(row.labels.industry)}</dd></div><div><dt>${h(category.total.period_prev || previous)}</dt><dd>${h(row.labels.share_prev)}</dd></div><div><dt>Perubahan YtD</dt><dd>${h(ppLabel(row.share_ytd, row.labels.share_ytd))}</dd></div></dl>
+            <p class="sg-market-total__source">${h(category.total.period_now || period)} · ${h(market.unit)}. ${h(market.source)}.</p>
+        </div>`;
+    };
+    const categoryInsight = (category) => {
+        const products = category.keys.map(key => category.group.find(item => item.key === key)).filter(Boolean)
+            .map(segment => ({ segment, row: scopeRow(segment, scope) })).filter(item => item.row?.share != null && Number.isFinite(Number(item.row.share)));
+        const strongest = [...products].sort((a, b) => b.row.share - a.row.share)[0];
+        const moving = products.filter(item => item.row.share_ytd != null && Number.isFinite(Number(item.row.share_ytd)));
+        const leader = [...moving].sort((a, b) => b.row.share_ytd - a.row.share_ytd)[0];
+        const label = item => h(item.segment.label.replace(/^Pinjaman /, ''));
+        return `<aside class="sg-market-insight" aria-label="Sorotan ${category.label}"><span>Sorotan ${category.label.toLowerCase()}</span>
+            ${strongest ? `<p><strong>${label(strongest)}</strong> memimpin pangsa produk: <b>${h(strongest.row.labels.share)}</b>.</p>` : '<p>Pangsa produk belum tersedia.</p>'}
+            ${leader ? `<p>Perubahan YtD tertinggi: <strong>${label(leader)}</strong> <b>${h(ppLabel(leader.row.share_ytd, leader.row.labels.share_ytd))}</b>.</p>` : ''}
+        </aside>`;
+    };
+    const categoryPanels = `<div class="sg-market-split" data-market-comparison>
+        ${categories.map(category => `<section class="sg-market-column" data-market-kind="${category.key}" aria-labelledby="sg-market-${category.key}-title">
+            <header class="sg-market-column__heading"><span>${category.key === 'simpanan' ? '01 / Dana' : '02 / Kredit'}</span><h3 id="sg-market-${category.key}-title">${category.label}</h3><p>BRI dibanding industri · ${h(period)}</p></header>
+            ${categoryTotal(category)}${productVessels(category)}${categoryInsight(category)}
+        </section>`).join('')}
+    </div>
+    ${previous ? block({ title: 'Arah pergerakan pangsa', lede: `${previous} ke ${period}, dalam poin persentase.`, body: `<div class="sg-grid sg-grid--2 sg-market-support">${categories.filter(c => c.group.length).map(c => shareShift(c.group, c.label, c.color)).join('')}</div>` }) : ''}
+    ${isArea ? block({ title: 'Posisi setiap cabang', lede: 'Simpanan dan pinjaman pada cakupan cabang yang sama.', body: `<div class="sg-grid sg-grid--2 sg-market-support">${categories.filter(c => c.total).map(c => tile({ title: c.label, meta: period, className: 'sg-tile--atlas', body: branchVessels(c.total) })).join('')}</div>` }) : ''}
+    <div class="sg-grid sg-grid--2 sg-market-ledgers">${categories.filter(c => c.group.length).map(c => disclosure(`Tabel ${c.label.toLowerCase()} per produk`, `${productTable(c.group, c.label)}<p class="sg-note">${h(c.note)} ${h(market.unit)}.</p>`)).join('')}</div>`;
+
     const heightsFor = (segment) => {
         const values = Object.fromEntries(segment.rows.filter((row) => row.key).map((row) => [row.key, row.share]));
         const max = Math.max(1, ...Object.values(values));
@@ -171,8 +196,8 @@ export const marketshare = (ctx) => {
             return { lift: 0.12 + t * 0.88, color: mix(0xc9d6ea, 0x1d4fb0, t * t * (3 - 2 * t)), roughness: 0.26 };
         };
     };
-    const primary = dpk || credit;
-    const primaryRow = dpkRow || creditRow;
+    const primary = dpk || credit || deposit[0] || loan[0];
+    const primaryRow = primary ? scopeRow(primary, scope) : null;
     const labelsFor = (segment) => segment.rows.filter((row) => row.key && (scope.key === 'area6' || row.key === scope.key)).map((row) => ({
         id: `ms-${row.key}`, codes: ctx.index.codesOfBranch(row.key), title: row.label, value: `${row.labels.share} ${segment.label}`,
     }));
@@ -182,20 +207,15 @@ export const marketshare = (ctx) => {
             key: 'marketshare',
             group: 'Wilayah · Marketshare',
             title: 'Posisi kita di pasar.',
-            figure: primaryRow ? { value: primaryRow.labels.share, label: `Pangsa ${primary.label} BRI ${scope.label} dibanding seluruh industri, ${primary.period_now}` } : null,
-            chips: [creditRow ? `<span class="sg-delta"><small>Pinjaman</small>${h(creditRow.labels.share)}</span>` : '', dpkRow ? `<span class="sg-delta is-${(dpkRow.share_ytd || 0) >= 0 ? 'up' : 'down'}"><small>DPK YtD</small>${h(ppLabel(dpkRow.share_ytd, dpkRow.labels.share_ytd))}</span>` : ''].join(''),
+            figure: { value: primaryRow?.labels.share || '-', label: primaryRow ? `Pangsa ${primary.label} BRI ${scope.label} dibanding seluruh industri, ${primary.period_now}` : 'Total belum tersedia pada sumber.' },
+            chips: primaryRow ? `<span class="sg-delta is-${(primaryRow.share_ytd || 0) >= 0 ? 'up' : 'down'}"><small>${h(primary.label)} YtD</small>${h(ppLabel(primaryRow.share_ytd, primaryRow.labels.share_ytd))}</span>` : '<span class="sg-delta">YtD belum tersedia</span>',
             lede: scope.key === 'area6' ? 'Pilih polygon cabang untuk membuka pangsa simpanan dan pinjaman terhadap industri.' : `Pangsa BRI terhadap industri di ${scope.label}, untuk simpanan dan pinjaman.`,
             note: 'Data industri tersedia per cabang. Klik polygon cabang untuk memilih; tinggi wilayah mengikuti pangsa cabangnya.',
             ground: 'light',
             anchor: 'lead',
             pose: 'lead',
             span: isArea ? 300 : 220,
-            sheet: `
-                ${block({ title: `BRI di dalam industri, ${scope.label}.`, lede: `Setiap bejana setinggi industrinya; isinya adalah porsi BRI. ${market.source}.`, body: `<div class="sg-grid sg-grid--2">${productVessels(deposit, 'Simpanan', BRI)}${productVessels(loan, 'Pinjaman', LOAN)}</div>` })}
-                ${previous ? block({ title: 'Ke mana pangsa bergerak.', lede: `Pangsa ${previous} dibanding ${period}, dalam poin persentase.`, body: `<div class="sg-grid sg-grid--2">${shareShift(deposit, 'Simpanan', BRI)}${shareShift(loan, 'Pinjaman', LOAN)}</div>` }) : ''}
-                ${isArea ? block({ title: 'Empat cabang berdampingan.', lede: 'Pilih produk; cabang yang dipilih di peta tetap menyala.', body: picker }) : ''}
-                ${disclosure('Lihat tabel pangsa per produk', `<div class="sg-grid sg-grid--1">${productTable(deposit, 'Simpanan')}${productTable(loan, 'Pinjaman')}</div><p class="sg-note">Bank lain dihitung dari industri dikurangi BRI. ${h(market.unit)}.</p>`)}
-            `,
+            sheet: categoryPanels,
         }),
         territory(studio) {
             const heights = heightsFor(primary);
@@ -216,22 +236,10 @@ export const marketshare = (ctx) => {
                 arrangement: () => ({ explode: 0, spread: 0, levitate: 0, levitateBranch: null, grow: 1, wave: 0 }),
             });
         },
-        bind(root) {
-            bindAtlas(root.querySelector('#sg-marketshare') || root);
-            const picker = root.querySelector('[data-sg-market-picker]');
-            if (!picker) return;
-            picker.addEventListener('click', (event) => {
-                const button = event.target.closest('[data-market]');
-                if (!button) return;
-                picker.querySelectorAll('[data-market]').forEach((item) => item.setAttribute('aria-selected', String(item === button)));
-                const segment = all.find((item) => item.key === button.dataset.market);
-                if (!segment) return;
-                state.product = segment.key;
-                const host = root.querySelector('[data-sg-market-matrix]');
-                host.innerHTML = tile({ className: 'sg-tile--atlas', body: branchVessels(segment) });
-                ctx.rescan(host);
-                bindAtlas(host);
-            });
+        bind(root, studio) {
+            const chapterRoot = root.querySelector('#sg-marketshare') || root;
+            bindAtlas(chapterRoot);
+
         },
     };
 };
@@ -344,7 +352,7 @@ export const mapping = (ctx) => {
             span: isArea ? 380 : 300,
             sheet: `
                 ${branchVessels ? block({ title: 'Empat cabang berdampingan.', lede: 'Setiap bejana setinggi potensi cabangnya; isinya nasabah BRI.', body: branchVessels }) : ''}
-                ${block({ title: 'Di mana peluang terbesar.', lede: `Setiap bola adalah satu unit: makin ke kiri makin tipis penetrasinya, makin tinggi makin besar potensinya, dan besarnya adalah nasabah yang belum tergarap.`, body: tile({ className: 'sg-tile--atlas', body: opportunity({ rows: rows.map((row) => ({ ...row, sub: isArea ? row.branch : '' })), average: totals.penetration, caption: `Peta peluang unit, ${label}` }) }) })}
+                ${block({ title: 'Di mana peluang terbesar.', lede: `Setiap bola adalah satu unit: makin ke kiri makin tipis penetrasinya, makin tinggi makin besar potensinya, dan besarnya adalah nasabah yang belum tergarap.`, body: tile({ className: 'sg-tile--atlas', body: opportunity({ rows: rows.map((row) => ({ ...row, sub: row.branch })), average: totals.penetration, caption: `Peta peluang unit, ${label}`, source: `Sheet REKAP, diperbarui ${map.updated_at || '-'}. Angka unit utuh pada wilayah terpilih.` }) }) })}
                 ${disclosure(`Lihat tabel ${rows.length} unit`, `<div class="sg-grid sg-grid--1">${branchTable}${unitTable}</div><p class="sg-note">Sheet REKAP, diperbarui ${h(map.updated_at)}. ${h(allocationNote(ctx, units))}</p>`)}
             `,
         }),

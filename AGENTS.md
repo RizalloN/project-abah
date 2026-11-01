@@ -16,6 +16,8 @@
   2. **`dashboard-pinjaman`** (`daily_loan_dinamis`, `DashboardPinjamanReportController`, `KinerjaRmReportController`, `lw325_ph`):
      - `daily_loan_dinamis` adalah tabel transaksi harian pinjaman utama (~16M+ baris, grain: `periode` + `nomor_rekening1`).
      - Matrix Pergeseran Kolek (`matrix-pergeseran-kolek`): Nilai sel pergeseran dihitung dari saldo periode pembanding (`prev.balance_cents` / `pivot_previous_balance`) untuk sel transisi, dan saldo berjalan (`curr.balance_cents` / `baki_debet1`) untuk New Account. Drilldown modal nominatif WAJIB menyediakan kedua saldo (`pivot_previous_balance` dan `baki_debet1`).
+       Basis pembanding `basis=mtd` (akhir bulan lalu) atau `basis=mtm` (tanggal sama bulan lalu, mundur ke slot Daily Loan terakhir di bulan itu); PH baru dibandingkan dengan nominatif PH pada tanggal pembanding itu sendiri, tanpa fallback. Rekening pembanding yang kolek-nya tak terklasifikasi bukan posisi awal, jadi tercatat New Account. Drilldown mengambil halaman nomor rekening dulu (`matrixCellAccountPage`), baru kolom detail untuk halaman itu.
+     - Rumus kolek SQL (`LoanQualityBucketMapper::buildSqlExpression`) dipakai 4 laporan; ubah hanya dengan bukti paritas baris-per-baris terhadap versi sebelumnya pada data asli.
      - Sub-fitur analitik: `kredit` (eksposur/kualitas), `chart-periodik` (tren snapshot), `analisa-ug-npl` (downgrade), `mismatch` (kolek vs umur tunggakan), `tunggakan-kecil`, `realisasi-6-bulan-menunggak`, `data-ph` (recovery).
   3. **`dashboard-simpanan`** (`DashboardSimpananController`, `simpanan_multipn`, `ssa_simpanan`):
      - `simpanan_multipn` adalah tabel raksasa teroptimasi. Indeks baru harus dicek left-prefix redundancy agar tidak membengkakkan storage.

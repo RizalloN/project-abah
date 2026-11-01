@@ -1,0 +1,225 @@
+/* Pointer light is a second instrument: material responds, the financial plane stays fixed. */
+.sg .sg-interaction-motion [data-sg-interaction] {
+    --sg-pointer-x: 0;
+    --sg-pointer-y: 0;
+    --sg-light-x: 50%;
+    --sg-light-y: 50%;
+    --sg-engaged: 0;
+    --sg-press: 0;
+    --sg-interaction-ease: cubic-bezier(.2,.75,.25,1);
+    --sg-interaction-edge: color-mix(in srgb, var(--kn-accent) 36%, transparent);
+}
+
+/* A confined reflection follows the hand across paper, not across the whole screen. */
+.sg .sg-interaction-motion [data-sg-interaction] > .sg-expressive-plane::after,
+.sg .sg-interaction-motion [data-sg-interaction="metrics"] > div > .sg-expressive-plane::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: radial-gradient(ellipse 240px 150px at var(--sg-light-x) var(--sg-light-y), color-mix(in srgb, var(--kn-accent) 13%, transparent), transparent 75%);
+    opacity: calc(var(--sg-engaged) * .85);
+    transition: opacity 220ms var(--sg-interaction-ease);
+    pointer-events: none;
+}
+.sg .sg-interaction-motion [data-sg-interaction="header"] > .sg-expressive-plane::after {
+    background: linear-gradient(90deg, transparent, var(--sg-interaction-edge), transparent);
+    inset: auto 0 0;
+    height: 1px;
+}
+.sg .sg-interaction-motion [data-sg-interaction="section"] > .sg-expressive-plane::after { display: none; }
+.sg .sg-interaction-motion [data-sg-interaction="metrics"] > div {
+    border-radius: 3px;
+    transition: background-color 200ms var(--sg-interaction-ease);
+}
+.sg .sg-interaction-motion [data-sg-interaction="metrics"] > div[data-sg-hot="true"] {
+    background-color: color-mix(in srgb, var(--kn-accent) 4%, transparent);
+}
+.sg .sg-interaction-motion [data-sg-interaction="metrics"] > div[data-sg-hot="true"]::after {
+    transform: scaleX(1.7);
+    box-shadow: 0 0 16px color-mix(in srgb, var(--kn-accent) 28%, transparent);
+}
+.sg .sg-interaction-motion [data-sg-interaction="metrics"] > div::after {
+    transition: transform 360ms var(--sg-interaction-ease), box-shadow 260ms var(--sg-interaction-ease);
+}
+
+/* Glass catches a narrow moving strip, while its meniscus and numerical height remain exact. */
+html.sg-motion .sg .sg-interaction-motion [data-sg-interaction="vessels"] .sg-vessel__glass::after,
+.sg .sg-interaction-motion [data-sg-interaction="vessels"] .sg-vessel__glass::after {
+    content: "";
+    position: absolute;
+    inset: 0 8%;
+    width: auto;
+    border-radius: inherit;
+    background: linear-gradient(100deg, transparent 7%, rgba(255,255,255,.6) 22%, rgba(255,255,255,.06) 36%, transparent 45%);
+    background-size: 160% 100%;
+    background-position: 50% 50%;
+    opacity: calc(var(--sg-engaged) * .48);
+    transform: translate3d(calc(var(--sg-pointer-x) * var(--sg-engaged) * 8%), 0, 0);
+    pointer-events: none;
+    transition: opacity 220ms var(--sg-interaction-ease);
+}
+.sg .sg-interaction-motion [data-sg-interaction="vessels"] .sg-vessel[data-sg-hot="true"] .sg-vessel__glass {
+    box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--c) 45%, #fff), inset 8px 0 18px -15px #fff;
+}
+.sg .sg-interaction-motion [data-sg-interaction="vessels"] .sg-vessel__glass {
+    transition: box-shadow 220ms var(--sg-interaction-ease);
+}
+
+/* Each sector prism has a polished face and a quieter edge reflection. */
+.sg .sg-interaction-motion [data-sg-interaction="skyline"] .sg-prism__front::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(112deg, transparent 12%, rgba(255,255,255,.52) 30%, transparent 48%);
+    background-size: 160% 100%;
+    background-position: 50% 50%;
+    transform: translate3d(calc(var(--sg-pointer-x) * var(--sg-engaged) * 8%), 0, 0);
+    opacity: calc(var(--sg-engaged) * .38);
+    pointer-events: none;
+    transition: opacity 220ms var(--sg-interaction-ease);
+}
+.sg .sg-interaction-motion [data-sg-interaction="skyline"] .sg-prism[data-sg-hot="true"] .sg-prism__top {
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.78), inset 0 3px 9px -5px #fff;
+}
+.sg .sg-interaction-motion [data-sg-interaction="skyline"] .sg-prism[data-sg-hot="true"] .sg-prism__side {
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 58%, #fff);
+}
+
+/* The ring's center is a separate, stationary readout. Only its nine-layer object leans. */
+.sg .sg-interaction-motion [data-sg-interaction="composition"] .sg-donut__disc { transform-style: preserve-3d; filter: none; }
+.sg .sg-interaction-motion [data-sg-interaction="composition"] .sg-donut__sheen {
+    opacity: calc(.65 + var(--sg-engaged) * .35);
+    translate: calc(var(--sg-pointer-x) * var(--sg-engaged) * 2px) calc(var(--sg-pointer-y) * var(--sg-engaged) * 2px);
+    transition: opacity 200ms var(--sg-interaction-ease), translate 180ms var(--sg-interaction-ease);
+}
+.sg .sg-interaction-motion [data-sg-interaction="composition"] .sg-legend li {
+    transition: background-color 180ms var(--sg-interaction-ease), box-shadow 180ms var(--sg-interaction-ease);
+}
+.sg .sg-interaction-motion [data-sg-interaction="composition"] .sg-legend li[data-sg-hot="true"] {
+    box-shadow: inset 3px 0 0 var(--c);
+    background-color: color-mix(in srgb, var(--c) 8%, var(--kn-paper));
+}
+
+/* Sphere radius and x/y encode data. A mobile highlight travels across their skin only. */
+.sg .sg-interaction-motion [data-sg-interaction="opportunity"] .sg-orb > span {
+    background: radial-gradient(circle at calc(32% + var(--sg-pointer-x) * var(--sg-engaged) * 12%) calc(24% + var(--sg-pointer-y) * var(--sg-engaged) * 12%), #fff 0, color-mix(in srgb, var(--c) 30%, #fff) 11%, var(--c) 43%, color-mix(in srgb, var(--c) 45%, #000) 83%, color-mix(in srgb, var(--c) 25%, #000));
+}
+.sg .sg-interaction-motion [data-sg-interaction="opportunity"] .sg-orb[data-sg-hot="true"] > span {
+    opacity: 1;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.8), 0 0 0 2px var(--kn-accent), 0 calc(var(--s) * .31) calc(var(--s) * .42) calc(var(--s) * -.2) rgba(0,17,49,.5);
+}
+
+/* Lines keep their actual vertices; tracking illuminates the stroke and probe instead. */
+.sg .sg-interaction-motion [data-sg-interaction="trend"][data-sg-engagement="pointer"] .sg-ts__line,
+.sg .sg-interaction-motion [data-sg-interaction="slope"][data-sg-engagement="pointer"] .sg-slope__line {
+    filter: drop-shadow(0 2px 2px color-mix(in srgb, var(--c) 40%, transparent));
+}
+.sg .sg-interaction-motion [data-sg-interaction="trend"] .sg-ts__probe circle {
+    filter: drop-shadow(0 1px 3px color-mix(in srgb, var(--c) 35%, transparent));
+}
+.sg .sg-interaction-motion [data-sg-interaction="surface"] :is(.sg-rods__track > i, .sg-twins__bars > i) {
+    box-shadow: inset calc(var(--sg-pointer-x) * var(--sg-engaged) * 12px) 1px 9px -7px rgba(255,255,255,.85), inset 0 -1px 0 rgba(0,20,55,.15);
+}
+.sg .sg-interaction-motion [data-sg-interaction="surface"] :is(.sg-rods > li, .sg-twins > li)[data-sg-hot="true"] :is(.sg-rods__track, .sg-twins__bars) {
+    box-shadow: inset 0 0 0 1px var(--sg-interaction-edge), 0 1px 0 rgba(255,255,255,.6);
+}
+.sg .sg-interaction-motion [data-sg-interaction="coverage"] .sg-coverage__front {
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.42), inset 0 -1px 0 rgba(0,0,0,.18), 0 9px 0 -6px color-mix(in srgb, var(--kn-ink) 12%, transparent);
+}
+
+/* Ledger tracking is an inset rule. No cell moves, changes size, or rises above its sticky header. */
+.sg .sg-interaction-motion :is([data-sg-interaction="ledger"], [data-sg-interaction="table"]) tbody tr > :is(td, th) {
+    transition: background-color 160ms var(--sg-interaction-ease), box-shadow 160ms var(--sg-interaction-ease);
+}
+.sg .sg-interaction-motion :is([data-sg-interaction="ledger"], [data-sg-interaction="table"]) tbody tr[data-sg-hot="true"] > :is(td, th):first-child {
+    box-shadow: inset 3px 0 0 var(--kn-accent);
+}
+.sg .sg-interaction-motion [data-sg-interaction="table"] tbody tr[data-sg-hot="true"] > :is(td, th) {
+    background-color: color-mix(in srgb, var(--kn-accent) 6%, var(--kn-paper));
+}
+
+/* Launcher choices have an optical edge; their labels and click surfaces are anchored. */
+.sg .sg-interaction-motion :is(.sg-card, .sg-scope)[data-sg-interaction="choice"] {
+    isolation: isolate;
+    transform: none;
+    transition: background-color 220ms var(--sg-interaction-ease), box-shadow 260ms var(--sg-interaction-ease);
+}
+.sg .sg-interaction-motion :is(.sg-card, .sg-scope)[data-sg-interaction="choice"]::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    background: radial-gradient(ellipse at var(--sg-light-x) var(--sg-light-y), rgba(122,187,255,.15), transparent 70%);
+    box-shadow: inset 0 1px 0 rgba(193,222,255,.28), 0 10px 22px -20px rgba(84,159,255,.6);
+    opacity: var(--sg-engaged);
+    pointer-events: none;
+    transition: opacity 200ms var(--sg-interaction-ease);
+}
+.sg .sg-interaction-motion .sg-card[data-sg-interaction="choice"] .sg-card__check {
+    transition: background-color 200ms var(--sg-interaction-ease), color 200ms var(--sg-interaction-ease), box-shadow 200ms var(--sg-interaction-ease), rotate 300ms var(--sg-interaction-ease);
+}
+.sg .sg-interaction-motion .sg-card[data-sg-interaction="choice"][data-sg-engagement="pointer"] .sg-card__check {
+    rotate: -8deg;
+    box-shadow: inset 0 0 0 1.5px #91c4ff, 0 0 0 4px rgba(76,157,255,.1);
+}
+.sg .sg-interaction-motion .sg-card[data-sg-interaction="choice"]:has(input:checked) .sg-card__check {
+    box-shadow: 0 0 0 4px rgba(76,157,255,.09);
+}
+
+/* The geographic stage receives light, never a mouse-driven camera orbit. */
+.sg .sg-interaction-motion .sg-opener__stage[data-sg-interaction="map"]::before {
+    background: radial-gradient(ellipse at var(--sg-light-x) var(--sg-light-y), color-mix(in srgb, var(--kn-accent) 19%, transparent), transparent 66%);
+    opacity: calc(.65 + var(--sg-engaged) * .35);
+    transition: opacity 220ms var(--sg-interaction-ease);
+}
+.sg .sg-interaction-motion [data-sg-interaction="navigation"] :is([data-story-point], [data-story-reset])[data-sg-hot="true"] {
+    box-shadow: inset 0 -2px 0 rgba(162,209,255,.7), 0 6px 16px -15px #a2d1ff;
+}
+.sg .sg-interaction-motion .sg-story-rail { animation: none; }
+.sg .sg-interaction-motion [data-sg-interaction][data-sg-engagement="focus"] {
+    --sg-light-x: 50%;
+    --sg-light-y: 50%;
+}
+
+/* Independent transform properties compose with the scroll owner's transform; labels never inherit them. */
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+    .sg .sg-interaction-motion [data-sg-interaction="vessels"] .sg-vessel__body,
+    .sg .sg-interaction-motion [data-sg-interaction="skyline"] .sg-prism__solid {
+        rotate: 0 1 0 calc(var(--sg-pointer-x) * var(--sg-engaged) * 4deg);
+        transition: rotate 300ms var(--sg-interaction-ease), translate 220ms var(--sg-interaction-ease);
+    }
+    .sg .sg-interaction-motion [data-sg-interaction="vessels"] .sg-vessel[data-sg-hot="true"] .sg-vessel__body,
+    .sg .sg-interaction-motion [data-sg-interaction="skyline"] .sg-prism[data-sg-hot="true"] .sg-prism__solid {
+        translate: 0 calc(var(--sg-press) * 1px) 4px;
+    }
+    .sg .sg-interaction-motion [data-sg-interaction="composition"] .sg-donut__disc {
+        rotate: 1 .75 0 calc((var(--sg-pointer-x) - var(--sg-pointer-y)) * var(--sg-engaged) * 3deg);
+        translate: 0 calc(var(--sg-engaged) * -3px) 0;
+        transition: rotate 320ms var(--sg-interaction-ease), translate 320ms var(--sg-interaction-ease);
+    }
+    .sg .sg-interaction-motion [data-sg-interaction="coverage"] .sg-coverage__slab {
+        rotate: 1 0 0 calc(var(--sg-pointer-y) * var(--sg-engaged) * 3deg);
+        transition: rotate 320ms var(--sg-interaction-ease);
+    }
+}
+
+@media (hover: none), (pointer: coarse) {
+    .sg .sg-interaction-motion :is(.sg-card, .sg-scope)[data-sg-interaction="choice"]:active {
+        box-shadow: inset 0 0 0 1.5px #91c4ff;
+    }
+    .sg .sg-interaction-motion [data-sg-interaction] .sg-expressive-plane::after { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .sg .sg-interaction-motion [data-sg-interaction],
+    .sg .sg-interaction-motion [data-sg-interaction] *,
+    .sg .sg-interaction-motion [data-sg-interaction]::after,
+    .sg .sg-interaction-motion [data-sg-interaction] *::after {
+        transition: none;
+    }
+    .sg .sg-interaction-motion [data-sg-interaction] .sg-expressive-plane::after { display: none; }
+    .sg .sg-interaction-motion [data-sg-interaction="composition"] .sg-donut__sheen { translate: none; }
+    .sg .sg-interaction-motion .sg-card[data-sg-interaction="choice"] .sg-card__check { rotate: none; }
+}

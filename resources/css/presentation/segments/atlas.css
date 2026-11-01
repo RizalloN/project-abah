@@ -930,3 +930,90 @@
     .sg .sg-sector-dial { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); max-width: none; }
     .sg .sg-opportunity__field { height: 320px; }
 }
+
+/* Marketshare categories and the two source-ranked opportunity cards. */
+.sg [data-sg-market-panel][hidden] { display: none !important; }
+.sg .sg-market-tabs { margin-block: 0 30px; }
+.sg .sg-market-tabs button { min-width: 130px; min-height: 44px; justify-content: center; padding: 10px 22px; font-size: .9375rem; }
+.sg [data-sg-market-panel] > * + * { margin-top: clamp(36px, 5vw, 64px); }
+.sg .sg-market-total { display: grid; grid-template-columns: minmax(190px, .9fr) minmax(0, 1.5fr); align-items: center; gap: 24px 40px; margin-bottom: 26px; padding: clamp(22px, 3vw, 38px); border: 1px solid var(--kn-line-strong); border-radius: 24px; background: var(--kn-paper); }
+.sg .sg-market-total__share p { margin: 0 0 12px; color: var(--kn-ink-2); font-size: .9375rem; font-weight: 500; }
+.sg .sg-market-total__share > strong { display: block; color: var(--kn-ink); font-size: clamp(2.8rem, 5.4vw, 5rem); font-weight: 600; line-height: 1; letter-spacing: -.055em; font-variant-numeric: tabular-nums; }
+.sg .sg-market-total__share > span { display: block; margin-top: 10px; color: var(--kn-ink-soft); font-size: .8125rem; }
+.sg .sg-market-total dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; margin: 0; }
+.sg .sg-market-total dt { margin-bottom: 6px; color: var(--kn-ink-soft); font-size: .8125rem; }
+.sg .sg-market-total dd { margin: 0; color: var(--kn-ink); font-size: clamp(1.25rem, 2vw, 1.8rem); font-weight: 600; line-height: 1.2; letter-spacing: -.025em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.sg .sg-market-total__source { grid-column: 1 / -1; margin: 0; padding-top: 18px; border-top: 1px solid var(--kn-line); color: var(--kn-ink-soft); font-size: .75rem; line-height: 1.5; }
+.sg .sg-opportunity__rankings { display: grid; gap: 18px; min-width: 0; }
+.sg .sg-opportunity__rank-card { min-width: 0; padding: 18px 14px 12px; border: 1px solid var(--kn-line-strong); border-radius: 18px; background: var(--kn-paper); }
+.sg .sg-opportunity__rank-card > header { padding: 0 4px 14px; }
+.sg .sg-opportunity__rank-card h4 { margin: 0; color: var(--kn-ink); font-size: .9375rem; font-weight: 600; letter-spacing: -.025em; line-height: 1.3; }
+.sg .sg-opportunity__rank-card header p { margin: 6px 0 0; color: var(--kn-ink-soft); font-size: .6875rem; line-height: 1.4; }
+.sg .sg-opportunity__rank-card .sg-opportunity__list li { grid-template-columns: 24px minmax(0, 1fr) auto; gap: 8px; padding: 10px 4px; border-radius: 8px; }
+.sg .sg-opportunity__rank-card .sg-opportunity__rank { width: 22px; height: 22px; font-size: .6875rem; }
+.sg .sg-opportunity__rank-card .sg-opportunity__name { font-size: .8125rem; line-height: 1.3; overflow-wrap: anywhere; }
+.sg .sg-opportunity__rank-card .sg-opportunity__name small { margin-top: 3px; font-size: .625rem; }
+.sg .sg-opportunity__rank-card .sg-opportunity__gap strong { font-size: .9375rem; }
+.sg .sg-opportunity__rank-card .sg-opportunity__gap small { font-size: .625rem; }
+@media (max-width: 960px) {
+    .sg .sg-opportunity__rankings { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .sg .sg-opportunity__rankings > .sg-note { grid-column: 1 / -1; }
+}
+@media (max-width: 640px) {
+    .sg .sg-market-total { grid-template-columns: minmax(0, 1fr); gap: 26px; padding: 22px; }
+    .sg .sg-market-total dl { gap: 20px 16px; }
+    .sg .sg-market-tabs { gap: 8px; margin-bottom: 24px; }
+    .sg .sg-market-tabs button { flex: 1 1 0; min-width: 0; }
+    .sg .sg-opportunity__rankings { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Two concurrent readings share the stage; all source products stay visible. */
+.sg .sg-market-split { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: clamp(20px, 2.4vw, 40px); align-items: start; }
+.sg .sg-market-column { --market-accent: #0058d0; min-width: 0; }
+.sg .sg-market-column[data-market-kind="pinjaman"] { --market-accent: #997646; }
+.sg .sg-market-column__heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; margin-bottom: 16px; border-top: 3px solid var(--market-accent); padding-top: 14px; }
+.sg .sg-market-column__heading > span { font-size: .6875rem; font-weight: 600; color: var(--market-accent); }
+.sg .sg-market-column__heading h3 { margin: 0; color: var(--kn-ink); font-size: clamp(1.5rem, 2.2vw, 2.2rem); letter-spacing: -.04em; }
+.sg .sg-market-column__heading p { margin: 0 0 0 auto; font-size: .75rem; color: var(--kn-ink-soft); }
+.sg .sg-market-column .sg-market-total { position: relative; grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); gap: 16px 24px; margin: 0 0 16px; padding: clamp(18px, 1.8vw, 28px); border-radius: 6px 24px 6px 24px; background: linear-gradient(130deg, color-mix(in srgb, var(--market-accent) 7%, var(--kn-paper)), var(--kn-paper) 75%); }
+.sg .sg-market-column .sg-market-total__share > strong { color: var(--market-accent); font-size: clamp(2.5rem, 3.8vw, 4.4rem); }
+.sg .sg-market-column .sg-market-total__share p { font-size: .75rem; margin-bottom: 8px; }
+.sg .sg-market-column .sg-market-total__share > span { font-size: .6875rem; margin-top: 8px; }
+.sg .sg-market-column .sg-market-total dl { gap: 14px; }
+.sg .sg-market-column .sg-market-total dt { font-size: .6875rem; }
+.sg .sg-market-column .sg-market-total dd { font-size: clamp(1.125rem, 1.5vw, 1.6rem); }
+.sg .sg-market-column .sg-market-total__source { padding-top: 12px; font-size: .6875rem; }
+.sg .sg-market-column .sg-market-products { padding: 18px 20px 14px; border-radius: 18px; }
+.sg .sg-market-products .sg-vessels { --vh: clamp(165px, 14vw, 225px); --vw: clamp(38px, 4vw, 62px); }
+.sg .sg-market-support .sg-vessels { --vh: clamp(160px, 13vw, 210px); --vw: clamp(38px, 4vw, 62px); }
+.sg .sg-market-products .sg-vessels__row { gap: 10px; }
+.sg .sg-market-products .sg-vessel__label { font-size: .8125rem; }
+.sg .sg-market-products .sg-vessel__label small { font-size: .6875rem; }
+.sg .sg-market-products .sg-vessels__readout { margin-top: 16px; padding-top: 12px; min-height: 78px; }
+.sg .sg-market-products .sg-note { margin-bottom: 0; font-size: .6875rem; line-height: 1.5; }
+.sg .sg-market-products .sg-tile__head h3 { font-size: 1rem; }
+.sg .sg-market-products .sg-tile__head > span { font-size: .6875rem; }
+.sg .sg-market-insight { padding: 14px 18px; margin-top: 14px; border-left: 3px solid var(--market-accent); background: color-mix(in srgb, var(--market-accent) 5%, var(--kn-paper)); border-radius: 0 12px 12px 0; }
+.sg .sg-market-insight > span { color: var(--market-accent); font-weight: 600; font-size: .6875rem; }
+.sg .sg-market-insight p { margin: 6px 0 0; color: var(--kn-ink-2); font-size: .8125rem; line-height: 1.5; }
+.sg .sg-market-insight b { color: var(--market-accent); font-variant-numeric: tabular-nums; }
+.sg .sg-market-ledgers > * { min-width: 0; }
+@media (max-width: 900px) {
+    .sg .sg-market-split, .sg .sg-market-support, .sg .sg-market-ledgers { grid-template-columns: minmax(0, 1fr); }
+    .sg .sg-market-column__heading p { flex-basis: 100%; margin-left: 0; }
+    .sg .sg-market-products .sg-vessels { --vh: 180px; --vw: clamp(32px, 10vw, 56px); }
+}
+@media (max-width: 400px) {
+    .sg .sg-market-column .sg-market-total { grid-template-columns: minmax(0, 1fr); gap: 14px; padding: 18px; }
+    .sg .sg-market-column .sg-market-products { padding: 16px 12px; }
+    .sg .sg-market-products .sg-vessels__row { gap: 4px; }
+    .sg .sg-market-products .sg-vessel__label { font-size: .6875rem; }
+}
+.sg .sg-market-column__heading h3 { line-height: 1.1; }
+.sg .sg-market-column .sg-market-total { padding: 18px 22px; gap: 12px 22px; }
+.sg .sg-market-column .sg-market-total__share > strong { font-size: clamp(2.5rem, 3.4vw, 3.8rem); }
+.sg .sg-market-column .sg-market-total dl { gap: 10px 16px; }
+.sg .sg-market-column .sg-market-total__source { padding-top: 10px; }
+.sg .sg-market-products .sg-vessels { --vh: clamp(155px, 12vw, 195px); }
+.sg .sg-room-mode #sg-marketshare .sg-market-split { margin-top: 0; }
+.sg .sg-room-mode .sg-market-column .sg-market-products { padding: 18px 20px 14px; }

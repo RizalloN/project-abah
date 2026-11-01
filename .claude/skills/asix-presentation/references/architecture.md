@@ -30,6 +30,7 @@ PowerPoint export stays on the keynote view (linked from the launcher foot).
 | `segments/charts.js` | `donut()` (stacked SVG layers = ring wall), `timeseries()` (+ `shown` series), `rods()`, `table()`, `meter()` |
 | `segments/motion.js` | `--e`, `--sp`, `--cover`, `--rise`, reveals, count-up, pointer tilt + specular, nav state |
 | `segments/territory-data.js` | `TerritoryIndex`: kecamatan <-> branch/unit, sector allocation, outlet matching; penetration colour ramp |
+| `segments/cinema.js`, `segments/smooth-scroll.js` | finishing film: Earth flight, room seams, staged arrival, report atmosphere, closing room, device tier, damped wheel |
 | `segments/render-wilayah.js` | marketshare, mapping, sektoral |
 | `segments/atlas.js` | Wilayah data objects: `vessels` (whole = height, our part = liquid), `slope`, `coverage`, `opportunity` (units on penetration x potential), `skyline` (sector prisms, click = choose), `ledger` (units x sectors), `disclosure` (exact tables folded); CSS in `segments/atlas.css`, entrance-only motion |
 | `segments/render-kinerja.js` | simpanan, pinjaman, kualitas, recovery |

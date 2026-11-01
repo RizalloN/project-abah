@@ -38,6 +38,12 @@ class SectorPotentialService
 
     private const BRANCHES = ['madiun' => 'KC Madiun', 'magetan' => 'KC Magetan', 'ngawi' => 'KC Ngawi', 'ponorogo' => 'KC Ponorogo'];
 
+    /**
+     * Loan-purpose sub-sectors used as catch-alls on micro loans (KUR Mikro/Kupedes, ~Rp55-58 jt
+     * average plafond): they say nothing about the borrower's KBLI business category.
+     */
+    private const CATCH_ALL_SUBSECTORS = ['JASA KEGIATAN LAINNYA', 'PERDAGANGAN EKSPOR HASIL TANAMAN'];
+
     public function payload(?string $branchKey = null): array
     {
         $branchKey = UserBranchScope::current()['key'] ?? $branchKey;
@@ -64,16 +70,23 @@ class SectorPotentialService
             'numerator_grain' => 'sum_jumlah_debitur_ssa_cras_aktif_dan_ph_non_consumer',
             'subsector_potential_available' => false,
             'unit_potential_available' => false,
-            'note' => 'Intra adalah BRI AKTIF dan ekstra adalah BRI PH; Consumer/Konsumer dikeluarkan. Total mencakup keduanya termasuk OTHER/tanpa sektor. Jumlah debitur merupakan penjumlahan SSA, bukan CIF unik lintas kelompok.',
+            'note' => 'Penetrasi = (debitur intra + debitur ekstra) / potensi. Intra adalah BRI AKTIF dan ekstra adalah BRI PH; Consumer/Konsumer dikeluarkan. Total mencakup keduanya termasuk OTHER/tanpa sektor. Jumlah debitur merupakan penjumlahan SSA, bukan CIF unik lintas kelompok.',
+            'extra_sector_note' => 'SSA mencatat tujuan kredit, sedangkan BPS mengelompokkan usaha menurut KBLI. Debitur tanpa sektor usaha yang dapat dipakai (PH tanpa sektor di SSA, OTHER, serta kode umum "Jasa Kegiatan Lainnya" dan "Perdagangan Ekspor Hasil Tanaman" pada kredit mikro) ditambah debitur yang melebihi jumlah pelaku usaha sektornya dibagi ulang ke sektor mengikuti komposisi pelaku usaha BPS di desa milik UKER, tanpa melampaui pelaku usaha sektor itu. Total debitur UKER tidak berubah.',
             'unit_potential_note' => 'Potensi UKER menjumlahkan kolom F hanya pada desa milik UKER menurut mapping desa. Duplikasi pemilik yang sama dideduplikasi, konflik tidak ditebak, dan desa tanpa data populasi ditandai terpisah.',
-            'normalization_note' => 'Penetrasi ditampilkan sebagai cakupan yang dinormalisasi ke rentang 0–100%. Potensi, debitur dan rasio asli tetap dipertahankan.',
-            'district_note' => 'Potensi kecamatan berasal dari penjumlahan desa. Debitur peta merupakan estimasi alokasi rata unit ke kecamatan layanannya, bukan alamat eksklusif nasabah.',
+            'normalization_note' => 'Penetrasi sektor dinormalisasi: debitur dicocokkan ke sektor usaha BPS (Sensus Pertanian 2023 dan Sensus Ekonomi 2016) di desa milik UKER, sehingga tidak ada sektor yang melebihi jumlah pelaku usahanya. Rasio sesuai kode SSA tetap disimpan sebagai rasio sumber.',
+            'normalization' => [
+                'method' => 'water_filling_proporsional_potensi_bps',
+                'denominator_sources' => ['ST2023 BPS (pertanian)', 'SE2016 BPS (non-pertanian)', 'Penduduk kecamatan BPS/Pemkab (distribusi ke desa)'],
+                'catch_all_subsectors' => ['Jasa Kegiatan Lainnya', 'Perdagangan Ekspor Hasil Tanaman'],
+                'total_unchanged' => true,
+            ],
+            'district_note' => 'Potensi kecamatan berasal dari penjumlahan desa. Debitur peta merupakan estimasi alokasi debitur unit ke kecamatan layanannya menurut porsi potensi desa kelolaan pada sektor yang sama, bukan alamat eksklusif nasabah.',
             'branches' => [], 'districts' => [], 'villages' => [], 'units' => [], 'unmapped_units' => [], 'coverage' => [],
         ];
         if ($reference === null || $ownership === null || $period === null) {
             return $base + ['message' => $reference === null ? 'Sumber potensi sektoral belum dapat dibaca.' : ($ownership === null ? 'Mapping kepemilikan desa belum dapat dibaca.' : 'SSA CRAS September 2026 belum tersedia.')];
         }
-        $key = 'sector_potential:payload:v4:'.self::SPREADSHEET_ID.':'.$reference['source']['data_sha256'].':'.VillageOwnershipReferenceService::SPREADSHEET_ID.':'.$ownership['source']['data_sha256'].':'.$period.':'.($branchKey ?? 'area6');
+        $key = 'sector_potential:payload:v9:'.self::SPREADSHEET_ID.':'.$reference['source']['data_sha256'].':'.VillageOwnershipReferenceService::SPREADSHEET_ID.':'.$ownership['source']['data_sha256'].':'.$period.':'.($branchKey ?? 'area6');
         $computed = Cache::remember($key, now()->addMinutes(5), fn () => $this->build($reference, $ownership, Carbon::parse($period)->toDateString(), $branchKey));
 
         return [...$base, ...$computed, 'ready' => true, 'message' => ''];
@@ -141,9 +154,24 @@ class SectorPotentialService
         if (is_array($header)) {
             $header[0] = ltrim((string) $header[0], "\xEF\xBB\xBF");
         }
-        if ($header !== ['Desa/Kelurahan', 'Kecamatan', 'Kabupaten/Kota', 'Keterangan', 'Deskripsi', 'Jumlah']) {
+        $required = ['Desa/Kelurahan', 'Kecamatan', 'Kabupaten/Kota', 'Keterangan', 'Deskripsi', 'Jumlah'];
+        if (! is_array($header) || array_slice(array_map('trim', $header), 0, 6) !== $required) {
             throw new RuntimeException('Header sumber potensi tidak sesuai.');
         }
+        // The processed workbook may add debtor counts per village and category: intra (AKTIF) and ekstra (PH).
+        $debtorColumns = [];
+        foreach (array_slice($header, 6, null, true) as $index => $name) {
+            $token = $this->token((string) $name);
+            if (str_contains($token, 'INTRA')) {
+                $debtorColumns['intra'] = $index;
+            } elseif (str_contains($token, 'EKSTRA') || str_contains($token, 'EXTRA')) {
+                $debtorColumns['extra'] = $index;
+            }
+        }
+        if ($debtorColumns !== [] && count($debtorColumns) !== 2) {
+            throw new RuntimeException('Kolom debitur intra dan ekstra harus tersedia bersamaan.');
+        }
+        $width = count($header);
         $records = [];
         $sectors = [];
         $villages = [];
@@ -155,10 +183,11 @@ class SectorPotentialService
             if (count($row) === 1 && trim((string) $row[0]) === '') {
                 continue;
             }
-            if (count($row) !== 6) {
+            if (count($row) !== $width) {
                 throw new RuntimeException('Baris sumber potensi tidak lengkap.');
             }
-            [$village, $district, $regency, $category, $label, $raw] = array_map('trim', $row);
+            $row = array_map('trim', $row);
+            [$village, $district, $regency, $category, $label, $raw] = array_slice($row, 0, 6);
             $value = str_replace(',', '', $raw);
             $branch = $this->sourceBranch($regency);
             if (! $branch || $village === '' || $district === '' || ! in_array($category, $allowed, true) || ! is_numeric($value) || (float) $value < 0) {
@@ -174,6 +203,16 @@ class SectorPotentialService
             $qualifiedKey = VillageOwnershipReferenceService::villageKey($regency, $district, $village);
             $villageRecords[$qualifiedKey] ??= ['key' => $qualifiedKey, 'name' => $village, 'district' => $district, 'regency' => $regency, 'physical_branch' => $branch, 'source_values' => []];
             $villageRecords[$qualifiedKey]['source_values'][$category] = (float) $value;
+            foreach ($debtorColumns as $side => $index) {
+                $count = str_replace(',', '', $row[$index]);
+                if ($count === '') {
+                    $count = '0';
+                }
+                if (! is_numeric($count) || (float) $count < 0) {
+                    throw new RuntimeException('Nilai debitur sumber potensi tidak valid.');
+                }
+                $villageRecords[$qualifiedKey]['source_debtors'][$side][$category] = (float) $count;
+            }
             $key = $regency.'|'.$district;
             $records[$key] ??= ['regency' => $regency, 'name' => $district, 'branch' => $branch, 'source_values' => [], 'village_count' => 0];
             $records[$key]['source_values'][$category] = ($records[$key]['source_values'][$category] ?? 0) + (float) $value;
@@ -200,7 +239,8 @@ class SectorPotentialService
         $result = ['schema_version' => 2, 'source' => [
             'spreadsheet_id' => self::SPREADSHEET_ID, 'sheet_id' => self::SHEET_ID, 'sheet' => 'Master Data', 'url' => $this->sourceUrl(), 'label' => 'Maping Pelaku Usaha Area 6',
             'captured_at' => now()->toIso8601String(), 'sha256' => hash('sha256', $csv), 'row_count' => $rows, 'village_count' => count($villages), 'district_count' => count($records), 'capture_method' => 'Google Sheets CSV export',
-        ], 'source_sectors' => array_map(fn ($key, $label) => ['key' => $key, 'label' => $label], array_keys($sectors), array_values($sectors)), 'districts' => array_values($records), 'villages' => array_values($villageRecords)];
+            'debtor_columns' => $debtorColumns !== [],
+        ],'source_sectors' => array_map(fn ($key, $label) => ['key' => $key, 'label' => $label], array_keys($sectors), array_values($sectors)), 'districts' => array_values($records), 'villages' => array_values($villageRecords)];
         $result['source']['data_sha256'] = $this->dataHash($result);
 
         return $result;
@@ -230,6 +270,7 @@ class SectorPotentialService
         foreach ($reference['villages'] as $village) {
             $sourceVillages[$village['key']] = $village;
         }
+        $sheetNumerator = (bool) data_get($reference, 'source.debtor_columns', false);
         $rows = $this->portfolio($period, $branchKey);
         $catalog = [];
         foreach ($rows as $row) {
@@ -313,6 +354,18 @@ class SectorPotentialService
             $units[$unitKey]['village_keys'][] = $village['key'];
             if ($village['district_code']) {
                 $units[$unitKey]['district_codes'][] = $village['district_code'];
+                // Weights for the map: debtors follow the unit's owned population in each district.
+                foreach ($village['source_values'] as $category => $potential) {
+                    $units[$unitKey]['district_source_values'][$village['district_code']][$category]
+                        = ($units[$unitKey]['district_source_values'][$village['district_code']][$category] ?? 0) + $potential;
+                }
+            }
+            if ($sheetNumerator) {
+                foreach (array_keys($village['values']) as $group) {
+                    $intra = $this->potentialFor($village['source_debtors']['intra'] ?? [], $group);
+                    $extra = $this->potentialFor($village['source_debtors']['extra'] ?? [], $group);
+                    $villages[$village['key']]['values'][$group] = [...$villages[$village['key']]['values'][$group], 'intra' => $intra, 'extra' => $extra, 'existing' => $intra + $extra];
+                }
             }
             foreach ($village['source_values'] as $key => $potential) {
                 $units[$unitKey]['source_values'][$key] = ($units[$unitKey]['source_values'][$key] ?? 0) + $potential;
@@ -340,7 +393,9 @@ class SectorPotentialService
         unset($unit);
         $coverage = ['ssa_rows' => 0, 'ssa_debtors' => 0, 'eligible_ssa_rows' => 0, 'eligible_debtors' => 0,
             'excluded_consumer_debtors' => 0, 'excluded_status_debtors' => 0, 'owned_intra' => 0, 'owned_extra' => 0,
-            'unmapped_intra' => 0, 'unmapped_extra' => 0, 'unclassified_debtors' => 0, 'nonbusiness_debtors' => 0, 'by_branch' => []];
+            'unmapped_intra' => 0, 'unmapped_extra' => 0, 'unclassified_debtors' => 0, 'nonbusiness_debtors' => 0, 'by_branch' => [],
+            'numerator_source' => $sheetNumerator ? 'sheet_desa' : 'ssa_cras_uker', 'extra_sector_estimated' => 0,
+            'extra_sector_basis' => $sheetNumerator ? 'sheet_desa' : 'komposisi_debitur_aktif_uker'];
         $unmappedUnits = [];
         foreach ($rows as $row) {
             $branch = array_search(trim($row['ket_kanca']), self::BRANCHES, true);
@@ -375,6 +430,15 @@ class SectorPotentialService
                 foreach ([$group, 'total'] as $key) {
                     $this->addMetric($units[$unitKey]['values'][$key], $metric);
                 }
+                if ($group !== 'unclassified' && $this->isCatchAllSubsector((string) ($row['sub_sektor_ekonomi'] ?? ''))) {
+                    $units[$unitKey]['catch_all'][$group] ??= array_fill_keys($this->countFields(), 0.0);
+                    $this->addMetric($units[$unitKey]['catch_all'][$group], $metric);
+                }
+                if ($group === 'unclassified' && str_contains($this->token((string) $row['sektor_ekonomi']), 'BUKAN LAPANGAN USAHA')) {
+                    // Credit to a non-business borrower: never redistributed into a business sector.
+                    $units[$unitKey]['nonbusiness'] ??= array_fill_keys($this->countFields(), 0.0);
+                    $this->addMetric($units[$unitKey]['nonbusiness'], $metric);
+                }
                 $side = $status === 'AKTIF' ? 'intra' : 'extra';
                 $coverage['owned_'.$side] += $count;
                 $coverage['by_branch'][$branch][$side] += $count;
@@ -392,6 +456,43 @@ class SectorPotentialService
                 $coverage['by_branch'][$branch]['unmapped_'.$side] += $count;
             }
         }
+        if ($sheetNumerator) {
+            // The processed workbook carries intra and ekstra per village: inside the ratio they replace the SSA unit counts.
+            foreach ($units as &$unit) {
+                $unit['numerator_available'] = true;
+                foreach ($unit['values'] as $group => &$value) {
+                    foreach (['intra', 'extra', 'existing'] as $metric) {
+                        $value[$metric] = (float) array_sum(array_map(fn ($key) => $villages[$key]['values'][$group][$metric] ?? 0, $unit['village_keys']));
+                    }
+                    $value['existing_source'] = $value['existing'];
+                    $value['extra_estimated'] = 0.0;
+                }
+                unset($value);
+            }
+            unset($unit);
+            $unresolvedNames = [];
+        } else {
+            $coverage['catch_all_debtors'] = 0.0;
+            $coverage['reallocated_debtors'] = 0.0;
+            foreach ($units as &$unit) {
+                if (! $unit['numerator_available']) {
+                    continue;
+                }
+                if ($unit['potential_available']) {
+                    $moved = $this->normalizeSectors($unit);
+                    $coverage['extra_sector_estimated'] += $moved['extra'];
+                    $coverage['catch_all_debtors'] += $moved['catch_all'];
+                    $coverage['reallocated_debtors'] += $moved['debtors'];
+                } else {
+                    $coverage['extra_sector_estimated'] += $this->allocateExtra($unit);
+                }
+            }
+            unset($unit);
+            foreach ($unmappedUnits as &$unit) {
+                $this->allocateExtra($unit);
+            }
+            unset($unit);
+        }
         $branches = [];
         $districts = [];
         foreach ($villages as $village) {
@@ -406,7 +507,8 @@ class SectorPotentialService
                 continue;
             }
             $districtKey = $branch.'|'.$code;
-            $districts[$districtKey] ??= ['code' => $code, 'name' => $village['district'], 'regency' => $village['regency'], 'branch' => $branch, 'source_values' => [], 'values' => $this->emptyValues(), 'village_keys' => [], 'allocation_estimate' => true, 'numerator_grain' => 'ssa_uker_even_owned_district_allocation'];
+            $districts[$districtKey] ??= ['code' => $code, 'name' => $village['district'], 'regency' => $village['regency'], 'branch' => $branch, 'source_values' => [], 'values' => $this->emptyValues(), 'village_keys' => [], 'allocation_estimate' => ! $sheetNumerator,
+                'numerator_grain' => $sheetNumerator ? 'sheet_desa' : 'ssa_uker_potential_weighted_owned_district_allocation'];
             $districts[$districtKey]['village_keys'][] = $village['key'];
             foreach ($village['source_values'] as $category => $potential) {
                 $districts[$districtKey]['source_values'][$category] = ($districts[$districtKey]['source_values'][$category] ?? 0) + $potential;
@@ -457,8 +559,17 @@ class SectorPotentialService
                         $districts[$districtKey]['ownership_conflict'] = true;
                     }
                     $allocated = $value;
+                    $share = $this->districtShare($unit, $code, $key);
                     foreach ($this->countFields() as $metric) {
-                        $allocated[$metric] = $allocated[$metric] === null ? null : $allocated[$metric] / count($unit['district_codes']);
+                        $allocated[$metric] = $allocated[$metric] === null ? null : $allocated[$metric] * $share;
+                    }
+                    if ($sheetNumerator) {
+                        // Village debtors are exact: the district holds the sum of its own villages.
+                        $inDistrict = array_filter($unit['village_keys'], fn ($village) => ($villages[$village]['district_code'] ?? null) === $code);
+                        foreach (['intra', 'extra', 'existing'] as $metric) {
+                            $allocated[$metric] = (float) array_sum(array_map(fn ($village) => $villages[$village]['values'][$key][$metric] ?? 0, $inDistrict));
+                        }
+                        $allocated['existing_source'] = $allocated['existing'];
                     }
                     $this->addMetric($districts[$districtKey]['values'][$key], $allocated);
                 }
@@ -536,6 +647,270 @@ class SectorPotentialService
         ];
     }
 
+    /**
+     * A unit's share of one comparison group that lands in one of its districts: its owned
+     * population of that group there, over the same population across its districts. A group
+     * without population (OTHER) falls back to an even split.
+     */
+    private function districtShare(array $unit, string $code, string $group): float
+    {
+        $codes = $unit['district_codes'];
+        $weights = array_map(fn ($district) => $this->potentialFor($unit['district_source_values'][$district] ?? [], $group), $codes);
+        $total = array_sum($weights);
+        if ($total <= 0) {
+            return 1 / max(1, count($codes));
+        }
+
+        return $this->potentialFor($unit['district_source_values'][$code] ?? [], $group) / $total;
+    }
+
+    /**
+     * SSA CRAS leaves the sector of PH accounts empty. A unit's PH debtors, accounts and
+     * balance move from OTHER into the comparison groups in proportion to that unit's own
+     * AKTIF debtors, by largest remainder so debtor counts stay whole. Returns the debtors moved.
+     */
+    private function allocateExtra(array &$unit): float
+    {
+        $pool = $unit['values']['unclassified'] ?? null;
+        $debtors = (float) ($pool['extra'] ?? 0);
+        if ($pool === null || $debtors <= 0) {
+            return 0.0;
+        }
+        $weights = [];
+        foreach (array_keys(self::GROUPS) as $group) {
+            $weights[$group] = max(0.0, (float) ($unit['values'][$group]['intra'] ?? 0));
+        }
+        $total = array_sum($weights);
+        if ($total <= 0) {
+            return 0.0;
+        }
+        $split = function (float $amount, bool $whole) use ($weights, $total): array {
+            $parts = array_map(fn ($weight) => $amount * $weight / $total, $weights);
+            if (! $whole) {
+                return $parts;
+            }
+            $floors = array_map('floor', $parts);
+            $left = (int) round($amount - array_sum($floors));
+            $order = array_keys($parts);
+            usort($order, fn ($a, $b) => [$parts[$b] - $floors[$b], $weights[$b]] <=> [$parts[$a] - $floors[$a], $weights[$a]]);
+            foreach (array_slice($order, 0, max(0, $left)) as $group) {
+                $floors[$group]++;
+            }
+
+            return $floors;
+        };
+        $moved = ['extra' => $split($debtors, true), 'accounts_extra' => $split((float) ($pool['accounts_extra'] ?? 0), true), 'credit_extra' => $split((float) ($pool['credit_extra'] ?? 0), false)];
+        foreach (array_keys($weights) as $group) {
+            $value = &$unit['values'][$group];
+            $value['extra'] += $moved['extra'][$group];
+            $value['existing'] += $moved['extra'][$group];
+            $value['extra_estimated'] += $moved['extra'][$group];
+            $value['accounts_extra'] += $moved['accounts_extra'][$group];
+            $value['credit_extra'] += $moved['credit_extra'][$group];
+            $value['credit_total'] += $moved['credit_extra'][$group];
+            unset($value);
+        }
+        $other = &$unit['values']['unclassified'];
+        $other['existing'] -= $debtors;
+        $other['credit_total'] -= (float) ($pool['credit_extra'] ?? 0);
+        $other['extra'] = $other['accounts_extra'] = $other['credit_extra'] = 0.0;
+        unset($other);
+
+        return $debtors;
+    }
+
+    /**
+     * SSA codes a loan's purpose; BPS (ST2023/SE2016) counts a business by its KBLI category. The
+     * two disagree for micro loans, which is what pushed sector ratios above 100%. Debtors that
+     * carry no usable business sector — PH (no sector in SSA), OTHER, catch-all purpose codes —
+     * plus debtors coded above a sector's business population form one pool per UKER. The pool is
+     * spread over sectors in proportion to the BPS business population of the UKER's own villages
+     * and never above a sector's population (water-filling). The UKER total is unchanged and the
+     * coded counts stay in `existing_source`.
+     *
+     * @return array{debtors: float, extra: float, catch_all: float}
+     */
+    private function normalizeSectors(array &$unit): array
+    {
+        $groups = array_keys(self::GROUPS);
+        $pool = array_fill_keys($this->countFields(), 0.0);
+        $catchAll = 0.0;
+        $specific = [];
+        $excessTotal = [];
+
+        $other = &$unit['values']['unclassified'];
+        $nonbusiness = $unit['nonbusiness'] ?? array_fill_keys($this->countFields(), 0.0);
+        foreach ($this->countFields() as $field) {
+            if ($field !== 'existing_source') {
+                $pool[$field] += (float) ($other[$field] ?? 0) - (float) $nonbusiness[$field];
+                $other[$field] = (float) $nonbusiness[$field];
+            }
+        }
+        unset($other);
+
+        foreach ($groups as $group) {
+            $value = &$unit['values'][$group];
+            $coded = $unit['catch_all'][$group] ?? null;
+            if ($coded !== null) {
+                foreach ($this->countFields() as $field) {
+                    if ($field !== 'existing_source') {
+                        $value[$field] -= (float) $coded[$field];
+                        $pool[$field] += (float) $coded[$field];
+                    }
+                }
+                $catchAll += (float) $coded['existing'];
+            }
+            $specific[$group] = (float) $value['existing'];
+            $potential = (float) ($value['potential'] ?? 0);
+            // A sector with no business population has no ratio; its debtors stay (no evidence to move them).
+            $excess = $potential > 0 && $value['existing'] > $potential ? $value['existing'] - floor($potential) : 0.0;
+            $excessTotal[$group] = $excess;
+            if ($excess > 0) {
+                $moved = $this->sliceMetric($value, $excess);
+                foreach ($moved as $field => $amount) {
+                    $value[$field] -= $amount;
+                    $pool[$field] += $amount;
+                }
+            }
+            unset($value);
+        }
+
+        $debtors = (float) $pool['existing'];
+        $capacity = [];
+        foreach ($groups as $group) {
+            $capacity[$group] = max(0.0, (float) ($unit['values'][$group]['potential'] ?? 0) - (float) $unit['values'][$group]['existing']);
+        }
+        $shares = $this->waterFill($debtors, $capacity, array_map(fn ($group) => (float) ($unit['values'][$group]['potential'] ?? 0), array_combine($groups, $groups)));
+
+        $placed = ['extra' => 0.0, 'debtors' => 0.0];
+        // Whole debtors per sector first (within capacity), then the intra/ekstra split inside them.
+        $placedDebtors = $this->largestRemainder($shares, $capacity);
+        $parts = ['intra' => [], 'extra' => []];
+        $intraShare = $debtors > 0 ? (float) $pool['intra'] / $debtors : 0.0;
+        $intraParts = $this->largestRemainder(array_map(fn ($count) => $count * $intraShare, $placedDebtors), $placedDebtors);
+        foreach ($placedDebtors as $group => $count) {
+            $parts['intra'][$group] = min($count, $intraParts[$group]);
+            $parts['extra'][$group] = $count - $parts['intra'][$group];
+        }
+        foreach (['accounts_intra', 'accounts_extra'] as $field) {
+            $parts[$field] = $this->largestRemainder($debtors > 0 ? array_map(fn ($count) => (float) $pool[$field] * $count / $debtors, $placedDebtors) : array_map(fn () => 0.0, $placedDebtors));
+        }
+        foreach ($groups as $group) {
+            $value = &$unit['values'][$group];
+            $intra = $parts['intra'][$group];
+            $extra = $parts['extra'][$group];
+            $ratio = $debtors > 0 ? ($intra + $extra) / $debtors : 0.0;
+            $value['intra'] += $intra;
+            $value['extra'] += $extra;
+            $value['existing'] += $intra + $extra;
+            $value['extra_estimated'] += $extra;
+            $value['accounts_intra'] += $parts['accounts_intra'][$group];
+            $value['accounts_extra'] += $parts['accounts_extra'][$group];
+            foreach (['credit_intra', 'credit_extra', 'credit_total'] as $field) {
+                $value[$field] += (float) $pool[$field] * $ratio;
+            }
+            $placed['extra'] += $extra;
+            $placed['debtors'] += $intra + $extra;
+            unset($value);
+        }
+
+        // Whatever no sector can take (all populations already reached) stays OTHER inside the total.
+        $left = $debtors - $placed['debtors'];
+        $other = &$unit['values']['unclassified'];
+        if ($left > 0) {
+            $ratio = $left / $debtors;
+            foreach (['intra', 'extra', 'accounts_intra', 'accounts_extra'] as $field) {
+                $other[$field] += (float) $pool[$field] - array_sum($parts[$field]);
+            }
+            $other['existing'] = $other['intra'] + $other['extra'];
+            foreach (['credit_intra', 'credit_extra', 'credit_total'] as $field) {
+                $other[$field] += (float) $pool[$field] * $ratio;
+            }
+        }
+        unset($other);
+
+        $unit['normalization'] = ['method' => 'water_filling_proporsional_potensi_bps', 'pool_debtors' => $debtors, 'keep_ratio' => [], 'pool_share' => []];
+        foreach ($groups as $group) {
+            $unit['normalization']['keep_ratio'][$group] = $specific[$group] > 0 ? ($specific[$group] - $excessTotal[$group]) / $specific[$group] : 1.0;
+            $unit['normalization']['pool_share'][$group] = $debtors > 0 ? ($parts['intra'][$group] + $parts['extra'][$group]) / $debtors : 0.0;
+        }
+        unset($unit['catch_all'], $unit['nonbusiness']);
+
+        return ['debtors' => $placed['debtors'], 'extra' => $placed['extra'], 'catch_all' => $catchAll];
+    }
+
+    /** A whole-debtor slice of a metric vector, keeping its intra/ekstra and account mix. */
+    private function sliceMetric(array $value, float $debtors): array
+    {
+        $total = (float) $value['existing'];
+        $ratio = $total > 0 ? $debtors / $total : 0.0;
+        $intra = min((float) $value['intra'], $debtors, round((float) $value['intra'] * $ratio));
+        $extra = $debtors - $intra;
+        if ($extra > (float) $value['extra']) {
+            $extra = (float) $value['extra'];
+            $intra = $debtors - $extra;
+        }
+
+        return ['existing' => $debtors, 'intra' => $intra, 'extra' => $extra,
+            'accounts_intra' => min((float) $value['accounts_intra'], round((float) $value['accounts_intra'] * $ratio)),
+            'accounts_extra' => min((float) $value['accounts_extra'], round((float) $value['accounts_extra'] * $ratio)),
+            'credit_intra' => (float) $value['credit_intra'] * $ratio, 'credit_extra' => (float) $value['credit_extra'] * $ratio,
+            'credit_total' => (float) $value['credit_total'] * $ratio];
+    }
+
+    /**
+     * Spread $amount over keys by $weights, never above each key's $capacity.
+     *
+     * @return array<string, float> share of $amount per key (sums to at most $amount)
+     */
+    private function waterFill(float $amount, array $capacity, array $weights): array
+    {
+        $placed = array_map(fn () => 0.0, $capacity);
+        for ($pass = 0; $pass < 50 && $amount > 1e-9; $pass++) {
+            $open = array_filter(array_keys($capacity), fn ($key) => $placed[$key] < $capacity[$key] - 1e-9 && ($weights[$key] ?? 0) > 0);
+            $weight = array_sum(array_map(fn ($key) => $weights[$key], $open));
+            if ($weight <= 0) {
+                break;
+            }
+            $left = 0.0;
+            foreach ($open as $key) {
+                $add = $amount * $weights[$key] / $weight;
+                $room = $capacity[$key] - $placed[$key];
+                $placed[$key] += min($add, $room);
+                $left += max(0.0, $add - $room);
+            }
+            $amount = $left;
+        }
+
+        return $placed;
+    }
+
+    /** Whole numbers that keep the rounded total, by largest remainder, never above an optional cap. */
+    private function largestRemainder(array $parts, ?array $caps = null): array
+    {
+        $floors = array_map('floor', $parts);
+        $left = (int) round(array_sum($parts) - array_sum($floors));
+        $order = array_keys($parts);
+        usort($order, fn ($a, $b) => ($parts[$b] - $floors[$b]) <=> ($parts[$a] - $floors[$a]));
+        foreach ($order as $key) {
+            if ($left <= 0) {
+                break;
+            }
+            if ($caps !== null && $floors[$key] + 1 > (float) $caps[$key] + 1e-9) {
+                continue;
+            }
+            $floors[$key]++;
+            $left--;
+        }
+
+        return $floors;
+    }
+
+    private function isCatchAllSubsector(string $subsector): bool
+    {
+        return in_array($this->token($subsector), self::CATCH_ALL_SUBSECTORS, true);
+    }
+
     private function potentialFor(array $sourceValues, string $group): float
     {
         $categories = $group === 'total' ? array_merge(...array_column(self::GROUPS, 'categories')) : (self::GROUPS[$group]['categories'] ?? []);
@@ -551,7 +926,7 @@ class SectorPotentialService
         $key = $branch.'|'.($code === '' ? 'name:'.$owner['unit_token'] : $code);
 
         return [$key, ['code' => $code, 'name' => $owner['unit_name'], 'branch' => $branch,
-            'village_keys' => [], 'owned_village_keys' => [], 'missing_population_villages' => [], 'conflicting_village_keys' => [], 'district_codes' => [],
+            'village_keys' => [], 'owned_village_keys' => [], 'missing_population_villages' => [], 'conflicting_village_keys' => [], 'district_codes' => [], 'district_source_values' => [],
             'source_values' => [], 'values' => $this->emptyValues(null), 'potential_available' => false, 'numerator_available' => $code !== '',
             'allocation_estimate' => false, 'denominator_grain' => 'pelaku_usaha_desa_milik_uker', 'ownership_cohort' => true]];
     }
@@ -565,7 +940,7 @@ class SectorPotentialService
 
     private function countFields(): array
     {
-        return ['existing', 'intra', 'extra', 'accounts_intra', 'accounts_extra', 'credit_intra', 'credit_extra', 'credit_total'];
+        return ['existing', 'existing_source', 'intra', 'extra', 'extra_estimated', 'accounts_intra', 'accounts_extra', 'credit_intra', 'credit_extra', 'credit_total'];
     }
 
     private function addMetric(array &$target, array $metric): void
@@ -581,7 +956,7 @@ class SectorPotentialService
         $count = (float) $row['existing'];
         $credit = (float) ($intra ? $row['credit_intra'] : $row['credit_extra']);
 
-        return ['existing' => $count, 'intra' => $intra ? $count : 0.0, 'extra' => $intra ? 0.0 : $count,
+        return ['existing' => $count, 'existing_source' => $count, 'intra' => $intra ? $count : 0.0, 'extra' => $intra ? 0.0 : $count, 'extra_estimated' => 0.0,
             'accounts_intra' => $intra ? (float) $row['accounts'] : 0.0, 'accounts_extra' => $intra ? 0.0 : (float) $row['accounts'],
             'credit_intra' => $intra ? $credit : 0.0, 'credit_extra' => $intra ? 0.0 : $credit, 'credit_total' => $credit];
     }
@@ -599,7 +974,7 @@ class SectorPotentialService
     /** One aggregate query for both broad and already-filtered CRAS reference cohorts. */
     public function referenceRows(Builder $query): array
     {
-        $keys = ['ket_kanca', 'br_number', 'ket_unit_kerja', 'sektor_ekonomi', 'status_rekening', 'segmen'];
+        $keys = ['ket_kanca', 'br_number', 'ket_unit_kerja', 'sektor_ekonomi', 'sub_sektor_ekonomi', 'status_rekening', 'segmen'];
         $number = fn ($column) => 'COALESCE(CAST(NULLIF(REPLACE(REPLACE(REPLACE(REPLACE(TRIM('.$column."), ',', ''), '\"', ''), '(', '-'), ')', ''), '') AS DECIMAL(30,4)),0)";
         if (DB::connection()->getDriverName() === 'mysql') {
             $debtors = $number('jumlah_debitur');
@@ -631,8 +1006,34 @@ class SectorPotentialService
         return (float) str_replace([',', '"', '(', ')'], ['', '', '-', ''], trim((string) $raw));
     }
 
+    /**
+     * A filtered CRAS row's share of one sector after normalization: rows coded to the sector keep
+     * the UKER's kept fraction; pooled rows (PH, OTHER, catch-all codes) and the overflow of other
+     * sectors follow the UKER's redistribution share. Without a sector (or for "total") the count
+     * is unchanged.
+     */
+    public function normalizedRowDebtors(array $row, ?array $unit, ?string $groupKey): float
+    {
+        $count = (float) ($row['existing'] ?? 0);
+        $normalization = $unit['normalization'] ?? null;
+        if ($groupKey === null || $groupKey === 'total' || ! isset(self::GROUPS[$groupKey]) || $normalization === null) {
+            return $count;
+        }
+        $rowGroup = $this->ssaGroup((string) ($row['sektor_ekonomi'] ?? ''));
+        $share = (float) ($normalization['pool_share'][$groupKey] ?? 0);
+        if ($rowGroup === null && str_contains($this->token((string) ($row['sektor_ekonomi'] ?? '')), 'BUKAN LAPANGAN USAHA')) {
+            return 0.0;
+        }
+        if ($rowGroup === null || $this->isCatchAllSubsector((string) ($row['sub_sektor_ekonomi'] ?? ''))) {
+            return $count * $share;
+        }
+        $keep = (float) ($normalization['keep_ratio'][$rowGroup] ?? 1);
+
+        return $count * (($rowGroup === $groupKey ? $keep : 0.0) + (1 - $keep) * $share);
+    }
+
     /** Additive owned-village cohort; the generic CRAS report retains its original metrics. */
-    public function referenceUnitsForRows(array $rows, array $payload): array
+    public function referenceUnitsForRows(array $rows, array $payload, ?string $groupKey = null): array
     {
         $owned = [];
         foreach ($payload['units'] ?? [] as $unit) {
@@ -649,8 +1050,10 @@ class SectorPotentialService
             $result[$key] ??= ['code' => $code, 'name' => (string) $row['ket_unit_kerja'], 'branch_key' => $branch, 'branch' => self::BRANCHES[$branch],
                 'district_codes' => $owned[$key]['district_codes'] ?? [], 'village_keys' => $owned[$key]['village_keys'] ?? [],
                 'potential_partial' => $owned[$key]['potential_partial'] ?? false, 'missing_population_village_count' => $owned[$key]['missing_population_village_count'] ?? 0,
-                'values' => ['existing' => 0.0, 'intra' => 0.0, 'extra' => 0.0, 'credit_intra' => 0.0, 'credit_extra' => 0.0, 'credit_total' => 0.0, 'accounts_intra' => 0.0, 'accounts_extra' => 0.0]];
+                'values' => ['existing' => 0.0, 'existing_source' => 0.0, 'intra' => 0.0, 'extra' => 0.0, 'extra_estimated' => 0.0, 'credit_intra' => 0.0, 'credit_extra' => 0.0, 'credit_total' => 0.0, 'accounts_intra' => 0.0, 'accounts_extra' => 0.0,
+                    'jumlah_debitur_normalized' => 0.0]];
             $this->addMetric($result[$key]['values'], $this->rowMetric($row));
+            $result[$key]['values']['jumlah_debitur_normalized'] += $this->normalizedRowDebtors($row, $owned[$key], $groupKey);
         }
         foreach ($result as &$unit) {
             $v = &$unit['values'];
@@ -676,7 +1079,7 @@ class SectorPotentialService
 
     private function emptyValues(?float $potential = 0): array
     {
-        return array_fill_keys(['total', ...array_keys(self::GROUPS), 'unclassified'], ['potential' => $potential, 'existing' => 0.0, 'intra' => 0.0, 'extra' => 0.0,
+        return array_fill_keys(['total', ...array_keys(self::GROUPS), 'unclassified'], ['potential' => $potential, 'existing' => 0.0, 'existing_source' => 0.0, 'intra' => 0.0, 'extra' => 0.0, 'extra_estimated' => 0.0,
             'accounts_intra' => 0.0, 'accounts_extra' => 0.0, 'credit_intra' => 0.0, 'credit_extra' => 0.0, 'credit_total' => 0.0,
             'penetration' => null, 'penetration_raw' => null, 'normalization_applied' => false, 'penetration_excess' => null]);
     }
@@ -689,19 +1092,25 @@ class SectorPotentialService
                     $value[$metric] = round($value[$metric], 2);
                 }
             }
-            $value = [...$value, ...$this->coverage($value['existing'], $value['potential'])];
+            $value = [...$value, ...$this->coverage($value['existing'], $value['potential'], $value['existing_source'] ?? $value['existing'])];
         }
         unset($value);
     }
 
-    public function coverage(float|int|null $existing, float|int|null $potential): array
+    /**
+     * `existing` is the sector-normalized debtor count; `existingSource` is the count as coded in
+     * SSA. The source ratio is kept as `penetration_raw`; the presented value stays within 0-100%.
+     */
+    public function coverage(float|int|null $existing, float|int|null $potential, float|int|null $existingSource = null): array
     {
-        $raw = $existing !== null && ($potential ?? 0) > 0 ? $existing / $potential * 100 : null;
+        $existingSource ??= $existing;
+        $ratio = $existing !== null && ($potential ?? 0) > 0 ? $existing / $potential * 100 : null;
+        $raw = $existing !== null && $existingSource !== null && ($potential ?? 0) > 0 ? $existingSource / $potential * 100 : null;
 
         return [
-            'potential' => $potential, 'existing' => $existing,
-            'penetration_raw' => $raw, 'penetration' => $raw === null ? null : min(100.0, max(0.0, $raw)),
-            'normalization_applied' => $raw !== null && ($raw < 0 || $raw > 100),
+            'potential' => $potential, 'existing' => $existing, 'existing_source' => $existingSource,
+            'penetration_raw' => $raw, 'penetration' => $ratio === null ? null : min(100.0, max(0.0, $ratio)),
+            'normalization_applied' => $raw !== null && (abs($raw - (float) $ratio) > 0.0001 || $raw < 0 || $raw > 100),
             'penetration_excess' => $raw === null ? null : max(0.0, $raw - 100),
         ];
     }

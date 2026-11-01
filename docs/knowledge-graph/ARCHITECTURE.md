@@ -40,8 +40,8 @@ flowchart LR
     d_bfac314fef["presentation"] -->|23| d_90026ec21f["dashboard-simpanan"]
     d_7c16aa6a77["jobs-snapshots"] -->|22| d_a0a49fdd98["dashboard-harian"]
     d_d294fcce0c["platform"] -->|21| d_0d45f5fd46["core"]
+    d_90026ec21f["dashboard-simpanan"] -->|21| d_d942f64886["import"]
     d_7c16aa6a77["jobs-snapshots"] -->|21| d_c393a69167["access-control"]
-    d_90026ec21f["dashboard-simpanan"] -->|20| d_d942f64886["import"]
     d_d942f64886["import"] -->|19| d_d294fcce0c["platform"]
     d_90026ec21f["dashboard-simpanan"] -->|17| d_d294fcce0c["platform"]
 ```
@@ -50,21 +50,21 @@ flowchart LR
 
 | Domain | Nodes | Detail |
 | --- | ---: | --- |
-| import | 2629 | [open](domains/import.md) |
-| core | 1587 | [open](domains/core.md) |
-| dashboard-pinjaman | 1079 | [open](domains/dashboard-pinjaman.md) |
+| import | 2634 | [open](domains/import.md) |
+| core | 1597 | [open](domains/core.md) |
+| dashboard-pinjaman | 1068 | [open](domains/dashboard-pinjaman.md) |
 | database | 794 | [open](domains/database.md) |
 | jobs-snapshots | 717 | [open](domains/jobs-snapshots.md) |
-| dashboard-simpanan | 642 | [open](domains/dashboard-simpanan.md) |
+| dashboard-simpanan | 641 | [open](domains/dashboard-simpanan.md) |
 | dashboard-harian | 367 | [open](domains/dashboard-harian.md) |
 | bank-pipeline | 363 | [open](domains/bank-pipeline.md) |
-| presentation | 286 | [open](domains/presentation.md) |
+| presentation | 291 | [open](domains/presentation.md) |
 | access-control | 200 | [open](domains/access-control.md) |
 | prognosa | 154 | [open](domains/prognosa.md) |
+| almafacts | 109 | [open](domains/almafacts.md) |
 | platform | 106 | [open](domains/platform.md) |
+| marketshare | 106 | [open](domains/marketshare.md) |
 | knowledge-graph | 106 | [open](domains/knowledge-graph.md) |
-| almafacts | 106 | [open](domains/almafacts.md) |
-| marketshare | 98 | [open](domains/marketshare.md) |
 | input-management | 51 | [open](domains/input-management.md) |
 | kpi | 46 | [open](domains/kpi.md) |
 | routing | 2 | [open](domains/routing.md) |

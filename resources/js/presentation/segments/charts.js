@@ -80,14 +80,18 @@ const W = 760;
 const H = 300;
 const PAD = { top: 22, right: 22, bottom: 34, left: 64 };
 
-const scaleOf = (series, labels) => {
+export const timeseriesScale = (series, labels, zeroBaseline = false) => {
     const values = series.flatMap((item) => item.values).filter((value) => value !== null && Number.isFinite(value));
     let min = Math.min(...values);
     let max = Math.max(...values);
     if (!values.length) { min = 0; max = 1; }
-    if (min === max) { min -= Math.abs(min) * 0.1 || 1; max += Math.abs(max) * 0.1 || 1; }
+    if (zeroBaseline) { min = Math.min(0, min); max = Math.max(0, max); }
+    if (min === max) {
+        if (zeroBaseline && min === 0) max = 1;
+        else { min -= Math.abs(min) * 0.1 || 1; max += Math.abs(max) * 0.1 || 1; }
+    }
     const room = (max - min) * 0.12;
-    min -= room;
+    min = zeroBaseline && min >= 0 ? 0 : min - room;
     max += room;
     const x = (index) => PAD.left + (labels.length <= 1 ? 0 : (index / (labels.length - 1)) * (W - PAD.left - PAD.right));
     const y = (value) => PAD.top + (1 - (value - min) / (max - min)) * (H - PAD.top - PAD.bottom);
@@ -126,10 +130,12 @@ const areaPath = (values, scale) => {
 
 const plot = (state) => {
     const visible = state.series.filter((item) => !state.hidden.has(item.key));
-    const scale = scaleOf(visible.length ? visible : state.series, state.labels);
+    const scale = timeseriesScale(visible.length ? visible : state.series, state.labels, state.zeroBaseline);
     state.scale = scale;
     const format = state.unit === 'percent' ? (value) => percent(value) : moneyShort;
-    const ticks = Array.from({ length: 4 }, (_, index) => scale.min + ((scale.max - scale.min) * (index + 0.5)) / 4);
+    const ticks = state.zeroBaseline
+        ? Array.from({ length: 5 }, (_, index) => scale.min + (scale.max - scale.min) * index / 4)
+        : Array.from({ length: 4 }, (_, index) => scale.min + ((scale.max - scale.min) * (index + 0.5)) / 4);
     const first = visible[0];
     const area = first ? areaPath(first.values, scale) : '';
     return `
@@ -156,11 +162,11 @@ const plot = (state) => {
  * shown: the series visible at first (default all); the rest wait behind the legend, so a
  * large total does not flatten its own components on a shared axis.
  */
-export const timeseries = ({ title, labels, series, unit = 'money', note = '', shown = null }) => {
+export const timeseries = ({ title, labels, series, unit = 'money', note = '', shown = null, scrollable = false, zeroBaseline = false }) => {
     chartSeed += 1;
     const id = `sg-ts-${chartSeed}`;
     const hidden = new Set(shown ? series.filter((item) => !shown.includes(item.key)).map((item) => item.key) : []);
-    const state = { id, labels, series, unit, hidden };
+    const state = { id, labels, series, unit, hidden, zeroBaseline };
     timeseriesStore.set(id, state);
     return `
         <figure class="sg-tile sg-ts" data-sg-ts="${id}">
@@ -170,7 +176,8 @@ export const timeseries = ({ title, labels, series, unit = 'money', note = '', s
                     ${series.map((item) => `<button type="button" aria-pressed="${!hidden.has(item.key)}" data-series="${h(item.key)}" style="--c:${h(item.color)}"><i aria-hidden="true"></i>${h(item.label)}</button>`).join('')}
                 </div>
             </header>
-            <div class="sg-ts__plot">
+            ${scrollable ? '<p class="sg-ts__scroll-hint">Geser grafik untuk melihat seluruh periode.</p>' : ''}
+            <div class="sg-ts__plot"${scrollable ? ' tabindex="0" role="region" aria-label="Grafik per periode, dapat digeser horizontal"' : ''}>
                 <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${h(title)}, ${h(labels[0] || '')} sampai ${h(labels[labels.length - 1] || '')}">${plot(state)}</svg>
                 <div class="sg-ts__tip" data-tip hidden></div>
             </div>

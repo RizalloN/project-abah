@@ -131,8 +131,17 @@ export const coverage = ({ potential, existing, partName = 'Nasabah BRI', wholeN
 
 /* -------------------------------------------------------------- opportunity -- */
 
+/** Two disjoint tails of the same source ranking; small scopes never repeat a unit. */
+export const opportunityRanks = (rows) => {
+    const eligible = rows.filter((row) => finite(row.gap) && Number(row.gap) >= 0 && finite(row.potential) && Number(row.potential) >= 0);
+    const ordered = [...eligible].sort((a, b) => Number(b.gap) - Number(a.gap) || String(a.name).localeCompare(String(b.name), 'id') || String(a.key).localeCompare(String(b.key), 'id'));
+    const largestCount = Math.min(10, Math.ceil(ordered.length / 2));
+    const smallestCount = Math.min(10, ordered.length - largestCount);
+    return { largest: ordered.slice(0, largestCount), smallest: [...ordered].reverse().slice(0, smallestCount), count: ordered.length };
+};
+
 /** rows: [{ key, name, sub, potential, existing, penetration, gap }], average: the scope's penetration. */
-export const opportunity = ({ rows, average, caption = '' }) => {
+export const opportunity = ({ rows, average, caption = '', source = '' }) => {
     const points = rows.filter((row) => row.potential > 0 && finite(row.penetration));
     if (!points.length) return '';
     const maxPotential = Math.max(...points.map((row) => row.potential));
@@ -150,10 +159,19 @@ export const opportunity = ({ rows, average, caption = '' }) => {
     const xPos = (value) => clamp(value / xMax, 0, 1) * 100;
     const yPos = (value) => (1 - value / yMax) * 100;
     const priority = points.filter((row) => row.penetration < avg && row.potential >= median).sort((a, b) => b.gap - a.gap);
-    const ranked = (priority.length ? priority : [...points].sort((a, b) => b.gap - a.gap)).slice(0, 6);
+    const ranking = opportunityRanks(rows);
+    const initial = ranking.largest.find((row) => points.some((point) => point.key === row.key)) || points[0];
     const priorityKeys = new Set(priority.map((row) => row.key));
     const byGap = [...points].sort((a, b) => b.gap - a.gap);
     const ticks = Array.from({ length: xMax / 20 + 1 }, (_, index) => index * 20).filter((tick) => tick % (xMax > 120 ? 40 : 20) === 0);
+    const rankCard = (items, kind, title, order) => `<section class="sg-opportunity__rank-card" data-opportunity-ranking="${kind}" aria-label="${title}">
+        <header><h4>${title}</h4><p>${order}. ${items.length} unit${ranking.count < 20 ? ` dari ${ranking.count} unit tersedia` : ''}.</p></header>
+        ${items.length ? `<ol class="sg-opportunity__list" aria-label="${title}">${items.map((row, index) => `<li style="--i:${index};--c:${penetrationCss(row.penetration)}" data-orb-link="${h(row.key)}" tabindex="0">
+            <span class="sg-opportunity__rank">${index + 1}</span>
+            <span class="sg-opportunity__name">${h(row.name)}${row.sub ? `<small>${h(row.sub)}</small>` : ''}</span>
+            <span class="sg-opportunity__gap"><strong>${count(row.gap)}</strong><small>belum tergarap</small></span>
+        </li>`).join('')}</ol>` : '<p class="sg-note">Tidak ada unit tambahan untuk kelompok ini.</p>'}
+    </section>`;
     return `
         <div class="sg-opportunity" data-sg-opportunity>
             <figure class="sg-opportunity__plot" style="--avg:${xPos(avg).toFixed(2)}%;--median:${yPos(median).toFixed(2)}%">
@@ -178,17 +196,15 @@ export const opportunity = ({ rows, average, caption = '' }) => {
                 <div class="sg-opportunity__guide"><span><i aria-hidden="true"></i><strong>Ukuran bola</strong> Jumlah nasabah yang belum tergarap</span><span><strong>Kiri atas</strong> Potensi besar, penetrasi masih rendah</span></div>
                 <figcaption class="sg-opportunity__readout" data-orb-readout aria-live="polite">
                     <small>Arahkan ke bola untuk membaca unitnya</small>
-                    <strong>${h(ranked[0]?.name || '')}</strong>
-                    <span>${ranked[0] ? `Potensi ${count(ranked[0].potential)} &middot; Nasabah ${count(ranked[0].existing)} &middot; ${percent(ranked[0].penetration, 1)}` : ''}</span>
+                    <strong>${h(initial.name)}</strong>
+                    <span>Potensi ${count(initial.potential)} &middot; Nasabah ${count(initial.existing)} &middot; ${percent(initial.penetration, 1)}</span>
                 </figcaption>
             </figure>
-            <ol class="sg-opportunity__list" aria-label="Unit dengan potensi belum tergarap terbesar">
-                ${ranked.map((row, index) => `<li style="--i:${index};--c:${penetrationCss(row.penetration)}" data-orb-link="${h(row.key)}" tabindex="0">
-                    <span class="sg-opportunity__rank">${index + 1}</span>
-                    <span class="sg-opportunity__name">${h(row.name)}${row.sub ? `<small>${h(row.sub)}</small>` : ''}</span>
-                    <span class="sg-opportunity__gap"><strong>${count(row.gap)}</strong><small>belum tergarap &middot; ${percent(row.penetration, 1)}</small></span>
-                </li>`).join('')}
-            </ol>
+            <aside class="sg-opportunity__rankings" aria-label="Peringkat peluang unit">
+                ${rankCard(ranking.largest, 'largest', '10 belum tergarap terbesar', 'Urutan terbesar ke kecil')}
+                ${rankCard(ranking.smallest, 'smallest', '10 belum tergarap terkecil', 'Urutan terkecil ke besar')}
+                <p class="sg-note">Peringkat memakai jumlah nasabah belum tergarap, bukan hanya kuadran prioritas.${ranking.count < 20 ? ' Kurang dari 20 unit tersedia; dua kelompok dibagi tanpa mengulang unit.' : ''}${source ? ` ${h(source)}` : ''}</p>
+            </aside>
         </div>`;
 };
 
@@ -229,7 +245,7 @@ export const ledger = ({ rows, sectors, selected, caption = '', headLabel = 'Uni
             <tbody>${rows.map((row, r) => `<tr style="--r:${Math.min(r, 24)}"><th scope="row">${h(row.label)}${row.sub ? `<small>${h(row.sub)}</small>` : ''}</th>${sectors.map((sector, c) => {
                 const cell = row.cells[sector.key];
                 if (!cell || !(cell.potential > 0)) return `<td class="is-empty" style="--col:${c}"><span>-</span></td>`;
-                return `<td class="${sector.key === selected ? 'is-current' : ''}" style="--col:${c};--tone:${penetrationCss(cell.penetration)}" title="${h(`${row.label}, ${sector.label}: ${count(cell.existing)} dari ${count(cell.potential)}, ${percent(cell.penetration, 1)}${cell.normalization_applied ? `. Rasio sumber ${percent(cell.penetration_raw, 2)}, tampilan dinormalisasi maksimum 100%.` : ''}`)}"><span>${cell.penetration > 300 ? '300%+' : percent(cell.penetration, 0)}</span></td>`;
+                return `<td class="${sector.key === selected ? 'is-current' : ''}" style="--col:${c};--tone:${penetrationCss(cell.penetration)}" title="${h(`${row.label}, ${sector.label}: ${count(cell.existing)} dari ${count(cell.potential)}, ${percent(cell.penetration, 1)}${cell.normalization_applied ? `. Rasio sesuai kode SSA ${percent(cell.penetration_raw, 2)}; debitur dicocokkan ke sektor usaha BPS.` : ''}`)}"><span>${cell.penetration > 300 ? '300%+' : percent(cell.penetration, 0)}</span></td>`;
             }).join('')}</tr>`).join('')}</tbody>
         </table>
     </div>

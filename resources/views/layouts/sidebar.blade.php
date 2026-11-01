@@ -873,7 +873,7 @@
                         <li class="nav-item">
                             <a href="{{ route('report.dashboard-almafacts.timeseries') }}" class="nav-link {{ request()->routeIs('report.dashboard-almafacts.timeseries') ? 'active' : '' }}">
                                 <i class="far fa-circle nav-icon"></i>
-                                <p>Timeseries Laba Rugi</p>
+                                <p>Timeseries Almafact</p>
                             </a>
                         </li>
                     </ul>

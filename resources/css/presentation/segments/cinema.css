@@ -1,0 +1,335 @@
+/*
+ * Finishing film (see segments/cinema.js). Decoration only: nothing here moves a
+ * figure, an axis, a row or a hit target after its room has arrived. Imported
+ * last. Reduced motion shows none of it; the lite tier drops what costs fill-rate.
+ */
+
+/* ---------------------------------------------------------------- the flight -- */
+
+/* Children are fixed one by one: a fixed parent would trap the copy under the canvas. */
+.sg-flight { position: static; color: #f4f8ff; }
+html.sg-flight-on .sg-relief { z-index: 8001; }
+html.sg-flight-on .sg-relief__labels { z-index: 7999; }
+.sg-flight__slot { position: fixed; inset: 0; z-index: 7998; pointer-events: none; }
+.sg-flight__stars {
+    position: fixed;
+    inset: 0;
+    z-index: 8000;
+    background:
+        radial-gradient(1px 1px at 12% 22%, #ffffffb0 50%, transparent 51%),
+        radial-gradient(1px 1px at 28% 68%, #ffffff80 50%, transparent 51%),
+        radial-gradient(1.4px 1.4px at 41% 14%, #ffffffa0 50%, transparent 51%),
+        radial-gradient(1px 1px at 57% 83%, #ffffff70 50%, transparent 51%),
+        radial-gradient(1.4px 1.4px at 69% 31%, #ffffff90 50%, transparent 51%),
+        radial-gradient(1px 1px at 83% 62%, #ffffff80 50%, transparent 51%),
+        radial-gradient(1px 1px at 92% 18%, #ffffffa0 50%, transparent 51%),
+        radial-gradient(ellipse 80% 70% at 62% 44%, #0c2748 0, #04101f 58%, #02070f 100%);
+    background-size: 340px 340px, 460px 460px, 520px 520px, 390px 390px, 610px 610px, 430px 430px, 570px 570px, 100% 100%;
+    animation: sg-flight-in 420ms ease backwards;
+    transition: opacity 760ms cubic-bezier(.4, 0, .2, 1);
+}
+.sg-flight__copy {
+    position: fixed;
+    z-index: 8002;
+    left: max(var(--kn-gutter, 56px), calc((100vw - 1680px) / 2));
+    bottom: clamp(36px, 8vh, 84px);
+    display: grid;
+    gap: 6px;
+    max-width: min(620px, 80vw);
+    pointer-events: none;
+    transition: opacity 420ms ease, transform 620ms cubic-bezier(.4, 0, .2, 1);
+}
+/* A scrim only where the words sit; the planet stays untouched everywhere else. */
+.sg-flight__copy::before {
+    content: "";
+    position: absolute;
+    inset: -34% -46% -30% -30%;
+    z-index: -1;
+    background: radial-gradient(ellipse 62% 58% at 34% 58%, #02070fd9 0, #02070f8c 52%, transparent 100%);
+}
+.sg-flight__kicker { margin: 0 0 4px; font-size: .8125rem; font-weight: 500; letter-spacing: .14em; text-transform: uppercase; color: #8fb7dd; animation: sg-flight-rise 700ms 120ms cubic-bezier(.16, 1, .3, 1) both; }
+.sg-flight__title { margin: 0; font-size: clamp(3rem, 7.4vw, 8rem); font-weight: 600; letter-spacing: -.05em; line-height: .98; color: #fff; animation: sg-flight-rise 900ms 200ms cubic-bezier(.16, 1, .3, 1) both; }
+.sg-flight__period { margin: 8px 0 0; font-size: clamp(1rem, 1.4vw, 1.25rem); color: #bcd3ea; animation: sg-flight-rise 800ms 340ms cubic-bezier(.16, 1, .3, 1) both; }
+.sg-flight__agenda { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 24px 0 0; padding: 0; list-style: none; font-size: .875rem; animation: sg-flight-rise 800ms 460ms cubic-bezier(.16, 1, .3, 1) both; }
+.sg-flight__agenda li { color: #8ba6c2; transition: color 360ms ease; }
+.sg-flight__agenda li.is-lit { color: #f4f8ff; }
+.sg-flight__skip {
+    position: fixed;
+    z-index: 8002;
+    right: max(var(--kn-gutter, 56px), calc((100vw - 1680px) / 2));
+    bottom: clamp(36px, 8vh, 84px);
+    min-height: 44px;
+    padding: 0 18px;
+    border: 1px solid #ffffff38;
+    border-radius: 10px;
+    background: #07162a99;
+    color: #dfeaf6;
+    font: inherit;
+    font-size: .875rem;
+    cursor: pointer;
+    transition: opacity 300ms ease, background-color 180ms ease;
+    animation: sg-flight-rise 800ms 900ms cubic-bezier(.16, 1, .3, 1) backwards;
+}
+.sg-flight__skip:hover { background: #12294699; }
+.sg-flight__skip:focus-visible { outline: 2px solid #bddbff; outline-offset: 3px; }
+.sg-flight.is-leaving .sg-flight__stars { opacity: 0; }
+.sg-flight.is-leaving .sg-flight__copy { opacity: 0; transform: translate3d(0, -28px, 0); }
+.sg-flight.is-leaving .sg-flight__skip { opacity: 0; pointer-events: none; }
+.sg-flight.is-skipped .sg-flight__skip { opacity: 0; pointer-events: none; }
+@keyframes sg-flight-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes sg-flight-rise { from { opacity: 0; transform: translate3d(0, 26px, 0); } to { opacity: 1; transform: translate3d(0, 0, 0); } }
+
+/* ------------------------------------------------------------------ the seams -- */
+
+.sg-seam { position: fixed; z-index: 40; inset: calc(var(--kn-nav-h) + var(--sg-room-offset, var(--sg-room-head-h, 126px))) 0 0; overflow: hidden; overflow: clip; pointer-events: none; visibility: hidden; }
+.sg-seam.is-on { visibility: visible; }
+.sg-seam > i {
+    position: absolute;
+    inset: -4% 30%;
+    display: block;
+    background: linear-gradient(90deg, transparent, #2c6fe014 24%, #ffffff8c 50%, #2c6fe01f 60%, transparent);
+    will-change: transform;
+}
+.sg-seam.is-dark > i { background: linear-gradient(90deg, transparent, #4c9dff0d 24%, #9cc7ff38 50%, #4c9dff12 60%, transparent); }
+
+/* The KC portal: its outline draws, its route lights up in order. */
+.sg .sg-room-mode .sg-room-portal__map path { stroke-dasharray: 1; vector-effect: none; }
+.sg .sg-room-mode .sg-room-portal__map { will-change: transform; }
+.sg .sg-room-mode .sg-room-portal__steps span { animation: sg-portal-step 480ms ease both; }
+.sg .sg-room-mode .sg-room-portal__steps span:nth-of-type(1) { animation-delay: 240ms; }
+.sg .sg-room-mode .sg-room-portal__steps span:nth-of-type(2) { animation-delay: 560ms; }
+.sg .sg-room-mode .sg-room-portal__steps span:nth-of-type(3) { animation-delay: 880ms; }
+@keyframes sg-portal-step { from { opacity: .3; } to { opacity: 1; } }
+
+/* Map labels come in one after another once the relief has risen. */
+.sg-relief__label { transition: opacity 420ms ease calc(var(--sg-label-i, 0) * 80ms); }
+
+/* A programmatic landing on a heading is not a keyboard stop worth a ring. */
+.sg :is(.sg-opener__title, .sg-detail-head__title, .sg-close__title, [data-room-title])[tabindex="-1"]:focus-visible { outline: none; box-shadow: none; }
+
+/* ------------------------------------------------------------- the launcher -- */
+
+@media (prefers-reduced-motion: no-preference) {
+    html.sg-ready .sg .sg-launcher__head > * { animation: sg-launch-rise 900ms cubic-bezier(.16, 1, .3, 1) both; }
+    html.sg-ready .sg .sg-launcher__head > :nth-child(2) { animation-delay: 70ms; }
+    html.sg-ready .sg .sg-launcher__head > :nth-child(3) { animation-delay: 150ms; }
+    html.sg-ready .sg .sg-launcher__head > :nth-child(4) { animation-delay: 230ms; }
+    html.sg-ready .sg .sg-panel > * { animation: sg-launch-rise 900ms 180ms cubic-bezier(.16, 1, .3, 1) both; }
+    html.sg-ready .sg .sg-panel > :nth-child(2) { animation-delay: 240ms; }
+    html.sg-ready .sg .sg-panel > :nth-child(3) { animation-delay: 300ms; }
+    html.sg-ready .sg .sg-panel > :nth-child(4) { animation-delay: 360ms; }
+    html.sg-ready .sg .sg-panel > :nth-child(n + 5) { animation-delay: 420ms; }
+    .sg .sg-launcher__agenda [data-sg-agenda] > span { animation: sg-agenda-in 460ms cubic-bezier(.16, 1, .3, 1) both; }
+    .sg .sg-start:not(:disabled) { position: relative; overflow: hidden; }
+    .sg .sg-start:not(:disabled)::after {
+        content: "";
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 42%;
+        background: linear-gradient(100deg, transparent, #ffffff66, transparent);
+        transform: translate3d(-140%, 0, 0);
+        animation: sg-start-sheen 3.4s 600ms cubic-bezier(.65, 0, .2, 1) infinite;
+        pointer-events: none;
+    }
+}
+@keyframes sg-launch-rise { from { opacity: 0; transform: translate3d(0, 24px, 0); } to { opacity: 1; transform: translate3d(0, 0, 0); } }
+@keyframes sg-agenda-in { from { opacity: 0; transform: translate3d(-10px, 0, 0); } to { opacity: 1; transform: translate3d(0, 0, 0); } }
+@keyframes sg-start-sheen { 0% { transform: translate3d(-140%, 0, 0); } 42%, 100% { transform: translate3d(340%, 0, 0); } }
+
+/* --------------------------------------------------------- the report's depth -- */
+
+/* Behind the sheet's own content and above its ground; it never takes layout or input. */
+.sg .sg-sheet { isolation: isolate; }
+.sg .sg-sheet > .sg-atmos-track {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    width: auto;
+    margin: 0;
+    overflow: hidden;
+    overflow: clip;
+    border-radius: inherit;
+    pointer-events: none;
+}
+.sg .sg-sheet > .sg-atmos-track + * { margin-top: 0; }
+.sg-atmos {
+    --atmos-a: var(--performance-accent, #2c6fe0);
+    --atmos-b: var(--performance-edge, #bdd6f7);
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    height: 100svh;
+    overflow: hidden;
+    overflow: clip;
+}
+.sg-atmos > i { position: absolute; display: block; border-radius: 50%; will-change: transform; }
+.sg-atmos > i:nth-child(1) {
+    width: 72vmax; height: 72vmax; left: -26vmax; top: -30vmax;
+    background: radial-gradient(closest-side, color-mix(in srgb, var(--atmos-a) 15%, transparent), transparent);
+    transform: translate3d(calc(var(--room-p, 0) * 46vw), calc(var(--room-p, 0) * 46vh), 0);
+}
+.sg-atmos > i:nth-child(2) {
+    width: 58vmax; height: 58vmax; right: -24vmax; bottom: -28vmax;
+    background: radial-gradient(closest-side, color-mix(in srgb, var(--atmos-b) 42%, transparent), transparent);
+    transform: translate3d(calc(var(--room-p, 0) * -38vw), calc(var(--room-p, 0) * -52vh), 0);
+}
+/* One large thin form per room, turning with the reader: the room's own material at scale. */
+.sg-atmos > i:nth-child(3) {
+    width: 62vmin; height: 62vmin; right: -14vmin; top: 12vh;
+    border: 1px solid color-mix(in srgb, var(--atmos-a) 22%, transparent);
+    box-shadow: inset 0 0 0 7vmin color-mix(in srgb, var(--atmos-a) 4%, transparent), 0 0 0 5vmin color-mix(in srgb, var(--atmos-a) 2.5%, transparent);
+    transform: translate3d(calc(var(--room-p, 0) * -24vw), calc(var(--room-p, 0) * 22vh), 0) rotateX(62deg) rotateZ(calc(var(--room-p, 0) * 160deg));
+}
+.sg .sg-performance[data-performance-theme="pinjaman"] .sg-atmos > i:nth-child(3) { border-radius: 10%; }
+.sg .sg-performance[data-performance-theme="kualitas"] .sg-atmos > i:nth-child(3) { border-radius: 0; }
+.sg .sg-performance[data-performance-theme="recovery"] .sg-atmos > i:nth-child(3) { border-radius: 50% 50% 8% 8%; }
+
+/* The act's own name, far larger and fainter, passes behind it as the reader scrolls. */
+.sg .sg-sheet .sg-block__head { position: relative; }
+.sg-act-ghost {
+    position: absolute;
+    inset: -8% -100vw auto;
+    z-index: -1;
+    display: block;
+    height: clamp(92px, 13vw, 210px);
+    overflow: hidden;
+    overflow: clip;
+    pointer-events: none;
+    user-select: none;
+}
+.sg-act-ghost > b {
+    position: absolute;
+    left: 100vw;
+    top: 0;
+    font-size: clamp(84px, 12.5vw, 196px);
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -.05em;
+    white-space: nowrap;
+    color: color-mix(in srgb, var(--performance-accent, #2c6fe0) 4%, transparent);
+    will-change: transform;
+}
+.sg .sg-performance .sg-performance-sculpture { transform-origin: 80% 40%; }
+
+/* A slim spine of the report's acts, once its own index has scrolled away. */
+.sg .sg-performance .sg-performance-path.sg-act-rail { display: none; }
+
+@media (prefers-reduced-motion: no-preference) {
+    html.sg-motion .sg-act-ghost > b { transform: translate3d(calc((.5 - var(--reading-pass, .5)) * 26vw), 0, 0); }
+    html.sg-motion .sg .sg-performance .sg-performance-sculpture {
+        transform: translate3d(0, calc((.5 - var(--reading-pass, .5)) * 30px), 0) rotateZ(calc((var(--reading-pass, .5) - .5) * 24deg)) scale(1.28);
+    }
+}
+
+/* It lives in the page gutter only: a report's figures are never underneath it. */
+@media (min-width: 1360px) and (prefers-reduced-motion: no-preference) {
+    .sg .sg-performance .sg-performance-path.sg-act-rail {
+        position: fixed;
+        z-index: 30;
+        right: 12px;
+        top: 50%;
+        display: block;
+        width: 34px;
+        margin: 0;
+        padding: 2px;
+        border: 0;
+        border-radius: 10px;
+        background: color-mix(in srgb, var(--performance-paper, #f7faff) 88%, transparent);
+        box-shadow: 0 10px 28px -18px var(--performance-shadow, #0003);
+        opacity: 0;
+        pointer-events: none;
+        transform: translate3d(10px, -50%, 0);
+        transition: opacity 320ms ease, transform 420ms cubic-bezier(.16, 1, .3, 1);
+    }
+    .sg .sg-performance.is-past-path:not(.is-room-transition) .sg-performance-path.sg-act-rail {
+        opacity: 1;
+        pointer-events: auto;
+        transform: translate3d(0, -50%, 0);
+    }
+    .sg .sg-performance .sg-performance-path.sg-act-rail ol { display: block; width: 30px; margin: 0; padding: 0; }
+    .sg .sg-performance .sg-performance-path.sg-act-rail li { display: block; width: 30px; margin: 0 0 2px; padding: 0; border: 0; }
+    .sg .sg-performance .sg-performance-path.sg-act-rail li:last-child { margin-bottom: 0; }
+    .sg .sg-performance .sg-performance-path.sg-act-rail a {
+        display: grid;
+        place-items: center;
+        width: 30px;
+        min-width: 0;
+        height: 30px;
+        min-height: 0;
+        padding: 0;
+        border: 0;
+        border-radius: 8px;
+        background: transparent;
+        box-shadow: none;
+        color: var(--kn-ink-soft);
+        font-size: .6875rem;
+        text-decoration: none;
+    }
+    .sg .sg-performance .sg-performance-path.sg-act-rail a > :not(small),
+    .sg .sg-performance .sg-performance-path.sg-act-rail a::before,
+    .sg .sg-performance .sg-performance-path.sg-act-rail a::after { display: none; }
+    .sg .sg-performance .sg-performance-path.sg-act-rail a > small { display: block; margin: 0; color: inherit; font-size: inherit; }
+    .sg .sg-performance .sg-performance-path.sg-act-rail a:hover { background: color-mix(in srgb, var(--performance-accent) 12%, transparent); }
+    .sg .sg-performance .sg-performance-path.sg-act-rail a[aria-current="location"] { background: var(--performance-accent); color: #fff; }
+    .sg .sg-performance[data-performance-theme="kualitas"] .sg-performance-path.sg-act-rail a[aria-current="location"] { color: #1d2027; }
+    .sg .sg-performance .sg-performance-path.sg-act-rail a:focus-visible { outline: 2px solid var(--performance-accent); outline-offset: 1px; }
+}
+
+/* ------------------------------------------------------------------ the finale -- */
+
+.sg .sg-room-mode .sg-close {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 42%) minmax(0, 1fr);
+    grid-template-rows: 1fr;
+    align-items: center;
+    min-height: calc(100svh - var(--kn-nav-h) - var(--sg-room-offset, var(--sg-room-head-h, 126px)));
+    padding: 0;
+    background: radial-gradient(ellipse 70% 80% at 68% 42%, #0f2b4d 0, #061325 62%, #030a15 100%);
+    color: #f4f8ff;
+    overflow: hidden;
+    overflow: clip;
+}
+/* The relief has its own half of the frame, so the closing words are never crossed by it. */
+.sg .sg-room-mode .sg-close__stage { position: relative; grid-column: 2; grid-row: 1; align-self: stretch; min-height: 0; }
+.sg .sg-room-mode .sg-close__copy {
+    grid-column: 1;
+    grid-row: 1;
+    justify-items: start;
+    gap: 20px;
+    padding: clamp(32px, 6vh, 72px) 24px clamp(32px, 6vh, 72px) max(var(--kn-gutter), calc((100vw - 1680px) / 2));
+    text-align: left;
+}
+.sg .sg-room-mode .sg-close__title { margin: 0; font-size: clamp(2.4rem, 4.4vw, 5.6rem); font-weight: 600; letter-spacing: -.05em; line-height: 1; color: #fff; }
+.sg .sg-room-mode .sg-close__title span { color: #9db9d6; }
+.sg .sg-room-mode .sg-close__list { justify-content: flex-start; }
+.sg .sg-room-mode .sg-close__list a { background: #ffffff14; color: #e4eefa; box-shadow: inset 0 0 0 1px #ffffff1f; transition: background-color 180ms ease; }
+.sg .sg-room-mode .sg-close__list a:hover { background: #ffffff26; }
+.sg .sg-room-mode .sg-close__actions { justify-content: flex-start; }
+.sg .sg-room-mode .sg-close .kn-link { color: #cfe0f2; }
+
+/* Without WebGL the closing frame still shows the territory, readable on its dark ground. */
+html.sg-relief-off .sg .sg-close__stage .sg-poster svg path { fill: #9db5d2; stroke: #06132580; }
+
+/* ------------------------------------------------------------------ the guards -- */
+
+html[data-sg-tier="lite"] .sg-atmos > i:nth-child(n + 2),
+html[data-sg-tier="lite"] .sg-act-ghost { display: none; }
+html[data-sg-tier="lite"] .sg-atmos > i { will-change: auto; }
+
+@media (max-width: 760px) {
+    .sg-flight__title { font-size: clamp(2.6rem, 13vw, 4rem); }
+    .sg-flight__skip { bottom: auto; top: 14px; }
+    .sg .sg-room-mode .sg-close { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(38svh, 1fr) auto; }
+    .sg .sg-room-mode .sg-close__stage { grid-column: 1; grid-row: 1; }
+    .sg .sg-room-mode .sg-close__copy { grid-column: 1; grid-row: 2; padding-right: var(--kn-gutter); }
+    .sg .sg-room-mode .sg-close__title { font-size: clamp(2.2rem, 10vw, 3.4rem); }
+    .sg-act-ghost { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .sg-seam, .sg-atmos-track, .sg-act-ghost, .sg-flight { display: none !important; }
+    .sg-relief__label { transition: none; }
+    .sg .sg-room-mode .sg-room-portal__steps span { animation: none; }
+    .sg .sg-room-mode .sg-room-portal__map path { stroke-dasharray: none; }
+}

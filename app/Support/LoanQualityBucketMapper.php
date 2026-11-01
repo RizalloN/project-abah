@@ -107,32 +107,49 @@ final class LoanQualityBucketMapper
             END
         ";
 
-        $effectiveAge = "
-            CASE
-                WHEN {$umurTunggakanColumn} IS NOT NULL THEN {$umurTunggakanColumn}
-                ELSE ({$derivedAge})
-            END
-        ";
+        $effectiveAge = "COALESCE({$umurTunggakanColumn}, {$derivedAge})";
 
+        // Simple CASE mengevaluasi operandnya sekali per baris. Versi lama menyalin
+        // kolek, umur dan detail ke setiap cabang (~67 KB SQL) sehingga dihitung
+        // berulang; hasilnya identik, hanya jauh lebih murah dievaluasi.
         $kolekValueExpression = "
-            CASE
-                WHEN {$normalizedKolek} IN ('1', '1.0', '1.00') THEN 1
-                WHEN {$normalizedKolek} IN ('2', '2.0', '2.00') THEN 2
-                WHEN {$normalizedKolek} IN ('3', '3.0', '3.00') THEN 3
-                WHEN {$normalizedKolek} IN ('4', '4.0', '4.00') THEN 4
-                WHEN {$normalizedKolek} IN ('5', '5.0', '5.00') THEN 5
-                ELSE NULL
+            CASE {$normalizedKolek}
+                WHEN '1' THEN 1 WHEN '1.0' THEN 1 WHEN '1.00' THEN 1
+                WHEN '2' THEN 2 WHEN '2.0' THEN 2 WHEN '2.00' THEN 2
+                WHEN '3' THEN 3 WHEN '3.0' THEN 3 WHEN '3.00' THEN 3
+                WHEN '4' THEN 4 WHEN '4.0' THEN 4 WHEN '4.00' THEN 4
+                WHEN '5' THEN 5 WHEN '5.0' THEN 5 WHEN '5.00' THEN 5
+                ELSE 0
             END
         ";
+        $currentOrRestructured = "CASE WHEN {$normalizedFlagRestruk} = 'Y' THEN 'LR' ELSE 'L' END";
 
-        $detailBucketExpression = "
+        // Tanpa kolek: umur menentukan bucket; bila umur juga kosong, kolek_detail.
+        // L dari umur/detail menjadi LR bila restruk dan detailnya L/LR.
+        $ageBucketExpression = "
             CASE
-                WHEN {$normalizedDetail} IN ('', '0', '-') THEN NULL
-                WHEN {$normalizedDetail} IN ('DPK1', 'DPK 1', 'SML1', 'SML 1') THEN 'DPK 1'
-                WHEN {$normalizedDetail} IN ('DPK2', 'DPK 2', 'SML2', 'SML 2') THEN 'DPK 2'
-                WHEN {$normalizedDetail} IN ('DPK3', 'DPK 3', 'SML3', 'SML 3') THEN 'DPK 3'
-                WHEN {$normalizedDetail} = 'NPL' THEN 'M'
-                WHEN {$normalizedDetail} IN ('PAY', 'LUNAS') THEN 'Pay'
+                WHEN {$effectiveAge} <= 0 THEN CASE
+                    WHEN {$normalizedFlagRestruk} = 'Y' AND {$normalizedDetail} IN ('L', 'LR') THEN 'LR'
+                    ELSE 'L'
+                END
+                WHEN {$effectiveAge} <= 30 THEN 'DPK 1'
+                WHEN {$effectiveAge} <= 60 THEN 'DPK 2'
+                WHEN {$effectiveAge} <= 90 THEN 'DPK 3'
+                WHEN {$effectiveAge} <= 120 THEN 'KL'
+                WHEN {$effectiveAge} <= 150 THEN 'D1'
+                WHEN {$effectiveAge} <= 180 THEN 'D2'
+                ELSE 'M'
+            END
+        ";
+        $detailBucketExpression = "
+            CASE {$normalizedDetail}
+                WHEN '' THEN 'Unknown' WHEN '0' THEN 'Unknown' WHEN '-' THEN 'Unknown'
+                WHEN 'DPK1' THEN 'DPK 1' WHEN 'DPK 1' THEN 'DPK 1' WHEN 'SML1' THEN 'DPK 1' WHEN 'SML 1' THEN 'DPK 1'
+                WHEN 'DPK2' THEN 'DPK 2' WHEN 'DPK 2' THEN 'DPK 2' WHEN 'SML2' THEN 'DPK 2' WHEN 'SML 2' THEN 'DPK 2'
+                WHEN 'DPK3' THEN 'DPK 3' WHEN 'DPK 3' THEN 'DPK 3' WHEN 'SML3' THEN 'DPK 3' WHEN 'SML 3' THEN 'DPK 3'
+                WHEN 'NPL' THEN 'M'
+                WHEN 'PAY' THEN 'Pay' WHEN 'LUNAS' THEN 'Pay'
+                WHEN 'L' THEN {$currentOrRestructured}
                 ELSE {$normalizedDetail}
             END
         ";
@@ -141,47 +158,21 @@ final class LoanQualityBucketMapper
         // periode - LEAST(next_pmt_date, next_pmt_int_date) bila NULL).
         // Bila umur tetap tidak diketahui, kolek=2 jatuh ke DPK 3 dan kolek=4 ke D2
         // mengikuti SOP "worst-case dalam kelas kolek".
-        $kolekBucketExpression = "
-            CASE
-                WHEN ({$kolekValueExpression}) = 1 AND {$normalizedFlagRestruk} = 'Y' THEN 'LR'
-                WHEN ({$kolekValueExpression}) = 1 THEN 'L'
-                WHEN ({$kolekValueExpression}) = 2 AND ({$effectiveAge}) IS NOT NULL AND ({$effectiveAge}) < 31 THEN 'DPK 1'
-                WHEN ({$kolekValueExpression}) = 2 AND ({$effectiveAge}) IS NOT NULL AND ({$effectiveAge}) < 61 THEN 'DPK 2'
-                WHEN ({$kolekValueExpression}) = 2 AND ({$effectiveAge}) IS NOT NULL AND ({$effectiveAge}) < 91 THEN 'DPK 3'
-                WHEN ({$kolekValueExpression}) = 2 THEN 'DPK 3'
-                WHEN ({$kolekValueExpression}) = 3 THEN 'KL'
-                WHEN ({$kolekValueExpression}) = 4 AND ({$effectiveAge}) IS NOT NULL AND ({$effectiveAge}) <= 150 THEN 'D1'
-                WHEN ({$kolekValueExpression}) = 4 AND ({$effectiveAge}) IS NOT NULL AND ({$effectiveAge}) <= 180 THEN 'D2'
-                WHEN ({$kolekValueExpression}) = 4 THEN 'D2'
-                WHEN ({$kolekValueExpression}) = 5 THEN 'M'
-                ELSE NULL
-            END
-        ";
-
-        $bucketExpression = "
-            CASE
-                WHEN ({$kolekBucketExpression}) IS NOT NULL THEN ({$kolekBucketExpression})
-                WHEN ({$effectiveAge}) IS NOT NULL THEN CASE
-                    WHEN ({$effectiveAge}) <= 0 THEN 'L'
-                    WHEN ({$effectiveAge}) <= 30 THEN 'DPK 1'
-                    WHEN ({$effectiveAge}) <= 60 THEN 'DPK 2'
-                    WHEN ({$effectiveAge}) <= 90 THEN 'DPK 3'
-                    WHEN ({$effectiveAge}) <= 120 THEN 'KL'
-                    WHEN ({$effectiveAge}) <= 150 THEN 'D1'
-                    WHEN ({$effectiveAge}) <= 180 THEN 'D2'
-                    ELSE 'M'
-                END
-                WHEN ({$detailBucketExpression}) IS NOT NULL THEN ({$detailBucketExpression})
-                ELSE 'Unknown'
-            END
-        ";
-
         return "
-            CASE
-                WHEN ({$bucketExpression}) = 'L'
-                    AND ({$detailBucketExpression}) IN ('L', 'LR')
-                    AND {$normalizedFlagRestruk} = 'Y' THEN 'LR'
-                ELSE ({$bucketExpression})
+            CASE {$kolekValueExpression}
+                WHEN 1 THEN {$currentOrRestructured}
+                WHEN 2 THEN CASE
+                    WHEN {$effectiveAge} < 31 THEN 'DPK 1'
+                    WHEN {$effectiveAge} < 61 THEN 'DPK 2'
+                    ELSE 'DPK 3'
+                END
+                WHEN 3 THEN 'KL'
+                WHEN 4 THEN CASE WHEN {$effectiveAge} <= 150 THEN 'D1' ELSE 'D2' END
+                WHEN 5 THEN 'M'
+                ELSE CASE
+                    WHEN {$effectiveAge} IS NOT NULL THEN {$ageBucketExpression}
+                    ELSE {$detailBucketExpression}
+                END
             END
         ";
     }

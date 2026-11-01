@@ -6,6 +6,7 @@
 @include('report.dashboard-pinjaman._partials._styles')
 
 @php
+    $comparisonBasis = $comparisonBasis ?? 'mtd';
     $formatMatrixPeriod = function (?string $period): string {
         if (!$period) {
             return '-';
@@ -32,7 +33,7 @@
     /* ── Modern Premium Selectors ── */
     .loan-filter-modern {
         display: grid;
-        grid-template-columns: repeat(5, 1fr) auto;
+        grid-template-columns: repeat(6, 1fr) auto;
         gap: 1rem;
         background: rgba(255, 255, 255, 0.8);
         backdrop-filter: blur(20px);
@@ -342,6 +343,17 @@
         white-space: nowrap;
     }
 
+    .loan-basis-tag {
+        display: inline-block;
+        padding: 0 0.35rem;
+        border-radius: 0.35rem;
+        background: rgba(8, 87, 195, 0.1);
+        color: #0857c3;
+        font-size: 0.7rem;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+    }
+
     .loan-filter-summary-copy strong {
         color: #162b45;
         font-weight: 800;
@@ -373,7 +385,7 @@
     }
 
     .loan-filter-shell .loan-filter-modern {
-        grid-template-columns: repeat(5, minmax(0, 1fr)) minmax(120px, auto);
+        grid-template-columns: repeat(6, minmax(0, 1fr)) minmax(120px, auto);
         gap: 0.65rem;
         margin: 0;
         padding: 0;
@@ -539,7 +551,7 @@
                             <span class="loan-filter-summary-copy">
                                 Posisi <strong id="loanActivePeriodMeta">{{ $formatMatrixPeriod($selectedPeriod) }}</strong>
                                 <span class="loan-filter-summary-separator">|</span>
-                                Pembanding <strong id="loanComparisonPeriodMeta">{{ $formatMatrixPeriod($comparisonPeriod) }}</strong>
+                                Pembanding <span id="loanComparisonBasisMeta" class="loan-basis-tag">{{ strtoupper($comparisonBasis) }}</span> <strong id="loanComparisonPeriodMeta">{{ $formatMatrixPeriod($comparisonPeriod) }}</strong>
                                 <span class="loan-filter-summary-separator">|</span>
                                 <span id="loanFilterSelectionSummary">Semua portofolio</span>
                             </span>
@@ -566,6 +578,22 @@
                                             {{ $formatMatrixPeriod($period) }}
                                         </option>
                                     @endforeach
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="loan-filter-item">
+                            <label class="loan-filter-label">Basis Pembanding</label>
+                            <div class="loan-dropdown" data-loan-dropdown="basis">
+                                <i class="fas fa-exchange-alt loan-dropdown-icon"></i>
+                                <button type="button" class="loan-dropdown-toggle" data-loan-dropdown-toggle="basis" title="MTD: akhir bulan lalu vs posisi. MTM: tanggal yang sama bulan lalu vs posisi.">
+                                    <span class="loan-dropdown-text">{{ $comparisonBasis === 'mtm' ? 'MTM · Tanggal Sama' : 'MTD · Akhir Bulan' }}</span>
+                                    <i class="fas fa-chevron-down small opacity-50"></i>
+                                </button>
+                                <div class="loan-dropdown-menu" data-loan-dropdown-menu="basis"></div>
+                                <select id="loanBasisInput" name="basis" class="d-none loan-filter-control" data-placeholder="MTD · Akhir Bulan">
+                                    <option value="mtd" @selected($comparisonBasis === 'mtd')>MTD · Akhir Bulan</option>
+                                    <option value="mtm" @selected($comparisonBasis === 'mtm')>MTM · Tanggal Sama</option>
                                 </select>
                             </div>
                         </div>
@@ -785,6 +813,7 @@
     document.addEventListener('DOMContentLoaded', function () {
         const form = document.getElementById('loanFilterForm');
         const periodInput = document.getElementById('loanPeriodeInput');
+        const basisInput = document.getElementById('loanBasisInput');
         const segmenSelect = document.getElementById('loanSegmenSelect');
         const produkSelect = document.getElementById('loanProdukSelect');
         const cabangSelect = document.getElementById('loanCabangSelect');
@@ -802,6 +831,7 @@
         const reconciliationBadge = document.getElementById('loanReconciliationBadge');
         const activePeriodMeta = document.getElementById('loanActivePeriodMeta');
         const comparisonPeriodMeta = document.getElementById('loanComparisonPeriodMeta');
+        const comparisonBasisMeta = document.getElementById('loanComparisonBasisMeta');
         const currentHeadLabel = document.getElementById('loanCurrentHeadLabel');
         const comparisonHeadLabel = document.getElementById('loanComparisonHeadLabel');
         const totalValueHeader = document.getElementById('loanTotalValueHeader');
@@ -878,12 +908,13 @@
             });
         }
 
-        function renderPositionDeltaLabel(selectedPeriod, comparisonPeriod) {
-            return `Posisi ${formatMatrixPeriodDate(selectedPeriod)} | Pembanding ${formatMatrixPeriodDate(comparisonPeriod)}`;
+        function renderPositionDeltaLabel(selectedPeriod, comparisonPeriod, comparisonBasis) {
+            const basisLabel = comparisonBasis ? ` ${String(comparisonBasis).toUpperCase()}` : '';
+            return `Posisi ${formatMatrixPeriodDate(selectedPeriod)} | Pembanding${basisLabel} ${formatMatrixPeriodDate(comparisonPeriod)}`;
         }
 
         function renderMatrixContextLabel(payload) {
-            const positionLabel = renderPositionDeltaLabel(payload?.selected_period, payload?.comparison_period);
+            const positionLabel = renderPositionDeltaLabel(payload?.selected_period, payload?.comparison_period, payload?.comparison_basis);
             if (!payload?.ph_period) return positionLabel;
 
             const fallbackLabel = payload.ph_period_relation === 'fallback' ? ' (terakhir tersedia)' : '';
@@ -895,6 +926,7 @@
             periodBadge.textContent = renderMatrixContextLabel(payload);
             activePeriodMeta.textContent = formatMatrixPeriodDate(payload.selected_period);
             comparisonPeriodMeta.textContent = formatMatrixPeriodDate(payload.comparison_period);
+            if (comparisonBasisMeta && payload.comparison_basis) comparisonBasisMeta.textContent = String(payload.comparison_basis).toUpperCase();
             if (currentHeadLabel) currentHeadLabel.textContent = formatMatrixPeriodDate(payload.selected_period);
             if (comparisonHeadLabel) comparisonHeadLabel.textContent = formatMatrixPeriodDate(payload.comparison_period);
         }
@@ -1118,7 +1150,7 @@
 
             drillMeta.innerHTML = `
                 <span>Posisi: ${escapeHtml(formatMatrixPeriodDate(payload.selected_period))}</span>
-                <span>Pembanding: ${escapeHtml(formatMatrixPeriodDate(payload.comparison_period))}</span>
+                <span>Pembanding${payload.comparison_basis ? ` ${escapeHtml(String(payload.comparison_basis).toUpperCase())}` : ''}: ${escapeHtml(formatMatrixPeriodDate(payload.comparison_period))}</span>
                 <span>Dari: ${escapeHtml(beforeLabel)}</span>
                 <span>Ke: ${escapeHtml(displayBucketLabel(payload.after_bucket))}</span>
                 <span>Ditampilkan: ${formatNumber(activeDrillRenderedCount + rows.length)}</span>
@@ -1365,7 +1397,7 @@
         }
 
         function renderFilterLoadError() {
-            document.querySelectorAll('[data-loan-dropdown-menu]:not([data-loan-dropdown-menu="periode"])').forEach(menu => {
+            document.querySelectorAll('[data-loan-dropdown-menu]:not([data-loan-dropdown-menu="periode"]):not([data-loan-dropdown-menu="basis"])').forEach(menu => {
                 if (menu.children.length > 0 && !menu.querySelector('.fa-spinner')) return;
                 menu.innerHTML = '<button type="button" class="btn btn-link btn-sm btn-block text-danger" data-loan-filter-retry><i class="fas fa-redo mr-2"></i>Gagal memuat. Coba lagi</button>';
             });
@@ -1627,6 +1659,11 @@
             updateFilterSummary();
             loadFilterOptions();
         });
+        basisInput?.addEventListener('change', () => {
+            markMatrixDirty();
+            if (comparisonBasisMeta) comparisonBasisMeta.textContent = basisInput.value.toUpperCase();
+            comparisonPeriodMeta.textContent = '-';
+        });
         periodInput.addEventListener('input', () => {
             markMatrixDirty();
             window.clearTimeout(filterReloadTimer);
@@ -1674,6 +1711,7 @@
         function initModernDropdowns() {
             const dropdownConfigs = [
                 { id: 'loanPeriodeInput', key: 'periode' },
+                { id: 'loanBasisInput', key: 'basis' },
                 { id: 'loanSegmenSelect', key: 'segmen' },
                 { id: 'loanProdukSelect', key: 'produk' },
                 { id: 'loanCabangSelect', key: 'cabang' },

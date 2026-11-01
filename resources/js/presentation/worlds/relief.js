@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { StageFX } from './stage-fx.js';
+import { territoryFlight } from './territory-flight.js';
 
 /*
  * The Area 6 relief: 76 real kecamatan, machined from anodised aluminium on a
@@ -210,6 +211,21 @@ export class ReliefScene {
         });
     }
 
+    /** The real planet under this relief, at its true longitude, latitude and scale. Lazy: 3 large textures. */
+    beginFlight(assetBase) {
+        if (this.flight) return this.flight;
+        this.flight = territoryFlight({ THREE, scene: this.scene, host: this.canvas.parentElement, renderer: this.renderer }, () => {}, { assetBase });
+        this.flight.setFrame(this.geoFrame);
+        return this.flight;
+    }
+
+    /** Frees the planet's GPU memory; the relief continues under the same camera. */
+    endFlight() {
+        this.flight?.dispose();
+        this.flight = null;
+        this.camera.far = 200;
+    }
+
     /** explode 0..1, spread 0..1, levitate 0..1 of levitateBranch, grow 0..1 of the data height, wave 0..1. */
     setArrangement(next = {}) {
         Object.assign(this.arrangementTarget, next);
@@ -228,6 +244,7 @@ export class ReliefScene {
         const correction = Math.cos(lat0 * Math.PI / 180);
         const scale = UNIT_WIDTH / Math.max((maxLon - minLon) * correction, maxLat - minLat);
         this.project = (lon, lat) => [(lon - lon0) * correction * scale, (lat - lat0) * scale];
+        this.geoFrame = { lat: lat0, lon: lon0, scale, bounds: { minLon, maxLon, minLat, maxLat } };
         const halfWidth = ((maxLon - minLon) * correction * scale) / 2;
         const halfDepth = ((maxLat - minLat) * scale) / 2;
         this.extent = { halfWidth, halfDepth };
@@ -546,6 +563,18 @@ export class ReliefScene {
         // Fast scrolling punches the lens in a touch and leans the horizon; both settle with the scroll.
         this.camera.fov = FOV + Math.min(1, velocity) * 2.6;
         this.camera.rotateZ((frame.px ?? 0) * 0.012 - Math.min(1, velocity) * 0.012 * Math.sign(frame.direction ?? 1));
+        if (this.flight) {
+            const { x, y, z } = this.camera.position;
+            const orientation = this.camera.quaternion.clone();
+            const journey = this.flight.update(frame.flight ?? 1, still, this.camera, distance, time);
+            // After arrival the relief's own camera takes over, starting from the same overhead pose.
+            if (!journey.flight) {
+                this.camera.position.set(x, y, z);
+                this.camera.quaternion.copy(orientation);
+                this.camera.far = 200;
+            }
+            settling = true;
+        }
         const dx = rect.x + rect.w / 2 - this.width / 2;
         const dy = rect.y + rect.h / 2 - this.height / 2;
         this.camera.setViewOffset(this.width, this.height, -dx, -dy, this.width, this.height);

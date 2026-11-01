@@ -83,4 +83,18 @@ class DashboardPinjamanMatrixViewTest extends TestCase
         $this->assertStringContainsString('.loan-matrix tfoot td.loan-drill-cell', $styles);
         $this->assertStringContainsString('.loan-matrix tfoot td.loan-drill-cell.is-selected', $styles);
     }
+
+    public function test_matrix_basis_select_travels_with_the_form_and_marks_rows_stale(): void
+    {
+        $view = file_get_contents(resource_path('views/report/dashboard-pinjaman/matrix.blade.php'));
+
+        $this->assertIsString($view);
+        // The form is serialized with FormData, so data, drilldown and export all carry `basis`.
+        $this->assertStringContainsString('<select id="loanBasisInput" name="basis"', $view);
+        $this->assertStringContainsString('<option value="mtd"', $view);
+        $this->assertStringContainsString('<option value="mtm"', $view);
+        $this->assertStringContainsString("{ id: 'loanBasisInput', key: 'basis' }", $view);
+        $this->assertStringContainsString("basisInput?.addEventListener('change', () => {\n            markMatrixDirty();", $view);
+        $this->assertSame(1, substr_count($view, 'id="loanComparisonBasisMeta"'));
+    }
 }

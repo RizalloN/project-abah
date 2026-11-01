@@ -25,13 +25,14 @@
                 <tbody>
                     @foreach($customerGroups as $customerGroup)
                         @php($customerFigures = $customerSource['totals'][$customerGroup['key']] ?? [])
-                        <tr><th scope="row" class="sector-cell">{{ $customerGroup['label'] }}</th><td>{{ implode(', ', $customerGroup['categories'] ?? []) ?: 'Tidak tersedia' }}</td><td>{{ $customerGroup['key'] === 'unclassified' ? '-' : $customerCount($customerFigures['potential'] ?? null) }}</td><td>{{ $customerCount($customerFigures['intra'] ?? null) }}</td><td>{{ $customerCount($customerFigures['extra'] ?? null) }}</td><td>{{ $customerCount($customerFigures['existing'] ?? null) }}</td><td title="Rasio sumber: {{ $customerRatio($customerFigures['penetration_raw'] ?? null) }}">{{ $customerRatio($customerFigures['penetration'] ?? null) }} @if(!empty($customerFigures['normalization_applied']))<small>Dinormalisasi</small>@endif</td></tr>
+                        <tr><th scope="row" class="sector-cell">{{ $customerGroup['label'] }}</th><td>{{ implode(', ', $customerGroup['categories'] ?? []) ?: 'Tidak tersedia' }}</td><td>{{ $customerGroup['key'] === 'unclassified' ? '-' : $customerCount($customerFigures['potential'] ?? null) }}</td><td>{{ $customerCount($customerFigures['intra'] ?? null) }}</td><td>{{ $customerCount($customerFigures['extra'] ?? null) }}</td><td>{{ $customerCount($customerFigures['existing'] ?? null) }}</td><td title="Rasio sesuai kode SSA: {{ $customerRatio($customerFigures['penetration_raw'] ?? null) }}">{{ $customerRatio($customerFigures['penetration'] ?? null) }} @if(!empty($customerFigures['normalization_applied']))<small>Dinormalisasi</small>@endif</td></tr>
                     @endforeach
                 </tbody>
                 <tfoot><tr><th scope="row" colspan="2">Total termasuk OTHER</th><td>{{ $customerCount($customerTotals['potential'] ?? null) }}</td><td>{{ $customerCount($customerTotals['intra'] ?? null) }}</td><td>{{ $customerCount($customerTotals['extra'] ?? null) }}</td><td>{{ $customerCount($customerTotals['existing'] ?? null) }}</td><td>{{ $customerRatio($customerTotals['penetration'] ?? null) }}</td></tr></tfoot>
             </table>
         </div>
         <p>{{ $customerSource['unit_potential_note'] ?? '' }} OTHER / tanpa sektor tetap masuk total, tanpa rasio tersendiri.</p>
+        <p>{{ $customerSource['normalization_note'] ?? '' }} {{ $customerSource['extra_sector_note'] ?? '' }}</p>
         @foreach($customerSource['units'] ?? [] as $customerUnit)
             @if(!empty($customerUnit['potential_partial']))
                 <p role="note">{{ $customerUnit['name'] }}: {{ $customerCount($customerUnit['matched_village_count'] ?? null) }} dari {{ $customerCount($customerUnit['owned_village_count'] ?? null) }} desa memiliki data potensi. Rasio memakai desa yang sudah tersedia.

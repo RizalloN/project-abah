@@ -16,6 +16,16 @@ const index = new TerritoryIndex([
 const area = { key: 'area6', label: 'Area 6' };
 const branch = { key: 'ngawi', label: 'KC Ngawi' };
 
+test('Area consolidation is explicit for all geographic topics and remains authorization scoped', () => {
+    for (const key of ['marketshare', 'mapping', 'sektoral']) {
+        const selection = resolvePolygonSelection({ key, scopeKey: 'area6', index, scope: area });
+        assert.equal(selection.branchKey, 'area6');
+        assert.equal(selection.level, 'branch');
+        assert.deepEqual([...selection.codes].sort(), ['A', 'B', 'C']);
+        assert.equal(resolvePolygonSelection({ key, scopeKey: 'area6', index, scope: branch }), null);
+    }
+});
+
 test('new village ownership changes polygon choices while preserving REKAP figures and identities', () => {
     const original = { ready: true, units: [
         { code: '001', name: 'Satu', branch: 'ngawi', district_codes: ['A'], values: { total: { potential: 900, existing: 400 } } },

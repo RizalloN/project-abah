@@ -1,0 +1,274 @@
+/* A stable reading plane; scroll belongs to the material inside each data object. */
+.sg .sg-reading-motion [data-sg-motion] {
+    --reading-reveal: clamp(0, var(--reading-enter, 1), 1);
+    --reading-rest: calc(1 - var(--reading-reveal));
+    --reading-travel: clamp(0, var(--reading-pass, .5), 1);
+}
+
+.sg .sg-reading-motion .sg-block[data-sg-motion="section"] + .sg-block[data-sg-motion="section"] {
+    padding-top: clamp(32px, 4vw, 56px);
+    border-top: 1px solid var(--kn-line-strong);
+}
+.sg .sg-reading-motion [data-sg-motion="header"] {
+    position: relative;
+    padding-bottom: 20px;
+}
+.sg .sg-reading-motion [data-sg-motion="header"]::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    width: clamp(56px, 8vw, 112px);
+    height: 2px;
+    border-radius: 1px;
+    background: linear-gradient(90deg, var(--kn-accent), color-mix(in srgb, var(--kn-accent) 45%, transparent));
+    transform-origin: 0 50%;
+    pointer-events: none;
+}
+.sg .sg-reading-motion [data-sg-motion="header"]::before {
+    content: "";
+    position: absolute;
+    z-index: 1;
+    left: 0;
+    bottom: 0;
+    width: 20px;
+    height: 2px;
+    border-radius: 1px;
+    background: color-mix(in srgb, var(--kn-accent) 28%, #fff);
+    pointer-events: none;
+}
+
+/* These overrides are intentionally stronger than the earlier reveal layers. */
+html.sg-motion .sg .sg-reading-motion .sg-tile,
+html.sg-motion .sg .sg-reading-motion .sg-sheet,
+html.sg-motion .sg .sg-reading-motion .sg-sheet.is-rising,
+html.sg-motion .sg .sg-reading-motion .sg-opener__copy,
+html.sg-motion .sg .sg-reading-motion [data-sg-rv],
+html.sg-motion .sg .sg-reading-motion [data-sg-motion="header"] .sg-block__title,
+html.sg-motion .sg .sg-reading-motion [data-sg-motion="metrics"] > div,
+html.sg-motion .sg .sg-reading-motion [data-sg-motion="metrics"] > div:nth-child(2n),
+html.sg-motion .sg .sg-reading-motion [data-sg-motion="table"],
+html.sg-motion .sg .sg-reading-motion [data-sg-motion="ledger"],
+html.sg-motion .sg .sg-reading-motion .sg-table tbody tr,
+html.sg-motion .sg .sg-reading-motion [data-sg-motion="table"] .sg-table tbody tr:nth-child(-n+8),
+html.sg-motion .sg .sg-reading-motion [data-sg-motion="ledger"] .sg-ledger td,
+html.sg-motion .sg .sg-reading-motion [data-sg-motion="opportunity"] .sg-opportunity__field,
+html.sg-motion .sg .sg-reading-motion [data-sg-motion="opportunity"] .sg-opportunity__zone,
+html.sg-motion .sg .sg-reading-motion [data-sg-motion="opportunity"] .sg-opportunity__list li {
+    transform: none;
+    opacity: 1;
+    transition: none;
+    will-change: auto;
+}
+html.sg-motion .sg .sg-reading-motion [data-sg-lines] .sg-word > span {
+    transform: none;
+    opacity: 1;
+    transition: none;
+}
+html.sg-motion .sg .sg-reading-motion .sg-tile { box-shadow: var(--kn-shadow); }
+html.sg-motion .sg .sg-reading-motion .sg-ground--dark .sg-tile { box-shadow: 0 0 0 1px rgba(255, 255, 255, .06); }
+
+/* These frames bound visual material only. The source labels and focus targets stay outside them. */
+.sg .sg-reading-motion [data-sg-motion="composition"] .sg-donut__stage { overflow: clip; }
+.sg .sg-reading-motion [data-sg-motion="opportunity"] .sg-orb > span { overflow: clip; }
+.sg .sg-reading-motion [data-sg-motion="opportunity"] .sg-orb { transform: translate(-50%, -50%); }
+
+@media (prefers-reduced-motion: no-preference) {
+    /* Section light advances with the hand; headings and figures never change their reading plane. */
+    html.sg-motion .sg .sg-reading-motion [data-sg-motion="header"]::after {
+        transform: scaleX(calc(.25 + var(--reading-reveal) * .75));
+    }
+    html.sg-motion .sg .sg-reading-motion [data-sg-motion="header"]::before {
+        opacity: min(.8, calc(var(--reading-travel) * 4), calc((1 - var(--reading-travel)) * 4));
+        transform: translate3d(calc(var(--reading-travel) * 84px), 0, 0);
+    }
+
+    /* Glass keeps a fixed capacity. Its internal fill reaches the exact fraction before reading. */
+    html.sg-motion .sg .sg-reading-motion [data-sg-motion="vessels"] .sg-vessel {
+        --reading-object: clamp(0, calc(var(--reading-reveal) * 1.35 - min(var(--i, 0), 10) * .025), 1);
+        --reading-object-rest: calc(1 - var(--reading-object));
+        --reading-fill: clamp(0, calc(var(--reading-object) * 1.12 - .12), 1);
+    }
+    html.sg-motion .sg .sg-reading-motion [data-sg-motion="vessels"] .sg-vessel__body {
+        transform: perspective(1200px)
+            rotateY(calc(var(--reading-object-rest) * -5deg))
+            scaleY(calc(.84 + var(--reading-object) * .16));
+        transform-origin: 50% 100%;
+        transition: none;
+    }
+    html.sg-motion .sg .sg-reading-motion [data-sg-motion="vessels"] .sg-vessel__liquid {
+        transform: scaleY(var(--reading-fill));
+        transform-origin: 50% 100%;
+        transition: none;
+    }
+    html.sg-motion .sg .sg-reading-motion [data-sg-motion="vessels"] .sg-vessel__value,
+    html.sg-motion .sg .sg-reading-motion [data-sg-motion="vessels"] .sg-vessel__label {
+        transform: none;
+        opacity: 1;
+        transition: none;
+    }
+    html.sg-motion .sg .sg-reading-motion [data-sg-motion="vessels"] .sg-vessel__glass::after {
+        content: "";
+        position: absolute;
+        inset: 0 auto var(--cap) 10%;
+        width: 20%;
+        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .55), transparent);
+        opacity: min(.5, calc(var(--reading-travel) * 4), calc((1 - var(--reading-travel)) * 4));
+        transform: translate3d(calc(var(--reading-travel) * 300%), 0, 0);
+        pointer-events: none;
+    }
+    html.sg-motion .sg .sg-reading-motion [data-sg-motion="vessels"] .sg-vessels__floor {
+        transform: scaleX(calc(.92 + var(--reading-reveal) * .08));
+        transform-origin: 50% 50%;
+    }
+
+    /* Skyline faces resolve locally, never tilting the labels or the scale beneath them. */
+    html.sg-motion .sg .sg-reading-motion [data-sg-motion="skyline"] .sg-prism {
+        --reading-object: clamp(0, calc(var(--reading-reveal) * 1.35 - min(var(--i, 0), 10) * .025), 1);
+        --reading-object-rest: calc(1 - var(--reading-object));
+        --reading-fill: clamp(0, calc(var(--reading-object) * 1.12 - .12), 1);
+    }
+    html.sg-motion .sg .sg-reading-motion [data-sg-motion="skyline"] .sg-prism__solid {
+        transform: scaleY(calc(.78 + var(--reading-object) * .22));
+        transform-origin: 50% 100%;
+        transition: none;
+    }
+    html.sg-motion .sg .sg-reading-motion [data-sg-motion="skyline"] .sg-prism__top {
+        transform: skewX(-45deg) translate3d(0, calc(var(--reading-object-rest) * -6px), 0);
+        transition: none;
+    }
+    html.sg-motion .sg .sg-reading-motion [data-sg-motion="skyline"] .sg-prism__side {
+        transform: skewY(-45deg) translate3d(calc(var(--reading-object-rest) * 6px), 0, 0);
+        transition: none;
+    }
+    html.sg-motion .sg .sg-reading-motion [data-sg-motion="skyline"] .sg-prism__front b,
+    html.sg-motion .sg .sg-reading-motion [data-sg-motion="skyline"] .sg-prism__side b {
+        transform: scaleY(var(--reading-fill));
+        transform-origin: 50% 100%;
+        transition: none;
+    }
+
+    /* Sphere centers, axes, priority boundaries and hit targets always agree. */
+    html.sg-motion .sg .sg-reading-motion [data-sg-motion="opportunity"] .sg-orb[data-motion-bubble] {
+        --reading-object: clamp(0, calc(var(--reading-reveal) * 1.35 - min(var(--i, 0), 10) * .025), 1);
+        transform: translate(-50%, -50%);
+    }
+    html.sg-motion .sg .sg-reading-motion [data-sg-motion="opportunity"] .sg-orb[data-motion-bubble] > span {
+        transform: scale(calc(.7 + var(--reading-object) * .3));
+        transform-origin: 50% 50%;
+        opacity: .85;
+        transition: none;
+    }
+    html.sg-motion .sg .sg-reading-motion [data-sg-motion="opportunity"] .sg-orb.is-priority > span,
+    html.sg-motion .sg .sg-reading-motion [data-sg-motion="opportunity"] .sg-orb.is-focus > span { opacity: 1; }
+    html.sg-motion .sg .sg-reading-motion [data-sg-motion="opportunity"] .sg-orb > span::after {
+        content: "";
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 34%;
+        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .7), transparent);
+        opacity: min(.45, calc(var(--reading-travel) * 4), calc((1 - var(--reading-travel)) * 4));
+        transform: translate3d(calc(-160% + var(--reading-travel) * 560%), 0, 0);
+        pointer-events: none;
+    }
+
+    /* Heatmap values hold a flat grid; the material edge alone follows the scroll. */
+    html.sg-motion .sg .sg-reading-motion [data-sg-motion="ledger"] .sg-ledger td { position: relative; }
+    html.sg-motion .sg .sg-reading-motion [data-sg-motion="ledger"] .sg-ledger td::after {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 6px;
+        right: 6px;
+        height: 1px;
+        border-radius: 1px;
+        background: rgba(255, 255, 255, .32);
+        transform: scaleX(calc(.35 + var(--reading-reveal) * .65));
+        transform-origin: 0 50%;
+        pointer-events: none;
+    }
+
+    html.sg-motion .sg .sg-reading-motion [data-sg-motion="slope"] .sg-slope__row {
+        --reading-vector: clamp(0, calc(var(--reading-reveal) * 1.3 - min(var(--i, 0), 8) * .025), 1);
+    }
+    html.sg-motion .sg .sg-reading-motion [data-sg-motion="slope"] .sg-slope__line {
+        stroke-dasharray: 1;
+        stroke-dashoffset: calc(1 - var(--reading-vector));
+        transition: none;
+    }
+    html.sg-motion .sg .sg-reading-motion [data-sg-motion="slope"] .sg-slope__dot.is-now,
+    html.sg-motion .sg .sg-reading-motion [data-sg-motion="slope"] .sg-slope__label.is-now {
+        transform: none;
+        opacity: 1;
+        transition: none;
+    }
+    html.sg-motion .sg .sg-reading-motion [data-sg-motion="trend"] .sg-ts__line {
+        stroke-dasharray: 1;
+        stroke-dashoffset: calc(1 - var(--reading-reveal));
+        transition: none;
+    }
+    html.sg-motion .sg .sg-reading-motion [data-sg-motion="trend"] .sg-ts__area {
+        opacity: calc(.5 + var(--reading-reveal) * .5);
+        transition: none;
+    }
+
+    /* Donut walls resolve inside their stage, keeping the recorded arcs and outside legend intact. */
+    html.sg-motion .sg .sg-reading-motion [data-sg-motion="composition"] .sg-donut__disc {
+        transform: rotateX(calc(54deg + var(--reading-rest) * 6deg)) rotateZ(-18deg);
+        transition: none;
+    }
+    html.sg-motion .sg .sg-reading-motion [data-sg-motion="composition"] .sg-donut__layer {
+        transform: translateZ(calc(var(--z) * (-2.4px - var(--reading-rest) * 1.2px)));
+        transition: none;
+    }
+    html.sg-motion .sg .sg-reading-motion [data-sg-motion="composition"] .sg-donut__arc {
+        stroke-dasharray: calc(var(--len) * var(--reading-reveal)) calc(100 - var(--len) * var(--reading-reveal));
+        transition: opacity 180ms var(--kn-ease), stroke-width 180ms var(--kn-ease);
+    }
+    html.sg-motion .sg .sg-reading-motion [data-sg-motion="coverage"] .sg-coverage__slab {
+        transform: perspective(1400px) rotateX(26deg);
+    }
+    html.sg-motion .sg .sg-reading-motion [data-sg-motion="coverage"] .sg-coverage__fill {
+        transform: scaleX(var(--reading-reveal));
+        transform-origin: 0 50%;
+        transition: none;
+    }
+
+    /* Once read, source geometry stays settled on reverse scroll until that DOM is replaced. */
+    html.sg-motion .sg .sg-reading-motion [data-sg-motion="vessels"][data-reading-settled="true"] .sg-vessel__body,
+    html.sg-motion .sg .sg-reading-motion [data-sg-motion="vessels"][data-reading-settled="true"] .sg-vessel__liquid,
+    html.sg-motion .sg .sg-reading-motion [data-sg-motion="skyline"][data-reading-settled="true"] .sg-prism__solid,
+    html.sg-motion .sg .sg-reading-motion [data-sg-motion="skyline"][data-reading-settled="true"] .sg-prism__front b,
+    html.sg-motion .sg .sg-reading-motion [data-sg-motion="skyline"][data-reading-settled="true"] .sg-prism__side b,
+    html.sg-motion .sg .sg-reading-motion [data-sg-motion="opportunity"][data-reading-settled="true"] .sg-orb[data-motion-bubble] > span { transform: none; }
+}
+
+@media (max-width: 760px) and (prefers-reduced-motion: no-preference) {
+    html.sg-motion .sg .sg-reading-motion [data-sg-motion="vessels"] .sg-vessel__body {
+        transform: scaleY(calc(.9 + var(--reading-object) * .1));
+    }
+    html.sg-motion .sg .sg-reading-motion [data-sg-motion="skyline"] .sg-prism__solid {
+        transform: scaleY(calc(.88 + var(--reading-object) * .12));
+    }
+    html.sg-motion .sg .sg-reading-motion [data-sg-motion="skyline"] .sg-prism__top {
+        transform: skewX(-45deg) translate3d(0, calc(var(--reading-object-rest) * -3px), 0);
+    }
+    html.sg-motion .sg .sg-reading-motion [data-sg-motion="skyline"] .sg-prism__side {
+        transform: skewY(-45deg) translate3d(calc(var(--reading-object-rest) * 3px), 0, 0);
+    }
+    html.sg-motion .sg .sg-reading-motion [data-sg-motion="opportunity"] .sg-orb[data-motion-bubble] > span {
+        transform: scale(calc(.82 + var(--reading-object) * .18));
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .sg .sg-reading-motion [data-sg-motion] { --reading-reveal: 1; --reading-rest: 0; }
+    .sg .sg-reading-motion [data-sg-motion="header"]::before,
+    .sg .sg-reading-motion .sg-vessel__glass::after,
+    .sg .sg-reading-motion .sg-orb > span::after { display: none; }
+    .sg .sg-reading-motion [data-sg-motion="header"]::after { transform: none; }
+    .sg .sg-reading-motion [data-sg-motion="slope"] .sg-slope__line,
+    .sg .sg-reading-motion [data-sg-motion="trend"] .sg-ts__line { stroke-dasharray: 1; stroke-dashoffset: 0; }
+    .sg .sg-reading-motion [data-sg-motion="composition"] .sg-donut__disc,
+    .sg .sg-reading-motion [data-sg-motion="composition"] .sg-donut__layer { transform: none; }
+}

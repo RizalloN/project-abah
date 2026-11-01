@@ -16,6 +16,17 @@ trait ServesMappedCsvPreviewFilters
 
     abstract protected function iterateMappedPreviewRows(string $path, array $context, callable $callback): void;
 
+    /**
+     * Rows for a filter-option scan. The callback only reads $columnIndexes, so an
+     * importer may override this to skip normalising every other column.
+     *
+     * @param  array<int, int>  $columnIndexes
+     */
+    protected function iterateMappedPreviewColumns(string $path, array $context, array $columnIndexes, callable $callback): void
+    {
+        $this->iterateMappedPreviewRows($path, $context, $callback);
+    }
+
     abstract protected function mappedPreviewCacheNamespace(): string;
 
     abstract protected function mappedPreviewLabel(): string;
@@ -139,7 +150,8 @@ trait ServesMappedCsvPreviewFilters
 
             $valuesMap = [];
             $limit = max(1, $this->mappedPreviewFilterOptionLimit());
-            $this->iterateMappedPreviewRows($workingPath, $context, function (array $row) use (
+            $scanColumns = array_values(array_unique(array_merge([$columnIndex], array_keys($activeFilters))));
+            $this->iterateMappedPreviewColumns($workingPath, $context, $scanColumns, function (array $row) use (
                 &$valuesMap,
                 $activeFilters,
                 $columnIndex,

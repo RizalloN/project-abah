@@ -76,6 +76,15 @@ class LoanQualityBucketMapperSqlParityTest extends TestCase
             ['id' => 15, 'kolek_detail' => 'SML 1', 'umur_tunggakan' => null, 'flag_restruk' => null, 'kol_adk1' => null, 'kolek' => null, 'periode' => null, 'next_pmt_date' => null, 'next_pmt_int_date' => null],
             ['id' => 16, 'kolek_detail' => 'SML 2', 'umur_tunggakan' => null, 'flag_restruk' => null, 'kol_adk1' => null, 'kolek' => null, 'periode' => null, 'next_pmt_date' => null, 'next_pmt_int_date' => null],
             ['id' => 17, 'kolek_detail' => 'SML 3', 'umur_tunggakan' => null, 'flag_restruk' => null, 'kol_adk1' => null, 'kolek' => null, 'periode' => null, 'next_pmt_date' => null, 'next_pmt_int_date' => null],
+            // Branches of the compact simple-CASE expression: L from age or detail turns LR when restructured.
+            ['id' => 18, 'kolek_detail' => 'LR', 'umur_tunggakan' => 0, 'flag_restruk' => 'Y', 'kol_adk1' => null, 'kolek' => null, 'periode' => null, 'next_pmt_date' => null, 'next_pmt_int_date' => null],
+            ['id' => 19, 'kolek_detail' => 'KL', 'umur_tunggakan' => 0, 'flag_restruk' => 'Y', 'kol_adk1' => null, 'kolek' => null, 'periode' => null, 'next_pmt_date' => null, 'next_pmt_int_date' => null],
+            ['id' => 20, 'kolek_detail' => 'l', 'umur_tunggakan' => null, 'flag_restruk' => ' y ', 'kol_adk1' => null, 'kolek' => null, 'periode' => null, 'next_pmt_date' => null, 'next_pmt_int_date' => null],
+            ['id' => 21, 'kolek_detail' => 'L', 'umur_tunggakan' => 45, 'flag_restruk' => null, 'kol_adk1' => null, 'kolek' => '2.00', 'periode' => null, 'next_pmt_date' => null, 'next_pmt_int_date' => null],
+            ['id' => 22, 'kolek_detail' => 'M', 'umur_tunggakan' => null, 'flag_restruk' => null, 'kol_adk1' => null, 'kolek' => '4.0', 'periode' => null, 'next_pmt_date' => null, 'next_pmt_int_date' => null],
+            ['id' => 23, 'kolek_detail' => 'L', 'umur_tunggakan' => 10, 'flag_restruk' => null, 'kol_adk1' => null, 'kolek' => ' 3 ', 'periode' => null, 'next_pmt_date' => null, 'next_pmt_int_date' => null],
+            ['id' => 24, 'kolek_detail' => 'NPL', 'umur_tunggakan' => null, 'flag_restruk' => null, 'kol_adk1' => null, 'kolek' => '', 'periode' => null, 'next_pmt_date' => null, 'next_pmt_int_date' => null],
+            ['id' => 25, 'kolek_detail' => 'L', 'umur_tunggakan' => 200, 'flag_restruk' => 'Y', 'kol_adk1' => null, 'kolek' => null, 'periode' => null, 'next_pmt_date' => null, 'next_pmt_int_date' => null],
         ];
         // Note: kasus umur_tunggakan NULL dengan fallback NEXT_PMT_DATE/NEXT_PMT_INT_DATE
         // dites khusus pada LoanQualityBucketMapperTest karena DATEDIFF/LEAST adalah

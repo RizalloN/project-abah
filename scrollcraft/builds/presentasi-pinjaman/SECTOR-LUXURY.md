@@ -52,3 +52,18 @@ actual ratios, source grain and asset validation live under
 The Scroll Craft doctor has no ffmpeg or local playwright-core installation.
 This build uses live application HTML/CSS/Three geometry and the available
 Playwright connector; it does not require film generation or a dependency change.
+
+## Penetrasi sektoral: intra + ekstra (27 Oktober 2026)
+
+User-confirmed: penetrasi/marketshare sektoral = (debitur intra + debitur ekstra) / potensi;
+intra = SSA CRAS AKTIF, ekstra = SSA CRAS PH; peluang = potensi - intra - ekstra.
+Village ownership: `1m2Mx7JjK3r0oH7gLzAaOjPREasIdxxiKdq-aJcOB0hM` (data kelolaan desa per UKER, the reference going forward).
+The September SSA cohort and the 0-100% display normalization are unchanged.
+
+- SSA CRAS records no sector on PH rows (all 293 rows, 49.390 debtors in September 2026). Each UKER's
+  PH debtors, accounts and balance move from OTHER into the 14 groups by that UKER's own AKTIF mix,
+  largest remainder so counts stay whole; flagged `extra_estimated` and disclosed. A UKER without AKTIF
+  sectors keeps its PH in OTHER. Totals are unchanged by construction.
+- Map districts receive a UKER's debtors by its owned village population of the same group (not an even split).
+- The potential workbook may add `Debitur Intra` and `Debitur Ekstra` columns (both or neither). When present,
+  village counts replace the SSA UKER counts inside the ratio and districts are exact (`numerator_source: sheet_desa`).

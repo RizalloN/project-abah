@@ -15,10 +15,15 @@ navigation evidence; current sources and tests remain authoritative. Check
 | `segments/render-wilayah.js` | Marketshare, mapping, sector and CRAS presentation |
 | `segments/render-kinerja.js` | Savings, loans, quality, Recovery DH |
 | `segments/charts.js` | Layered SVG donuts, timeseries, rods, tables |
-| `segments/motion.js` | Scroll progress, 3D surfaces, count-up, navigation state |
+| `segments/atlas.js` | Source-backed vessels, slope, opportunity bubbles, sector skyline, ledger and exact-data disclosure |
+| `segments/motion.js` | Reading registration, material progress, exact source text and navigation state |
+| `segments/expressive-motion.js` | Per-object timed material assemblies, capped stagger, cancellation and source interaction replay |
+| `segments/cinema.js`, `segments/smooth-scroll.js` | Finishing film: flight, seams, staged arrival, report atmosphere, act rail, device tier (`still`, `lite`, `full`) and the damped wheel |
+| `segments/reading-clock.js` | Hidden-safe layout measurement, monotonic entry latch and reversible decorative passage |
 | `segments/territory-data.js` | Polygon-to-unit index and geographic allocation |
 | `segments/map-controls.js` | Semantic branch/unit map focus and reset controls |
-| `segments/polygon-journey.js` | Explicit polygon selection, geography detail gates, reset, and accessible pins |
+| `segments/polygon-journey.js` | Explicit KC selection, stable map/detail views, lateral handoff, reset, and accessible pins |
+| `segments/panel-transition.js` | One cancellable owner for zoom delays, Web Animations and layout cleanup |
 | `segments/polygon-selection.js` | Authorized branch/district/unit identity resolution without guessing shared units |
 | `segments/choice-panel.js` | Searchable inline source choices without native selects |
 | `segments/sector-model.js`, `segments/render-sector.js` | Population/SSA sector view with normalized coverage and exact source metrics |
@@ -30,6 +35,10 @@ navigation evidence; current sources and tests remain authoritative. Check
 | `worlds/relief.js` | Extruded polygons and camera bounds/focus |
 | `resources/css/presentation/presentation-segments.css` | Segmented layout CSS entrypoint |
 | `resources/css/presentation/segments/segments.css` | Chapter, chart, motion, responsive styles |
+| `resources/css/presentation/segments/panel-journey.css` | Two-view layout, clipped transition viewport and live financial detail header |
+| `resources/css/presentation/segments/reading-motion.css` | Final motion layer: flat financial planes, kind-scoped chart material and bounded decorative light |
+| `resources/css/presentation/segments/cinema.css` | Imported last. Flight stage, seam band, atmosphere, act ghost titles and rail, closing room, tier and reduced-motion guards |
+| `resources/css/presentation/segments/expressive-motion.css` | Expressive material, inert clipped planes, glass/prism/donut depth and input energy |
 
 JavaScript paths beginning `segments/` or `worlds/` are relative to
 `resources/js/presentation/`. Preserve `?layout=keynote`, `?layout=slides`, and
@@ -117,7 +126,56 @@ and grain, show subsector penetration as unavailable. Keep actual counts/OS and
 the existing REKAP sector penetration usable. Do not repurpose LPG mapping ratio,
 NPL ratio, or share of BRI debtors as market penetration.
 
+## Reading motion
+
+The deck's `.sg-reading-motion` layer is imported last and keeps financial text,
+cards, tables, rows, cells, labels and axes stationary. `data-sg-motion` identifies
+the actual component kind. `--reading-enter` reaches 1 before the reading band
+and latches until that node is replaced; `--reading-pass` follows reversible
+viewport passage for decoration only. `data-reading-phase` records approach,
+entry, hold and departure, while `data-reading-settled` records the entry latch.
+Focus and reduced motion immediately receive complete geometry. Keep numeric
+text equal to the formatted source throughout scroll and selection changes;
+an opacity transition must not substitute intermediate numeric values.
+
+Animate only local chart material. Sphere material scales around its recorded
+center; its hit target and axes never move independently. A settled section or
+header must not force a nested chart to settle: match the component kind in its
+settled selector. Preserve the settled baseline projection and source ratios.
+Clip decorative material selectively, retaining rims, labels, focus rings and
+exact-data disclosures.
+
+`measureReadingBox()` rejects hidden, inert, transitioning, detached and zero-size
+content before reading its dimensions. It uses the untransformed offset chain
+instead of a bounding rectangle affected by the animation itself. Re-measure
+after a panel becomes visible, a disclosure opens, or content is replaced; new
+DOM receives a new entry latch. Do not carry stale measurements or completed
+entry state into a replacement source/filter result.
+
+## The flight and the seams
+
+`TerritoryStudio.beginFlight()` attaches `territoryFlight` to the live `ReliefScene`
+at its true `geoFrame`, and registers a full-screen `flight` state that survives
+the deck rebuild. `PresentationCinema` holds the camera above Earth until the deck
+exists, then descends on a fixed clock. At `FLIGHT.handoff` the slot is removed and
+`studio.handoff` damps the frame, clip and pose into the first room's slot, so there
+is no cut. `endFlight()` disposes the planet's textures and restores the camera's
+depth range. Any wheel, touch, Escape, Space, Enter, `Lewati`, a hidden tab or
+sustained slow frames skips it. A failed build calls `abortFlight()`.
+
+`studio.seam(direction, { assemble })` swings the camera the way the reader travels
+and raises the new figures from the floor. `showFinale()` is a room outside `keys`
+with its own history entry (`halaman=finale`).
+
 ## Scene integration
+
+Expressive assemblies have their own per-object owner inside `SegmentMotion`.
+They use the same visible untransformed measurements, do not animate financial
+labels/axes/rows, and settle reading geometry before cancelling filled handles.
+First entry still plays after a wheel jump directly to complete reading progress.
+Decorative planes clip their own moving children. Donut layers retain a real
+preserve-3d hierarchy; final keyframes use the actual settled CSS projection.
+The panel/camera owner remains separate from these local material owners.
 
 Register a scene state with `TerritoryStudio.register(key, spec)`. The established
 spec includes a `journey` of camera stops, focus polygon sets, labels, heights,
@@ -135,12 +193,40 @@ Only explicit map activation selects a branch, and the first activation always
 names the KC before unit drilldown, including in branch-scoped presentations.
 Synchronize the branch across geographic chapters, frame it on the persistent
 camera, and show its identity in an overlay and sticky three-point reading rail.
-Details remain inline under the scroll clock. Do not create a popup or native
-select. CRAS return-to-map scrolls back to its map with filters preserved.
+The first explicit choice zooms to the named KC, then opens its financial detail
+through a leftward handoff. Returning to the map reverses the handoff. Once a KC
+is selected, the three-point rail and chapter navigation open its detail
+directly. Do not create a popup or native select. CRAS return-to-map uses the
+same view lifecycle and preserves its filters.
+
+`data-polygon-view="map|detail"` records a chapter's stable view. Only its current
+opener or sheet is visible and interactive: synchronize `hidden`, `inert`, and
+`aria-hidden`. Detail stays in normal vertical document flow. Move the actual
+headline figure/label/chips into `.sg-detail-summary`, retaining markers for
+restoration to the opener; never clone live forms or chart nodes. Preserve the
+source values and period when the same nodes change location.
+
+One `PanelTransition` owns the zoom delay, animation handles and cleanup. New
+navigation, a new polygon choice, reset, launcher suspend, or deck disposal must
+cancel that owner before another begins. Cancellation removes temporary layout,
+animation fills, busy state and hidden labels, returning to a coherent stable
+view. Use a temporarily clipped chapter with `--sg-panel-height` and absolute
+opener/sheet while both participate in the handoff; release those rules at its
+end so a long detail never changes the outgoing map's layout mid-animation.
+
+Keep the map stage's layout rectangle stationary. Animate the copy, sheet and
+shared WebGL/label visual planes, not the geometry used by camera projection.
+`TerritoryStudio` must ignore detached, hidden or zero-size slots before reading
+bounds, and release stale targets, hover and active scene state when a panel or
+deck leaves. Do not create an isolated opaque chapter stacking context below the
+shared fixed canvas: its copy and incoming sheet must remain above that canvas.
+After settlement, re-scan current charts/scene and transfer focus without an
+unintended scroll. Reduced motion reaches the same views immediately; touch and
+the SVG fallback use the same branch identity and back action.
+
 Hover must not change camera orientation or tilt cards. Hide StageFX.rings only
 in TerritoryStudio so decorative orbit motion is absent on this entry path.
-Keep SVG
-polygon keyboard/touch selection, backwards navigation, and reset usable.
+Keep SVG polygon keyboard/touch selection, backwards navigation, and reset usable.
 Blur is temporary camera feedback on the canvas.
 Reduced motion and a static fallback must preserve reading and selection.
 

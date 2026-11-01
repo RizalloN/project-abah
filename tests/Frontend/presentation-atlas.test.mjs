@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { vessels, slope, coverage, opportunity, skyline, ledger } from '../../resources/js/presentation/segments/atlas.js';
+import { vessels, slope, coverage, opportunity, opportunityRanks, skyline, ledger } from '../../resources/js/presentation/segments/atlas.js';
 
 const attr = (html, name) => [...html.matchAll(new RegExp(`${name}:([\\d.]+)`, 'g'))].map((match) => Number(match[1]));
 
@@ -33,7 +33,7 @@ test('coverage splits potential into customers and the untapped remainder', () =
     assert.match(html, />1\.000</);
 });
 
-test('opportunity ranks large-potential, below-average units as the priority, largest gap first', () => {
+test('opportunity keeps the priority quadrant separate from its source-ranked opposite tails', () => {
     const rows = [
         { key: 'big-thin', name: 'Big thin', potential: 1000, existing: 100, penetration: 10, gap: 900 },
         { key: 'big-thick', name: 'Big thick', potential: 900, existing: 800, penetration: 88.9, gap: 100 },
@@ -41,16 +41,46 @@ test('opportunity ranks large-potential, below-average units as the priority, la
         { key: 'mid-thin', name: 'Mid thin', potential: 600, existing: 120, penetration: 20, gap: 480 },
     ];
     const html = opportunity({ rows, average: 50 });
-    // Median potential of [50, 600, 900, 1000] is 900: only Big thin is large and below the average.
-    const list = html.slice(html.indexOf('sg-opportunity__list'));
+    // The priority quadrant still marks only Big thin; the lists rank all eligible source units.
+    const list = html.slice(html.indexOf('sg-opportunity__rankings'));
     assert.match(list, /Big thin/);
-    assert.doesNotMatch(list, /Big thick|Small thin|Mid thin/);
+    assert.match(list, /Big thick|Small thin|Mid thin/);
     assert.equal((html.match(/sg-orb is-priority/g) || []).length, 1);
-    // With no unit in the priority quadrant the list falls back to the largest gaps.
-    const fallback = opportunity({ rows: rows.map((row) => ({ ...row, penetration: 90 })), average: 50 });
-    const fallbackList = fallback.slice(fallback.indexOf('sg-opportunity__list'));
-    assert.ok(fallbackList.indexOf('Big thin') < fallbackList.indexOf('Mid thin'));
+    assert.deepEqual(opportunityRanks(rows).largest.map(row => row.key), ['big-thin', 'mid-thin']);
+    assert.deepEqual(opportunityRanks(rows).smallest.map(row => row.key), ['small-thin', 'big-thick']);
+    assert.match(html, /tanpa mengulang unit/);
     assert.equal(opportunity({ rows: [], average: 50 }), '');
+});
+
+test('opportunity ranks ten actual largest and smallest gaps without repeating small scopes', () => {
+    for (const size of [1, 2, 9, 12, 19, 20, 25]) {
+        const rows = Array.from({ length: size }, (_, index) => ({ key: `u${index}`, name: `Unit ${index}`, sub: 'KC Madiun', potential: 1000, existing: 1000 - index, penetration: 100 - index / 10, gap: index }));
+        const ranking = opportunityRanks(rows);
+        const biggest = Math.min(10, Math.ceil(size / 2));
+        const smallest = Math.min(10, size - biggest);
+        assert.equal(ranking.count, size);
+        assert.deepEqual(ranking.largest.map(row => row.gap), Array.from({ length: biggest }, (_, index) => size - 1 - index));
+        assert.deepEqual(ranking.smallest.map(row => row.gap), Array.from({ length: smallest }, (_, index) => index));
+        assert.equal(new Set([...ranking.largest, ...ranking.smallest].map(row => row.key)).size, biggest + smallest);
+        assert.equal(rows[0].gap, 0, 'source order and values are preserved');
+        const html = opportunity({ rows, average: 50, source: 'Sheet REKAP, updated 2026-10-25.' });
+        assert.equal((html.match(/data-opportunity-ranking=/g) || []).length, 2);
+        assert.equal((html.match(/data-orb-link=/g) || []).length, biggest + smallest);
+        assert.match(html, /KC Madiun/);
+        assert.match(html, /Sheet REKAP, updated 2026-10-25/);
+    }
+});
+
+test('opportunity rankings preserve a real zero and omit unavailable gaps or potentials', () => {
+    const rows = [
+        { key: 'zero', name: 'Zero', potential: 0, gap: 0 },
+        { key: 'missing', name: 'Missing', potential: 100, gap: null },
+        { key: 'unavailable', name: 'Unavailable', potential: null, gap: 50 },
+        { key: 'known', name: 'Known', potential: 100, gap: 60 },
+    ];
+    const ranking = opportunityRanks(rows);
+    assert.deepEqual(ranking.largest.map(row => row.key), ['known']);
+    assert.deepEqual(ranking.smallest.map(row => row.key), ['zero']);
 });
 
 test('opportunity exposes numeric potential ticks, percentage penetration and the bubble-size measure', () => {

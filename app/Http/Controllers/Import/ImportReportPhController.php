@@ -23,11 +23,13 @@ use App\Services\Import\Strategies\Lw325PhImportStrategy;
 use App\Support\StrictDateParser;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 
 class ImportReportPhController extends Controller
@@ -102,12 +104,29 @@ class ImportReportPhController extends Controller
 
     public function upload(Request $request)
     {
-        $request->validate([
-            'id_report' => 'required',
-            'file' => 'required|file|mimes:csv,txt,xlsx,xls|max:' . $this->configuredSessionImportUploadMaxKilobytes(),
-        ]);
+        if ($request->input('file_encoding') === 'gzip') {
+            // Browser mengompres CSV/TXT sebelum upload (±5x lebih kecil), jadi
+            // transfer lewat tunnel tidak lagi menjadi tahap terlama sebelum preview.
+            $request->validate([
+                'id_report' => 'required',
+                'file' => 'required|file|max:' . $this->configuredSessionImportUploadMaxKilobytes(),
+                'original_name' => ['required', 'string', 'max:255', 'regex:/\.(csv|txt)$/i'],
+                'original_size' => 'required|integer|min:1',
+            ]);
 
-        $path = $request->file('file')->store('report_ph_imports');
+            $path = $this->storeGzipEncodedUpload(
+                $request->file('file'),
+                (string) $request->input('original_name'),
+                (int) $request->input('original_size')
+            );
+        } else {
+            $request->validate([
+                'id_report' => 'required',
+                'file' => 'required|file|mimes:csv,txt,xlsx,xls|max:' . $this->configuredSessionImportUploadMaxKilobytes(),
+            ]);
+
+            $path = $request->file('file')->store('report_ph_imports');
+        }
 
         session([
             'active_id_report' => $request->input('id_report'),
@@ -123,6 +142,70 @@ class ImportReportPhController extends Controller
         }
 
         return redirect()->route('import.reportph.preview');
+    }
+
+    /**
+     * Inflate a browser-gzipped CSV/TXT straight into report_ph_imports so every
+     * later step (preview, filter, Polars) keeps reading the plain file.
+     */
+    private function storeGzipEncodedUpload(UploadedFile $file, string $originalName, int $originalSize): string
+    {
+        $maxBytes = $this->configuredSessionImportUploadMaxKilobytes() * 1024;
+        if ($originalSize > $maxBytes) {
+            throw ValidationException::withMessages(['file' => 'Ukuran file melebihi batas upload server.']);
+        }
+
+        $sourcePath = (string) $file->getRealPath();
+        $magic = (string) @file_get_contents($sourcePath, false, null, 0, 2);
+        $input = $magic === "\x1f\x8b" ? @gzopen($sourcePath, 'rb') : false;
+        if ($input === false) {
+            throw ValidationException::withMessages(['file' => 'File terkompresi ' . self::REPORT_LABEL . ' tidak valid. Silakan upload ulang.']);
+        }
+
+        $extension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+        $relativePath = 'report_ph_imports/' . Str::random(40) . '.' . $extension;
+        $targetPath = Storage::path($relativePath);
+        if (!is_dir(dirname($targetPath))) {
+            @mkdir(dirname($targetPath), 0777, true);
+        }
+
+        $output = @fopen($targetPath, 'wb');
+        $writtenBytes = 0;
+        $failure = $output === false ? 'File upload ' . self::REPORT_LABEL . ' gagal disimpan di server.' : null;
+
+        try {
+            while ($failure === null && !gzeof($input)) {
+                $chunk = gzread($input, 1048576);
+                if ($chunk === false) {
+                    $failure = 'File terkompresi ' . self::REPORT_LABEL . ' rusak saat diekstrak.';
+                    break;
+                }
+
+                $writtenBytes += strlen($chunk);
+                if ($writtenBytes > $originalSize || $writtenBytes > $maxBytes) {
+                    $failure = 'Ukuran hasil ekstrak ' . self::REPORT_LABEL . ' tidak sesuai dengan file asli.';
+                    break;
+                }
+
+                fwrite($output, $chunk);
+            }
+        } finally {
+            gzclose($input);
+            if ($output !== false) {
+                fclose($output);
+            }
+        }
+
+        if ($failure === null && $writtenBytes !== $originalSize) {
+            $failure = 'Upload ' . self::REPORT_LABEL . ' tidak lengkap. Silakan upload ulang.';
+        }
+
+        if ($failure !== null) {
+            @unlink($targetPath);
+            throw ValidationException::withMessages(['file' => $failure]);
+        }
+
+        return $relativePath;
     }
 
     private function isExcelFile(string $path): bool
@@ -2064,6 +2147,21 @@ class ImportReportPhController extends Controller
 
     protected function iterateMappedPreviewRows(string $path, array $context, callable $callback): void
     {
+        $this->scanMappedPreviewRows($path, $context, $callback);
+    }
+
+    protected function iterateMappedPreviewColumns(string $path, array $context, array $columnIndexes, callable $callback): void
+    {
+        // Normalisasi 69 kolom per baris memakan ±75% waktu scan opsi filter;
+        // scan ini hanya membaca kolom filter, sisanya dibiarkan null.
+        $this->scanMappedPreviewRows($path, $context, $callback, array_fill_keys(array_map('intval', $columnIndexes), true));
+    }
+
+    /**
+     * @param  array<int, true>|null  $onlyColumnIndexes
+     */
+    private function scanMappedPreviewRows(string $path, array $context, callable $callback, ?array $onlyColumnIndexes = null): void
+    {
         $handle = fopen($path, 'r');
         if ($handle === false) {
             throw new \RuntimeException('Gagal membuka file CSV ' . self::REPORT_LABEL . '.');
@@ -2077,7 +2175,7 @@ class ImportReportPhController extends Controller
                     continue;
                 }
 
-                $row = $this->mapCsvRow($context, $sourceRow);
+                $row = $this->mapCsvRow($context, $sourceRow, $onlyColumnIndexes);
                 if ($row === null) {
                     continue;
                 }
@@ -2401,7 +2499,10 @@ class ImportReportPhController extends Controller
         return $this->trimTrailingEmptyCells($normalizedRow);
     }
 
-    private function mapCsvRow(array $context, array $data): ?array
+    /**
+     * @param  array<int, true>|null  $onlyColumnIndexes  display columns to normalise; others stay null
+     */
+    private function mapCsvRow(array $context, array $data, ?array $onlyColumnIndexes = null): ?array
     {
         if ($this->isEmptyCsvRow($data)) {
             return null;
@@ -2413,7 +2514,12 @@ class ImportReportPhController extends Controller
         }
 
         $row = [];
-        foreach ($context['headers'] as $column) {
+        foreach ($context['headers'] as $displayIndex => $column) {
+            if ($onlyColumnIndexes !== null && !isset($onlyColumnIndexes[$displayIndex])) {
+                $row[] = null;
+                continue;
+            }
+
             $sourceIndex = $context['source_indexes'][$column] ?? null;
             $row[] = $this->normalizeCellValue($column, $sourceIndex !== null ? ($data[$sourceIndex] ?? null) : null);
         }

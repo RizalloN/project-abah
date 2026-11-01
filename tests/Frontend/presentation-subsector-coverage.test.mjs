@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { subsectorReference } from '../../resources/js/presentation/segments/subsector-coverage.js';
+import { subsectorReference, subsectorGroup, subsectorUnitCoverage } from '../../resources/js/presentation/segments/subsector-coverage.js';
 
 const source = {
     units: [
@@ -65,4 +65,101 @@ test('a zero-customer subsector does not erase or shrink the fixed selected serv
     assert.equal(partial.total.potential, 1000);
     assert.equal(partial.total.existing, 20);
     assert.equal(partial.total.penetration, 2);
+});
+
+const allGroups = [
+    { key: 'total', label: 'Seluruh sektor usaha', categories: ['A', 'G'] },
+    { key: 'trade', label: 'Perdagangan', categories: ['G'] },
+];
+const allPayload = () => ({
+    sector_reference_ready: true,
+    filters: { selected: { sektor: 'all', sub_sektor: 'all' } },
+    sector_potential: {
+        comparison_groups: allGroups,
+        selected_context: { sector: 'all', subsector: 'all', parent_group: null, reference_ready: true,
+            subsector_parent_coverage: { potential: null, existing: 30, penetration: null } },
+        totals: { total: { potential: 1200 }, trade: { potential: 1000 } },
+        branches: [{ key: 'madiun', values: { total: { potential: 1200 }, trade: { potential: 1000 } } }],
+        units: source.units.map(record => ({ ...record, branch: 'madiun', values: { total: { potential: record.code === '01' ? 1200 : 500 }, trade: { potential: record.code === '01' ? 1000 : 400 } } })),
+        villages: [{ key: 'A', source_values: { A: 100, G: 400 } }, { key: 'B', source_values: { A: 100, G: 600 } }],
+    },
+});
+
+test('all sectors and subsectors use the explicit aggregate category instead of blank parent fields', () => {
+    const payload = allPayload();
+    const reference = subsectorReference(payload, units, { level: 'branch', branchKey: 'madiun' });
+    assert.equal(reference.group.key, 'total');
+    assert.equal(reference.total.potential, 1200);
+    assert.equal(reference.total.existing, 30);
+    assert.equal(reference.total.penetration, 2.5);
+    assert.equal(payload.sector_potential.selected_context.parent_group, null);
+    assert.equal(payload.sector_potential.selected_context.subsector_parent_coverage.potential, null);
+    assert.equal(subsectorReference(payload, units, { level: 'branch', branchKey: 'area6' }).total.potential, 1200);
+});
+
+test('unfiltered UKER rows use their own total potential and preserve ratios exceeding 100 percent', () => {
+    const payload = allPayload();
+    const coverage = subsectorUnitCoverage(payload, { code: '02', branch_key: 'madiun', values: { jumlah_debitur: 600 } });
+    assert.equal(coverage.potential, 500);
+    assert.equal(coverage.existing, 600);
+    assert.equal(coverage.penetration_raw, 120);
+    assert.equal(coverage.penetration, 100);
+    assert.equal(coverage.normalization_applied, true);
+});
+
+test('choosing a parent sector keeps its exact UKER denominator instead of the all-sector population', () => {
+    const payload = allPayload();
+    payload.filters.selected = { sektor: 'PERDAGANGAN', sub_sektor: 'Rincian perdagangan' };
+    payload.sector_potential.selected_context.parent_group = allGroups[1];
+    const coverage = subsectorUnitCoverage(payload, { code: '02', branch_key: 'madiun', values: { jumlah_debitur: 20 } });
+    assert.equal(subsectorGroup(payload).key, 'trade');
+    assert.equal(coverage.potential, 400);
+    assert.equal(coverage.penetration, 5);
+});
+
+test('all-sector district coverage deduplicates source villages without summing repeated unit populations', () => {
+    const reference = subsectorReference(allPayload(), units, { level: 'district', branchKey: 'madiun', unitCodes: ['01', '02'] });
+    assert.equal(reference.total.potential, 1200);
+    assert.equal(reference.total.existing, 30);
+});
+
+test('an ambiguous filtered parent cannot silently fall back to the all-sector denominator', () => {
+    const payload = allPayload();
+    payload.filters.selected.sub_sektor = 'Mixed subsector';
+    assert.equal(subsectorGroup(payload), null);
+    assert.equal(subsectorUnitCoverage(payload, { code: '01', values: { jumlah_debitur: 10 } }).potential, null);
+    payload.filters.selected = { sektor: 'Unknown sector', sub_sektor: 'all' };
+    assert.equal(subsectorReference(payload, units).total.potential, null);
+});
+
+test('same UKER code in another branch cannot supply the chosen UKER population', () => {
+    const payload = allPayload();
+    payload.sector_potential.units.push({ code: '02', branch: 'ngawi', potential_available: true, values: { total: { potential: 9000 } } });
+    assert.equal(subsectorUnitCoverage(payload, { code: '02', branch_key: 'madiun', values: { jumlah_debitur: 20 } }).potential, 500);
+    assert.equal(subsectorUnitCoverage(payload, { code: '02', values: { jumlah_debitur: 20 } }).potential, null);
+    assert.equal(subsectorReference(payload, units, { level: 'branch', branchKey: 'unknown' }).total.potential, null);
+});
+
+test('missing, conflicted, and zero source populations remain distinct', () => {
+    const payload = allPayload();
+    const unit = { code: '02', branch_key: 'madiun', values: { jumlah_debitur: 20 } };
+    payload.sector_potential.units[1].values.total.potential = 0;
+    assert.equal(subsectorUnitCoverage(payload, unit).potential, 0);
+    assert.equal(subsectorUnitCoverage(payload, unit).penetration, null);
+    payload.sector_potential.units[1].values.total.potential = null;
+    assert.equal(subsectorUnitCoverage(payload, unit).potential, null);
+    payload.sector_potential.units[1].values.total.potential = 500;
+    payload.sector_potential.units[1].potential_available = false;
+    assert.equal(subsectorUnitCoverage(payload, unit).potential, null);
+    assert.equal(subsectorUnitCoverage(payload, { ...unit, code: 'missing' }).potential, null);
+});
+
+test('a reference period or source flagged unavailable never supplies presentation coverage', () => {
+    const payload = allPayload();
+    payload.sector_reference_ready = false;
+    assert.equal(subsectorReference(payload, units).total.potential, null);
+    assert.equal(subsectorUnitCoverage(payload, { code: '01', values: { jumlah_debitur: 10 } }).potential, null);
+    payload.sector_reference_ready = true;
+    payload.sector_potential.selected_context.reference_ready = false;
+    assert.equal(subsectorGroup(payload), null);
 });

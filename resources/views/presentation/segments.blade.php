@@ -62,6 +62,7 @@
       </nav>
       <div class="kn-nav__end">
         <p class="kn-nav__period"><span class="kn-sr">Posisi data </span>{{ $segmentPeriodLabel }}</p>
+        <button type="button" class="sg-fullscreen" data-sg-fullscreen aria-label="Masuk layar penuh" aria-pressed="false" hidden><i class="fas fa-expand" aria-hidden="true"></i><span>Layar penuh</span></button>
         <button type="button" class="kn-button kn-button--primary kn-nav__ppt" data-sg-open-launcher hidden>Pilih segmen</button>
       </div>
     </div>
@@ -73,14 +74,19 @@
       <div class="sg-launcher__sticky">
         <div class="sg-launcher__stage" data-territory="cover" data-territory-pose="hero" aria-hidden="true"><div class="sg-poster" data-territory-poster></div></div>
         <div class="sg-launcher__head">
-          <p class="sg-kicker">Mode presentasi &middot; Posisi {{ $segmentPeriodLabel }}</p>
-          <h1 class="sg-launcher__title" id="sg-launcher-title">Pilih yang ingin<br>Anda presentasikan.</h1>
+          <p class="sg-launcher__brand"><span aria-hidden="true">A</span> ABAH <small>Ruang presentasi</small></p>
+          <h1 class="sg-launcher__title" id="sg-launcher-title">Presentasikan<br>arah bisnis.</h1>
+          <p class="sg-launcher__intro">Dari perspektif wilayah hingga rincian kinerja. Susun agenda, lalu masuk ke cabang pilihan Anda.</p>
+          <button type="button" class="sg-compose" data-sg-compose>Susun agenda <i class="fas fa-list-ul" aria-hidden="true"></i></button>
         </div>
+        <div class="sg-launcher__caption"><span data-sg-cover-scope>{{ $segmentScopeLabel }}</span><small>Posisi {{ $segmentPeriodLabel }}</small></div>
+        <div class="sg-launcher__agenda" aria-label="Ringkasan agenda"><p><strong data-sg-agenda-count>0</strong> materi dalam agenda</p><div data-sg-agenda></div></div>
       </div>
       <form class="sg-panel" data-sg-form aria-label="Pilihan presentasi">
+        <header class="sg-panel__heading"><h2 tabindex="-1" data-sg-compose-title>Susun presentasi Anda.</h2><p>Pilih cakupan dan materi yang ingin dibahas.</p></header>
         <fieldset class="sg-panel__scope">
-          <legend>{{ $branchOnly ? 'Cakupan' : 'Filter area atau cabang' }}</legend>
-          <div class="sg-scopes" role="radiogroup">
+          <legend id="sg-scope-heading">{{ $branchOnly ? 'Cakupan' : 'Cakupan wilayah' }}</legend>
+          <div class="sg-scopes" role="radiogroup" aria-labelledby="sg-scope-heading">
             @foreach($segmentScopes as $scope)
               <label class="sg-scope">
                 <input type="radio" name="scope" value="{{ $scope['key'] }}" @checked($scope['key'] === $segmentScope)>
@@ -92,7 +98,7 @@
         @foreach($segmentGroups as $group)
           <fieldset class="sg-panel__group" data-sg-group="{{ $group['key'] }}">
             <legend>
-              <span>{{ $group['label'] }}</span>
+              <span>{{ $group['label'] }} <small class="sg-group-count" data-sg-group-count="{{ $group['key'] }}">0 / {{ count($group['segments']) }}</small></span>
               <button type="button" class="sg-toggle-all" data-sg-toggle-group="{{ $group['key'] }}">Pilih semua</button>
             </legend>
             <p class="sg-panel__lede">{{ $group['lede'] }}</p>
@@ -100,6 +106,7 @@
               @foreach($group['segments'] as $segment)
                 <label class="sg-card" data-sg-card="{{ $segment['key'] }}">
                   <input type="checkbox" name="segmen" value="{{ $segment['key'] }}">
+                  <span class="sg-card__visual" aria-hidden="true"><i></i><i></i><i></i></span>
                   <span class="sg-card__check" aria-hidden="true"><i class="fas fa-check"></i></span>
                   <strong>{{ $segment['label'] }}</strong>
                   <small>{{ $segment['meta'] }}</small>
@@ -110,7 +117,7 @@
         @endforeach
         <div class="sg-panel__actions" data-sg-actions>
           <p class="sg-panel__summary" data-sg-summary role="status" aria-live="polite">Pilih paling sedikit satu segmen terlebih dahulu untuk memulai presentasi.</p>
-          <button type="submit" class="kn-button kn-button--primary kn-button--large sg-start" disabled>Mulai presentasi<i class="fas fa-arrow-down" aria-hidden="true"></i></button>
+          <button type="submit" class="kn-button kn-button--primary kn-button--large sg-start" disabled><span data-sg-start-label>Mulai presentasi</span><i class="fas fa-arrow-right" aria-hidden="true"></i></button>
         </div>
         <p class="sg-panel__foot">
           <a class="kn-link" href="{{ route('dashboard.presentation', ['layout' => 'keynote', 'periode' => $selectedPeriod]) }}">Versi keynote dan ekspor PowerPoint<i class="fas fa-chevron-right" aria-hidden="true"></i></a>
@@ -120,6 +127,7 @@
 
     <div class="sg-deck" id="sg-deck" data-sg-deck aria-live="polite" hidden aria-hidden="true"></div>
   </main>
+  <p class="kn-sr" role="status" data-sg-display-status></p>
 
   <div class="dashboard-loading-overlay active kn-loader" id="sg-loader" role="status" aria-live="polite">
     <p class="kn-loader__title">Mode presentasi</p>
