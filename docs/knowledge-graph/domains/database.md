@@ -7,8 +7,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Kind | Count |
 | --- | ---: |
 | command | 4 |
-| file | 163 |
-| function | 388 |
+| file | 164 |
+| function | 391 |
 | method | 193 |
 | unresolved_symbol | 18 |
 | route | 2 |

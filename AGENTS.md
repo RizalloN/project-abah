@@ -110,3 +110,9 @@ Selalu jawab dengan:
 - Untuk implementasi UI/UX, baca [Web Interface Guidelines Vercel](.agents/skills/web-design-guidelines/references/vercel-web-interface-guidelines.md); sumber terkini: https://vercel.com/design/guidelines. Untuk audit UI, gunakan [web-design-guidelines](.agents/skills/web-design-guidelines/SKILL.md).
 - Terapkan akses keyboard, fokus terlihat, label yang jelas, kontras, responsivitas, reduced motion, state loading/empty/error, dan validasi visual sesuai komponen yang diubah. Preferensi brand khusus Vercel mengikuti bahasa dan identitas aplikasi yang sudah disepakati.
 - Instruksi visual eksplisit pengguna tetap menjadi prioritas. Pertahankan stack Laravel/Blade, istilah finansial, formula bisnis, serta scope perubahan; guideline desain tidak mengizinkan perubahan logic atau dependency lain.
+
+## Reverse Engineering & Design System Extraction (Dembrandt & REA)
+
+- Gunakan [dembrandt](.agents/skills/dembrandt/SKILL.md) ([dembrandt/dembrandt](https://github.com/dembrandt/dembrandt)) untuk mengekstrak design system, color palette, typography scale, spacing, dan file `DESIGN.md` dari URL website live menggunakan headless Playwright/CLI.
+- Gunakan [rea](.agents/skills/rea/SKILL.md) ([morluto/rea](https://github.com/morluto/rea)) untuk reverse engineering aplikasi, web bundle, Electron/JS, APK, atau binary dengan alur 3-fase (*Decompile -> Understand -> Recreate*) berbasis Evidence-backed ledger (*Seen*, *Inferred*, *Unknown*).
+- **Sinergi Rekonstruksi Fitur**: Padukan REA (decompile logika, mapping application graph, dan tracing API) dengan Dembrandt (ekstraksi token visual, CSS theme, dan `DESIGN.md`) untuk mereplikasi aplikasi atau fitur target secara akurat dan clean-room. Detail alur: [.agents/rules/reverse-engineering-and-design-extraction.md](.agents/rules/reverse-engineering-and-design-extraction.md).

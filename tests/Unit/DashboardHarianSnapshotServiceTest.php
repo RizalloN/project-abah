@@ -1491,6 +1491,74 @@ class DashboardHarianSnapshotServiceTest extends TestCase
         $this->assertSame(800.0, (float) $summary->total_npl_abs_non_commercial);
     }
 
+    public function test_ssa_restructuring_flag_splits_current_loans_into_lr_and_lnr_and_backfills_in_place(): void
+    {
+        $this->createSourceMetadataTables();
+
+        Schema::table('ssa_pinjaman', function (Blueprint $table): void {
+            $table->string('flag_restruk')->nullable();
+        });
+        Schema::table('dashboard_harian_snapshots', function (Blueprint $table): void {
+            foreach (['kpr_os', 'kpr_sml', 'kpr_npl', 'kpr_lr', 'kpr_lnr', 'total_os', 'total_os_non_commercial', 'total_sml_abs_non_commercial', 'total_npl_abs_non_commercial'] as $column) {
+                $table->decimal($column, 20, 2)->default(0);
+            }
+        });
+
+        $baseLoanRow = [
+            'month_day_year_of_periode' => '2026-05-31',
+            'nama_cabang' => '00045 -- KC Madiun (Konsolidasi-MB)',
+            'nama_uker' => '00045 -- KC Madiun',
+            'segmen_dashboard' => 'Consumer',
+            'produk_dashboard' => 'KPR',
+            'produk' => 'KPR',
+            'segmen_2025' => 'Consumer',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ];
+
+        DB::table('ssa_pinjaman')->insert([
+            $baseLoanRow + ['kolektabilitas_one_obligor' => '1', 'flag_restruk' => 'Y', 'baki_debet' => 100],
+            $baseLoanRow + ['kolektabilitas_one_obligor' => '1', 'flag_restruk' => 'N', 'baki_debet' => 400],
+            // Restructured but no longer current: SML, never LR.
+            $baseLoanRow + ['kolektabilitas_one_obligor' => '2', 'flag_restruk' => 'Y', 'baki_debet' => 200],
+            $baseLoanRow + ['kolektabilitas_one_obligor' => '3', 'flag_restruk' => 'N', 'baki_debet' => 300],
+        ]);
+
+        DB::table('ssa_simpanan')->insert([
+            'Month_Day_Year_of_Posisi' => '2026-05-31',
+            'nama_cabang' => '00045 -- KC Madiun (Konsolidasi-MB)',
+            'nama_uker' => '00045 -- KC Madiun',
+            'segmentasi' => 'Ritel',
+            'produk' => 'Tabungan',
+            'saldo' => 10000,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $service = new DashboardHarianSnapshotService();
+        $summary = fn () => DB::table('dashboard_harian_snapshots')
+            ->where('snapshot_period', '2026-05-31')
+            ->where('kanca_key', 'kc-madiun')
+            ->where('unit_key', 'kc-madiun')
+            ->first();
+
+        // The SSA guard compares the split too, so a full build must still pass it.
+        $this->assertSame(2, $service->buildPeriodSnapshot('2026-05-31', true));
+        $this->assertSame(100.0, (float) $summary()->kpr_lr);
+        $this->assertSame(400.0, (float) $summary()->kpr_lnr);
+        $this->assertSame(1000.0, (float) $summary()->kpr_os);
+        $this->assertSame(
+            (float) $summary()->kpr_os,
+            (float) $summary()->kpr_lr + (float) $summary()->kpr_lnr + (float) $summary()->kpr_sml + (float) $summary()->kpr_npl
+        );
+
+        DB::table('dashboard_harian_snapshots')->update(['kpr_lr' => 0, 'kpr_lnr' => 0, 'kpr_os' => 1234]);
+        $this->assertSame(2, $service->backfillRestrukMetrics('2026-05-31', false));
+        $this->assertSame(100.0, (float) $summary()->kpr_lr);
+        $this->assertSame(400.0, (float) $summary()->kpr_lnr);
+        $this->assertSame(1234.0, (float) $summary()->kpr_os, 'the backfill writes only the split');
+    }
+
     public function test_snapshot_freshness_rebuilds_legacy_rows_and_rejects_changed_signature(): void
     {
         $this->createSourceMetadataTables();

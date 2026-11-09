@@ -96,7 +96,7 @@ const seeded = (index, salt) => {
 const BRANCH_OF_REGENCY = { MADIUN: 'madiun', 'KOTA MADIUN': 'madiun', MAGETAN: 'magetan', NGAWI: 'ngawi', PONOROGO: 'ponorogo' };
 
 export class ReliefScene {
-    constructor(canvas, features, { maxPixelRatio = 1.75, dustCount = 1100 } = {}) {
+    constructor(canvas, features, { maxPixelRatio = 1.75, dustCount = 1100, maxPixels = 4200000, shadowSize = 2048 } = {}) {
         this.canvas = canvas;
         this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
         this.renderer.setClearColor(0x000000, 0);
@@ -106,6 +106,7 @@ export class ReliefScene {
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         this.maxPixelRatio = maxPixelRatio;
+        this.maxPixels = maxPixels;
 
         this.scene = new THREE.Scene();
         const pmrem = new THREE.PMREMGenerator(this.renderer);
@@ -119,7 +120,7 @@ export class ReliefScene {
 
         this.key = new THREE.DirectionalLight(0xffffff, 2.1);
         this.key.castShadow = true;
-        this.key.shadow.mapSize.set(2048, 2048);
+        this.key.shadow.mapSize.set(shadowSize, shadowSize);
         this.key.shadow.radius = 5;
         this.key.shadow.blurSamples = 20;
         this.key.shadow.bias = -0.0006;
@@ -392,6 +393,21 @@ export class ReliefScene {
         this.compiled = true;
     }
 
+    /** Let parallel shader compilation finish without busy-waiting on GPU programs. */
+    async precompileAsync() {
+        if (this.compiled) return;
+        if (!this.renderer.compileAsync) { this.precompile(); return; }
+        try {
+            this.pieces.forEach(piece => { piece.mesh.material = piece.glass; piece.core.visible = true; });
+            await this.renderer.compileAsync(this.scene, this.camera);
+            this.pieces.forEach(piece => { piece.mesh.material = piece.metal; piece.core.visible = false; });
+            await this.renderer.compileAsync(this.scene, this.camera);
+            this.compiled = true;
+        } finally {
+            this.pieces.forEach(piece => { piece.mesh.material = piece.metal; piece.core.visible = false; });
+        }
+    }
+
     /**
      * targets: Map(code -> { lift 0..1, color hex, roughness, core 0..1 }), glass 0..1, dark 0..1.
      */
@@ -410,7 +426,7 @@ export class ReliefScene {
     resize(width, height) {
         this.width = width;
         this.height = height;
-        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.maxPixelRatio, Math.sqrt(4200000 / Math.max(1, width * height))));
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.maxPixelRatio, Math.sqrt(this.maxPixels / Math.max(1, width * height))));
         this.renderer.setSize(width, height, false);
         this.camera.aspect = width / Math.max(1, height);
         this.camera.updateProjectionMatrix();

@@ -4,14 +4,19 @@ namespace App\Http\Controllers\Import;
 
 use App\Http\Controllers\Controller;
 use App\Services\Import\ImportExecutionService;
+use App\Services\Import\ImportBackgroundLauncher;
+use App\Services\Import\ImmediateImportRunner;
 use App\Services\Import\ImportProgressService;
 use App\Services\Import\ActiveImportJobCounter;
 use App\Services\Import\QueueWorkerControlService;
 use App\Services\Import\QueueWorkerMonitorService;
 use App\Services\Import\SafeWorkerRestartService;
 use App\Support\ManagedReportSnapshotRebuildCoordinator;
+use App\Jobs\RunImportJob;
 use Illuminate\Http\Request;
+use Illuminate\Process\Exceptions\ProcessTimedOutException;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
@@ -155,12 +160,7 @@ class ImportJobManagementController extends Controller
             ->partition(fn (array $job): bool => in_array($job['status'] ?? '', ['queued', 'processing'], true))
             ->map(fn ($jobs) => $jobs->values()->all())
             ->all();
-        $managedDeleteHistory = collect($finishedLiveDeleteJobs)
-            ->map(fn (array $job): array => $job + ['stage_label' => 'Selesai'])
-            ->concat($this->resolveManagedDeleteHistory($liveDeleteIds))
-            ->sortByDesc(fn (array $job): string => (string) ($job['updated_at'] ?? ''))
-            ->values()
-            ->all();
+        $managedDeleteHistory = $this->filteredManagedDeleteHistory($liveDeleteIds, $finishedLiveDeleteJobs, $status, $search, $activeOnly);
         $rawQueueJobs = $this->resolveRawQueueJobs(
             $liveDeleteIds,
             collect($snapshotJobs)->pluck('id')->filter()->map(fn ($id): string => (string) $id)->all()
@@ -332,6 +332,21 @@ class ImportJobManagementController extends Controller
 
     public function forceStart(int $jobId, ImportProgressService $progressService, ImportExecutionService $executionService)
     {
+        $cache = Cache::store(config('import.cache_store') ?: config('cache.default'));
+        $lock = $cache->lock('import:force-start-request:'.$jobId, 30);
+        if (! $lock->get()) {
+            return response()->json(['status' => 'error', 'message' => 'Permintaan Force Start sedang diproses.'], 409);
+        }
+
+        try {
+            return $this->startQueuedImport($jobId, $progressService, $executionService);
+        } finally {
+            $lock->release();
+        }
+    }
+
+    private function startQueuedImport(int $jobId, ImportProgressService $progressService, ImportExecutionService $executionService)
+    {
         $job = $progressService->findJob($jobId);
         if (!$job) {
             return response()->json([
@@ -347,6 +362,19 @@ class ImportJobManagementController extends Controller
                 'status' => 'error',
                 'message' => 'Force start hanya tersedia untuk job import queued atau failed tanpa baris sukses.',
             ], 422);
+        }
+
+        $reserved = DB::table('jobs')->whereNotNull('reserved_at')
+            ->where('payload', 'like', '%'.class_basename(RunImportJob::class).'%')
+            ->where('payload', 'like', '%jobId%')
+            ->where('payload', 'like', '%i:'.$jobId.';%')->exists();
+        $cache = Cache::store(config('import.cache_store') ?: config('cache.default'));
+        if ($reserved || $cache->has('import:force-start-launched:'.$jobId)
+            || app(ImmediateImportRunner::class)->isRunning($jobId)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Job sudah diambil worker atau Force Start sedang berjalan. Pantau progres tanpa menjalankan ulang.',
+            ], 409);
         }
 
         if ($retryingFailedZeroProgress) {
@@ -365,8 +393,35 @@ class ImportJobManagementController extends Controller
         }
 
         $progressService->cleanupQueuedImportJobRowsForJob($jobId);
-        if (!$this->launchImportInBackground($jobId)) {
-            $executionService->run($jobId);
+        $cache->put('import:force-start-launched:'.$jobId, true, 60);
+        try {
+            $launched = $this->launchImportInBackground($jobId);
+        } catch (ProcessTimedOutException $e) {
+            // The child may have started. Do not run inline; a queued fallback
+            // goes through the same table lock and preserves any live owner.
+            app(ImmediateImportRunner::class)->requeueIfPending($jobId, $progressService);
+            Log::warning('Force Start launch confirmation timed out.', ['job_id' => $jobId]);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Peluncuran belum terkonfirmasi. Job tetap dipantau melalui antrean; jangan jalankan ulang selama progres diperbarui.',
+            ], 202);
+        }
+        if (!$launched) {
+            try {
+                $result = app(ImmediateImportRunner::class)->run($jobId, $progressService, $executionService);
+            } finally {
+                $cache->forget('import:force-start-launched:'.$jobId);
+            }
+
+            if ($result !== 'executed') {
+                return response()->json([
+                    'status' => 'success',
+                    'message' => $result === 'deferred'
+                        ? 'Tabel sedang diproses. Job tetap dijadwalkan di antrean sampai tabel tersedia.'
+                        : 'Force Start sebelumnya masih berjalan. Pantau progres job.',
+                ], 202);
+            }
 
             return response()->json([
                 'status' => 'success',
@@ -389,42 +444,7 @@ class ImportJobManagementController extends Controller
 
     protected function launchImportInBackground(int $jobId): bool
     {
-        if ($jobId <= 0) {
-            return false;
-        }
-
-        try {
-            $phpBinary = PHP_BINARY ?: 'php';
-            $artisanPath = base_path('artisan');
-            $projectRoot = base_path();
-            $command = escapeshellarg($phpBinary)
-                . ' '
-                . escapeshellarg($artisanPath)
-                . ' import:run-job '
-                . $jobId;
-
-            if (DIRECTORY_SEPARATOR === '\\') {
-                $backgroundCommand = 'start /B cmd /C "cd /D '
-                    . escapeshellarg($projectRoot)
-                    . ' && '
-                    . $command
-                    . '"';
-                @pclose(@popen($backgroundCommand, 'r'));
-
-                return true;
-            }
-
-            exec('cd ' . escapeshellarg($projectRoot) . ' && ' . $command . ' > /dev/null 2>&1 &');
-
-            return true;
-        } catch (\Throwable $e) {
-            Log::warning('ImportJobManagementController: gagal menjalankan import background.', [
-                'job_id' => $jobId,
-                'message' => $e->getMessage(),
-            ]);
-
-            return false;
-        }
+        return app(ImportBackgroundLauncher::class)->launch($jobId);
     }
 
     public function forceStartSnapshot(string $rebuildId)
@@ -760,12 +780,42 @@ class ImportJobManagementController extends Controller
         }
 
         $validated = $request->validate([
-            'status' => 'nullable|string|in:all,completed,failed,failed_partial,terminated',
+            'status' => 'nullable|string|in:all,queued,processing,completed,failed,failed_partial,terminated',
             'search' => 'nullable|string|max:255',
+            'active_only' => 'nullable|boolean',
+            'history_view' => 'nullable|string|in:import,delete',
         ]);
 
         $status = (string) ($validated['status'] ?? 'all');
         $search = trim((string) ($validated['search'] ?? ''));
+
+        if (($validated['history_view'] ?? 'import') === 'delete') {
+            if (!Schema::hasTable('report_sync_audits')) {
+                return response()->json(['status' => 'error', 'message' => 'Tabel audit delete belum tersedia.'], 500);
+            }
+            $live = collect($this->importIndexController->resolveManagedReportDeleteJobs());
+            $ids = $live->pluck('id')->filter()->map(fn ($id): string => (string) $id)->all();
+            $finished = $live->reject(fn (array $job): bool => in_array($job['status'] ?? '', ['queued', 'processing'], true))->values()->all();
+            $jobs = $this->filteredManagedDeleteHistory($ids, $finished, $status, $search, (bool) ($validated['active_only'] ?? false));
+            if (empty($jobs)) {
+                return response()->json(['status' => 'warning', 'message' => 'Tidak ada riwayat delete yang cocok untuk dibersihkan.', 'deleted_count' => 0]);
+            }
+            $now = now();
+            DB::table('report_sync_audits')->insert(array_map(fn (array $job): array => [
+                'table_name' => (string) ($job['table_name'] ?? ''),
+                'action' => 'managed_delete_history_cleared',
+                'status' => 'success',
+                'context' => json_encode(['delete_id' => (string) $job['id']]),
+                'created_at' => $now,
+                'updated_at' => $now,
+            ], $jobs));
+
+            return response()->json(['status' => 'success', 'message' => count($jobs) . ' riwayat delete berhasil dibersihkan.', 'deleted_count' => count($jobs)]);
+        }
+
+        if (($validated['active_only'] ?? false) || in_array($status, ['queued', 'processing'], true)) {
+            return response()->json(['status' => 'warning', 'message' => 'Tidak ada riwayat job terminal yang cocok untuk dihapus.', 'deleted_count' => 0]);
+        }
 
         $query = DB::table('import_jobs as ij')
             ->leftJoin('nama_report as nr', 'nr.id_report', '=', 'ij.id_report')
@@ -1377,6 +1427,39 @@ class ImportJobManagementController extends Controller
         $parsed = $this->safeParseDate($createdAt);
 
         return $parsed ? max(0, now()->diffInSeconds($parsed)) : 0;
+    }
+
+    private function filteredManagedDeleteHistory(array $liveIds, array $finishedLiveJobs, string $status, string $search, bool $activeOnly): array
+    {
+        if ($activeOnly) {
+            return [];
+        }
+
+        $cleared = Schema::hasTable('report_sync_audits')
+            ? DB::table('report_sync_audits')->where('action', 'managed_delete_history_cleared')
+                ->where('created_at', '>=', now()->subDays(14))->pluck('context')
+                ->map(fn ($context): string => (string) (json_decode((string) $context, true)['delete_id'] ?? ''))->filter()->all()
+            : [];
+        $cleared = array_fill_keys($cleared, true);
+
+        return collect($finishedLiveJobs)
+            ->map(fn (array $job): array => $job + ['stage_label' => 'Selesai'])
+            ->concat($this->resolveManagedDeleteHistory($liveIds, 14, 5000))
+            ->reject(fn (array $job): bool => isset($cleared[(string) ($job['id'] ?? '')]))
+            ->filter(fn (array $job): bool => $status === 'all' || ($job['status'] ?? '') === $status)
+            ->filter(function (array $job) use ($search): bool {
+                if ($search === '') {
+                    return true;
+                }
+                foreach (['id', 'report_name', 'table_name', 'file_name', 'created_by_name'] as $field) {
+                    if (mb_stripos((string) ($job[$field] ?? ''), $search) !== false) {
+                        return true;
+                    }
+                }
+                return false;
+            })
+            ->sortByDesc(fn (array $job): string => (string) ($job['updated_at'] ?? ''))
+            ->values()->all();
     }
 
     /**

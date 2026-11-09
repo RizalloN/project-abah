@@ -23,8 +23,10 @@
       }
       try { browser.sessionStorage.setItem(key, String(attempts + 1)); }
       catch (_) { return; }
-      if (url.searchParams.has('refresh')) {
-        url.searchParams.delete('refresh');
+      // These parameters make the controller forget its payload cache; repeating them keeps the page pending.
+      const invalidating = ['refresh', '_refresh', '_area6'].filter(name => url.searchParams.has(name));
+      if (invalidating.length) {
+        invalidating.forEach(name => url.searchParams.delete(name));
         browser.location.replace(url.toString());
       } else {
         browser.location.reload();
@@ -32,6 +34,6 @@
     };
     browser.setTimeout(reread, delays[attempts]);
   };
-  recoverLandingPage(@json(\App\Support\LandingPayloadState::pending($dashboard ?? [])), window, document);
+  recoverLandingPage(@json(\App\Support\LandingPayloadState::needsPageRecovery($dashboard ?? [])), window, document);
 })();
 </script>

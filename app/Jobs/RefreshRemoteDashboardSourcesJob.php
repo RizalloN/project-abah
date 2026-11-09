@@ -8,10 +8,13 @@ use App\Http\Controllers\Report\AlmafactsDashboardController;
 use App\Services\Reports\BusinessClusterReportService;
 use App\Services\Reports\MicroPipelineSyncService;
 use App\Services\Reports\SppgReportService;
+use App\Support\RemoteDashboardSourceRefreshPolicy;
+use DateTimeInterface;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Cache;
@@ -24,9 +27,12 @@ class RefreshRemoteDashboardSourcesJob implements ShouldBeUnique, ShouldQueue
 
     public int $tries = 3;
 
+    // Cooldown releases are not execution failures; real failures remain bounded.
+    public int $maxExceptions = 3;
+
     public int $timeout = 480;
 
-    public int $uniqueFor = 900;
+    public int $uniqueFor = 86400;
 
     public array $backoff = [30, 120, 300];
 
@@ -47,6 +53,11 @@ class RefreshRemoteDashboardSourcesJob implements ShouldBeUnique, ShouldQueue
         return sha1(implode(',', $this->sources).'|'.implode(',', $this->kpiSheetKeys).'|'.$this->kpiPeriod);
     }
 
+    public function retryUntil(): DateTimeInterface
+    {
+        return now()->addDay();
+    }
+
     public function handle(
         DashboardSimpananController $dashboardSimpanan,
         PublicWorkbookController $publicWorkbook,
@@ -55,33 +66,49 @@ class RefreshRemoteDashboardSourcesJob implements ShouldBeUnique, ShouldQueue
         SppgReportService $sppg,
         MicroPipelineSyncService $microPipeline
     ): void {
+        $errors = [];
+        $cooldowns = [];
+        $refresh = function (string $source, callable $callback) use (&$errors, &$cooldowns): void {
+            $delay = RemoteDashboardSourceRefreshPolicy::retryDelay($source);
+            if ($delay > 0) {
+                $cooldowns[$source] = $delay;
+
+                return;
+            }
+
+            try {
+                $this->refreshSource($source, $callback);
+            } catch (Throwable $exception) {
+                $errors[$source] = $exception;
+            }
+        };
         try {
             if (in_array('market-share', $this->sources, true)) {
-                $this->refreshSource('market-share', fn () => $publicWorkbook->refreshMarketShareSource());
+                $refresh('market-share', fn () => $publicWorkbook->refreshMarketShareSource());
             }
 
             if (in_array('market-share-mapping', $this->sources, true)) {
-                $this->refreshSource('market-share-mapping', fn () => $dashboardSimpanan->refreshMarketShareMappingSource());
+                $refresh('market-share-mapping', fn () => $dashboardSimpanan->refreshMarketShareMappingSource());
             }
 
             if (in_array('market-share-instansi', $this->sources, true)) {
-                $this->refreshSource('market-share-instansi', fn () => $dashboardSimpanan->refreshMarketShareInstansiSources());
+                $refresh('market-share-instansi', fn () => $dashboardSimpanan->refreshMarketShareInstansiSources());
             }
 
             if (in_array('kpi', $this->sources, true)) {
-                $this->refreshSource('kpi', fn () => $almafacts->refreshKpiSourceCaches($this->kpiSheetKeys, $this->kpiPeriod));
+                $refresh('kpi', fn () => $almafacts->refreshKpiSourceCaches($this->kpiSheetKeys, $this->kpiPeriod));
             }
 
             if (in_array('business-cluster', $this->sources, true)) {
-                $this->refreshSource('business-cluster', fn () => $businessCluster->refreshSourceCaches());
+                $refresh('business-cluster', fn () => $businessCluster->refreshSourceCaches());
             }
 
             if (in_array('sppg', $this->sources, true)) {
-                $this->refreshSource('sppg', fn () => $sppg->refreshSourceCache());
+                $refresh('sppg', fn () => $sppg->refreshSourceCache());
             }
 
             if (in_array('micro-pipeline', $this->sources, true)) {
-                $this->refreshSource('micro-pipeline', fn () => [
+                $refresh('micro-pipeline', fn () => [
                     'success' => collect($microPipeline->syncAll(true))->every(
                         fn (array $result): bool => array_key_exists('changed', $result)
                     ),
@@ -110,28 +137,37 @@ class RefreshRemoteDashboardSourcesJob implements ShouldBeUnique, ShouldQueue
                 }
             }
         }
+
+        if ($errors !== []) {
+            $messages = array_map(static fn (Throwable $exception): string => $exception->getMessage(), $errors);
+            throw new RuntimeException(implode('; ', $messages), 0, reset($errors));
+        }
+        if ($cooldowns !== []) {
+            if ($this->job === null) {
+                throw new RuntimeException('Refresh ditunda sampai masa tunggu sumber berakhir: '.implode(', ', array_keys($cooldowns)));
+            }
+            $this->release(min($cooldowns));
+        }
     }
 
     private function refreshSource(string $source, callable $callback): void
     {
+        $retryAfter = null;
         try {
             $result = $callback();
             $success = $this->resultIsSuccessful($result);
-            Cache::forever('dashboard_sources:last_refresh:'.$source, [
-                'success' => $success,
-                'refreshed_at' => now()->toIso8601String(),
-                'error' => $success ? null : $this->resultError($result),
-            ]);
+            $retryAfter = is_array($result) ? ($result['retry_after'] ?? null) : null;
 
             if (! $success) {
-                throw new RuntimeException('Refresh sumber '.$source.' tidak berhasil; last-good cache tetap digunakan.');
+                $detail = $this->resultError($result);
+                throw new RuntimeException('Refresh sumber '.$source.' tidak berhasil; last-good cache tetap digunakan.'.($detail ? ' '.$detail : ''));
             }
+            RemoteDashboardSourceRefreshPolicy::succeeded($source);
         } catch (Throwable $exception) {
-            Cache::forever('dashboard_sources:last_refresh:'.$source, [
-                'success' => false,
-                'refreshed_at' => now()->toIso8601String(),
-                'error' => mb_substr($exception->getMessage(), 0, 500),
-            ]);
+            if ($exception instanceof RequestException) {
+                $retryAfter = $exception->response->header('Retry-After') ?: $retryAfter;
+            }
+            RemoteDashboardSourceRefreshPolicy::failed($source, $exception->getMessage(), $retryAfter);
 
             throw $exception;
         }

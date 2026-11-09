@@ -8,6 +8,48 @@ use Tests\TestCase;
 
 class EkosistemMonitoringTest extends TestCase
 {
+    public function test_timeseries_counts_only_valid_recorded_milestones_and_keeps_empty_dates(): void
+    {
+        $rows = [
+            ['KC' => 'Madiun', 'Tgl_Mulai' => '2026-10-08', 'Tgl_Selesai' => '2026-10-10', 'Status' => 'Selesai', 'Tahap' => 'Maintenance'],
+            ['KC' => 'Magetan', 'Tgl_Mulai' => '2026-10-08', 'Tgl_Selesai' => '2026-10-10', 'Status' => 'Berjalan', 'Tahap' => 'Penawaran'],
+            ['KC' => 'Madiun', 'Tgl_Mulai' => '', 'Tgl_Selesai' => '', 'Status' => 'Belum mulai', 'Tahap' => 'Pendataan'],
+            ['KC' => 'Madiun', 'Tgl_Mulai' => '2026-02-30', 'Tgl_Selesai' => '2026-11-03', 'Status' => 'Selesai', 'Tahap' => 'Closing'],
+            ['KC' => 'Ngawi', 'Tgl_Mulai' => '2026-01-01', 'Tgl_Selesai' => '2026-02-02', 'Status' => 'Selesai', 'Tahap' => 'Maintenance'],
+        ];
+        $data = (new EkosistemMonitoring)->chartData($rows, '2026-11-02');
+        $this->assertCount(90, $data['dates']);
+        $this->assertSame('2026-08-05', $data['dates'][0]);
+        $this->assertSame('2026-11-02', $data['dates'][89]);
+        $this->assertSame(2, array_sum($data['started']));
+        $this->assertSame(1, array_sum($data['completed']));
+        $this->assertSame(['started' => 3, 'completed' => 2], $data['coverage']);
+        $this->assertSame(2, $data['started'][array_search('2026-10-08', $data['dates'], true)]);
+        $this->assertSame(0, $data['started'][array_search('2026-10-09', $data['dates'], true)]);
+        $this->assertSame(1, $data['completed'][array_search('2026-10-10', $data['dates'], true)]);
+        $this->assertSame(5, array_sum($data['branches']));
+        $this->assertSame(5, array_sum($data['stages']));
+    }
+
+    public function test_chart_breakdowns_follow_the_same_branch_and_prospect_filters_as_monitoring(): void
+    {
+        $monitor = new EkosistemMonitoring;
+        $rows = [
+            $this->row(['KC' => 'Madiun', 'Jalur_RM' => 'RMFT', 'Tgl_Mulai' => '2026-10-08', 'Tahap' => 'Penawaran']),
+            $this->row(['KC' => 'Magetan', 'Jalur_RM' => 'RMFT', 'Tgl_Mulai' => '2026-10-08', 'Tahap' => 'Closing']),
+            $this->row(['KC' => 'Madiun', 'Jalur_RM' => 'Mantri', 'Tgl_Mulai' => '2026-10-08', 'Tahap' => 'Pendataan']),
+        ];
+        $data = $monitor->chartData($monitor->filter($rows, ['kc' => 'madiun', 'jalur' => 'RMFT']), '2026-11-02');
+        $this->assertSame(['Madiun' => 1], $data['branches']);
+        $this->assertSame(1, array_sum($data['started']));
+        $this->assertSame(1, $data['stages']['Penawaran']);
+        $this->assertSame(0, $data['stages']['Closing']);
+        $empty = $monitor->chartData([], '2026-11-02');
+        $this->assertCount(90, $empty['started']);
+        $this->assertSame(0, array_sum($empty['started']));
+        $this->assertSame([], $empty['branches']);
+    }
+
     public function test_financial_categories_are_never_combined_with_annual_cash_flow_or_payroll(): void
     {
         $monitor = new EkosistemMonitoring;

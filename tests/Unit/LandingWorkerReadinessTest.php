@@ -91,6 +91,21 @@ class LandingWorkerReadinessTest extends TestCase
         $this->assertStringContainsString('recoverLandingPage(true, window, document)', $html);
     }
 
+    public function test_page_recovery_keeps_stale_but_valid_data_without_reloading(): void
+    {
+        $stale = [
+            'period' => '2026-11-02',
+            'meta' => ['refresh_pending' => true],
+            'area6_portfolio' => ['meta' => ['refresh_pending' => true]],
+        ];
+        $html = view('dashboard.partials.landing-page-recovery', ['dashboard' => $stale])->render();
+
+        $this->assertTrue(LandingPayloadState::pending($stale));
+        $this->assertFalse(LandingPayloadState::needsPageRecovery($stale));
+        $this->assertStringContainsString('recoverLandingPage(false, window, document)', $html);
+        $this->assertFalse(LandingPayloadState::needsPageRecovery(['period' => null]));
+    }
+
     public function test_worker_stops_quietly_when_source_is_still_pending_on_last_attempt(): void
     {
         $controller = $this->createMock(DashboardSimpananController::class);

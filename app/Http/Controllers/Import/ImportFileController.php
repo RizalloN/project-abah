@@ -319,13 +319,14 @@ class ImportFileController extends Controller
 
     private function readCsvRecord($handle, string $delimiter)
     {
-        $line = fgets($handle);
-        if ($line === false) {
-            return false;
-        }
-
-        // Use smartParseCsvLine to avoid double-processing quotes (fgetcsv already unquotes)
-        $row = $this->smartParseCsvLine((string) $line, $delimiter, false);
+        // Blank records are not EOF; exported reports can contain spacer lines.
+        do {
+            $line = fgets($handle);
+            if ($line === false) {
+                return false;
+            }
+            $row = $this->smartParseCsvLine((string) $line, $delimiter, false);
+        } while ($row === []);
         
         // OPTIMIZATION: Strip BOM only once per file on first record (tracked by bomAlreadyStripped)
         if (!empty($row) && $this->bomAlreadyStripped !== true) {
@@ -853,11 +854,12 @@ class ImportFileController extends Controller
         $meta = stream_get_meta_data($handle);
         $path = $meta['uri'] ?? null;
         if (is_string($path) && $path !== '' && is_file($path)) {
-            // OPTIMIZATION: Cache delimiter detection by file path to avoid re-scanning
-            if (!isset($this->delimiterDetectionCache[$path])) {
-                $this->delimiterDetectionCache[$path] = $this->smartDetectCsvDelimiter($path, [',', ';', "\t", '|', '.']);
+            clearstatcache(true, $path);
+            $cacheKey = $path.'|'.filesize($path).'|'.filemtime($path);
+            if (!isset($this->delimiterDetectionCache[$cacheKey])) {
+                $this->delimiterDetectionCache[$cacheKey] = $this->smartDetectCsvDelimiter($path, [',', ';', "\t", '|', '.']);
             }
-            return $this->delimiterDetectionCache[$path];
+            return $this->delimiterDetectionCache[$cacheKey];
         }
 
         $firstLine = fgets($handle);
@@ -3136,9 +3138,12 @@ class ImportFileController extends Controller
     {
         $this->applySafeRuntimeLimits();
 
-        $request->validate(['file_path' => 'required|string', 'delimiter' => 'nullable|string']);
+        $request->validate([
+            'file_path' => 'required|string',
+            'delimiter' => ['nullable', 'string', \Illuminate\Validation\Rule::in(['auto', ',', ';', '|', "\t", '.'])],
+        ]);
         $filePath = $this->authorizeImportSourceFile((string) $request->input('file_path'));
-        $currentDelimiter = $request->input('delimiter', 'auto');
+        $currentDelimiter = (string) ($request->input('delimiter') ?: 'auto');
         if (!file_exists($filePath)) { return back()->with('error', 'File tidak ditemukan di server.'); }
         $extension = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
         
@@ -3205,23 +3210,10 @@ class ImportFileController extends Controller
 
         if (in_array($extension, ['csv', 'txt'], true)) {
             if (($handle = fopen($filePath, "r")) !== FALSE) {
-                // OPTIMIZATION 1: Cache delimiter detection results
-                $delimiterCacheKey = "import_csv_delimiter:" . md5($filePath . filesize($filePath));
-                $delimiter = Cache::get($delimiterCacheKey);
-                
-                if ($delimiter === null) {
-                    $firstLine = fgets($handle);
-                    if ($currentDelimiter === 'auto') {
-                        $delimiters = [',' => 0, ';' => 0, '|' => 0, "\t" => 0, '.' => 0];
-                        foreach ($delimiters as $delim => &$count) { $count = substr_count($firstLine, $delim); }
-                        arsort($delimiters); $delimiter = key($delimiters); 
-                    } else { $delimiter = $currentDelimiter; }
-                    Cache::put($delimiterCacheKey, $delimiter, now()->addHours(24));
-                    rewind($handle);
-                } else {
-                    // Delimiter dari cache, skip firstLine reading
-                    rewind($handle);
-                }
+                // Use the same detector as filtering/import; explicit choices
+                // must take precedence over any previous automatic detection.
+                $delimiter = $this->resolveDelimiter($handle, $currentDelimiter);
+                rewind($handle);
                 
                 // OPTIMIZATION 2: Prepare data for efficient batch processing
                 $rowCounter = 0;

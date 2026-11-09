@@ -7,10 +7,10 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Kind | Count |
 | --- | ---: |
 | command | 8 |
-| file | 136 |
-| method | 2155 |
+| file | 138 |
+| method | 2162 |
 | route | 173 |
-| class | 112 |
+| class | 114 |
 | trait | 7 |
 | interface | 1 |
 | table | 26 |
@@ -24,31 +24,31 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `ImportIndexController` | class | 159 | `app/Http/Controllers/Import/ImportIndexController.php:31` |
 | `ImportFileController` | class | 126 | `app/Http/Controllers/Import/ImportFileController.php:32` |
 | `import_jobs` | table | 120 | - |
+| `ImportProgressService` | class | 108 | `app/Services/Import/ImportProgressService.php:13` |
 | `ImportReportPhController` | class | 106 | `app/Http/Controllers/Import/ImportReportPhController.php:35` |
-| `ImportProgressService` | class | 104 | `app/Services/Import/ImportProgressService.php:13` |
 | `ImportPerformancePisPerProdukController` | class | 83 | `app/Http/Controllers/Import/ImportPerformancePisPerProdukController.php:23` |
 | `ImportSimpananMultiPnCsvController` | class | 67 | `app/Http/Controllers/Import/ImportSimpananMultiPnCsvController.php:17` |
 | `ImportCognosRecoveryController` | class | 62 | `app/Http/Controllers/Import/ImportCognosRecoveryController.php:20` |
-| `ImportExecutionService` | class | 57 | `app/Services/Import/ImportExecutionService.php:16` |
+| `ImportExecutionService` | class | 59 | `app/Services/Import/ImportExecutionService.php:16` |
 | `ImportCognosPhController` | class | 55 | `app/Http/Controllers/Import/ImportCognosPhController.php:20` |
-| `processImport` | method | 53 | `app/Http/Controllers/Import/ImportFileController.php:5512` |
+| `processImport` | method | 53 | `app/Http/Controllers/Import/ImportFileController.php:5504` |
 | `import.index` | view | 49 | `resources/views/import/index.blade.php:1` |
 | `EnsureImportedSnapshotsFreshJob` | class | 46 | `app/Jobs/EnsureImportedSnapshotsFreshJob.php:31` |
-| `processStagedCsvStream` | method | 45 | `app/Http/Controllers/Import/ImportExcelController.php:14812` |
+| `processStagedCsvStream` | method | 45 | `app/Http/Controllers/Import/ImportExcelController.php:14824` |
+| `preview` | method | 44 | `app/Http/Controllers/Import/ImportFileController.php:3137` |
+| `ImportJobManagementController` | class | 43 | `app/Http/Controllers/Import/ImportJobManagementController.php:24` |
 | `QueueWorkerControlService` | class | 42 | `app/Services/Import/QueueWorkerControlService.php:10` |
-| `preview` | method | 42 | `app/Http/Controllers/Import/ImportFileController.php:3135` |
-| `previewExcel` | method | 42 | `app/Http/Controllers/Import/ImportExcelController.php:13207` |
-| `ImportJobManagementController` | class | 41 | `app/Http/Controllers/Import/ImportJobManagementController.php:19` |
-| `processFastPathBulkCsvStream` | method | 41 | `app/Http/Controllers/Import/ImportExcelController.php:9353` |
+| `previewExcel` | method | 42 | `app/Http/Controllers/Import/ImportExcelController.php:13219` |
+| `processFastPathBulkCsvStream` | method | 41 | `app/Http/Controllers/Import/ImportExcelController.php:9365` |
 | `import.index` | route | 40 | - |
 | `Gi405RecDhImportExcelController` | class | 39 | `app/Http/Controllers/Import/Gi405RecDhImportExcelController.php:20` |
-| `initializeQueuedImportJobForExecution` | method | 39 | `app/Http/Controllers/Import/ImportExcelController.php:13685` |
+| `initializeQueuedImportJobForExecution` | method | 39 | `app/Http/Controllers/Import/ImportExcelController.php:13697` |
 | `ExcelStagingService` | class | 37 | `app/Services/Import/ExcelStagingService.php:7` |
-| `buildImportContext` | method | 37 | `app/Http/Controllers/Import/ImportExcelController.php:3728` |
-| `initExcelImport` | method | 36 | `app/Http/Controllers/Import/ImportExcelController.php:14139` |
-| `processImportStream` | method | 36 | `app/Http/Controllers/Import/ImportFileController.php:4983` |
-| `detectCsvDelimiter` | method | 35 | `app/Http/Controllers/Import/ImportExcelController.php:1004` |
-| `previewFilterOptions` | method | 35 | `app/Http/Controllers/Import/ImportFileController.php:3589` |
+| `buildImportContext` | method | 37 | `app/Http/Controllers/Import/ImportExcelController.php:3740` |
+| `initExcelImport` | method | 36 | `app/Http/Controllers/Import/ImportExcelController.php:14151` |
+| `processImportStream` | method | 36 | `app/Http/Controllers/Import/ImportFileController.php:4975` |
+| `detectCsvDelimiter` | method | 35 | `app/Http/Controllers/Import/ImportExcelController.php:1016` |
+| `previewFilterOptions` | method | 35 | `app/Http/Controllers/Import/ImportFileController.php:3581` |
 | `ImportCasaBrilinkController` | class | 33 | `app/Http/Controllers/Import/ImportCasaBrilinkController.php:22` |
 
 ## Route Nodes
@@ -171,6 +171,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `Gi405SingleRowRecoverySource` - `app/Support/Gi405SingleRowRecoverySource.php`
 - `Gi405SingleRowValueNormalizer` - `app/Services/Import/Gi405SingleRowValueNormalizer.php`
 - `HourlyDpkImportStrategy` - `app/Services/Import/Strategies/HourlyDpkImportStrategy.php`
+- `ImmediateImportRunner` - `app/Services/Import/ImmediateImportRunner.php`
+- `ImportBackgroundLauncher` - `app/Services/Import/ImportBackgroundLauncher.php`
 - `ImportCasaBrilinkController` - `app/Http/Controllers/Import/ImportCasaBrilinkController.php`
 - `ImportCleanupController` - `app/Http/Controllers/Import/ImportCleanupController.php`
 - `ImportCleanupService` - `app/Services/Import/ImportCleanupService.php`
@@ -214,8 +216,6 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `PerformanceBrimoController` - `app/Http/Controllers/PerformanceBrimoController.php`
 - `PerformancePisImportStrategy` - `app/Services/Import/Strategies/PerformancePisImportStrategy.php`
 - `PrepareCsvStagingJob` - `app/Jobs/PrepareCsvStagingJob.php`
-- `ProcessPolarsImportPhJob` - `app/Jobs/ProcessPolarsImportPhJob.php`
-- `QueueSupervisorProcessRunner` - `app/Services/Import/QueueSupervisorProcessRunner.php`
 
 ## Interface Nodes
 
@@ -295,16 +295,16 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Direction | Count |
 | --- | ---: |
 | import -> access-control (protected_by) | 1065 |
-| import -> core (calls) | 662 |
+| import -> core (calls) | 666 |
 | import -> core (instantiates) | 301 |
 | import -> core (accepts) | 227 |
 | database -> import (checks_table) | 47 |
 | import -> jobs-snapshots (calls) | 46 |
-| import -> core (reads_table) | 29 |
+| import -> core (reads_table) | 30 |
 | database -> import (defines_table) | 28 |
 | import -> core (extends) | 26 |
+| import -> jobs-snapshots (reads_table) | 23 |
 | core -> import (reads_table) | 23 |
-| import -> jobs-snapshots (reads_table) | 22 |
 | core -> import (calls) | 18 |
 | import -> jobs-snapshots (uses_trait) | 17 |
 | import -> jobs-snapshots (checks_table) | 16 |
@@ -314,11 +314,11 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | database -> import (uses_table) | 11 |
 | import -> jobs-snapshots (accepts) | 11 |
 | database -> import (alters_table) | 10 |
+| import -> core (checks_table) | 10 |
 | core -> import (injects) | 10 |
 | import -> dashboard-harian (accepts) | 10 |
 | import -> platform (extends_view) | 10 |
 | jobs-snapshots -> import (accepts) | 8 |
-| import -> core (checks_table) | 8 |
 | import -> platform (calls) | 8 |
 | dashboard-harian -> import (checks_table) | 8 |
 | dashboard-simpanan -> import (reads_table) | 7 |

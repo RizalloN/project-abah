@@ -32,6 +32,8 @@ export class SegmentMotion {
         this.readings = [];
         this.figureAnimations = new Map();
         this.layoutDirty = false;
+        this.readDirty = true;
+        this.openerBoxes = new Map();
         this.expressiveImpulse = 0;
         this.expressiveScroll = null;
         this.expressive = new ExpressiveMotion({ settle: (element) => {
@@ -41,7 +43,7 @@ export class SegmentMotion {
             this.set(element, '--sg-read', 1, '_sgRead');
             this.set(element, '--reading-enter', 1, '_readingEnter');
         } });
-        this.interaction = new InteractionMotion({ root: document.querySelector('.sg-main'), schedule: () => this.schedule(),
+        this.interaction = new InteractionMotion({ root: document.querySelector('.sg-main'), schedule: () => this.schedule(false),
             settle: (element) => this.expressive.takeover(element) });
         this.observer = 'IntersectionObserver' in window
             ? new IntersectionObserver((entries) => entries.forEach((entry) => {
@@ -66,7 +68,13 @@ export class SegmentMotion {
         document.addEventListener('click', (event) => {
             if (!reduceMotion()) this.expressive.interact(event.target, window.innerWidth <= 760);
         });
-        document.addEventListener('visibilitychange', () => { if (document.hidden) this.expressive.finishAll(); });
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                window.cancelAnimationFrame(this.frame);
+                this.frame = null;
+                this.expressive.finishAll();
+            } else this.measure();
+        });
         const preference = window.matchMedia('(prefers-reduced-motion: reduce)');
         preference.addEventListener('change', () => {
             document.documentElement.classList.toggle('sg-motion', !preference.matches);
@@ -97,6 +105,7 @@ export class SegmentMotion {
         }
         this.readings = [...document.querySelectorAll('.sg-deck [data-sg-motion]')];
         this.readings.forEach((element) => {
+            element._readingRoom = element.closest('[data-sg-segment]');
             if (element.dataset.readingSettled !== undefined) return;
             element.dataset.readingSettled = 'false';
             element.dataset.readingPhase = 'before';
@@ -136,7 +145,9 @@ export class SegmentMotion {
 
     measure(schedule = true) {
         this.readings.forEach((element) => { element._readingBox = measureReadingBox(element); });
+        this.openerBoxes = new Map(this.openers.map(element => [element, measureReadingBox(element)]));
         this.layoutDirty = false;
+        this.readDirty = true;
         if (schedule) this.schedule();
     }
 
@@ -200,13 +211,15 @@ export class SegmentMotion {
         window.requestAnimationFrame(step);
     }
 
-    schedule() {
+    schedule(read = true) {
+        this.readDirty ||= read;
+        if (document.hidden) return;
         if (this.frame !== null) return;
         this.frame = window.requestAnimationFrame((now) => {
             this.frame = null;
             if (this.layoutDirty) this.measure(false);
-            this.read();
-            if (this.interaction.update(now)) this.schedule();
+            if (this.readDirty) { this.readDirty = false; this.read(); }
+            if (this.interaction.update(now)) this.schedule(false);
         });
     }
 
@@ -228,7 +241,9 @@ export class SegmentMotion {
         const roomHead = document.querySelector('.sg-room-head:not([hidden])');
         const ceiling = Math.max(0, this.nav?.getBoundingClientRect().bottom || 0, rail?.getBoundingClientRect().bottom || 0, roomHead?.getBoundingClientRect().bottom || 0);
 
+        const activeRoom = document.querySelector('[data-sg-segment][data-room-active="true"]');
         this.readings.forEach((element) => {
+            if (activeRoom && element._readingRoom && element._readingRoom !== activeRoom) return;
             if (!element.isConnected || element.closest('[hidden], [inert], .is-panel-transition, .is-room-transition')) {
                 element._readingBox = null;
                 this.expressive.update(element, { active: false });
@@ -274,8 +289,11 @@ export class SegmentMotion {
         }
 
         this.openers.forEach((opener) => {
-            if (!measureReadingBox(opener)) return;
-            const rect = opener.getBoundingClientRect();
+            if (activeRoom && !activeRoom.contains(opener)) return;
+            const box = this.openerBoxes.get(opener) || measureReadingBox(opener);
+            if (!box) return;
+            this.openerBoxes.set(opener, box);
+            const rect = { top: box.top - scrollY, bottom: box.top + box.height - scrollY, height: box.height };
             if (rect.bottom < -viewport || rect.top > viewport * 2) return;
             this.set(opener, '--sp', still ? 1 : clamp01(-rect.top / Math.max(1, rect.height - viewport)), '_sp');
             // The title turns up as soon as the opener owns most of the screen, ahead of its figure.

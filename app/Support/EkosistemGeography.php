@@ -52,7 +52,7 @@ class EkosistemGeography
         $bottom = max(array_column($projected, 1)) + 25;
         $result['viewBox'] = implode(' ', array_map(static fn ($n) => round($n, 2), [$left, $top, $right - $left, $bottom - $top]));
         $result['north'] = ['x' => round($right - 14, 2), 'y' => round($top + 50, 2)];
-        $palette = ['madiun' => '#0857c3', 'magetan' => '#11849a', 'ngawi' => '#5b64b7', 'ponorogo' => '#317b59'];
+        $palette = ['madiun' => '#307fe2', 'magetan' => '#6aa5eb', 'ngawi' => '#8bc0f2', 'ponorogo' => '#a8d5f6'];
         foreach ($regions as $key => $polygons) {
             $paths = [];
             $vertices = [];

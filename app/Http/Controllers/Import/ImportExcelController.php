@@ -536,7 +536,9 @@ class ImportExcelController extends Controller
 
         $bestIndex = null;
         $bestScore = 0;
+        $periodHeaderIndex = null;
         $dbColumnsLookup = [];
+        $guard = $this->smartGuardService();
 
         if ($tableName && $this->cachedSchemaHasTable($tableName)) {
             $dbColumnsLookup = array_fill_keys(
@@ -546,17 +548,23 @@ class ImportExcelController extends Controller
         }
 
         foreach ($rows as $i => $row) {
-            $rowUpper = array_map(fn($v) => strtoupper(trim((string) $v)), $row);
+            $labels = array_filter((array) $row, static fn ($value): bool => trim((string) $value) !== '');
+            $textLabels = array_filter($labels, static fn ($value): bool => ! $guard->isDateLikeValue(trim((string) $value))
+                && ! $guard->isCurrencyOrDecimalAmount(trim((string) $value)));
+            if (count($textLabels) < 2 || count($textLabels) / max(1, count($labels)) < 0.6) {
+                continue;
+            }
+            $rowUpper = array_map(fn ($value): string => $guard->normalizeHeaderName((string) $value), $textLabels);
             if (in_array('PERIODE', $rowUpper, true) || in_array('POSISI', $rowUpper, true)) {
-                return $i;
+                $periodHeaderIndex ??= $i;
             }
 
             if (empty($dbColumnsLookup)) {
                 continue;
             }
 
-            $score = 0;
-            foreach ($row as $cell) {
+            $matchedColumns = [];
+            foreach ($textLabels as $cell) {
                 $header = trim((string) $cell);
                 if ($header === '') {
                     continue;
@@ -564,12 +572,13 @@ class ImportExcelController extends Controller
 
                 foreach ($this->getHeaderDatabaseCandidates($header) as $candidateColumn) {
                     if (isset($dbColumnsLookup[$candidateColumn])) {
-                        $score++;
+                        $matchedColumns[$candidateColumn] = true;
                         break;
                     }
                 }
             }
 
+            $score = count($matchedColumns);
             if ($score > $bestScore) {
                 $bestScore = $score;
                 $bestIndex = $i;
@@ -578,6 +587,9 @@ class ImportExcelController extends Controller
 
         if ($bestScore >= 2) {
             return $bestIndex;
+        }
+        if ($periodHeaderIndex !== null) {
+            return $periodHeaderIndex;
         }
 
         // Fallback: Smart content-aware header detection when headers are renamed
@@ -10158,7 +10170,7 @@ class ImportExcelController extends Controller
         $tableName = $this->resolveActiveTableName();
         
         // Delimiter dari cache atau detect
-        $delimiterCacheKey = "csv_delimiter:" . md5($path . filesize($path));
+        $delimiterCacheKey = 'csv_delimiter:v2:'.md5($path.'|'.filesize($path).'|'.filemtime($path));
         $delimiter = Cache::get($delimiterCacheKey);
         if ($delimiter === null) {
             $delimiter = $this->detectCsvDelimiter($path);
@@ -10390,7 +10402,7 @@ class ImportExcelController extends Controller
         }
         
         // OPTIMIZATION 1: Cache delimiter detection (expensive operation)
-        $cacheKey = "csv_delimiter:" . md5($path . filesize($path));
+        $cacheKey = 'csv_delimiter:v2:'.md5($path.'|'.filesize($path).'|'.filemtime($path));
         $delimiter = Cache::get($cacheKey);
         if ($delimiter === null) {
             $delimiter = $this->detectCsvDelimiter($path);
@@ -10689,7 +10701,7 @@ class ImportExcelController extends Controller
 
     private function prepareLw321PnCsvPreviewFastPath(string $path): array
     {
-        $delimiterCacheKey = 'csv_delimiter:' . md5($path . (@filesize($path) ?: 0));
+        $delimiterCacheKey = 'csv_delimiter:v2:'.md5($path.'|'.(@filesize($path) ?: 0).'|'.filemtime($path));
         $delimiter = Cache::get($delimiterCacheKey);
         if ($delimiter === null) {
             $delimiter = $this->detectCsvDelimiter($path);
@@ -10791,7 +10803,7 @@ class ImportExcelController extends Controller
 
     private function prepareGi405CsvPreviewFastPath(string $path): array
     {
-        $delimiterCacheKey = 'csv_delimiter:' . md5($path . (@filesize($path) ?: 0));
+        $delimiterCacheKey = 'csv_delimiter:v2:'.md5($path.'|'.(@filesize($path) ?: 0).'|'.filemtime($path));
         $delimiter = Cache::get($delimiterCacheKey);
         if ($delimiter === null) {
             $delimiter = $this->detectCsvDelimiter($path);

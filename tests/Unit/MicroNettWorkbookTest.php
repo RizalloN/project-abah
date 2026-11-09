@@ -17,8 +17,8 @@ class MicroNettWorkbookTest extends TestCase
             ],
             'contract' => [
                 [-20_000_000, 'extreme_low'], [0, 'none'], [1, 'extreme_low'],
-                [174_999_999, 'extreme_low'], [175_000_000, 'low'], [350_000_000, 'low'],
-                [350_000_001, 'mid'], [450_000_000, 'mid'], [450_000_001, 'high'],
+                [349_999_999, 'extreme_low'], [350_000_000, 'low'], [600_000_000, 'low'],
+                [600_000_001, 'mid'], [800_000_000, 'mid'], [800_000_001, 'high'],
             ],
         ];
         $roster = [];
@@ -48,6 +48,7 @@ class MicroNettWorkbookTest extends TestCase
             $this->assertSame(['none' => 1, 'extreme_low' => 3, 'low' => 2, 'mid' => 2, 'high' => 1], $buckets->map(fn (array $bucket): int => $bucket['mantri'])->all());
             $this->assertEqualsWithDelta(100, $buckets->sum('share'), 0.00001);
         }
+        $this->assertSame(['Nett = Rp0', '<350 jt', '350 - 600 jt', '>600 - 800 jt', '>800 jt'], array_column($result['total']['tiers']['contract']['buckets'], 'range'));
     }
 
     public function test_all_sheets_reconcile_nett_and_include_zero_roster_without_fabricating_gross(): void

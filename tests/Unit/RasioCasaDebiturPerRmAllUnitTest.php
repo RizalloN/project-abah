@@ -4,6 +4,7 @@ namespace Tests\Unit;
 
 use App\Http\Controllers\RasioCasaDebiturController;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
@@ -148,6 +149,98 @@ class RasioCasaDebiturPerRmAllUnitTest extends TestCase
         $this->assertArrayNotHasKey('RM BETA', $snapshot['os']);
         $this->assertEqualsWithDelta(1000.0, $snapshot['os']['RM ALPHA']['total'], 0.001);
         $this->assertEqualsWithDelta(100.0, $snapshot['casa']['RM ALPHA']['total'], 0.001);
+    }
+
+    public function test_same_pn_aliases_merge_without_duplicating_shared_cif_casa_or_other_people(): void
+    {
+        $labels = ['00385933 -', '385933 - ROFIIQOH AFFIF NISRINA', '00999999 - ROFIIQOH AFFIF NISRINA'];
+        foreach ($labels as $index => $label) {
+            DB::table('daily_loan_dinamis')->insert([
+                'periode' => '2026-05-31',
+                'cabang1' => 'MADIUN',
+                'unit1' => $index === 1 ? 'UNIT B' : 'UNIT A',
+                'pn_pengelola1' => $label,
+                'cifno' => 'SHARED',
+                'baki_debet1' => [300, 700, 1000][$index],
+                'segmen_dashboard' => 'Micro',
+                'produk_dashboard' => 'Kupedes',
+            ]);
+        }
+        DB::table('simpanan_multipn')->insert([
+            'posisi' => '2026-05-31',
+            'CIFNO' => 'SHARED',
+            'kantor_cabang' => 'KC MADIUN',
+            'unit_kerja' => 'UNIT A',
+            'jenis_simpanan' => 'TABUNGAN',
+            'saldo_idr' => 500,
+        ]);
+
+        $snapshot = $this->buildRmSnapshot('2026-05-31', 'MADIUN', 'ALL UKER');
+
+        $this->assertSame('00385933 - ROFIIQOH AFFIF NISRINA', $snapshot['branch_labels']['PN:385933']);
+        $this->assertSame(['UNIT A', 'UNIT B'], $snapshot['rm_units']['PN:385933']);
+        $this->assertEqualsWithDelta(1000, $snapshot['os']['PN:385933']['total'], 0.001);
+        $this->assertEqualsWithDelta(250, $snapshot['casa']['PN:385933']['total'], 0.001);
+        $this->assertEqualsWithDelta(250, $snapshot['casa']['PN:999999']['total'], 0.001);
+        $this->assertEqualsWithDelta(5500, array_sum(array_column($snapshot['os'], 'total')), 0.001);
+        $this->assertEqualsWithDelta(1050, array_sum(array_column($snapshot['casa'], 'total')), 0.001);
+        $this->assertCount(4, $snapshot['os']);
+
+        $unitSnapshot = $this->buildRmSnapshot('2026-05-31', 'MADIUN', 'UNIT B');
+        $this->assertSame(['UNIT B'], $unitSnapshot['rm_units']['PN:385933']);
+        $this->assertEqualsWithDelta(700, $unitSnapshot['os']['PN:385933']['total'], 0.001);
+    }
+
+    public function test_report_merges_pn_across_all_comparison_periods_and_uses_latest_unit_and_available_name(): void
+    {
+        $positions = [
+            ['2025-12-31', '00385933 -', 'UNIT B', 1000],
+            ['2026-08-31', '385933', 'UNIT A', 2000],
+            ['2026-09-30', '00385933 - ROFIIQOH AFFIF NISRINA', 'UNIT A', 3000],
+            ['2026-10-31', '00385933 -', 'UNIT A', 4000],
+        ];
+        foreach ($positions as [$period, $label, $unit, $balance]) {
+            DB::table('daily_loan_dinamis')->insert([
+                'periode' => $period,
+                'cabang1' => 'MADIUN',
+                'unit1' => $unit,
+                'pn_pengelola1' => $label,
+                'cifno' => 'MERGED',
+                'baki_debet1' => $balance,
+                'segmen_dashboard' => 'Micro',
+                'produk_dashboard' => 'Kupedes',
+            ]);
+            DB::table('simpanan_multipn')->insert([
+                'posisi' => $period,
+                'CIFNO' => 'MERGED',
+                'kantor_cabang' => 'KC MADIUN',
+                'unit_kerja' => $unit,
+                'jenis_simpanan' => 'TABUNGAN',
+                'saldo_idr' => $balance / 10,
+            ]);
+        }
+
+        $request = Request::create('/report/data/rasiocasa-per-rm', 'POST', [
+            'posisi' => '2026-10-31',
+            'cabang1' => 'MADIUN',
+            'unit1' => 'ALL UKER',
+        ]);
+        $response = (new RasioCasaDebiturController())->fetchDataPerRm($request);
+        $payload = $response->getData(true);
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame('success', $payload['status']);
+        $this->assertCount(1, $payload['data']);
+        $row = $payload['data'][0];
+        $this->assertSame('00385933 - ROFIIQOH AFFIF NISRINA', $row['branch']);
+        $this->assertSame('UNIT A', $row['unit_kerja']);
+        foreach (['ytd' => 1000, 'm2' => 2000, 'prev' => 3000, 'curr' => 4000] as $position => $balance) {
+            $this->assertEqualsWithDelta($balance, $row['total']['os_' . $position], 0.001);
+            $this->assertEqualsWithDelta($balance / 10, $row['total']['casa_' . $position], 0.001);
+            $this->assertEqualsWithDelta(10, $row['total']['rasio_' . $position], 0.001);
+            $this->assertEqualsWithDelta($balance, $payload['total']['total']['os_' . $position], 0.001);
+        }
+        $this->assertEqualsWithDelta(0, $row['total']['mtd'], 0.001);
     }
 
     private function buildRmSnapshot(string $period, string $branch, string $unit): array

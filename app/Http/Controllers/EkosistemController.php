@@ -37,7 +37,7 @@ class EkosistemController extends Controller
         'ponorogo' => 'Ponorogo',
     ];
 
-    public const JALUR_RM = ['RMFT', 'RM SME', 'RM Konsumer', 'KUR Mikro & Mantri'];
+    public const JALUR_RM = ['RMFT', 'RM SME', 'RM Konsumer', 'RM Mikro', 'Mantri'];
 
     public const STATUS = ['Belum mulai', 'Berjalan', 'Tertunda', 'Selesai', 'Batal'];
 
@@ -137,18 +137,19 @@ class EkosistemController extends Controller
         }
         $branches = [];
         $matrix = [];
+        $jalurOptions = array_values(array_unique(array_merge(self::JALUR_RM, $choices['jalur'])));
         foreach ($kcOptions as $key => $label) {
             if ($key === 'all') {
                 continue;
             }
             $rows = array_values(array_filter($contextRows, static fn (array $row): bool => mb_strtolower($row['KC'] ?? '') === $key));
             $branches[$key] = ['label' => $label, 'stats' => $monitor->stats($rows)];
-            foreach (self::JALUR_RM as $jalur) {
+            foreach ($jalurOptions as $jalur) {
                 $matrix[$key][$jalur] = $monitor->stats(array_values(array_filter($rows, static fn (array $row): bool => ($row['Jalur_RM'] ?? '') === $jalur)));
             }
         }
         $view = $request->query('view', 'overview');
-        $activeView = in_array($view, ['overview', 'monitor', 'prospects', 'ecosystems'], true) ? $view : 'overview';
+        $activeView = in_array($view, ['overview', 'monitor', 'followup', 'prospects', 'ecosystems'], true) ? $view : 'overview';
         $page = max(1, (int) $request->integer('page', 1));
         $page = min($page, max(1, (int) ceil(count($prospects) / 20)));
         $paginator = new LengthAwarePaginator(array_slice($prospects, ($page - 1) * 20, 20), count($prospects), 20, $page, ['path' => route('ekosistem.index'), 'query' => array_merge($filters, ['view' => 'prospects'])]);
@@ -156,6 +157,26 @@ class EkosistemController extends Controller
         $picPage = min(max(1, $request->integer('pic_page', 1)), max(1, (int) ceil(count($picGroups) / 20)));
         $picPaginator = new LengthAwarePaginator(array_slice($picGroups, ($picPage - 1) * 20, 20), count($picGroups), 20, $picPage,
             ['path' => route('ekosistem.index'), 'query' => array_merge($filters, ['view' => 'monitor']), 'pageName' => 'pic_page']);
+
+        $followupFilter = $request->query('followup', 'all');
+        $followupFilter = in_array($followupFilter, ['all', 'followup', 'offer', 'empty'], true) ? $followupFilter : 'all';
+        $followupRows = [];
+        $followupSummary = ['total' => count($prospects), 'followup' => 0, 'offer' => 0, 'empty' => 0];
+        foreach ($prospects as $row) {
+            $fields = $monitor->recordedFields($row);
+            $hasFollowup = $fields['followup'] !== [];
+            $hasOffer = $fields['offer'] !== [];
+            $followupSummary['followup'] += (int) $hasFollowup;
+            $followupSummary['offer'] += (int) $hasOffer;
+            $followupSummary['empty'] += (int) (! $hasFollowup && ! $hasOffer);
+            if ($followupFilter === 'all' || ($followupFilter === 'followup' && $hasFollowup)
+                || ($followupFilter === 'offer' && $hasOffer) || ($followupFilter === 'empty' && ! $hasFollowup && ! $hasOffer)) {
+                $followupRows[] = $row + ['Monitoring_Fields' => $fields];
+            }
+        }
+        $followupPage = min(max(1, $request->integer('tl_page', 1)), max(1, (int) ceil(count($followupRows) / 20)));
+        $followupPaginator = new LengthAwarePaginator(array_slice($followupRows, ($followupPage - 1) * 20, 20), count($followupRows), 20, $followupPage,
+            ['path' => route('ekosistem.index'), 'query' => array_merge($filters, ['view' => 'followup', 'followup' => $followupFilter]), 'pageName' => 'tl_page']);
 
         $prospectIds = array_flip(array_column($prospects, 'ID_Prospek'));
         $activity = array_values(array_filter(
@@ -172,7 +193,7 @@ class EkosistemController extends Controller
             'ecosystems' => $this->summarizeEcosystems($ecosystems, $prospects),
             'prospects' => $prospects,
             'activity' => array_slice($activity, 0, 20),
-            'jalurOptions' => self::JALUR_RM,
+            'jalurOptions' => $jalurOptions,
             'statusOptions' => self::STATUS,
             'ringOptions' => self::RING,
             'fetchedAt' => $source['fetched_at'] ?? null,
@@ -185,12 +206,16 @@ class EkosistemController extends Controller
             'matrix' => $matrix,
             'picGroups' => $picGroups,
             'picPaginator' => $picPaginator,
+            'followupPaginator' => $followupPaginator,
+            'followupSummary' => $followupSummary,
+            'followupFilter' => $followupFilter,
             'priority' => $monitor->priority($prospects),
             'paginator' => $paginator,
             'geography' => (new EkosistemGeography)->build(array_keys($branches)),
             'allEcosystems' => $accessibleEcosystems,
             'conditions' => EkosistemMonitoring::CONDITIONS,
             'statusCounts' => $monitor->stats($prospects)['statuses'],
+            'chartData' => $monitor->chartData($prospects, $today),
         ]);
     }
 

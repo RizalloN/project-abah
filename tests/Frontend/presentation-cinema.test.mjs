@@ -108,3 +108,18 @@ test('the film is imported last and needs no Blade change, so the live page cann
     const view = source('views/presentation/segments.blade.php');
     assert.doesNotMatch(view, /sg-flight|sg-atmos|sg-seam/);
 });
+
+test('a flight whose GPU scene is gone skips to the room instead of holding a blank sky', () => {
+    const cinema = Object.create(PresentationCinema.prototype);
+    const added = [];
+    let finished = null;
+    const flight = { skipped: false, readyToLand: true, startedAt: 0, previous: null, slow: 0, items: [],
+        stage: { classList: { add: (name) => added.push(name) } } };
+    let ended = 0;
+    Object.assign(cinema, { flight, studio: { canFly: () => false, endFlight: () => { ended++; } }, finishFlight: (glided) => { finished = glided; } });
+    cinema.flightTick(16);
+    assert.equal(flight.skipped, true);
+    assert.equal(ended, 1);
+    assert.deepEqual(added, ['is-skipped']);
+    assert.equal(finished, false, 'with the deck ready, the stage leaves at once');
+});

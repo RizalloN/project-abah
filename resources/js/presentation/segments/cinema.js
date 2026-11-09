@@ -153,6 +153,8 @@ export class PresentationCinema {
     flightTick(now) {
         const flight = this.flight;
         if (!flight || flight.skipped) return;
+        // A lost GPU context takes the planet with it; the room's poster map is what remains to land on.
+        if (!this.studio.canFly()) { this.skipFlight(); return; }
         const elapsed = now - flight.startedAt;
         // A machine that cannot hold the planet goes straight to the room.
         if (flight.previous !== null && now - flight.previous > 70) flight.slow += 1;

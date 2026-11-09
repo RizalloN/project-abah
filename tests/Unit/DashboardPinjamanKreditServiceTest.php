@@ -488,6 +488,104 @@ class DashboardPinjamanKreditServiceTest extends TestCase
         $this->assertEqualsWithDelta(245_000_000, $grandTotal['selected'], 0.01);
     }
 
+    public function test_restructured_split_follows_requested_order_and_lar_adds_up_from_displayed_quality(): void
+    {
+        $current = $this->snapshotRow('2026-05-15', 'KC Madiun', 1_000_000_000);
+        $current['kecil_non_cashcoll_sml'] = 100_000_000;
+        $current['kecil_non_cashcoll_npl'] = 50_000_000;
+        $current['kecil_non_cashcoll_lr'] = 200_000_000;
+        $current['kecil_non_cashcoll_lnr'] = 650_000_000;
+        $monthEnd = $this->snapshotRow('2026-04-30', 'KC Madiun', 900_000_000);
+        $monthEnd['kecil_non_cashcoll_sml'] = 90_000_000;
+        $monthEnd['kecil_non_cashcoll_npl'] = 40_000_000;
+        $monthEnd['kecil_non_cashcoll_lr'] = 170_000_000;
+        $monthEnd['kecil_non_cashcoll_lnr'] = 600_000_000;
+        // Built before the split existed: its kol-1 balance has no LR/LNR at all.
+        $yearEnd = $this->snapshotRow('2025-12-31', 'KC Madiun', 800_000_000);
+
+        DB::table('dashboard_harian_snapshots')->insert([$current, $monthEnd, $yearEnd]);
+
+        $payload = app(DashboardPinjamanKreditService::class)->getUnifiedSegmentData('2026-05-15', 'SME', 'KC Madiun');
+        $row = fn (string $type): array => collect($payload[$type])->first(fn (array $item): bool => ($item['category'] ?? '') === 'Kecil non Cashcoll');
+        $total = fn (string $type): array => collect($payload[$type])->firstWhere('is_total', true);
+
+        $this->assertSame(['os', 'lr', 'lnr', 'sml', 'npl'], array_slice(array_keys($payload), 0, 5));
+        $this->assertArrayHasKey('lar', $payload);
+        $this->assertEqualsWithDelta(200_000_000, $row('lr')['selected'], 0.01);
+        $this->assertEqualsWithDelta(650_000_000, $row('lnr')['selected'], 0.01);
+        $this->assertEqualsWithDelta(
+            $row('os')['selected'],
+            $row('lr')['selected'] + $row('lnr')['selected'] + $row('sml')['selected'] + $row('npl')['selected'],
+            0.01
+        );
+        $this->assertEqualsWithDelta(350_000_000, $row('lar')['selected'], 0.01, 'LAR = LR + SML + NPL');
+        $this->assertEqualsWithDelta(300_000_000, $row('lar')['mtd'], 0.01);
+        $this->assertEqualsWithDelta(50_000_000, $row('lar')['delta_mtd'], 0.01);
+        $this->assertEqualsWithDelta(30_000_000, $row('lr')['delta_mtd'], 0.01);
+        $this->assertEqualsWithDelta(350_000_000, $total('lar')['selected'], 0.01);
+
+        $this->assertNull($row('lr')['ytd'], 'a period without the split is unknown, never zero');
+        $this->assertNull($row('lr')['delta_ytd']);
+        $this->assertNull($row('lar')['ytd']);
+        $this->assertNull($total('lnr')['ytd']);
+        $this->assertEqualsWithDelta(800_000_000, $row('os')['ytd'], 0.01, 'OS keeps its own history');
+
+        foreach (['lr', 'lnr', 'lar'] as $type) {
+            $this->assertNull($row($type)['penc_cur_pct'], "{$type} without an RKAP row has no achievement");
+        }
+        $this->assertNull($total('lnr')['rka_current'], 'LNR has no RKAP line');
+    }
+
+    public function test_lr_and_lar_targets_sum_every_office_and_sme_lar_splits_by_collateral(): void
+    {
+        $row = $this->snapshotRow('2026-05-15', 'KC Madiun', 1_000_000_000);
+        $row['kecil_non_cashcoll_sml'] = 100_000_000;
+        $row['kecil_non_cashcoll_npl'] = 50_000_000;
+        $row['kecil_non_cashcoll_lr'] = 200_000_000;
+        $row['kecil_non_cashcoll_lnr'] = 650_000_000;
+        DB::table('dashboard_harian_snapshots')->insert([$row]);
+
+        $budget = fn (string $uker, string $line, int $may): array => [
+            'kanca' => 'KC Madiun', 'desc_uker' => $uker, 'mata_anggaran' => $line,
+            'apr' => 0, 'may' => $may, 'dec' => $may, 'created_at' => '2026-01-01 00:00:00',
+        ];
+        // The KC office row is an office of its own for these lines, not a consolidation of its KCPs.
+        DB::table('rka')->insert([
+            $budget('45-KC Madiun', 'Restru Lancar Rp Non Cash Collateral', 300_000_000),
+            $budget('552-KCP Caruban', 'Restru Lancar Rp Non Cash Collateral', 100_000_000),
+            $budget('45-KC Madiun', 'Restru Lancar Rp Small', 300_000_000),
+            $budget('552-KCP Caruban', 'Restru Lancar Rp Small', 100_000_000),
+            $budget('45-KC Madiun', 'DPK Rp Kecil Non Cash Collateral', 60_000_000),
+            $budget('45-KC Madiun', 'NPL Rp Kecil Non Cash Collateral', 30_000_000),
+            $budget('45-KC Madiun', 'NPL Rp Kecil Cash Collateral', 5_000_000),
+            $budget('552-KCP Caruban', 'DPK Rp Kecil Non Cash Collateral', 5_000_000),
+            // LAR Rp Small = Restru Lancar + DPK + NPL over both collateral types.
+            $budget('45-KC Madiun', 'LAR Rp Small', 395_000_000),
+            $budget('552-KCP Caruban', 'LAR Rp Small', 105_000_000),
+        ]);
+
+        $payload = app(DashboardPinjamanKreditService::class)->getUnifiedSegmentData('2026-05-15', 'SME');
+        $row = fn (string $type): array => collect($payload[$type])->first(fn (array $item): bool => ($item['branch'] ?? '') === 'KC Madiun' && ($item['category'] ?? '') === 'Kecil non Cashcoll');
+        $total = fn (string $type): array => collect($payload[$type])->firstWhere('is_total', true);
+
+        $this->assertEqualsWithDelta(400_000_000, $row('lr')['rka_current'], 0.01);
+        $this->assertEqualsWithDelta(400_000_000, $total('lr')['rka_current'], 0.01);
+        $this->assertEqualsWithDelta(-200_000_000, $row('lr')['penc_cur_rp'], 0.01, 'LR below target');
+        $this->assertEqualsWithDelta(200.0, $row('lr')['penc_cur_pct'], 0.01, 'quality direction: target / actual');
+
+        $cash = collect($payload['lar'])->first(fn (array $item): bool => ($item['branch'] ?? '') === 'KC Madiun' && ($item['category'] ?? '') === 'Cashcoll');
+        $this->assertEqualsWithDelta(495_000_000, $row('lar')['rka_current'], 0.01, 'Non Cash: Restru Lancar 400 + DPK 65 + NPL 30');
+        $this->assertEqualsWithDelta(5_000_000, $cash['rka_current'], 0.01, 'Cash: its own NPL line');
+        $this->assertEqualsWithDelta(500_000_000, $row('lar')['segment_rka_current'], 0.01);
+        $this->assertEqualsWithDelta($row('lar')['segment_rka_current'], $row('lar')['rka_current'] + $cash['rka_current'], 0.01);
+        $this->assertEqualsWithDelta(500_000_000, $total('lar')['rka_current'], 0.01, 'each office once, not per category row');
+        $this->assertEqualsWithDelta(350_000_000, $total('lar')['selected'], 0.01);
+        $this->assertEqualsWithDelta(-150_000_000, $total('lar')['penc_cur_rp'], 0.01);
+
+        $this->assertNull($total('lnr')['rka_current']);
+        $this->assertNull($row('lnr')['penc_cur_pct']);
+    }
+
     private function snapshotRow(string $period, string $branch, int $os, int $cashcollOs = 0, ?string $unitKey = null, ?string $unitLabel = null): array
     {
         $kancaKey = strtolower(str_replace(' ', '-', $branch));
@@ -563,6 +661,26 @@ class DashboardPinjamanKreditServiceTest extends TestCase
             'kur_mikro_npl',
             'kur_kecil_npl',
             'kur_kpp_npl',
+            'kecil_non_cashcoll_lr',
+            'cashcoll_lr',
+            'briguna_konsumer_lr',
+            'kpr_lr',
+            'kkb_lr',
+            'briguna_mikro_lr',
+            'kupedes_lr',
+            'kur_mikro_lr',
+            'kur_kecil_lr',
+            'kur_kpp_lr',
+            'kecil_non_cashcoll_lnr',
+            'cashcoll_lnr',
+            'briguna_konsumer_lnr',
+            'kpr_lnr',
+            'kkb_lnr',
+            'briguna_mikro_lnr',
+            'kupedes_lnr',
+            'kur_mikro_lnr',
+            'kur_kecil_lnr',
+            'kur_kpp_lnr',
         ];
     }
 }

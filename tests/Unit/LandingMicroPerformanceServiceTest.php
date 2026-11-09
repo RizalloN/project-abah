@@ -948,7 +948,7 @@ class LandingMicroPerformanceServiceTest extends TestCase
     {
         $cases = [
             'pt' => [[-1, 'extreme_low'], [0, 'none'], [1, 'extreme_low'], [399_999_999, 'extreme_low'], [400_000_000, 'low'], [800_000_000, 'low'], [800_000_001, 'mid'], [1_000_000_000, 'mid'], [1_000_000_001, 'high']],
-            'contract' => [[-1, 'extreme_low'], [0, 'none'], [1, 'extreme_low'], [174_999_999, 'extreme_low'], [175_000_000, 'low'], [350_000_000, 'low'], [350_000_001, 'mid'], [450_000_000, 'mid'], [450_000_001, 'high']],
+            'contract' => [[-1, 'extreme_low'], [0, 'none'], [1, 'extreme_low'], [349_999_999, 'extreme_low'], [350_000_000, 'low'], [600_000_000, 'low'], [600_000_001, 'mid'], [800_000_000, 'mid'], [800_000_001, 'high']],
         ];
         foreach ($cases as $category => $values) {
             $people = collect();
@@ -960,6 +960,9 @@ class LandingMicroPerformanceServiceTest extends TestCase
             }
             $payload = $this->invokePrivate(app(LandingMicroPerformanceService::class), 'mantriTierPayload', [$people, $metrics, $category]);
             $buckets = collect($payload['buckets'])->keyBy('key');
+            if ($category === 'contract') {
+                $this->assertSame(['Belum Realisasi', 'Extreme Low < 350 jt', 'Low 350 - 600 jt', 'Mid >600 - 800 jt', 'High > 800 jt'], $buckets->pluck('label')->all());
+            }
             $this->assertSame(['none' => 1, 'extreme_low' => 3, 'low' => 2, 'mid' => 2, 'high' => 1], $buckets->map(fn (array $bucket): int => $bucket['mantri'])->all());
             foreach ($values as $index => [$amount, $tier]) {
                 $person = collect($buckets->get($tier)['people'])->firstWhere('pn', (string) ($index + 1));

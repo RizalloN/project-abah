@@ -114,12 +114,15 @@ trait SmartCsvImportSupport
                     $counts[] = count($parsed);
                 }
 
-                $maxCount = max($counts);
-                $minCount = min($counts);
-                $avgCount = array_sum($counts) / max(count($counts), 1);
-                $stableRows = count(array_filter($counts, static fn (int $count): bool => $count === $maxCount));
-
-                $score = ($maxCount * 1000) + ($stableRows * 100) - (($maxCount - $minCount) * 20) + (int) round($avgCount);
+                // Prefer repeated record widths over a single comma-heavy title
+                // or punctuation inside a value. One-column parses are not evidence.
+                $widths = array_count_values(array_filter($counts, static fn (int $count): bool => $count > 1));
+                if ($widths === []) {
+                    continue;
+                }
+                $stableRows = max($widths);
+                $modalWidth = max(array_keys($widths, $stableRows, true));
+                $score = ($stableRows / count($counts)) * 1000 + log($modalWidth, 2) * 20;
                 if ($score > $bestScore) {
                     $bestScore = $score;
                     $bestDelimiter = $delimiter;

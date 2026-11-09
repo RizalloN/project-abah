@@ -233,6 +233,11 @@
         top: var(--abah-table-head-top, 41px);
         z-index: 9;
     }
+
+    .table-report thead tr.bg-header-sub > th:not(.rka-col) {
+        background: #274bba !important;
+        color: #ffffff !important;
+    }
     
     .col-block { background-color: #f1f5f9; } /* slate-100 */
     .rka-col { background-color: #fffbeb !important; color: #b45309 !important; } /* amber-50 / amber-700 */

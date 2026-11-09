@@ -15,6 +15,8 @@
  * click on a kecamatan focuses (its branch from the Area, its unit from a branch).
  */
 
+import { deviceEnvironment, deviceProfile, FrameBudget } from '../segments/device-runtime.js';
+
 const reduceMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const finePointer = () => window.matchMedia('(hover: hover) and (pointer: fine)').matches;
 const clamp01 = (value) => Math.min(1, Math.max(0, value));
@@ -59,6 +61,10 @@ export class TerritoryStudio {
         this.features = [];
         this.scene = null;
         this.frame = null;
+        this.idleTimer = null;
+        this.budget = new FrameBudget();
+        this.profile = deviceProfile();
+        this.continuous = false;
         this.lastTime = null;
         this.time = 0;
         this.rect = null;
@@ -79,10 +85,12 @@ export class TerritoryStudio {
         this.clip = null;
         this.lastPose = null;
         this.arrival = null;
+        this.rebuilds = 0;
         this.ready = new Promise((resolve) => { this.resolveReady = resolve; });
     }
 
     init() {
+        this.profile = deviceProfile(deviceEnvironment());
         this.webgl = 'IntersectionObserver' in window && supportsWebGL();
         document.documentElement.classList.add(this.webgl ? 'sg-relief-on' : 'sg-relief-off');
         this.layer = this.element('div', 'sg-relief');
@@ -93,7 +101,19 @@ export class TerritoryStudio {
         this.bindPointer();
         window.addEventListener('scroll', () => this.kick(), { passive: true });
         window.addEventListener('resize', () => { this.scene?.resize(window.innerWidth, window.innerHeight); this.kick(); }, { passive: true });
-        document.addEventListener('visibilitychange', () => this.kick());
+        document.addEventListener('visibilitychange', () => {
+            window.cancelAnimationFrame(this.frame);
+            window.clearTimeout(this.idleTimer);
+            this.frame = this.idleTimer = null;
+            this.lastTime = null;
+            this.continuous = false;
+            this.budget.reset();
+            this.kick();
+        });
+        window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', () => {
+            this.profile = deviceProfile(deviceEnvironment());
+            this.kick();
+        });
         this.load();
     }
 
@@ -112,20 +132,12 @@ export class TerritoryStudio {
             this.paintPosters();
             this.resolveReady(this.features);
             if (!this.webgl || !this.features.length) return;
-            const { ReliefScene } = await import('./relief.js');
-            this.canvas = document.createElement('canvas');
-            this.layer.append(this.canvas);
-            this.scene = new ReliefScene(this.canvas, this.features, { maxPixelRatio: finePointer() ? 1.75 : 1.5, dustCount: finePointer() ? 900 : 420 });
-            // The presentation uses a quiet atlas, without the shared scene's orbiting bezel/satellites.
-            this.scene.fx.rings.visible = false;
-            // Nothing circles, pulses or lifts under the pointer: hover only names the kecamatan.
-            this.scene.fx.calm = true;
-            this.scene.quietHover = true;
-            this.scene.resize(window.innerWidth, window.innerHeight);
-            this.scene.precompile();
-            this.appliedKey = null;
-            document.documentElement.classList.add('sg-relief-live');
-            this.kick();
+            // The SVG map and controls can paint before downloading/compiling the GPU enhancement.
+            await new Promise(resolve => {
+                if (window.requestIdleCallback) window.requestIdleCallback(resolve, { timeout: 900 });
+                else window.setTimeout(resolve, 0);
+            });
+            await this.buildScene();
         } catch (error) {
             console.warn('Territory relief fell back to its poster.', error);
             this.resolveReady(this.features);
@@ -133,6 +145,66 @@ export class TerritoryStudio {
             document.documentElement.classList.replace('sg-relief-on', 'sg-relief-off');
             this.kick();
         }
+    }
+
+    async buildScene() {
+        let pendingScene = null;
+        const canvas = document.createElement('canvas');
+        try {
+            const { ReliefScene } = await import('./relief.js');
+            this.canvas = canvas;
+            this.layer.append(canvas);
+            // The GPU may drop the context (driver reset, memory pressure from the Earth textures).
+            // Three.js cannot rebuild this scene's targets, so the poster takes over until a new one is ready.
+            canvas.addEventListener('webglcontextlost', (event) => {
+                event.preventDefault();
+                if (this.canvas === canvas) this.dropScene();
+            });
+            canvas.addEventListener('webglcontextrestored', () => {
+                if (this.canvas !== canvas || this.scene) return;
+                canvas.remove();
+                if (++this.rebuilds <= 2) this.buildScene().catch(() => {});
+            });
+            pendingScene = new ReliefScene(canvas, this.features, this.profile);
+            // The presentation uses a quiet atlas, without the shared scene's orbiting bezel/satellites.
+            pendingScene.fx.rings.visible = false;
+            // Nothing circles, pulses or lifts under the pointer: hover only names the kecamatan.
+            pendingScene.fx.calm = true;
+            pendingScene.quietHover = true;
+            pendingScene.resize(window.innerWidth, window.innerHeight);
+            await pendingScene.precompileAsync();
+            if (pendingScene.renderer.getContext().isContextLost()) throw new Error('WebGL context lost while preparing the relief.');
+            // An orientation change may happen while shaders are still preparing.
+            pendingScene.resize(window.innerWidth, window.innerHeight);
+            this.scene = pendingScene;
+            pendingScene = null;
+            this.appliedKey = null;
+            this.webgl = true;
+            document.documentElement.classList.replace('sg-relief-off', 'sg-relief-on');
+            document.documentElement.classList.add('sg-relief-live');
+            this.kick();
+        } catch (error) {
+            pendingScene?.dispose();
+            canvas.remove();
+            if (this.canvas === canvas) this.canvas = null;
+            throw error;
+        }
+    }
+
+    /** A lost context leaves a blank canvas over the frame: show the SVG poster and end any flight. */
+    dropScene() {
+        if (!this.scene) return;
+        this.endFlight();
+        this.handoff = null;
+        // Its GL objects belong to the dead context; dropping the references is the whole release.
+        this.scene = null;
+        this.releaseSurface();
+        this.canvas.style.display = 'none';
+        // Until a rebuilt scene is live, the poster is the completed map: focus waits must not hang on the GPU.
+        this.webgl = false;
+        document.documentElement.classList.replace('sg-relief-on', 'sg-relief-off');
+        document.documentElement.classList.remove('sg-relief-live');
+        this.scan();
     }
 
     /** Kecamatan features (once loaded), for callers that derive district values. */
@@ -501,8 +573,16 @@ export class TerritoryStudio {
         this.tip.classList.toggle('is-on', Boolean(this.tip.innerHTML));
     }
 
-    kick() {
+    kick(delay = 0) {
+        window.clearTimeout(this.idleTimer);
+        this.idleTimer = null;
+        if (document.hidden) return;
         if (this.frame !== null) return;
+        if (delay > 0) {
+            this.idleTimer = window.setTimeout(() => { this.idleTimer = null; this.kick(); }, delay);
+            return;
+        }
+        this.queuedAt = performance.now();
         this.frame = window.requestAnimationFrame((time) => this.tick(time));
     }
 
@@ -702,6 +782,15 @@ export class TerritoryStudio {
     tick(time) {
         this.frame = null;
         if (document.hidden) { this.cancelFocusWait(); return; }
+        if (this.lastTime !== null && time - this.lastTime < 1000 / this.profile.activeFps - .5) {
+            this.kick(1000 / this.profile.activeFps - (time - this.lastTime));
+            return;
+        }
+        if (this.budget.observe(time - this.queuedAt, this.continuous) && this.scene) {
+            this.scene.maxPixelRatio = this.profile.maxPixelRatio * this.budget.scale;
+            this.scene.maxPixels = this.profile.maxPixels * this.budget.scale ** 2;
+            this.scene.resize(window.innerWidth, window.innerHeight);
+        }
         const still = reduceMotion();
         const dt = this.lastTime === null ? 1 / 60 : Math.min(0.05, Math.max(0, (time - this.lastTime) / 1000));
         const elapsed = this.lastTime === null ? dt : Math.min(0.25, (time - this.lastTime) / 1000);
@@ -828,7 +917,8 @@ export class TerritoryStudio {
         this.placeLabels((!this.scene.zooming || this.scene.zooming < 0.25) && settledIn > 0.55 && !this.handoff && this.flightP === null);
         if (!still) this.updateHover(spec);
         const moving = ['x', 'y', 'w', 'h'].some((side) => Math.abs(this.rect[side] - target[side]) > 0.5) || this.blur > 0.05;
-        if (!still && (settling || moving || this.swoop > 0.01 || this.arrival || this.handoff || this.flightP !== null || this.drag.active || Math.abs(this.drag.yaw) > 0.05 || this.pointer.seen)) this.kick();
-        else if (!still) window.setTimeout(() => this.kick(), 120);
+        this.continuous = !still && Boolean(settling || moving || this.swoop > 0.01 || this.arrival || this.handoff || this.flightP !== null || this.drag.active || Math.abs(this.drag.yaw) > 0.05 || this.velocity > .012);
+        if (this.continuous) this.kick();
+        else if (!still && this.profile.ambientFps) this.kick(1000 / this.profile.ambientFps);
     }
 }

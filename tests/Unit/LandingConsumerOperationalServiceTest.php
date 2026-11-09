@@ -652,4 +652,42 @@ CSV;
             'realisasi_os' => $realisation,
         ];
     }
+
+    public function test_hot_prospects_consumer_parser_and_branch_scoping(): void
+    {
+        $csv = implode("\n", [
+            '"HOT PROSPEK KONSUMER DI BULAN November 2026 NO ","KANCA ","PN ","NAMA ","BC UKER ","UKER ","TOTAL PIPELINE OKTOBER 2026 Deb ","Rp.Juta ","PROSES PRAKARSA Deb ","Rp.Juta ","MENUNGGU PUTUSAN Deb ","Rp.Juta ","SUDAH REALISASI Deb ","Rp.Juta "',
+            '"1","KC Madiun","121911","Mochamad Taufik","2109","KC Madiun","6","4,100","2","1,500","1","500","1","200"',
+            '"2","KC Magetan","151454","Vivin Sri","552","KC Magetan","9","5,710","0","0","0","0","0","0"',
+            '"3","KC Ngawi","218297","Glagah M","45","KC Ngawi","13","3,795","1","200","0","0","2","300"',
+        ]);
+
+        $service = app(LandingConsumerOperationalService::class);
+        $source = LandingConsumerOperationalService::HOT_PROSPECTS_SOURCE;
+        $parsed = $service->parseHotProspectsCsv($csv, $source);
+
+        $this->assertTrue($parsed['available']);
+        $this->assertSame('November 2026', $parsed['period_label']);
+        $this->assertCount(3, $parsed['records']);
+
+        // Area 6 (all branches)
+        $scopedArea = $service->scopeHotProspects($parsed, null);
+        $this->assertSame(3, $scopedArea['rm_count']);
+        $this->assertSame(28, data_get($scopedArea, 'summary.total.deb')); // 6 + 9 + 13
+        $this->assertSame(13605.0, data_get($scopedArea, 'summary.total.amount_juta')); // 4100 + 5710 + 3795
+        $this->assertSame(3, data_get($scopedArea, 'summary.realisasi.deb')); // 1 + 0 + 2
+        $this->assertSame(500.0, data_get($scopedArea, 'summary.realisasi.amount_juta')); // 200 + 0 + 300
+
+        // KC Madiun only
+        $scopedMadiun = $service->scopeHotProspects($parsed, ['key' => 'madiun', 'label' => 'KC Madiun']);
+        $this->assertSame(1, $scopedMadiun['rm_count']);
+        $this->assertSame(6, data_get($scopedMadiun, 'summary.total.deb'));
+        $this->assertSame(4100.0, data_get($scopedMadiun, 'summary.total.amount_juta'));
+        $this->assertSame(1, data_get($scopedMadiun, 'summary.realisasi.deb'));
+
+        // KC Ponorogo (none in this sample)
+        $scopedPonorogo = $service->scopeHotProspects($parsed, ['key' => 'ponorogo', 'label' => 'KC Ponorogo']);
+        $this->assertSame(0, $scopedPonorogo['rm_count']);
+        $this->assertSame(0, data_get($scopedPonorogo, 'summary.total.deb'));
+    }
 }

@@ -219,7 +219,7 @@ class KinerjaRmMikroReportController extends Controller
     {
         $reference = app(\App\Support\MicroRmRosterReference::class);
         $referenceVersion = $mantri ? app(MantriSourceInputStore::class)->fingerprint($period) : $reference->fingerprint();
-        $cachePrefix = $mantri ? 'nett_workbook_v19-mantri-zero-productivity' : 'nett_workbook_v10-kur-old-date-topup';
+        $cachePrefix = $mantri ? 'nett_workbook_v20-mantri-contract-targets' : 'nett_workbook_v10-kur-old-date-topup';
 
         return Cache::remember($this->cacheKey($cachePrefix, $period, [$referenceVersion, $mantri ? 'mantri' : 'rm']), 600, function () use ($period, $mantri, $reference): array {
             if (! $mantri) {

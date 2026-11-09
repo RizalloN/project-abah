@@ -124,6 +124,87 @@ class LandingSmeOperationalServiceTest extends TestCase
         $this->assertSame('Agustus', $parsed['period_label']);
     }
 
+
+    public function test_hot_progress_summary_layout_resolves_total_menunggu_putusan_despite_typo(): void
+    {
+        $service = $this->service();
+        $header = [
+            'PROGRES HOT PROSPEK NOVEMBER NO', 'AREA HEAD', 'KODE UKER', 'UNIT KERJA', 'NAMA SHEETS',
+            'TOTAL HOT PROSPEK NSB', 'OS',
+            'BELUM OTS PEMUTUS NSB', 'OS',
+            'ANALISA RM (MAK) NSB', 'OS',
+            'VERIFIKASI ADK NSB', 'OS',
+            'MENUNGGGU PUTUSAN NSB', 'OS',
+            'Menunggu Putusan (Pinca) NSB', 'OS',
+            'SUDAH DIPUTUS NSB', 'OS',
+            'REALISASI NSB', 'OS',
+            'BATAL NSB', 'OS',
+            'CARRY OVER NSB', 'OS',
+        ];
+        $parsed = $service->parseHotProspectCsv($this->csv([
+            $header,
+            [23, 'AH 6 - MADIUN', '0049', 'KANCA MAGETAN', 'MAGETAN', 28, '25,300', 20, '15,800', 3, '2,750', 1, '3,000', 2, '1,500', 0, 0, 1, 500, 1, '1,750', 0, 0, 0, 0],
+        ]));
+
+        $this->assertCount(1, $parsed['records']);
+        $this->assertSame('KC MAGETAN', $parsed['records'][0]['branch']);
+        $this->assertSame(['deb' => 2, 'amount_juta' => 1500.0], $parsed['records'][0]['statuses']['menunggu_putusan']);
+        $this->assertSame(['deb' => 28, 'amount_juta' => 25300.0], $parsed['records'][0]['total']);
+        $this->assertSame('November', $parsed['period_label']);
+    }
+
+    public function test_hot_prospect_rekap_uker_layout_maps_area_6_and_scopes_by_branch(): void
+    {
+        $service = $this->service();
+        $header = [
+            'No', 'Kode Kanca', 'Kanca', 'Kode Uker', 'UKER', 'AREA HEAD',
+            'Jumlah RM Total', '', 'Minimal Hot Prospek Uker',
+            'CIF Baru Kredit Small Deb', 'Rp (Jt)',
+            'Suplesi/ Tambah Fasilitas Kredit Small Deb', 'Rp (Jt)',
+            'TOTAL HP Deb', 'Rp (Jt)',
+            'DELTA HP THD MINIMAL HOT PROSPEK Rp (Jt)', 'RATAS HP/RM', 'Minimal % SR',
+            'RM SUDAH REAL', 'RM BELUM REAL',
+        ];
+        $parsed = $service->parseHotProspectCsv($this->csv([
+            $header,
+            [1, '0045', 'KANCA MADIUN', '0045', 'KANCA MADIUN', 'AH 6 - MADIUN', 7, '', '21,000', 16, '17,300', 3, '2,650', 19, '19,950', '-1,050', '2,850', '100%', 0, 7],
+            [2, '0045', 'KANCA MADIUN', '00552', 'KCP CARUBAN', 'AH 6 - MADIUN', 4, '', '12,000', 15, '12,000', 0, 0, 15, '12,000', 0, '3,000', '100%', 0, 4],
+            [3, '0049', 'KANCA MAGETAN', '0049', 'KANCA MAGETAN', 'AH 6 - MADIUN', 8, '', '24,000', 22, '20,800', 6, '4,500', 28, '25,300', '1,300', '3,162', '94.86%', 1, 7],
+            [4, '0033', 'KANCA KEDIRI', '0033', 'KANCA KEDIRI', 'AH 5 - KEDIRI', 10, '', '30,000', 10, '10,000', 0, 0, 10, '10,000', '-20,000', '1,000', '33%', 0, 10],
+        ]));
+
+        $this->assertTrue($parsed['is_rekap_uker']);
+        $this->assertCount(3, $parsed['records']);
+
+        $reflector = new \ReflectionClass($service);
+        $scopeMethod = $reflector->getMethod('scopeHotProspects');
+        $scopeMethod->setAccessible(true);
+
+        // Area 6 (all branches)
+        $all = $scopeMethod->invoke($service, $parsed, '');
+        $this->assertSame(19, $all['rm_count']);
+        $this->assertSame(3, $all['unit_count']);
+        $this->assertSame(62, $all['total']['deb']);
+        $this->assertSame(57250.0, $all['total']['amount_juta']);
+        $this->assertTrue($all['reconciliation']['matches']);
+        $this->assertCount(3, $all['records']);
+
+        // KC MADIUN scope (includes KCP Caruban)
+        $madiun = $scopeMethod->invoke($service, $parsed, 'KC MADIUN');
+        $this->assertSame(11, $madiun['rm_count']);
+        $this->assertSame(2, $madiun['unit_count']);
+        $this->assertSame(34, $madiun['total']['deb']);
+        $this->assertSame(31950.0, $madiun['total']['amount_juta']);
+        $this->assertCount(2, $madiun['records']);
+
+        // KC MAGETAN scope
+        $magetan = $scopeMethod->invoke($service, $parsed, 'KC MAGETAN');
+        $this->assertSame(8, $magetan['rm_count']);
+        $this->assertSame(1, $magetan['unit_count']);
+        $this->assertSame(28, $magetan['total']['deb']);
+        $this->assertSame(25300.0, $magetan['total']['amount_juta']);
+    }
+
     public function test_extension_and_restructuring_parsers_preserve_status_pairs(): void
     {
         $service = $this->service();
@@ -178,21 +259,62 @@ class LandingSmeOperationalServiceTest extends TestCase
         $serviceSource = (string) file_get_contents(app_path('Support/LandingSmeOperationalService.php'));
 
         foreach ([
-            '1Iidgzfevd8WSjP7An4zQSRe6qVevQYBF',
-            '1QNOlNFQsNeYtm43w52cKEHmuUuUDEIT4',
+            '1CjQpbtRflU8PtMkJcXk8KZuD5zIVyUhZ',
+            '1W6SQNG2uxKW9d6dn4N0K0AF2Xm7qZSig',
             '1ZVzkRkBaBFdgkrQQPXO4JHTnSHCU39pi',
             '1c7UCMOO2aHnusgJ9jOlLKN7SebQKdRIi',
-            '14sQxMWrKLhyrhENBEJWgN2In0vvG2_iq',
+            '1zsu1OwS-dXXkPQsX3zpbgGoErCQ-KUND',
         ] as $spreadsheetId) {
             $this->assertStringContainsString($spreadsheetId, $serviceSource);
         }
 
-        $this->assertStringContainsString("'sheet' => 'REKAP PROGRESS'", $serviceSource);
+        $this->assertStringContainsString("'sheet' => 'Rekap Uker'", $serviceSource);
         $this->assertStringContainsString("'sheet' => 'DOWNLINE NASABAH MEDIUM'", $serviceSource);
         $this->assertStringContainsString("'sheet' => 'AGEN GAS'", $serviceSource);
         $this->assertStringContainsString("'sheet' => 'SPBU'", $serviceSource);
         $this->assertStringContainsString('ouid=104421189091698527488', $serviceSource);
         $this->assertStringContainsString("'csv_mode' => 'gviz'", $serviceSource);
+    }
+
+    public function test_november_extension_maps_restruk_without_shifting_later_status_columns(): void
+    {
+        $header = ['UKER', 'KODE UKER', 'KANCA INDUK', 'TOTAL NOMINATIF NOV 26', ''];
+        $groups = ['', '', '', '', ''];
+        $row = ['KC MADIUN', '45', 'KC MADIUN', 36, 3600];
+        foreach (['ANALISA RM', 'MENUNGGU PUTUSAN', 'SUDAH DIPUTUS', 'RESTRUK', 'SUDAH DIPERPANJANG', 'LUNAS', 'BELUM TL', 'TIDAK DIPERPANJANG'] as $index => $label) {
+            array_push($header, '', '', '');
+            array_push($groups, $label, '', '');
+            array_push($row, $index + 1, ($index + 1) * 100, 0.25);
+        }
+        $parsed = $this->service()->parseExtensionCsv($this->csv([
+            ['PROGRES PERPANJANGAN NOVEMBER'], $header, $groups, $row,
+        ]));
+
+        $this->assertSame('November', $parsed['period_label']);
+        $this->assertSame(['deb' => 4, 'amount_juta' => 400.0], $parsed['records'][0]['statuses']['restruk']);
+        $this->assertSame(['deb' => 5, 'amount_juta' => 500.0], $parsed['records'][0]['statuses']['sudah_diperpanjang']);
+        $this->assertSame(['deb' => 8, 'amount_juta' => 800.0], $parsed['records'][0]['statuses']['tidak_diperpanjang']);
+        $this->assertSame(36, array_sum(array_column($parsed['records'][0]['statuses'], 'deb')));
+    }
+
+    public function test_new_pipeline_sources_reject_old_aggregate_and_stable_caches(): void
+    {
+        $cache = \Illuminate\Support\Facades\Cache::getFacadeRoot();
+        $old = ['records' => [['old_source' => true]], 'meta' => ['available' => true]];
+        $cache->put('landing:sme:external:v9', ['rtl_pipeline' => $old, 'extension' => $old], 600);
+        foreach (['rtl_pipeline', 'extension'] as $key) {
+            $cache->put('landing:sme:external:v9:'.$key.':stable', $old, 600);
+        }
+        Http::fake(['*' => Http::response('', 503)]);
+        $service = $this->service();
+        $result = (new \ReflectionMethod($service, 'externalPayload'))->invoke($service, false);
+
+        foreach (['rtl_pipeline' => '1W6SQNG2uxKW9d6dn4N0K0AF2Xm7qZSig', 'extension' => '1CjQpbtRflU8PtMkJcXk8KZuD5zIVyUhZ'] as $key => $sourceId) {
+            $this->assertSame([], $result[$key]['records']);
+            $this->assertFalse($result[$key]['meta']['available']);
+            $this->assertStringContainsString($sourceId, $result[$key]['meta']['source_url']);
+            Http::assertSent(fn ($request) => str_contains($request->url(), $sourceId) && str_contains($request->url(), 'sheet=REKAP'));
+        }
     }
 
     public function test_rtl_parser_flattens_merged_three_row_headers(): void
@@ -241,13 +363,15 @@ class LandingSmeOperationalServiceTest extends TestCase
         $areaSix = ['AREA 6', '0045', '00045', 'KC Madiun'];
         $outsideArea = ['AREA 5', '0033', '00033', 'KC Kediri'];
 
-        foreach (['AGEN GAS', 'VENDOR PETROKIMIA', 'KIOS PUPUK LENGKAP'] as $vendor) {
+        foreach (['AGEN GAS', 'VENDOR PETROKIMIA', 'KIOS PUPUK LENGKAP', 'TRANSPORTIR KI - HISWANA MIGAS'] as $vendor) {
             array_push($groupHeader, $vendor, '', '', '', '', '', '', '', '', '', '', '');
             array_push($metricHeader, 'TOTAL PIPELINE', '', '', '', '', 'OTS', '', '', '', '', 'PEMBIAYAAN', '');
             array_push($leafHeader, '', '', '', '', '', 'Sudah OTS', 'Belum OTS', '', '', '', 'Berminat', 'Tidak Berminat');
         }
         array_push($areaSix, 11, 0, 0, 0, 0, 7, 0, 0, 0, 0, 5, 0, 4, 0, 0, 0, 0, 3, 0, 0, 0, 0, 2, 0, 9, 0, 0, 0, 0, 6, 0, 0, 0, 0, 4, 0);
         array_push($outsideArea, '#N/A', 0, 0, 0, 0, '#N/A', 0, 0, 0, 0, '#N/A', 0, '#N/A', 0, 0, 0, 0, '#N/A', 0, 0, 0, 0, '#N/A', 0, '#N/A', 0, 0, 0, 0, '#N/A', 0, 0, 0, 0, '#N/A', 0);
+        array_push($areaSix, 12, 0, 0, 0, 0, 8, 0, 0, 0, 0, 6, 0);
+        array_push($outsideArea, '#N/A', 0, 0, 0, 0, '#N/A', 0, 0, 0, 0, '#N/A', 0);
 
         $parsed = $service->parseRtlPipelineCsv($this->csv([$groupHeader, $metricHeader, $leafHeader, $areaSix, $outsideArea]));
 
@@ -255,6 +379,7 @@ class LandingSmeOperationalServiceTest extends TestCase
         $this->assertSame(['pipeline' => 11, 'ots' => 7, 'interested' => 5], $parsed['records'][0]['vendors']['agen_gas']);
         $this->assertSame(['pipeline' => 4, 'ots' => 3, 'interested' => 2], $parsed['records'][0]['vendors']['petrokimia']);
         $this->assertSame(['pipeline' => 9, 'ots' => 6, 'interested' => 4], $parsed['records'][0]['vendors']['kios_pupuk_lengkap']);
+        $this->assertSame(['pipeline' => 12, 'ots' => 8, 'interested' => 6], $parsed['records'][0]['vendors']['transportir_ki']);
         $this->assertSame([], $parsed['records'][0]['formula_errors']);
     }
 
@@ -312,6 +437,7 @@ class LandingSmeOperationalServiceTest extends TestCase
             $this->assertSame(1, $payload['row_count']);
             $this->assertSame('KC MADIUN', data_get($payload, 'rows.0.branch'));
             $this->assertContains('NAMA DISTRIBUTOR', array_column($payload['columns'], 'label'));
+            Http::assertSent(fn ($request) => str_contains($request->url(), '1W6SQNG2uxKW9d6dn4N0K0AF2Xm7qZSig/export?format=xlsx'));
         } finally {
             $spreadsheet->disconnectWorksheets();
             if (is_string($temporaryFile) && is_file($temporaryFile)) {

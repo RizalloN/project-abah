@@ -8,6 +8,7 @@ use App\Http\Controllers\Report\AlmafactsDashboardController;
 use App\Jobs\RefreshRemoteDashboardSourcesJob;
 use App\Services\Reports\BusinessClusterReportService;
 use App\Services\Reports\SppgReportService;
+use App\Support\RemoteDashboardSourceRefreshPolicy;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
@@ -122,6 +123,9 @@ class RefreshRemoteDashboardSourcesCommand extends Command
 
     private function sourceNeedsRefresh(string $source): bool
     {
+        if (RemoteDashboardSourceRefreshPolicy::retryDelay($source) > 0) {
+            return false;
+        }
         $status = Cache::get('dashboard_sources:last_refresh:'.$source);
         if (! is_array($status) || ! (bool) ($status['success'] ?? false)) {
             return ! $this->localSourceFileIsFresh($source);

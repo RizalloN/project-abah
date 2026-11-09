@@ -79,6 +79,13 @@ final class LandingConsumerOperationalService
         'sheet' => 'Madiun',
     ];
 
+    public const HOT_PROSPECTS_SOURCE = [
+        'spreadsheet_id' => '13ihs35zb7RrEbO9ar3_fvHcJt_QN5KjE4DNTBaUl4nE',
+        'source_url' => 'https://docs.google.com/spreadsheets/d/13ihs35zb7RrEbO9ar3_fvHcJt_QN5KjE4DNTBaUl4nE/edit?usp=sharing',
+        'sheet' => 'RM',
+        'label' => 'Pipeline Hot Prospek Konsumer',
+    ];
+
     private const BRIGUNA_TARGET_FALLBACK = [
         'ARISSULISTYAWAN' => 3700000000.0,
         'ZULFAENDYCRISMANA' => 3700000000.0,
@@ -103,6 +110,7 @@ final class LandingConsumerOperationalService
     {
         $pipeline = $this->pipelinePayload($branchScope, $forceRefresh);
         $kprPipeline = $this->kprPipelinePayload($branchScope, $forceRefresh);
+        $hotProspects = $this->hotProspectsPayload($branchScope, $forceRefresh);
         $quadrants = $this->cachedQuadrantPayload($requestedPeriod, $branchScope, $forceRefresh);
 
         return [
@@ -118,6 +126,7 @@ final class LandingConsumerOperationalService
             ],
             'pipeline' => $pipeline,
             'kpr_pipeline' => $kprPipeline,
+            'hot_prospects' => $hotProspects,
             'quadrants' => $quadrants,
         ];
     }
@@ -628,6 +637,269 @@ final class LandingConsumerOperationalService
                 Cache::forget($pendingKey);
             }
         }, $pendingKey, true);
+    }
+
+    /** @param array<string, mixed>|null $branchScope */
+    public function hotProspectsPayload(?array $branchScope = null, bool $forceRefresh = false): array
+    {
+        $source = self::HOT_PROSPECTS_SOURCE;
+        $cacheKey = 'landing:consumer:hot-prospects:v1';
+        $stableCacheKey = 'landing:consumer:hot-prospects:stable:v1';
+
+        $cached = ! $forceRefresh ? Cache::get($cacheKey) : null;
+        if (! is_array($cached)) {
+            $stable = ! $forceRefresh ? Cache::get($stableCacheKey) : null;
+            if (is_array($stable) && ! empty($stable['available'])) {
+                $stable['stale'] = true;
+                $this->deferHotProspectsRefresh();
+
+                return $this->scopeHotProspects($stable, $branchScope);
+            }
+
+            try {
+                $response = Http::connectTimeout(5)
+                    ->timeout(20)
+                    ->get($this->gvizCsvUrl($source['spreadsheet_id'], $source['sheet']));
+
+                if (! $response->successful() || trim($response->body()) === '') {
+                    throw new \RuntimeException('Google Sheets Hot Prospek Konsumer tidak merespons dengan CSV yang valid.');
+                }
+
+                $cached = $this->parseHotProspectsCsv($response->body(), $source);
+                Cache::put($cacheKey, $cached, now()->addMinutes(10));
+                Cache::put($stableCacheKey, $cached, now()->addDays(2));
+            } catch (Throwable $exception) {
+                $stable = Cache::get($stableCacheKey);
+                if (is_array($stable)) {
+                    $stable['stale'] = true;
+                    $stable['error'] = $exception->getMessage();
+                    Cache::put($cacheKey, $stable, now()->addSeconds(30));
+
+                    return $this->scopeHotProspects($stable, $branchScope);
+                }
+
+                $empty = [
+                    'available' => false,
+                    'stale' => false,
+                    'label' => $source['label'],
+                    'source_url' => $source['source_url'],
+                    'sheet' => $source['sheet'],
+                    'period_label' => '',
+                    'error' => $exception->getMessage(),
+                    'records' => [],
+                    'statuses' => [],
+                    'summary' => [
+                        'total' => ['deb' => 0, 'amount_juta' => 0.0],
+                        'prakarsa' => ['deb' => 0, 'amount_juta' => 0.0],
+                        'putusan' => ['deb' => 0, 'amount_juta' => 0.0],
+                        'realisasi' => ['deb' => 0, 'amount_juta' => 0.0],
+                    ],
+                    'rm_count' => 0,
+                ];
+                Cache::put($cacheKey, $empty, now()->addSeconds(30));
+
+                return $empty;
+            }
+        }
+
+        return $this->scopeHotProspects($cached, $branchScope);
+    }
+
+    private function deferHotProspectsRefresh(): void
+    {
+        $pendingKey = 'landing:consumer:hot-prospects:refresh-pending';
+        if (! Cache::add($pendingKey, true, now()->addMinutes(2))) {
+            return;
+        }
+
+        defer(function () use ($pendingKey): void {
+            try {
+                $this->hotProspectsPayload(null, true);
+            } catch (Throwable $exception) {
+                logger()->warning('Refresh Hot Prospek Konsumer gagal.', ['error' => $exception->getMessage()]);
+            } finally {
+                Cache::forget($pendingKey);
+            }
+        }, $pendingKey, true);
+    }
+
+    public function parseHotProspectsCsv(string $csv, array $source): array
+    {
+        $matrix = $this->csvMatrix($csv);
+        $headerIndex = collect($matrix)->search(function (array $row): bool {
+            $labels = array_map(fn ($val): string => $this->normaliseLabel((string) $val), $row);
+
+            return in_array('KANCA', $labels, true) || in_array('NAMA', $labels, true) || in_array('PN', $labels, true);
+        });
+
+        if ($headerIndex === false) {
+            $headerIndex = 0;
+        }
+
+        $header = $matrix[(int) $headerIndex] ?? [];
+
+        $periodLabel = '';
+        foreach (array_slice($matrix, 0, (int) $headerIndex + 1) as $headingRow) {
+            foreach ($headingRow as $cell) {
+                if (preg_match('/(?:DI BULAN|BULAN|KUR KECIL)\s+([A-Za-z0-9\s]+?)(?:\s+NO)?\s*$/i', (string) $cell, $matches) === 1) {
+                    $periodLabel = ucwords(strtolower(trim($matches[1])));
+                    break 2;
+                }
+            }
+        }
+
+        $colKanca = $this->findColumn($header, ['KANCA']);
+        if ($colKanca < 0) { $colKanca = 1; }
+        $colPn = $this->findColumn($header, ['PN']);
+        if ($colPn < 0) { $colPn = 2; }
+        $colName = $this->findColumn($header, ['NAMA', 'NAMA RM']);
+        if ($colName < 0) { $colName = 3; }
+        $colUnitCode = $this->findColumn($header, ['BC UKER', 'KODE UKER']);
+        if ($colUnitCode < 0) { $colUnitCode = 4; }
+        $colUnit = $this->findColumn($header, ['UKER', 'UNIT KERJA']);
+        if ($colUnit < 0 || $colUnit === $colUnitCode) { $colUnit = 5; }
+
+        $colTotalDeb = $this->findColumnStartingWith($header, 'TOTAL PIPELINE');
+        if ($colTotalDeb < 0) { $colTotalDeb = 6; }
+        $colTotalRp = $colTotalDeb + 1;
+
+        $colPrakarsaDeb = $this->findColumnStartingWith($header, 'PROSES PRAKARSA');
+        if ($colPrakarsaDeb < 0) { $colPrakarsaDeb = 8; }
+        $colPrakarsaRp = $colPrakarsaDeb + 1;
+
+        $colPutusanDeb = $this->findColumnStartingWith($header, 'MENUNGGU PUTUSAN');
+        if ($colPutusanDeb < 0) { $colPutusanDeb = 10; }
+        $colPutusanRp = $colPutusanDeb + 1;
+
+        $colRealisasiDeb = $this->findColumnStartingWith($header, 'SUDAH REALISASI');
+        if ($colRealisasiDeb < 0) { $colRealisasiDeb = 12; }
+        $colRealisasiRp = $colRealisasiDeb + 1;
+
+        $records = [];
+        foreach (array_slice($matrix, (int) $headerIndex + 1) as $row) {
+            $pn = $this->clean($this->cell($row, $colPn));
+            $name = $this->clean($this->cell($row, $colName));
+            if ($pn === '' && $name === '') {
+                continue;
+            }
+
+            $rawKanca = $this->clean($this->cell($row, $colKanca));
+            $cleanKanca = trim(str_ireplace('KC ', '', $rawKanca));
+            $branchName = 'KC ' . ucwords(strtolower($cleanKanca));
+            $branchKey = strtolower($cleanKanca);
+
+            $totalDeb = (int) round($this->number($this->cell($row, $colTotalDeb)) ?? 0.0);
+            $totalRp = (float) ($this->number($this->cell($row, $colTotalRp)) ?? 0.0);
+
+            $prakarsaDeb = (int) round($this->number($this->cell($row, $colPrakarsaDeb)) ?? 0.0);
+            $prakarsaRp = (float) ($this->number($this->cell($row, $colPrakarsaRp)) ?? 0.0);
+
+            $putusanDeb = (int) round($this->number($this->cell($row, $colPutusanDeb)) ?? 0.0);
+            $putusanRp = (float) ($this->number($this->cell($row, $colPutusanRp)) ?? 0.0);
+
+            $realisasiDeb = (int) round($this->number($this->cell($row, $colRealisasiDeb)) ?? 0.0);
+            $realisasiRp = (float) ($this->number($this->cell($row, $colRealisasiRp)) ?? 0.0);
+
+            $records[] = [
+                'branch' => $branchName,
+                'branch_key' => $branchKey,
+                'pn' => $pn,
+                'rm_name' => $name,
+                'unit_code' => $this->clean($this->cell($row, $colUnitCode)),
+                'unit' => $this->clean($this->cell($row, $colUnit)),
+                'total' => ['deb' => $totalDeb, 'amount_juta' => $totalRp],
+                'prakarsa' => ['deb' => $prakarsaDeb, 'amount_juta' => $prakarsaRp],
+                'putusan' => ['deb' => $putusanDeb, 'amount_juta' => $putusanRp],
+                'realisasi' => ['deb' => $realisasiDeb, 'amount_juta' => $realisasiRp],
+            ];
+        }
+
+        return [
+            'available' => count($records) > 0,
+            'stale' => false,
+            'label' => (string) ($source['label'] ?? 'Pipeline Hot Prospek Konsumer'),
+            'source_url' => (string) ($source['source_url'] ?? ''),
+            'sheet' => (string) ($source['sheet'] ?? 'RM'),
+            'period_label' => $periodLabel ?: 'November 2026',
+            'records' => $records,
+            'fetched_at' => now()->toIso8601String(),
+        ];
+    }
+
+    public function scopeHotProspects(array $payload, ?array $branchScope): array
+    {
+        $allRecords = (array) ($payload['records'] ?? []);
+        $scopeKey = strtolower(trim((string) ($branchScope['key'] ?? '')));
+
+        $records = collect($allRecords)->filter(function (array $r) use ($scopeKey): bool {
+            if ($scopeKey === '' || $scopeKey === 'all' || $scopeKey === 'area6' || $scopeKey === UserBranchScope::AREA_SCOPE) {
+                return true;
+            }
+
+            return $r['branch_key'] === $scopeKey || str_contains($r['branch_key'], $scopeKey);
+        })->values()->all();
+
+        $totalDeb = (int) array_sum(array_column(array_column($records, 'total'), 'deb'));
+        $totalRp = (float) array_sum(array_column(array_column($records, 'total'), 'amount_juta'));
+
+        $prakarsaDeb = (int) array_sum(array_column(array_column($records, 'prakarsa'), 'deb'));
+        $prakarsaRp = (float) array_sum(array_column(array_column($records, 'prakarsa'), 'amount_juta'));
+
+        $putusanDeb = (int) array_sum(array_column(array_column($records, 'putusan'), 'deb'));
+        $putusanRp = (float) array_sum(array_column(array_column($records, 'putusan'), 'amount_juta'));
+
+        $realisasiDeb = (int) array_sum(array_column(array_column($records, 'realisasi'), 'deb'));
+        $realisasiRp = (float) array_sum(array_column(array_column($records, 'realisasi'), 'amount_juta'));
+
+        $statuses = [
+            [
+                'key' => 'total',
+                'label' => 'Total Pipeline',
+                'deb' => $totalDeb,
+                'amount_juta' => $totalRp,
+                'icon' => 'fas fa-funnel-dollar',
+            ],
+            [
+                'key' => 'prakarsa',
+                'label' => 'Proses Prakarsa',
+                'deb' => $prakarsaDeb,
+                'amount_juta' => $prakarsaRp,
+                'icon' => 'fas fa-tasks',
+            ],
+            [
+                'key' => 'putusan',
+                'label' => 'Menunggu Putusan',
+                'deb' => $putusanDeb,
+                'amount_juta' => $putusanRp,
+                'icon' => 'fas fa-gavel',
+            ],
+            [
+                'key' => 'realisasi',
+                'label' => 'Sudah Realisasi',
+                'deb' => $realisasiDeb,
+                'amount_juta' => $realisasiRp,
+                'icon' => 'fas fa-check-circle',
+            ],
+        ];
+
+        return array_merge($payload, [
+            'available' => count($records) > 0,
+            'scope_label' => (string) ($branchScope['label'] ?? 'Area 6'),
+            'rm_count' => count($records),
+            'summary' => [
+                'total' => ['deb' => $totalDeb, 'amount_juta' => $totalRp],
+                'prakarsa' => ['deb' => $prakarsaDeb, 'amount_juta' => $prakarsaRp],
+                'putusan' => ['deb' => $putusanDeb, 'amount_juta' => $putusanRp],
+                'realisasi' => ['deb' => $realisasiDeb, 'amount_juta' => $realisasiRp],
+            ],
+            'statuses' => $statuses,
+            'records' => $records,
+        ]);
+    }
+
+    private function gvizCsvUrl(string $id, string $sheet): string
+    {
+        return "https://docs.google.com/spreadsheets/d/{$id}/gviz/tq?tqx=out:csv&sheet=" . urlencode($sheet);
     }
 
     /** @param array<string, mixed>|null $branchScope */

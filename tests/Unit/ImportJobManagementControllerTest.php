@@ -133,6 +133,7 @@ class ImportJobManagementControllerTest extends TestCase
         $executionService->shouldReceive('run')
             ->once()
             ->with(78);
+        $progressService->shouldReceive('getJobState')->with(78)->andReturn([]);
 
         $controller = new class(
             app(ManagedReportSnapshotRebuildCoordinator::class),
@@ -192,6 +193,120 @@ class ImportJobManagementControllerTest extends TestCase
         $payload = $response->getData(true);
 
         $this->assertSame('success', $payload['status']);
+    }
+
+    public function test_force_start_repeated_click_does_not_launch_another_process(): void
+    {
+        $progress = Mockery::mock(ImportProgressService::class);
+        $execution = Mockery::mock(ImportExecutionService::class);
+        $progress->shouldReceive('findJob')->twice()->with(80)->andReturn((object) [
+            'id' => 80, 'status' => 'queued', 'total_success' => 0, 'total_failed' => 0,
+        ]);
+        $progress->shouldReceive('cleanupQueuedImportJobRowsForJob')->once()->with(80);
+        $execution->shouldNotReceive('run');
+        $controller = new class(app(ManagedReportSnapshotRebuildCoordinator::class), app(ImportIndexController::class)) extends ImportJobManagementController {
+            public int $launchCount = 0;
+            protected function launchImportInBackground(int $jobId): bool
+            {
+                $this->launchCount++;
+
+                return true;
+            }
+        };
+
+        $this->assertSame(200, $controller->forceStart(80, $progress, $execution)->getStatusCode());
+        $this->assertSame(409, $controller->forceStart(80, $progress, $execution)->getStatusCode());
+        $this->assertSame(1, $controller->launchCount);
+    }
+
+    public function test_force_start_does_not_touch_a_reserved_worker_job(): void
+    {
+        $progress = Mockery::mock(ImportProgressService::class);
+        $execution = Mockery::mock(ImportExecutionService::class);
+        $progress->shouldReceive('findJob')->once()->with(81)->andReturn((object) [
+            'id' => 81, 'status' => 'queued', 'total_success' => 0, 'total_failed' => 0,
+        ]);
+        $progress->shouldNotReceive('cleanupQueuedImportJobRowsForJob');
+        $execution->shouldNotReceive('run');
+        DB::table('jobs')->insert([
+            'queue' => 'imports-high', 'reserved_at' => time(),
+            'payload' => json_encode(['displayName' => \App\Jobs\RunImportJob::class,
+                'data' => ['command' => serialize(new \App\Jobs\RunImportJob(81))]]),
+        ]);
+
+        $response = app(ImportJobManagementController::class)->forceStart(81, $progress, $execution);
+
+        $this->assertSame(409, $response->getStatusCode());
+        $this->assertSame(1, DB::table('jobs')->count());
+    }
+
+    public function test_force_start_rejects_partially_imported_job(): void
+    {
+        $progress = Mockery::mock(ImportProgressService::class);
+        $execution = Mockery::mock(ImportExecutionService::class);
+        $progress->shouldReceive('findJob')->once()->with(82)->andReturn((object) [
+            'id' => 82, 'status' => 'failed_partial', 'total_success' => 20, 'total_failed' => 1,
+        ]);
+        $progress->shouldNotReceive('cleanupQueuedImportJobRowsForJob');
+        $execution->shouldNotReceive('run');
+
+        $this->assertSame(422, app(ImportJobManagementController::class)->forceStart(82, $progress, $execution)->getStatusCode());
+    }
+
+    public function test_force_start_respects_file_lock_after_launch_marker_expires(): void
+    {
+        $directory = storage_path('framework/testing/force-start-lock-'.uniqid());
+        Config::set('cache.stores.force-start-test', ['driver' => 'file', 'path' => $directory, 'lock_path' => $directory]);
+        Config::set('import.cache_store', 'force-start-test');
+        $cache = Cache::store('force-start-test');
+        $lock = $cache->lock('import:immediate-execution:83', 21600);
+        $this->assertTrue($lock->get());
+        $cache->put('import:force-start-launched:83', true, 60);
+        $this->travel(61)->seconds();
+        $this->assertFalse($cache->has('import:force-start-launched:83'));
+        $progress = Mockery::mock(ImportProgressService::class);
+        $execution = Mockery::mock(ImportExecutionService::class);
+        $progress->shouldReceive('findJob')->once()->with(83)->andReturn((object) [
+            'id' => 83, 'status' => 'queued', 'total_success' => 0, 'total_failed' => 0,
+        ]);
+        $progress->shouldNotReceive('cleanupQueuedImportJobRowsForJob');
+        $execution->shouldNotReceive('run');
+
+        try {
+            $this->assertSame(409, app(ImportJobManagementController::class)->forceStart(83, $progress, $execution)->getStatusCode());
+        } finally {
+            $lock->release();
+            $this->travelBack();
+        }
+    }
+
+    public function test_force_start_timeout_restores_queue_without_inline_replay(): void
+    {
+        $progress = Mockery::mock(ImportProgressService::class);
+        $execution = Mockery::mock(ImportExecutionService::class);
+        $progress->shouldReceive('findJob')->twice()->with(84)->andReturn((object) [
+            'id' => 84, 'id_report' => 9, 'status' => 'queued', 'total_success' => 0, 'total_failed' => 0,
+        ]);
+        $progress->shouldReceive('cleanupQueuedImportJobRowsForJob')->once()->with(84);
+        $progress->shouldReceive('getJobState')->with(84)->andReturn(['params' => ['table_name' => 'simpanan_multipn']]);
+        $execution->shouldNotReceive('run');
+        $controller = new class(app(ManagedReportSnapshotRebuildCoordinator::class), app(ImportIndexController::class)) extends ImportJobManagementController {
+            protected function launchImportInBackground(int $jobId): bool
+            {
+                throw new \Illuminate\Process\Exceptions\ProcessTimedOutException(
+                    new \Symfony\Component\Process\Exception\ProcessTimedOutException(
+                        new \Symfony\Component\Process\Process(['php']),
+                        \Symfony\Component\Process\Exception\ProcessTimedOutException::TYPE_GENERAL
+                    ),
+                    \Illuminate\Support\Facades\Process::result()
+                );
+            }
+        };
+
+        $response = $controller->forceStart(84, $progress, $execution);
+
+        $this->assertSame(202, $response->getStatusCode());
+        Queue::assertPushed(\App\Jobs\RunImportJob::class, fn ($job) => $job->jobId === 84 && $job->queue === 'imports-high');
     }
 
     public function test_queue_health_reports_stale_reserved_snapshot_without_mutating_queue(): void
@@ -551,6 +666,60 @@ SQL");
         $this->assertSame('Delete gagal: Lock wait timeout', $jobs['fail-1']['message']);
         $this->assertFalse($jobs['done-1']['can_cancel']);
         $this->assertSame('managed_delete_history', $jobs['done-1']['kind']);
+    }
+
+    public function test_clear_delete_history_respects_filters_and_keeps_audit_and_active_jobs(): void
+    {
+        Schema::create('report_sync_audits', function (Blueprint $table) {
+            $table->increments('id');
+            $table->string('table_name');
+            $table->string('period_hint')->nullable();
+            $table->string('action');
+            $table->string('status');
+            $table->bigInteger('affected_rows')->nullable();
+            $table->text('message')->nullable();
+            $table->text('context')->nullable();
+            $table->timestamps();
+        });
+        foreach (['done' => 'success', 'failed' => 'failed', 'active' => 'success'] as $id => $status) {
+            DB::table('report_sync_audits')->insert([
+                'table_name' => 'loan', 'action' => $status === 'failed' ? 'managed_delete_failed' : 'managed_delete_chunk',
+                'status' => $status, 'affected_rows' => 1, 'context' => json_encode(['delete_id' => $id]), 'created_at' => now(),
+            ]);
+        }
+        DB::table('import_jobs')->insert(['id' => 123, 'status' => 'completed']);
+        $index = Mockery::mock(ImportIndexController::class);
+        $index->shouldReceive('resolveManagedReportDeleteJobs')->andReturn([
+            ['id' => 'active', 'status' => 'processing', 'table_name' => 'loan'],
+            ['id' => 'live-done', 'status' => 'completed', 'table_name' => 'loan', 'updated_at' => now()->toIso8601String()],
+        ]);
+        $controller = new ImportJobManagementController(app(ManagedReportSnapshotRebuildCoordinator::class), $index);
+        $progress = Mockery::mock(ImportProgressService::class);
+        $progress->shouldNotReceive('deleteJobsByIds');
+
+        $filtered = $controller->data(\Illuminate\Http\Request::create('/', 'GET', [
+            'status' => 'failed', 'search' => 'loan',
+        ]), $progress)->getData(true);
+        $this->assertSame(['failed'], array_column($filtered['managed_delete_history'], 'id'));
+
+        $response = $controller->clear(\Illuminate\Http\Request::create('/', 'POST', [
+            'history_view' => 'delete', 'status' => 'completed', 'search' => 'loan',
+        ]), $progress)->getData(true);
+        $this->assertSame(2, $response['deleted_count']);
+        $this->assertSame(3, DB::table('report_sync_audits')->whereIn('action', ['managed_delete_chunk', 'managed_delete_failed'])->count());
+        $this->assertSame(1, DB::table('import_jobs')->count());
+
+        $payload = $controller->data(\Illuminate\Http\Request::create('/', 'GET', ['search' => 'loan']), $progress)->getData(true);
+        $this->assertSame(['failed'], array_column($payload['managed_delete_history'], 'id'));
+        $this->assertSame(['active'], array_column($payload['managed_delete_jobs'], 'id'));
+        $repeated = $controller->clear(\Illuminate\Http\Request::create('/', 'POST', [
+            'history_view' => 'delete', 'status' => 'completed', 'search' => 'loan',
+        ]), $progress)->getData(true);
+        $this->assertSame(0, $repeated['deleted_count']);
+        $activeOnly = $controller->clear(\Illuminate\Http\Request::create('/', 'POST', [
+            'history_view' => 'delete', 'active_only' => true,
+        ]), $progress)->getData(true);
+        $this->assertSame(0, $activeOnly['deleted_count']);
     }
 
     public function test_finished_deletes_move_from_active_cards_to_execution_history(): void

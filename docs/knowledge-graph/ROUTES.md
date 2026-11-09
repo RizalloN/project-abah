@@ -2,8 +2,8 @@
 
 | Methods | URI | Name | Domain | Handler |
 | --- | --- | --- | --- | --- |
-| POST | `login` | `generated::aqSOFuxgc94Se8GM` | access-control | `App\Http\Controllers\Auth\AuthenticatedSessionController::store` |
-| POST | `confirm-password` | `generated::cTux6rj6OlkdmCYv` | access-control | `App\Http\Controllers\Auth\ConfirmablePasswordController::store` |
+| POST | `confirm-password` | `generated::4e4aCalWuqOPhnk6` | access-control | `App\Http\Controllers\Auth\ConfirmablePasswordController::store` |
+| POST | `login` | `generated::lFlSsxvETuEHeQtY` | access-control | `App\Http\Controllers\Auth\AuthenticatedSessionController::store` |
 | GET | `login` | `login` | access-control | `App\Http\Controllers\Auth\AuthenticatedSessionController::create` |
 | POST | `logout` | `logout` | access-control | `App\Http\Controllers\Auth\AuthenticatedSessionController::destroy` |
 | GET | `confirm-password` | `password.confirm` | access-control | `App\Http\Controllers\Auth\ConfirmablePasswordController::show` |
@@ -53,7 +53,7 @@
 | POST | `file-management/delete` | `file-management.destroy` | core | `App\Http\Controllers\Admin\FileManagementController::destroy` |
 | GET | `file-management/download` | `file-management.download` | core | `App\Http\Controllers\Admin\FileManagementDownloadController::__invoke` |
 | GET | `file-management` | `file-management.index` | core | `App\Http\Controllers\Admin\FileManagementController::index` |
-| GET | `up` | `generated::1G8R3UEGbw0MrjuW` | core | Closure |
+| GET | `up` | `generated::ifiQVzIvVqWTmG8o` | core | Closure |
 | GET | `/` | `home` | core | Closure |
 | GET | `link-management` | `link-management.index` | core | `App\Http\Controllers\Admin\LinkManagementController::index` |
 | POST | `link-management` | `link-management.update` | core | `App\Http\Controllers\Admin\LinkManagementController::update` |

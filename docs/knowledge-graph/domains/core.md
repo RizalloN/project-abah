@@ -7,13 +7,13 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Kind | Count |
 | --- | ---: |
 | command | 16 |
-| file | 130 |
-| method | 897 |
-| unresolved_symbol | 389 |
+| file | 135 |
+| method | 909 |
+| unresolved_symbol | 392 |
 | route | 16 |
-| class | 86 |
+| class | 87 |
 | table | 15 |
-| view | 48 |
+| view | 52 |
 
 ## Main Hubs
 
@@ -23,12 +23,12 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `LandingMicroPerformanceService` | class | 85 | `app/Support/LandingMicroPerformanceService.php:16` |
 | `normalize` | method | 84 | `app/Support/StrictDateParser.php:185` |
 | `ReportDataSyncService` | class | 72 | `app/Support/ReportDataSyncService.php:19` |
-| `LandingSmeOperationalService` | class | 64 | `app/Support/LandingSmeOperationalService.php:16` |
+| `LandingSmeOperationalService` | class | 65 | `app/Support/LandingSmeOperationalService.php:16` |
 | `Controller` | class | 58 | `app/Http/Controllers/Controller.php:7` |
 | `ManagedReportManagementService` | class | 52 | `app/Support/ManagedReportManagementService.php:11` |
 | `DataPhReportController` | class | 44 | `app/Http/Controllers/Report/DataPhReportController.php:16` |
+| `LandingConsumerOperationalService` | class | 44 | `app/Support/LandingConsumerOperationalService.php:15` |
 | `apply` | method | 41 | `app/Support/SargableDateFilter.php:9` |
-| `LandingConsumerOperationalService` | class | 39 | `app/Support/LandingConsumerOperationalService.php:15` |
 | `MicroNettDisbursementCalculator` | class | 37 | `app/Support/MicroNettDisbursementCalculator.php:13` |
 | `SectorPotentialService` | class | 37 | `app/Support/SectorPotentialService.php:16` |
 | `KinerjaNonPtpReportController` | class | 36 | `app/Http/Controllers/Report/KinerjaNonPtpReportController.php:17` |
@@ -47,7 +47,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `index` | method | 21 | `app/Http/Controllers/Report/KinerjaNonPtpReportController.php:52` |
 | `LinkManagementController` | class | 20 | `app/Http/Controllers/Admin/LinkManagementController.php:17` |
 | `PhpMyAdminGateway` | class | 20 | `app/Services/ControlCenter/PhpMyAdminGateway.php:21` |
-| `quadrantPayload` | method | 20 | `app/Support/LandingConsumerOperationalService.php:634` |
+| `quadrantPayload` | method | 20 | `app/Support/LandingConsumerOperationalService.php:906` |
 | `PruneReportDailyHistoryCommand` | class | 19 | `app/Console/Commands/PruneReportDailyHistoryCommand.php:19` |
 
 ## Route Nodes
@@ -56,7 +56,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `file-management.destroy` - `file-management/delete`
 - `file-management.download` - `file-management/download`
 - `file-management.index` - `file-management`
-- `generated::1G8R3UEGbw0MrjuW` - `up`
+- `generated::ifiQVzIvVqWTmG8o` - `up`
 - `home` - `/`
 - `link-management.index` - `link-management`
 - `link-management.update` - `link-management`
@@ -128,6 +128,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `RebuildPerformanceRmCommand` - `app/Console/Commands/RebuildPerformanceRmCommand.php`
 - `RecoverSafeDumpCommand` - `app/Console/Commands/RecoverSafeDumpCommand.php`
 - `RefreshRemoteDashboardSourcesCommand` - `app/Console/Commands/RefreshRemoteDashboardSourcesCommand.php`
+- `RemoteDashboardSourceRefreshPolicy` - `app/Support/RemoteDashboardSourceRefreshPolicy.php`
 - `ReportDataFreshnessService` - `app/Services/ControlCenter/ReportDataFreshnessService.php`
 - `ReportDataSyncService` - `app/Support/ReportDataSyncService.php`
 - `ReportFilterService` - `app/Services/Reports/ReportFilterService.php`
@@ -150,7 +151,6 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `SimulateDeleteScenarioCommand` - `app/Console/Commands/SimulateDeleteScenarioCommand.php`
 - `SppgReportService` - `app/Services/Reports/SppgReportService.php`
 - `SpreadsheetFileFormatDetector` - `app/Support/SpreadsheetFileFormatDetector.php`
-- `StreamedFileLineCounter` - `app/Support/StreamedFileLineCounter.php`
 
 ## Command Nodes
 
@@ -209,6 +209,10 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `input.partials.scripts` - `resources/views/input/partials/scripts.blade.php`
 - `input.partials.styles` - `resources/views/input/partials/styles.blade.php`
 - `report._bri-report-ui` - `resources/views/report/_bri-report-ui.blade.php`
+- `report._ekosistem_charts` - `resources/views/report/_ekosistem_charts.blade.php`
+- `report._ekosistem_charts_script` - `resources/views/report/_ekosistem_charts_script.blade.php`
+- `report._ekosistem_hero` - `resources/views/report/_ekosistem_hero.blade.php`
+- `report._ekosistem_styles` - `resources/views/report/_ekosistem_styles.blade.php`
 - `report.data-ph` - `resources/views/report/data-ph.blade.php`
 - `report.ekosistem` - `resources/views/report/ekosistem.blade.php`
 - `report.partials.floating-scrollbar` - `resources/views/report/partials/floating-scrollbar.blade.php`
@@ -244,13 +248,13 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Direction | Count |
 | --- | ---: |
-| import -> core (calls) | 662 |
+| import -> core (calls) | 666 |
 | import -> core (instantiates) | 301 |
-| dashboard-pinjaman -> core (calls) | 283 |
+| dashboard-pinjaman -> core (calls) | 284 |
 | import -> core (accepts) | 227 |
 | dashboard-simpanan -> core (calls) | 202 |
 | bank-pipeline -> core (calls) | 167 |
-| jobs-snapshots -> core (calls) | 114 |
+| jobs-snapshots -> core (calls) | 117 |
 | dashboard-pinjaman -> core (accepts) | 102 |
 | dashboard-harian -> core (calls) | 82 |
 | database -> core (instantiates) | 79 |
@@ -261,7 +265,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | bank-pipeline -> core (accepts) | 63 |
 | database -> core (writes_table) | 62 |
 | database -> core (checks_table) | 62 |
-| dashboard-pinjaman -> core (instantiates) | 60 |
+| dashboard-pinjaman -> core (instantiates) | 62 |
 | dashboard-simpanan -> core (accepts) | 60 |
 | platform -> core (calls) | 37 |
 | bank-pipeline -> core (instantiates) | 37 |
@@ -269,8 +273,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | jobs-snapshots -> core (uses_trait) | 35 |
 | prognosa -> core (accepts) | 34 |
 | almafacts -> core (calls) | 32 |
+| import -> core (reads_table) | 30 |
 | access-control -> core (accepts) | 29 |
-| import -> core (reads_table) | 29 |
 | presentation -> core (accepts) | 29 |
 | prognosa -> core (instantiates) | 28 |
 | core -> bank-pipeline (references_route) | 28 |

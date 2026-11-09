@@ -17,8 +17,9 @@
     };
     $num = static fn ($n): string => number_format((float) $n, 0, ',', '.');
     $date = static fn ($v): string => $v ? \Carbon\Carbon::parse($v)->locale('id')->translatedFormat('d M Y') : 'Belum diisi';
-    $url = static function (array $patch = []) use ($filters, $activeView): string {
-        $params = array_merge($filters, ['view' => $activeView], $patch);
+    $url = static function (array $patch = []) use ($filters, $activeView, $followupFilter): string {
+        $params = array_merge($filters, ['view' => $activeView, 'followup' => $followupFilter], $patch);
+        if ($params['view'] !== 'followup') unset($params['followup']);
         return route('ekosistem.index', array_filter($params, static fn ($v): bool => $v !== '' && $v !== null));
     };
     $detailUrl = static fn (array $patch = []): string => $url(array_merge(['view' => 'prospects', 'page' => null], $patch));
@@ -26,207 +27,27 @@
     $filterLabels = ['jalur'=>'Jalur RM', 'condition'=>'Kondisi', 'q'=>'Pencarian', 'jenis'=>'Jenis potensi', 'status'=>'Status', 'pic'=>'PIC', 'ring'=>'Ring', 'arah'=>'Arah', 'dasar'=>'Dasar angka', 'eco'=>'Ekosistem', 'peran'=>'Peran PIC'];
     $extraOpen = count(array_filter(array_intersect_key($filters, array_flip(['jenis','status','pic','ring','arah','dasar','eco','peran'])))) > 0;
     $attention = array_sum(array_intersect_key($s['conditions'], array_flip(['late','stale','due','hold','nopic'])));
-    $detailRecords = array_column($paginator->items(), null, 'ID_Prospek');
+    $detailRecords = array_column(($activeView === 'followup' ? $followupPaginator : $paginator)->items(), null, 'ID_Prospek');
     $ecoNames = array_column($allEcosystems, 'Nama_Ekosistem', 'ID_Ekosistem');
+    $ringCounts = array_count_values(array_column($prospects, 'Ring'));
+    $stageCounts = array_count_values(array_column($prospects, 'Tahap'));
+    $completion = $s['total'] ? round($s['statuses']['Selesai'] / $s['total'] * 100) : 0;
+    $viewLabels = ['overview'=>'Ringkasan', 'monitor'=>'Monitoring KC & PIC', 'followup'=>'TL & Penawaran', 'prospects'=>'Daftar prospek', 'ecosystems'=>'Ekosistem & ring'];
 @endphp
 
 @section('styles')
-<style>
-    .em { --em-blue:#0857c3; --em-navy:#053b82; --em-ink:#172c46; --em-muted:#536a83; --em-line:#dbe5f0; --em-soft:#f3f7fc; --em-green:#15724d; --em-amber:#88560b; --em-red:#b43436; color:var(--em-ink); padding:.5rem 0 2rem; font-size:.85rem; line-height:1.5; font-variant-numeric:tabular-nums; }
-    .em *, .em *::before, .em *::after { box-sizing:border-box; }
-    .em [hidden] { display:none !important; }
-    .em ::selection { color:#053b82; background:#cee5ff; }
-    .em :is(a,button,input,select,summary):focus-visible { outline:3px solid #307fe2; outline-offset:3px; }
-    .em :is(a,button,input,select) { touch-action:manipulation; }
-    .em a { text-underline-offset:3px; }
-    .em h1,.em h2,.em h3 { color:var(--em-ink); margin:0; font-weight:750; }
-    .em h1 { font-size:1.45rem; letter-spacing:-.025em; }
-    .em h2 { font-size:1rem; letter-spacing:-.015em; }
-    .em h3 { font-size:.9rem; }
-    .em-head { display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap; margin-bottom:1rem; }
-    .em-brand { display:flex; align-items:center; gap:.85rem; }
-    .em-brand-icon { display:grid; place-items:center; width:45px; height:45px; border-radius:12px; background:var(--em-navy); color:#fff; font-size:1.2rem; }
-    .em-head p { color:var(--em-muted); margin:.2rem 0 0; font-size:.8rem; }
-    .em-actions { display:flex; align-items:center; flex-wrap:wrap; gap:.5rem; }
-    .em-btn { display:inline-flex; align-items:center; justify-content:center; gap:.5rem; min-height:38px; padding:.45rem .8rem; background:#fff; border:1px solid #bdcfe3; border-radius:7px; color:var(--em-navy); font:inherit; font-weight:650; cursor:pointer; text-decoration:none; }
-    .em-btn:hover { color:var(--em-blue); background:#edf4ff; text-decoration:none; }
-    .em-btn--primary { background:var(--em-blue); border-color:var(--em-blue); color:#fff; }
-    .em-btn--primary:hover { background:var(--em-navy); color:#fff; }
-    .em-btn[aria-busy=true] { cursor:progress; }
-    .em-tabs { display:flex; gap:1.5rem; border-bottom:1px solid #bccfe5; overflow-x:auto; margin-bottom:1rem; }
-    .em-tabs a { display:inline-flex; align-items:center; gap:.5rem; padding:.7rem .1rem; white-space:nowrap; color:var(--em-muted); border-bottom:3px solid transparent; text-decoration:none; font-weight:650; }
-    .em-tabs a[aria-current=page] { color:var(--em-navy); border-bottom-color:var(--em-blue); }
-    .em-tabs a:hover { color:var(--em-blue); }
-    .em-quick-stats { display:none; }
-    .em-controls { background:#fff; border:1px solid var(--em-line); border-radius:10px; margin-bottom:1rem; }
-    .em-controls > summary { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:.5rem; min-height:48px; padding:.7rem 1rem; list-style:none; cursor:pointer; color:var(--em-navy); font-weight:600; }
-    .em-controls > summary::-webkit-details-marker { display:none; }
-    .em-controls > summary .em-subtle { margin-left:.65rem; font-weight:400; }
-    .em-controls > .em-filter { border:0; border-top:1px solid var(--em-line); margin:0; border-radius:0 0 10px 10px; }
-    .em-filter { border:1px solid var(--em-line); background:#fff; border-radius:12px; padding:.9rem 1rem; margin-bottom:1rem; }
-    .em-filter-main { display:grid; grid-template-columns:minmax(135px,.9fr) minmax(190px,1.7fr) minmax(140px,1fr) minmax(160px,1.15fr) auto; gap:.75rem; align-items:end; }
-    .em-field { display:flex; flex-direction:column; gap:.3rem; min-width:0; }
-    .em label { font-size:.75rem; font-weight:600; color:var(--em-muted); margin:0; }
-    .em :is(input,select) { width:100%; min-width:0; height:38px; background:#fff; color:var(--em-ink); border:1px solid #bdcfe3; border-radius:6px; padding:0 .6rem; font:inherit; caret-color:var(--em-blue); }
-    .em input::placeholder { color:var(--em-muted); }
-    .em select:disabled { background:var(--em-soft); color:var(--em-muted); }
-    .em-filter-bottom { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:.5rem; margin-top:.6rem; color:var(--em-muted); font-size:.74rem; }
-    .em-filter details { margin-top:.55rem; }
-    .em-filter summary { color:var(--em-blue); cursor:pointer; width:fit-content; padding:.2rem 0; font-size:.78rem; font-weight:600; }
-    .em-filter-extra { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:.75rem; padding:.8rem 0 .25rem; }
-    .em-filter-active { display:flex; flex-wrap:wrap; gap:.3rem; margin-top:.65rem; }
-    .em-filter-active a { padding:.2rem .45rem; background:#eaf2ff; color:#053b82; border-radius:5px; font-size:.73rem; overflow-wrap:anywhere; }
-    .em-finance { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); background:var(--em-navy); color:#fff; border-radius:12px; padding:1rem .3rem; margin-bottom:1rem; }
-    .em-finance > a { padding:.1rem 1.1rem; color:#fff; border-right:1px solid #ffffff36; text-decoration:none; min-width:0; }
-    .em-finance > a:last-child { border:0; }
-    .em-finance > a:hover { background:#ffffff10; }
-    .em-finance span { display:flex; gap:.5rem; align-items:center; font-size:.76rem; color:#d8eaff; }
-    .em-finance strong { display:block; font-size:1.3rem; font-weight:750; margin:.35rem 0 .2rem; letter-spacing:-.02em; overflow-wrap:anywhere; }
-    .em-finance .em-finance-note { color:#d8eaff; font-size:.7rem; display:block; }
-    .em-title-row { display:flex; align-items:baseline; justify-content:space-between; gap:.65rem; flex-wrap:wrap; margin-bottom:.8rem; }
-    .em-title-row p { margin:.15rem 0 0; color:var(--em-muted); font-size:.77rem; }
-    .em-subtle { color:var(--em-muted); font-size:.75rem; }
-    .em-overview { display:grid; grid-template-columns:minmax(0,1.35fr) minmax(0,1fr); gap:1rem; margin-bottom:1rem; }
-    .em-panel { background:#fff; border:1px solid var(--em-line); border-radius:12px; padding:1.1rem; min-width:0; }
-    .em-map-panel { display:flex; flex-direction:column; }
-    .em-map { position:relative; background:#eef4fa; border-radius:9px; flex:1; min-height:340px; display:grid; place-items:center; overflow:hidden; }
-    .em-map svg { display:block; width:100%; max-height:390px; height:auto; }
-    .em-region path { fill:var(--region-color); stroke:#fff; stroke-width:.7; vector-effect:non-scaling-stroke; transition:fill-opacity .15s ease; }
-    .em-region:hover path,.em-region:focus path { fill-opacity:.75; stroke:var(--em-navy); stroke-width:1; }
-    .em-region[data-selected=true] path { stroke:#102d52; stroke-width:1.6; }
-    .em-region rect { fill:#fff; stroke:#d5e1ef; stroke-width:1; }
-    .em-region text { fill:#12385f; font-size:14px; font-weight:700; text-anchor:middle; pointer-events:none; }
-    .em-region .em-map-count { font-size:10px; font-weight:500; fill:#536a83; }
-    .em-map-empty { padding:2rem; color:var(--em-muted); text-align:center; }
-    .em-map-legend { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:.5rem; margin-top:.7rem; }
-    .em-map-legend a { padding:.4rem; border-radius:5px; color:var(--em-ink); text-decoration:none; font-size:.73rem; }
-    .em-map-legend a:hover { background:#eef4ff; }
-    .em-map-legend i { display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:.35rem; background:var(--region-color); }
-    .em-map-legend strong { display:block; margin:.15rem 0 0 .85rem; font-size:.85rem; }
-    .em-map-note { margin:.6rem 0 0; color:var(--em-muted); font-size:.68rem; }
-    .em-total { display:flex; justify-content:space-between; align-items:end; gap:.7rem; padding-bottom:.85rem; border-bottom:1px solid var(--em-line); }
-    .em-total strong { font-size:2.25rem; line-height:1; font-weight:800; color:var(--em-navy); letter-spacing:-.035em; }
-    .em-total span { display:block; margin-top:.45rem; color:var(--em-muted); font-size:.8rem; }
-    .em-execution { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); margin:1rem 0; gap:.75rem; }
-    .em-execution a { text-decoration:none; color:var(--em-ink); }
-    .em-execution b { display:block; font-size:1.4rem; font-weight:750; }
-    .em-execution span { display:block; color:var(--em-muted); font-size:.73rem; }
-    .em-stack { display:flex; height:10px; gap:2px; overflow:hidden; border-radius:4px; background:#edf2f7; margin:1rem 0 .75rem; }
-    .em-stack span { min-width:0; }
-    .em-statuses { display:grid; grid-template-columns:1fr 1fr; gap:.4rem .85rem; margin-bottom:1rem; }
-    .em-statuses a { display:flex; align-items:center; gap:.4rem; color:var(--em-muted); text-decoration:none; font-size:.76rem; }
-    .em-statuses b { margin-left:auto; color:var(--em-ink); }
-    .em-dot { width:7px; height:7px; display:inline-block; border-radius:50%; flex-shrink:0; }
-    .em-real { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:.5rem; padding:.85rem 0; border-top:1px solid var(--em-line); border-bottom:1px solid var(--em-line); }
-    .em-real span { color:var(--em-muted); font-size:.75rem; }
-    .em-real strong { font-size:1.05rem; color:var(--em-green); }
-    .em-attention { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.5rem; margin-top:.8rem; }
-    .em-attention a { display:block; padding:.55rem; border-radius:7px; background:#fff7ec; color:#88560b; text-decoration:none; }
-    .em-attention b { display:block; font-size:1.05rem; }
-    .em-attention span { font-size:.68rem; }
-    .em-section { margin-bottom:1rem; }
-    .em-scroll { overflow-x:auto; scrollbar-width:thin; scrollbar-color:#91accb #eef4fa; }
-    .em-table { width:100%; border-collapse:collapse; font-size:.79rem; }
-    .em-table th { background:#edf3fb; color:#3d5979; font-size:.71rem; font-weight:650; padding:.65rem .6rem; text-align:left; white-space:nowrap; border-bottom:1px solid #ccdaeb; }
-    .em-table td { padding:.8rem .6rem; border-bottom:1px solid #e5edf5; vertical-align:top; }
-    .em-table tr:last-child td { border-bottom:0; }
-    .em-table tbody tr:hover { background:#f8fbff; }
-    .em-table .em-right { text-align:right; white-space:nowrap; }
-    .em-table a { color:var(--em-navy); font-weight:650; }
-    .em-table td > span.em-subtle { display:block; margin-top:.2rem; }
-    .em-table .em-kc { white-space:nowrap; font-weight:700; }
-    .em-coverage { display:flex; align-items:center; gap:.45rem; white-space:nowrap; }
-    .em-coverage > span { height:4px; width:50px; background:#e5edf6; overflow:hidden; border-radius:2px; }
-    .em-coverage i { display:block; height:100%; background:var(--em-blue); }
-    .em-bottom-grid { display:grid; grid-template-columns:minmax(0,1.3fr) minmax(0,1fr); gap:1rem; margin-bottom:1rem; }
-    .em-priority { margin:0; padding:0; list-style:none; }
-    .em-priority li + li { border-top:1px solid var(--em-line); }
-    .em-priority a { display:flex; justify-content:space-between; align-items:center; gap:.75rem; padding:.75rem 0; text-decoration:none; color:var(--em-ink); }
-    .em-priority strong { display:block; font-size:.8rem; overflow-wrap:anywhere; }
-    .em-priority .em-subtle { display:block; margin-top:.2rem; }
-    .em-badge { display:inline-flex; align-items:center; white-space:normal; width:fit-content; padding:.15rem .45rem; font-size:.7rem; border-radius:5px; color:#4d627c; background:#edf2f7; font-weight:600; }
-    .em-badge--info { color:#0857c3; background:#e7f0ff; }
-    .em-badge--success { color:#146747; background:#e7f5ee; }
-    .em-badge--warning { color:#80510b; background:#fff2dc; }
-    .em-badge--danger { color:#a62c30; background:#fcebed; }
-    .em-bar-list { display:grid; gap:.75rem; }
-    .em-bar-list a { display:grid; grid-template-columns:105px minmax(0,1fr) 32px; gap:.6rem; align-items:center; font-size:.77rem; color:var(--em-muted); text-decoration:none; }
-    .em-bar-list .em-bar { height:7px; background:#eaf1fa; border-radius:4px; overflow:hidden; }
-    .em-bar i { display:block; height:100%; background:#307fe2; border-radius:inherit; }
-    .em-bar-list b { text-align:right; color:var(--em-ink); }
-    .em-empty { color:var(--em-muted); text-align:center; padding:2rem 1rem; }
-    .em-empty strong { display:block; color:var(--em-ink); margin-bottom:.4rem; }
-    .em-notice { margin-bottom:1rem; background:#fffaef; border:1px solid #ecd7ad; border-radius:8px; color:#85520c; font-size:.77rem; }
-    .em-notice summary { cursor:pointer; padding:.65rem .9rem; }
-    .em-notice > div { padding:0 .9rem .75rem; }
-    .em-alert { padding:1rem; border:1px solid #ecd7ad; background:#fffaef; color:#85520c; border-radius:10px; }
-    .em-method { color:var(--em-muted); font-size:.72rem; line-height:1.7; padding:.2rem .1rem; }
-    .em-log { margin:0; padding:0; list-style:none; }
-    .em-log li { display:flex; flex-wrap:wrap; align-items:baseline; gap:.35rem .75rem; padding:.6rem 0; border-top:1px solid var(--em-line); font-size:.75rem; }
-    .em-log time { color:var(--em-muted); min-width:115px; }
-    .em-matrix td { min-width:125px; }
-    .em-matrix a { display:block; text-decoration:none; padding:.55rem; background:#eaf4f0; border-radius:7px; color:#1f694d; }
-    .em-matrix a.em-cell-attention { background:#fff3e1; color:#895611; }
-    .em-matrix b { font-size:1rem; }
-    .em-ring-cell a { display:block; text-decoration:none; font-size:.76rem; }
-    .em-ring-cell span { display:block; color:var(--em-muted); margin-top:.2rem; font-size:.68rem; }
-    .em-eco-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1rem; }
-    .em-eco { background:#fff; border:1px solid var(--em-line); border-radius:12px; padding:1rem; min-width:0; }
-    .em-eco h3 { margin:.7rem 0 .4rem; color:var(--em-navy); overflow-wrap:anywhere; }
-    .em-eco p { font-size:.76rem; color:var(--em-muted); margin:.4rem 0; }
-    .em-eco-rings { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.4rem; margin-top:1rem; }
-    .em-eco-rings a { padding:.55rem .4rem; background:#edf4ff; color:var(--em-navy); border-radius:6px; text-decoration:none; text-align:center; font-size:.73rem; }
-    .em-eco-rings b { display:block; font-size:1.1rem; }
-    .em-pagination { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:.6rem; margin-top:1rem; }
-    .em-prospect { min-width:250px; max-width:330px; }
-    .em-prospect button { background:none; border:0; padding:0; color:var(--em-navy); font:inherit; font-weight:700; text-align:left; cursor:pointer; overflow-wrap:anywhere; }
-    .em-prospect button:hover { text-decoration:underline; }
-    .em-prospect .em-subtle { font-size:.71rem; }
-    .em-dialog { color:var(--em-ink); border:0; border-radius:14px; padding:0; width:min(860px,calc(100vw - 32px)); max-height:calc(100dvh - 32px); box-shadow:0 24px 64px -20px #042a5f80; }
-    .em-dialog::backdrop { background:#0a244c99; }
-    .em-dialog-head { padding:1.2rem 1.4rem; background:#edf4ff; display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; border-bottom:1px solid var(--em-line); }
-    .em-dialog-head h2 { font-size:1.05rem; line-height:1.5; }
-    .em-dialog-body { padding:1.2rem 1.4rem; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1.5rem; }
-    .em-dialog h3 { font-size:.9rem; margin-bottom:.8rem; color:var(--em-navy); }
-    .em-dialog dl { display:grid; grid-template-columns:115px minmax(0,1fr); gap:.5rem .75rem; margin:0; font-size:.79rem; }
-    .em-dialog dt { color:var(--em-muted); font-weight:500; }
-    .em-dialog dd { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; }
-    .em-dialog-wide { grid-column:1 / -1; }
-    @media(max-width:1199.98px) { .em-filter-main { grid-template-columns:repeat(4,minmax(0,1fr)); } .em-filter-main .em-field:nth-child(2) { grid-column:span 2; } .em-filter-main .em-btn { grid-column:4; } .em-overview { grid-template-columns:minmax(0,1.2fr) minmax(0,1fr); } .em-finance strong { font-size:1.1rem; } .em-eco-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
-    @media(max-width:991.98px) {
-        .em-quick-stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); padding:.75rem .25rem; margin-bottom:1rem; border:1px solid var(--em-line); border-radius:10px; background:#fff; }
-        .em-quick-stats a { display:block; text-decoration:none; padding:0 .5rem; border-right:1px solid var(--em-line); color:var(--em-navy); }
-        .em-quick-stats a:last-child { border:0; }
-        .em-quick-stats b { display:block; font-size:1.35rem; font-weight:750; }
-        .em-quick-stats span { display:block; font-size:.68rem; color:var(--em-muted); }
-        .em-overview { grid-template-columns:1fr; } .em-map { min-height:300px; } .em-bottom-grid { grid-template-columns:1fr; } .em-finance { grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem 0; } .em-finance>a:nth-child(2) { border:0; }
-    }
-    @media(max-width:575.98px) {
-        .em h1 { font-size:1.15rem; } .em-head { gap:.8rem; } .em-brand { align-items:flex-start; gap:.6rem; } .em-brand-icon { width:38px; height:38px; flex-shrink:0; }
-        .em-head .em-actions { width:100%; } .em-head .em-actions .em-btn { flex:1; } .em-tabs { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.15rem .75rem; overflow:visible; } .em-tabs a { font-size:.78rem; min-height:44px; }
-        .em-filter { padding:.8rem; } .em-filter-main { grid-template-columns:repeat(2,minmax(0,1fr)); gap:.65rem; } .em-filter-main .em-field:nth-child(2) { grid-column:auto; } .em-filter-main .em-btn { grid-column:1 / -1; }
-        .em :is(input,select) { font-size:1rem; height:44px; } .em-btn { min-height:44px; } .em-filter-extra { grid-template-columns:repeat(2,minmax(0,1fr)); } .em-filter summary { min-height:32px; }
-        .em-finance>a { padding:0 .8rem; } .em-finance span { font-size:.7rem; } .em-finance strong { font-size:1.05rem; } .em-finance .em-finance-note { font-size:.65rem; }
-        .em-panel { padding:.85rem; } .em-map { min-height:235px; } .em-map-legend { grid-template-columns:repeat(2,minmax(0,1fr)); } .em-map-legend a { min-height:44px; }
-        .em-execution b { font-size:1.3rem; } .em-priority a { flex-wrap:wrap; } .em-priority .em-badge { margin-left:0; } .em-eco-grid { grid-template-columns:1fr; }
-        .em-prospect-table { display:block; } .em-prospect-table thead { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); } .em-prospect-table tbody { display:grid; gap:.8rem; }
-        .em-prospect-table tr { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); padding:.8rem; gap:.6rem; border:1px solid var(--em-line); border-radius:8px; }
-        .em-prospect-table td { border:0; min-width:0; padding:0; overflow-wrap:anywhere; } .em-prospect-table td::before { content:attr(data-label); display:block; color:var(--em-muted); font-size:.68rem; margin-bottom:.2rem; }
-        .em-prospect-table .em-prospect { grid-column:1 / -1; min-width:0; max-width:none; } .em-prospect::before { display:none !important; } .em-prospect-table .em-right { text-align:left; white-space:normal; }
-        .em-dialog-body { grid-template-columns:1fr; } .em-dialog dl { grid-template-columns:95px minmax(0,1fr); } .em-dialog-head,.em-dialog-body { padding:1rem; }
-    }
-    @media(prefers-reduced-motion:reduce) { .em *, .em *::before, .em *::after { animation:none !important; transition:none !important; scroll-behavior:auto !important; } }
-</style>
+@include('report._ekosistem_styles')
 @endsection
 
 @section('content')
 <div class="em" id="eco-workspace">
     <header class="em-head">
-        <div class="em-brand"><span class="em-brand-icon"><i class="fas fa-project-diagram" aria-hidden="true"></i></span><div><h1>Peta Prospek Ekosistem</h1><p>Monitoring peluang, eksekusi, dan cakupan BRI Area 6.</p></div></div>
+        <div class="em-brand"><span class="em-brand-icon"><i class="fas fa-project-diagram" aria-hidden="true"></i></span><div><h1>Peta Prospek Ekosistem</h1><p>Peluang bisnis, penugasan PIC, dan progres tindak lanjut.</p></div></div>
         <div class="em-actions"><span class="em-subtle"><i class="fas fa-eye" aria-hidden="true"></i> Monitoring</span><a class="em-btn" href="{{ $spreadsheetUrl }}" target="_blank" rel="noopener"><i class="fas fa-external-link-alt" aria-hidden="true"></i> Sumber</a><a class="em-btn em-btn--primary" data-em-refresh href="{{ $url(['refresh'=>1]) }}"><i class="fas fa-sync-alt" aria-hidden="true"></i> Perbarui</a></div>
     </header>
+    <div class="em-location"><span><b>BRI Area 6</b> / {{ $viewLabels[$activeView] }} / {{ $kcOptions[$selectedKc] }}</span><span @class(['em-source-status','em-source-status--error'=>(bool)$error]) role="status">{{ $fetchedAt ? 'Pembaruan sumber: '.$fetchedAt : 'Sumber belum tersedia' }}</span></div>
     <nav class="em-tabs" aria-label="Tampilan monitoring">
-        @foreach(['overview'=>['Ringkasan','chart-pie'],'monitor'=>['KC & PIC','users'],'ecosystems'=>['Ekosistem & ring','project-diagram'],'prospects'=>['Detail prospek','list']] as $key=>$tab)
+        @foreach(['overview'=>['Ringkasan','chart-pie'],'monitor'=>['KC & PIC','users'],'followup'=>['TL & Penawaran','tasks'],'prospects'=>['Daftar prospek','list'],'ecosystems'=>['Ekosistem & ring','project-diagram']] as $key=>$tab)
             <a href="{{ $url(['view'=>$key]) }}" @if($activeView===$key) aria-current="page" 
 @endif
 ><i class="fas fa-{{ $tab[1] }}" aria-hidden="true"></i>{{ $tab[0] }}</a>
@@ -234,15 +55,7 @@
 @endforeach
 
     </nav>
-    @if(! $error && $activeView==='overview')
-        <div class="em-quick-stats" aria-label="Ringkasan eksekusi sesuai filter">
-            <a href="{{ $detailUrl() }}"><b>{{ $num($s['total']) }}</b><span>Prospek</span></a>
-            <a href="{{ $detailUrl(['status'=>'Berjalan']) }}"><b>{{ $num($s['statuses']['Berjalan']) }}</b><span>Berjalan</span></a>
-            <a href="{{ $detailUrl(['status'=>'Selesai']) }}"><b>{{ $num($s['statuses']['Selesai']) }}</b><span>Selesai</span></a>
-            <a href="{{ $detailUrl(['pic'=>'__assigned']) }}"><b>{{ $s['coverage'] }}%</b><span>PIC terisi</span></a>
-        </div>
-    @endif
-    <details class="em-controls" @if(count(array_filter(array_diff_key($filters,['kc'=>true])))>0) open @endif>
+    <details class="em-controls" data-em-controls data-active-filters="{{ count(array_filter(array_diff_key($filters,['kc'=>true])))>0 ? 'true' : 'false' }}" @if(count(array_filter(array_diff_key($filters,['kc'=>true])))>0) open @endif>
         <summary><span><i class="fas fa-filter" aria-hidden="true"></i> Filter monitoring <span class="em-subtle">{{ $kcOptions[$selectedKc] }}</span></span><span class="em-subtle">{{ $fetchedAt ? 'Data '.$fetchedAt : 'Sumber belum tersedia' }} <i class="fas fa-chevron-down" aria-hidden="true"></i></span></summary>
     <form method="GET" action="{{ route('ekosistem.index') }}" class="em-filter" aria-label="Filter seluruh monitoring">
         <input type="hidden" name="view" value="{{ $activeView }}">
@@ -301,6 +114,11 @@
         
 @endif
 
+        @if($activeView==='overview')
+            @include('report._ekosistem_hero')
+        @else
+            <div class="em-view-heading"><div><h2>{{ $viewLabels[$activeView] }}</h2><p>{{ $num($s['total']) }} prospek sesuai filter pada {{ $kcOptions[$selectedKc] }}.</p></div><span class="em-badge em-badge--info"><i class="fas fa-eye mr-1" aria-hidden="true"></i> Monitoring</span></div>
+        @endif
         <div class="em-finance" aria-label="Potensi dipisahkan menurut jenis, tidak dijumlahkan">
             @foreach(['Simpanan'=>['wallet','Peluang dana simpanan'],'Kredit'=>['hand-holding-usd','Peluang pembiayaan'],'Payroll'=>['users','Target orang, indikatif'],'Arus dana'=>['exchange-alt','Per tahun, bukan saldo']] as $category=>$meta)
                 <a href="{{ $detailUrl(['jenis'=>$category]) }}"><span><i class="fas fa-{{ $meta[0] }}" aria-hidden="true"></i>{{ $category==='Arus dana' ? 'Arus dana / tahun' : 'Potensi '.$category }}</span><strong>{{ $category==='Payroll' ? $num($s['payroll']).' orang' : $range($s['categories'][$category]['min'],$s['categories'][$category]['max']) }}</strong><span class="em-finance-note">{{ $meta[1] }}</span></a>
@@ -309,6 +127,7 @@
 
         </div>
         @if($activeView==='overview')
+            @include('report._ekosistem_charts')
             <div class="em-overview">
                 <section class="em-panel em-map-panel" aria-labelledby="em-map-title">
                     <div class="em-title-row"><div><h2 id="em-map-title">Peta cakupan wilayah</h2><p>Pilih poligon atau nama KC untuk memfokuskan monitoring.</p></div>@if($selectedKc!=='all' && !$isLocked)<a class="em-subtle" href="{{ $url(['kc'=>'all']) }}">Semua KC</a>
@@ -346,7 +165,7 @@
                     <div class="em-title-row"><div><h2 id="em-execution-title">Eksekusi {{ $kcOptions[$selectedKc] }}</h2><p>Prospek yang sesuai seluruh filter.</p></div></div>
                     <div class="em-total"><div><strong>{{ $num($s['total']) }}</strong><span>prospek pada {{ $num($s['ecosystems']) }} ekosistem terdaftar</span>@if($s['unmapped_ecosystem']>0)<a class="em-subtle" href="{{ $detailUrl(['condition'=>'unmapped']) }}">{{ $s['unmapped_ecosystem'] }} prospek belum terhubung ke master</a>@endif</div><a href="{{ $detailUrl() }}" class="em-btn">Lihat detail <i class="fas fa-arrow-right" aria-hidden="true"></i></a></div>
                     <div class="em-execution"><a href="{{ $detailUrl(['status'=>'Berjalan']) }}"><b>{{ $num($s['statuses']['Berjalan']) }}</b><span>Berjalan</span></a><a href="{{ $detailUrl(['status'=>'Selesai']) }}"><b>{{ $num($s['statuses']['Selesai']) }}</b><span>Selesai</span></a><a href="{{ $detailUrl(['pic'=>'__assigned']) }}"><b>{{ $s['coverage'] }}%</b><span>PIC terisi · {{ $s['assigned'] }}/{{ $s['total'] }}</span></a></div>
-                    @php $colors=['Belum mulai'=>'#9bacc2','Berjalan'=>'#0857c3','Tertunda'=>'#d08a24','Selesai'=>'#19805b','Batal'=>'#bd4d54']; @endphp
+                    @php $colors=['Belum mulai'=>'#d9e8f9','Berjalan'=>'#307fe2','Tertunda'=>'#e3b761','Selesai'=>'#0a4d98','Batal'=>'#a9b6c6']; @endphp
                     <div class="em-stack" role="img" aria-label="Komposisi status; rincian jumlah pada legenda berikut.">@foreach($s['statuses'] as $status=>$total)<span style="width:{{ $s['total']>0 ? $total/$s['total']*100:0 }}%;background:{{ $colors[$status] ?? '#9bacc2' }}"></span>
 @endforeach
 </div>
@@ -449,6 +268,33 @@
 @endif
 
 
+        @if($activeView==='followup')
+            <div class="em-tl-metrics" aria-label="Kelengkapan catatan tindak lanjut dan penawaran">
+                @foreach(['all'=>['Semua prospek',$followupSummary['total']],'followup'=>['Kolom TL terisi',$followupSummary['followup']],'offer'=>['Kolom penawaran terisi',$followupSummary['offer']],'empty'=>['Belum ada isian TL / penawaran',$followupSummary['empty']]] as $key=>$metric)
+                    <a href="{{ $url(['followup'=>$key,'tl_page'=>null]) }}" aria-current="{{ $followupFilter===$key ? 'true' : 'false' }}"><span>{{ $metric[0] }}</span><strong>{{ $num($metric[1]) }}</strong></a>
+                @endforeach
+            </div>
+            <section class="em-panel em-section" aria-labelledby="em-followup-title">
+                <div class="em-title-row"><div><h2 id="em-followup-title">Progres TL & Penawaran</h2><p>Penawaran mengikuti isian sumber, termasuk pilihan “Tidak”. Satu prospek dapat memiliki isian TL dan penawaran.</p></div><span class="em-subtle">{{ $num($followupPaginator->total()) }} prospek</span></div>
+                <div class="em-scroll" tabindex="0" role="region" aria-label="Monitoring catatan tindak lanjut dan penawaran" data-abah-no-table-guard="1">
+                    <table class="em-table em-followup-table" data-abah-no-table-guard="1"><thead><tr><th scope="col">KC & PIC</th><th scope="col">Ekosistem & prospek</th><th scope="col">Tindak lanjut tercatat</th><th scope="col">Penawaran tercatat</th><th scope="col">Informasi lainnya</th></tr></thead><tbody>
+                    @forelse($followupPaginator as $row)
+                        <tr data-prospect-row="{{ $row['ID_Prospek'] }}">
+                            <td><strong>KC {{ $row['KC'] }}</strong><span class="em-subtle">{{ $row['Nama_PIC'] ?: 'PIC belum diisi' }}</span><span class="em-subtle">{{ $row['Jalur_RM'] }}</span><span class="em-badge em-badge--{{ $statusTone[$row['Status']] ?? 'muted' }}">{{ $row['Status'] }}</span></td>
+                            <td class="em-prospect"><button type="button" data-em-detail="{{ $row['ID_Prospek'] }}" aria-haspopup="dialog">{{ $row['Prospek'] }}</button><span class="em-subtle">{{ $row['ID_Prospek'] }} · {{ $row['Ekosistem'] }}</span><span class="em-subtle">{{ $row['Produk'] }}</span></td>
+                            @foreach(['followup','offer','other'] as $group)
+                                <td>@if($row['Monitoring_Fields'][$group]!==[])<dl class="em-recorded">@foreach($row['Monitoring_Fields'][$group] as $field)<div><dt>{{ $field['label'] }}</dt><dd>{{ match(strtoupper($field['value'])) { 'TRUE'=>'Ya', 'FALSE'=>'Tidak', default=>$field['value'] } }}</dd></div>@endforeach</dl>@else<span class="em-subtle">Belum ada isian</span>@endif</td>
+                            @endforeach
+                        </tr>
+                    @empty
+                        <tr><td colspan="5"><div class="em-empty"><strong>Tidak ada prospek sesuai filter</strong>Ubah filter catatan atau pilih cakupan yang lebih luas.</div></td></tr>
+                    @endforelse
+                    </tbody></table>
+                </div>
+                <div class="em-pagination"><span class="em-subtle">{{ $followupPaginator->firstItem() ?? 0 }}–{{ $followupPaginator->lastItem() ?? 0 }} dari {{ $num($followupPaginator->total()) }} prospek</span><div class="em-actions">@if($followupPaginator->previousPageUrl())<a class="em-btn" rel="prev" href="{{ $followupPaginator->previousPageUrl() }}">Sebelumnya</a>@endif @if($followupPaginator->nextPageUrl())<a class="em-btn" rel="next" href="{{ $followupPaginator->nextPageUrl() }}">Berikutnya</a>@endif</div></div>
+            </section>
+        @endif
+
         @if($activeView==='prospects')
             <section class="em-panel em-section" aria-labelledby="em-prospects-title"><div class="em-title-row"><div><h2 id="em-prospects-title">Detail prospek</h2><p>Klik nama prospek untuk membuka seluruh rincian dalam mode baca.</p></div><span class="em-subtle" id="em-record-count">{{ $num($paginator->total()) }} prospek sesuai filter</span></div>
             @if($paginator->isEmpty())<div class="em-empty"><strong>Tidak ada prospek sesuai filter</strong>Coba perluas pilihan wilayah atau reset filter. <a href="{{ route('ekosistem.index',['view'=>'prospects','kc'=>$selectedKc]) }}">Reset filter</a></div>
@@ -472,9 +318,12 @@
             
 @endif
 </section>
-            <dialog class="em-dialog" id="em-detail-dialog" aria-labelledby="em-detail-title"><div class="em-dialog-head"><div><span class="em-subtle" id="em-detail-id"></span><h2 id="em-detail-title">Rincian prospek</h2></div><button type="button" class="em-btn" id="em-detail-close" aria-label="Tutup rincian prospek">Tutup</button></div><div class="em-dialog-body" id="em-detail-body"></div></dialog>
         
 @endif
+
+        @if(in_array($activeView,['prospects','followup']))
+            <dialog class="em-dialog" id="em-detail-dialog" aria-labelledby="em-detail-title"><div class="em-dialog-head"><div><span class="em-subtle" id="em-detail-id"></span><h2 id="em-detail-title">Rincian prospek</h2></div><button type="button" class="em-btn" id="em-detail-close" aria-label="Tutup rincian prospek">Tutup</button></div><div class="em-dialog-body" id="em-detail-body"></div></dialog>
+        @endif
 
         <p class="em-method">Nominal sumber menggunakan juta rupiah. Simpanan, kredit, dan arus dana tahunan disajikan terpisah. Estimasi dan target nasabah bersifat indikatif dan dapat tumpang tindih. Monitoring ini hanya membaca sumber; pembaruan tetap mengikuti proses pada spreadsheet/webapp.</p>
     
@@ -498,6 +347,10 @@
         button.disabled = true;
         button.textContent = 'Menerapkan…';
     });
+    const controls = document.querySelector('[data-em-controls]');
+    if (controls && controls.dataset.activeFilters !== 'true' && window.matchMedia('(max-width: 575.98px)').matches) {
+        controls.open = false;
+    }
     const dialog = document.getElementById('em-detail-dialog');
     if (!dialog) return;
     const records = @json($detailRecords);
@@ -517,6 +370,11 @@
             ['Potensi & realisasi', [['Jenis potensi',record.Jenis_Potensi],['Estimasi minimum',nominal(record.Est_Min_Juta)],['Estimasi maksimum',nominal(record.Est_Max_Juta)],['Target nasabah',record.Est_Nasabah],['Realisasi',nominal(record.Realisasi_Nominal_Juta)],['Nasabah terealisasi',record.Realisasi_Nasabah],['Dasar angka',record.Dasar_Angka],['Pemeriksaan satuan',(record.Cek_Satuan || []).map(issue=>issue.label+': '+number.format(issue.value)+' juta (nilai asli; tidak masuk rekap)').join('\n')]]],
             ['Sumber & catatan', [['Sumber',record.Sumber],['Catatan analis',record.Catatan_Analis],['Kendala',record.Kendala],['Catatan tindak lanjut',record.Catatan]]]
         ];
+        const extraGroups = record.Monitoring_Fields || {};
+        [['followup','Tindak lanjut tercatat'],['offer','Penawaran tercatat'],['other','Informasi tambahan']].forEach(([key,label]) => {
+            const fields = extraGroups[key] || [];
+            if (fields.length) sections.push([label, fields.map(field => [field.label, String(field.value).toUpperCase()==='TRUE' ? 'Ya' : (String(field.value).toUpperCase()==='FALSE' ? 'Tidak' : field.value)])]);
+        });
         sections.forEach(([title, fields]) => {
             const section = document.createElement('section');
             const heading = document.createElement('h3'); heading.textContent = title;
@@ -535,4 +393,8 @@
     dialog.addEventListener('click', event => { if (event.target === dialog) {const r=dialog.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom) dialog.close();} });
 })();
 </script>
+@if($activeView==='overview' && ! $error)
+    <script src="{{ asset('vendor/chartjs/chart.min.js') }}"></script>
+    @include('report._ekosistem_charts_script')
+@endif
 @endsection

@@ -368,6 +368,26 @@
         text-align: left;
     }
 
+    .table-report .casa-rm-name {
+        min-width: 210px;
+        max-width: 260px;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+
+    .table-report .casa-rm-unit {
+        min-width: 190px;
+        max-width: 240px;
+        white-space: normal;
+    }
+
+    @media (max-width: 575.98px) {
+        .table-report .casa-rm-name {
+            min-width: 150px;
+            max-width: 170px;
+        }
+    }
+
     .bg-header-main {
         background: var(--table-header-bg) !important;
         color: var(--table-header-text) !important;
@@ -398,6 +418,11 @@
         position: sticky;
         top: 76px; /* Adjusted for compact padding */
         z-index: 9;
+    }
+
+    .table-report thead > tr.bg-header-sub > th,
+    .table-report thead > tr.bg-header-sub-light > th {
+        color: #ffffff !important;
     }
 
     .table-hover tbody tr:hover td { 
@@ -1026,7 +1051,8 @@
                             <table class="table table-report casa-no-hover m-0">
                                 <thead>
                                     <tr>
-                                        <th rowspan="3" class="bg-header-main sticky-col align-middle col-group-label" style="min-width: 170px;">RM / MANTRI</th>
+                                        <th rowspan="3" scope="col" class="bg-header-main sticky-col align-middle col-group-label casa-rm-name">RM / MANTRI</th>
+                                        <th rowspan="3" scope="col" class="bg-header-main align-middle casa-rm-unit">Unit Kerja</th>
                                         <th colspan="15" class="bg-header-main">TOTAL</th>
                                     </tr>
                                     <tr class="bg-header-sub">
@@ -1269,7 +1295,7 @@ document.addEventListener('DOMContentLoaded', function () {
         $('#tbody-total').html(html.replace('31', '16'));
         $('#tbody-briguna-kpr').html(html);
         $('#tbody-mikro-smc').html(html);
-        $('#tbody-per-rm').html(html.replace('31', '16'));
+        $('#tbody-per-rm').html(html.replace('31', '17'));
     }
 
     function renderSingleTableBody(tbodyId, dataList, totalData, segmentKey = 'total', isDual = false, segmentKey2 = null) {
@@ -1686,15 +1712,16 @@ document.addEventListener('DOMContentLoaded', function () {
 
             if (dataList.length === 0) {
                 const tr = document.createElement('tr');
-                tr.innerHTML = '<td colspan="16" class="text-center text-muted">Tidak ada data untuk filter yang dipilih.</td>';
+                tr.innerHTML = '<td colspan="17" class="text-center text-muted">Tidak ada data untuk filter yang dipilih.</td>';
                 tbodyPerRm.appendChild(tr);
             } else {
                 const fragment = document.createDocumentFragment();
                 
                 dataList.forEach(function(row) {
                     const tr = document.createElement('tr');
-                    const branchCell = `<td class="sticky-col text-left font-weight-bold">${escapeHtml(row.branch || '-')}</td>`;
-                    tr.innerHTML = branchCell + createDataCells(row.total);
+                    const branchCell = `<td class="sticky-col text-left font-weight-bold casa-rm-name">${escapeHtml(row.branch || '-')}</td>`;
+                    const unitCell = `<td class="text-left casa-rm-unit">${escapeHtml(row.unit_kerja || '-')}</td>`;
+                    tr.innerHTML = branchCell + unitCell + createDataCells(row.total);
                     fragment.appendChild(tr);
                 });
 
@@ -1704,7 +1731,7 @@ document.addEventListener('DOMContentLoaded', function () {
             // Append total row
             const trTotal = document.createElement('tr');
             trTotal.className = 'row-total';
-            const totalBranchCell = `<td class="sticky-col text-left">${totalData.branch || 'TOTAL'}</td>`;
+            const totalBranchCell = `<td class="sticky-col text-left casa-rm-name">${escapeHtml(totalData.branch || 'TOTAL')}</td><td></td>`;
             trTotal.innerHTML = totalBranchCell + createDataCells(totalData.total);
             tbodyPerRm.appendChild(trTotal);
 

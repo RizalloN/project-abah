@@ -307,7 +307,7 @@ class RasioCasaDebiturController extends Controller
             $ytdPeriod = $comparisonPeriods['ytd'];
 
             $forceRefresh = $request->boolean('refresh');
-            $responseCacheKey = 'rasio_casa_per_rm:fetch:v' . $this->reportCacheVersion() . ':' . md5(json_encode([
+            $responseCacheKey = 'rasio_casa_per_rm:fetch:v2:v' . $this->reportCacheVersion() . ':' . md5(json_encode([
                 'curr' => $currentPeriod,
                 'prev' => $previousPeriod,
                 'm2' => $m2Period,
@@ -340,7 +340,7 @@ class RasioCasaDebiturController extends Controller
                 array_keys($m2Summary['os'] ?? []),
                 array_keys($ytdSummary['os'] ?? [])
             ));
-            sort($rms);
+            sort($rms, SORT_NATURAL);
 
             $scopeLabel = $this->isPerRmAllUnit($selectedUker) ? self::PER_RM_ALL_UNIT_LABEL : $selectedUker;
             [$rows, $total] = $this->assembleRmRows($rms, $previousSummary, $currentSummary, "{$selectedBranch} | {$scopeLabel}", $m2Summary, $ytdSummary);
@@ -1983,7 +1983,7 @@ class RasioCasaDebiturController extends Controller
      */
     private function computeRmSnapshot(string $loanPeriod, string $selectedBranch, string $selectedUnit, bool $forceRefresh = false): array
     {
-        $cacheKey = 'rasio_casa_per_rm_snapshot:v1:' . md5(json_encode([
+        $cacheKey = 'rasio_casa_per_rm_snapshot:v2:' . md5(json_encode([
             'cache_version' => $this->reportCacheVersion(),
             'loan_period' => $loanPeriod,
             'branch' => $selectedBranch,
@@ -2073,6 +2073,7 @@ class RasioCasaDebiturController extends Controller
             ->where("d.{$loanRmColumn}", '<>', '')
             ->selectRaw("
                 UPPER(TRIM(d.{$loanRmColumn})) as rm_key,
+                UPPER(TRIM(d.{$loanUnitColumn})) as unit_name,
                 {$loanIdentitySql} as identity_key,
                 COALESCE(d.{$loanBalanceColumn}, 0) as loan_balance,
                 1 as has_total,
@@ -2087,6 +2088,7 @@ class RasioCasaDebiturController extends Controller
             ->selectRaw("
                 rm_key,
                 identity_key,
+                GROUP_CONCAT(DISTINCT unit_name) as unit_names,
                 SUM(loan_balance) as total_os,
                 SUM(CASE WHEN has_briguna = 1 THEN loan_balance ELSE 0 END) as briguna_os,
                 SUM(CASE WHEN has_kpr = 1 THEN loan_balance ELSE 0 END) as kpr_os,
@@ -2122,6 +2124,10 @@ class RasioCasaDebiturController extends Controller
 
             $snapshot['row_count']++;
             $snapshot['branch_labels'][$rmKey] = $rmKey;
+            $snapshot['rm_units'][$rmKey] = array_values(array_unique(array_merge(
+                $snapshot['rm_units'][$rmKey] ?? [],
+                array_filter(array_map('trim', explode(',', (string) ($row->unit_names ?? ''))))
+            )));
             $snapshot['os'][$rmKey] ??= ['total' => 0, 'briguna' => 0, 'kpr' => 0, 'mikro' => 0, 'smc' => 0];
             $snapshot['casa'][$rmKey] ??= ['total' => 0, 'briguna' => 0, 'kpr' => 0, 'mikro' => 0, 'smc' => 0];
 
@@ -2195,7 +2201,56 @@ class RasioCasaDebiturController extends Controller
             }
         }
 
-        return $snapshot;
+        return $this->consolidateRmSnapshot($snapshot);
+    }
+
+    private function normalizeRmIdentity(string $label): array
+    {
+        $label = preg_replace('/\s+/u', ' ', strtoupper(trim($label))) ?? trim($label);
+
+        if (preg_match('/^(\d+)(?:\s*[-–—]\s*|\s+|$)(.*)$/u', $label, $matches)
+            && ($pn = ltrim($matches[1], '0')) !== '') {
+            $displayPn = str_pad($pn, 8, '0', STR_PAD_LEFT);
+            $name = trim($matches[2]);
+
+            return [
+                'key' => 'PN:' . $pn,
+                'label' => $name !== '' ? $displayPn . ' - ' . $name : $displayPn,
+                'has_name' => $name !== '',
+            ];
+        }
+
+        return ['key' => $label, 'label' => $label, 'has_name' => true];
+    }
+
+    private function consolidateRmSnapshot(array $snapshot): array
+    {
+        $merged = $snapshot;
+        $merged['os'] = $merged['casa'] = $merged['branch_labels'] = $merged['rm_units'] = [];
+
+        foreach (array_keys($snapshot['os']) as $rawKey) {
+            $identity = $this->normalizeRmIdentity((string) $rawKey);
+            $rmKey = $identity['key'];
+            $existingLabel = $merged['branch_labels'][$rmKey] ?? '';
+
+            if ($existingLabel === '' || (!$this->normalizeRmIdentity($existingLabel)['has_name'] && $identity['has_name'])) {
+                $merged['branch_labels'][$rmKey] = $identity['label'];
+            }
+
+            foreach (['os', 'casa'] as $metric) {
+                foreach ($snapshot[$metric][$rawKey] ?? [] as $segment => $balance) {
+                    $merged[$metric][$rmKey][$segment] = ($merged[$metric][$rmKey][$segment] ?? 0) + $balance;
+                }
+            }
+
+            $merged['rm_units'][$rmKey] = array_values(array_unique(array_merge(
+                $merged['rm_units'][$rmKey] ?? [],
+                $snapshot['rm_units'][$rawKey] ?? []
+            )));
+            sort($merged['rm_units'][$rmKey]);
+        }
+
+        return $merged;
     }
 
     private function allocateCasaBalanceForRm(float $casaBalance, array $rmOsBySegment, float $identityTotalOs): array
@@ -2253,7 +2308,23 @@ class RasioCasaDebiturController extends Controller
         }
 
         foreach ($rms as $rmKey) {
-            $row = ['branch' => $rmKey];
+            $label = '';
+            $units = [];
+
+            foreach ([$currentSummary, $previousSummary, $m2Summary, $ytdSummary] as $summary) {
+                $candidate = $summary['branch_labels'][$rmKey] ?? '';
+                if ($candidate !== '' && ($label === '' || !$this->normalizeRmIdentity($label)['has_name'])) {
+                    $label = $candidate;
+                }
+                if ($units === [] && !empty($summary['rm_units'][$rmKey])) {
+                    $units = $summary['rm_units'][$rmKey];
+                }
+            }
+
+            $row = [
+                'branch' => $label !== '' ? $label : $rmKey,
+                'unit_kerja' => $units !== [] ? implode(' · ', $units) : '-',
+            ];
 
             foreach (self::SEGMENTS as $segment) {
                 $segmentKey = strtolower($segment);

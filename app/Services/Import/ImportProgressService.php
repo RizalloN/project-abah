@@ -976,6 +976,9 @@ class ImportProgressService
             $attempts++;
             try {
                 DB::table('jobs')
+                    // The worker must acknowledge its own reserved wrapper. IDs
+                    // are reused: deleting it early can erase a later job on ACK.
+                    ->whereNull('reserved_at')
                     ->where('payload', 'like', '%' . class_basename(RunImportJob::class) . '%')
                     ->where('payload', 'like', '%jobId%')
                     ->where('payload', 'like', '%i:' . $jobId . ';%')

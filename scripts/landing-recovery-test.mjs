@@ -183,3 +183,14 @@ test('page automatic reread strips a manual refresh flag to avoid repeated inval
   assert.equal(target.searchParams.get('periode'), '2026-10-04');
   assert.equal(target.searchParams.get('cabang'), '00045');
 });
+
+test('page automatic reread strips controller cache-busting flags', () => {
+  for (const flag of ['_area6', '_refresh']) {
+    const h = pageHarness(); h.browser.location.href += `&${flag}=1793672524204`;
+    let target; h.browser.location.replace = url => { target = new URL(url); };
+    h.recover(true); h.timers.shift().fn();
+    assert.equal(target.searchParams.has(flag), false);
+    assert.equal(target.searchParams.get('segment'), 'micro');
+    assert.equal(h.reloads(), 0);
+  }
+});

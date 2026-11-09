@@ -58,7 +58,7 @@ class MicroNettWorkbook
                 $eligible = $people->where('counted', true)->where('category', $category);
                 $buckets = [];
                 foreach (['none' => 'Belum Realisasi', 'extreme_low' => 'Extreme Low', 'low' => 'Low', 'mid' => 'Mid', 'high' => 'High'] as $key => $label) {
-                    $range = match ($key) { 'none' => 'Nett = Rp0', 'extreme_low' => $category === 'contract' ? '<175 jt' : '<400 jt', 'low' => $category === 'contract' ? '175 - 350 jt' : '400 - 800 jt', 'mid' => $category === 'contract' ? '>350 - 450 jt' : '>800 jt - 1 M', default => $category === 'contract' ? '>450 jt' : '>1 M' };
+                    $range = match ($key) { 'none' => 'Nett = Rp0', 'extreme_low' => $category === 'contract' ? '<350 jt' : '<400 jt', 'low' => $category === 'contract' ? '350 - 600 jt' : '400 - 800 jt', 'mid' => $category === 'contract' ? '>600 - 800 jt' : '>800 jt - 1 M', default => $category === 'contract' ? '>800 jt' : '>1 M' };
                     $buckets[$key] = ['key' => $key, 'label' => $label, 'range' => $range, 'mantri' => 0, 'share' => 0.0, 'people' => []];
                 }
                 foreach ($eligible as $person) {
@@ -90,7 +90,7 @@ class MicroNettWorkbook
     // Produktivitas nol dipisahkan dari kelompok nominal Extreme Low.
     private function nettTier(string $category, float $value): string
     {
-        [$low, $mid, $high] = $category === 'contract' ? [175000000, 350000000, 450000000] : [400000000, 800000000, 1000000000];
+        [$low, $mid, $high] = $category === 'contract' ? [350000000, 600000000, 800000000] : [400000000, 800000000, 1000000000];
 
         return match (true) { $value === 0.0 => 'none', $value < $low => 'extreme_low', $value <= $mid => 'low', $value <= $high => 'mid', default => 'high' };
     }

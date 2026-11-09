@@ -33,20 +33,20 @@ final class LandingSmeOperationalService
 
     private const SOURCES = [
         'hot_prospects' => [
-            'spreadsheet_id' => '14sQxMWrKLhyrhENBEJWgN2In0vvG2_iq',
-            'source_url' => 'https://docs.google.com/spreadsheets/d/14sQxMWrKLhyrhENBEJWgN2In0vvG2_iq/edit?usp=sharing&ouid=104421189091698527488&rtpof=true&sd=true',
-            'sheet' => 'REKAP PROGRESS',
+            'spreadsheet_id' => '1zsu1OwS-dXXkPQsX3zpbgGoErCQ-KUND',
+            'source_url' => 'https://docs.google.com/spreadsheets/d/1zsu1OwS-dXXkPQsX3zpbgGoErCQ-KUND/edit?usp=sharing&ouid=104421189091698527488&rtpof=true&sd=true',
+            'sheet' => 'Rekap Uker',
             'label' => 'Monitoring Hot Prospek',
             'csv_mode' => 'gviz',
         ],
         'rtl_pipeline' => [
-            'spreadsheet_id' => '1QNOlNFQsNeYtm43w52cKEHmuUuUDEIT4',
-            'source_url' => 'https://docs.google.com/spreadsheets/d/1QNOlNFQsNeYtm43w52cKEHmuUuUDEIT4/edit?usp=sharing&ouid=104421189091698527488&rtpof=true&sd=true',
+            'spreadsheet_id' => '1W6SQNG2uxKW9d6dn4N0K0AF2Xm7qZSig',
+            'source_url' => 'https://docs.google.com/spreadsheets/d/1W6SQNG2uxKW9d6dn4N0K0AF2Xm7qZSig/edit?usp=sharing&ouid=104421189091698527488&rtpof=true&sd=true',
             'sheet' => 'REKAP',
             'label' => 'Pipeline RO Malang',
         ],
         'extension' => [
-            'spreadsheet_id' => '1Iidgzfevd8WSjP7An4zQSRe6qVevQYBF',
+            'spreadsheet_id' => '1CjQpbtRflU8PtMkJcXk8KZuD5zIVyUhZ',
             'sheet' => 'REKAP',
             'label' => 'Perpanjangan',
         ],
@@ -77,6 +77,7 @@ final class LandingSmeOperationalService
         'analisa_rm' => 'Analisa RM',
         'menunggu_putusan' => 'Menunggu Putusan',
         'sudah_diputus' => 'Sudah Diputus',
+        'restruk' => 'Restruk',
         'sudah_diperpanjang' => 'Sudah Diperpanjang',
         'lunas' => 'Lunas',
         'belum_tl' => 'Belum TL',
@@ -108,6 +109,7 @@ final class LandingSmeOperationalService
         ['key' => 'kios_pupuk_lengkap', 'label' => 'Kios Pupuk Lengkap', 'sheet' => 'KIOS PUPUK LENGKAP', 'icon' => 'fas fa-store', 'include' => true],
         ['key' => 'agen_gas', 'label' => 'Agen Gas', 'sheet' => 'AGEN GAS', 'icon' => 'fas fa-fire', 'include' => true],
         ['key' => 'spbu_hiswana_migas', 'label' => 'SPBU Hiswana Migas', 'sheet' => 'SPBU', 'icon' => 'fas fa-gas-pump', 'include' => true],
+        ['key' => 'transportir_ki', 'label' => 'Transportir KI - Hiswana Migas', 'sheet' => 'Transportir - KI', 'icon' => 'fas fa-truck', 'include' => true],
     ];
 
     public function __construct(
@@ -307,7 +309,7 @@ final class LandingSmeOperationalService
             throw new \InvalidArgumentException('Vendor RTL tidak dikenali.');
         }
 
-        $cacheKey = self::CACHE_KEY.':nominative:v1:'.$vendorKey;
+        $cacheKey = self::CACHE_KEY.':nominative:v1:'.self::SOURCES['rtl_pipeline']['spreadsheet_id'].':'.$vendorKey;
         $stableKey = $cacheKey.':stable';
         $parsed = ! $forceRefresh ? Cache::get($cacheKey) : null;
         $stale = false;
@@ -548,7 +550,7 @@ final class LandingSmeOperationalService
     {
         if (! $forceRefresh) {
             $cached = Cache::get(self::CACHE_KEY);
-            if (is_array($cached)) {
+            if (is_array($cached) && ($cached['_source_signature'] ?? null) === $this->externalSourceSignature()) {
                 $hasErrors = collect(self::SOURCES)->keys()->contains(
                     fn (string $key): bool => !empty($cached[$key]['meta']['error'])
                 );
@@ -674,6 +676,7 @@ final class LandingSmeOperationalService
             unset($source);
             $payload['_retry_after'] = now()->addSeconds(30)->timestamp;
         }
+        $payload['_source_signature'] = $this->externalSourceSignature();
         Cache::put(self::CACHE_KEY, $payload, $hasErrors ? now()->addSeconds(30) : now()->addMinutes(5));
 
         return $payload;
@@ -686,8 +689,85 @@ final class LandingSmeOperationalService
         $headerIndex = $this->findHeaderRowUsingAnySet($matrix, [
             ['KODE KANCA', 'KODE UKER', 'NAMA RM'],
             ['KODE UKER', 'UNIT KERJA'],
+            ['KODE UKER', 'UKER'],
         ]);
         $header = $matrix[$headerIndex] ?? [];
+        $isRekapUkerLayout = $this->findColumnStartingWith($header, ['MINIMAL HOT PROSPEK UKER', 'CIF BARU KREDIT SMALL DEB']) >= 0;
+
+        if ($isRekapUkerLayout) {
+            $colBranchCode = $this->findColumn($header, ['KODE KANCA']);
+            $colUnitCode = $this->findColumn($header, ['KODE UKER']);
+            $colUnit = $this->findColumn($header, ['UKER', 'UNIT KERJA']);
+            $colRmCount = $this->findColumnStartingWith($header, 'JUMLAH RM TOTAL');
+            $colMinHp = $this->findColumnStartingWith($header, 'MINIMAL HOT PROSPEK UKER');
+            $colBaruDeb = $this->findColumnStartingWith($header, 'CIF BARU KREDIT SMALL DEB');
+            $colBaruRp = $colBaruDeb >= 0 ? $colBaruDeb + 1 : -1;
+            $colSupDeb = $this->findColumnStartingWith($header, 'SUPLESI TAMBAH FASILITAS KREDIT SMALL DEB');
+            $colSupRp = $colSupDeb >= 0 ? $colSupDeb + 1 : -1;
+            $colTotalDeb = $this->findColumnStartingWith($header, 'TOTAL HP DEB');
+            $colTotalRp = $colTotalDeb >= 0 ? $colTotalDeb + 1 : -1;
+            $colDeltaRp = $this->findColumnStartingWith($header, 'DELTA HP THD MINIMAL HOT PROSPEK');
+            $colRatas = $this->findColumnStartingWith($header, 'RATAS HP RM');
+            $colPersenSr = $this->findColumnStartingWith($header, 'MINIMAL PERSEN SR');
+            $colReal = $this->findColumnStartingWith($header, 'RM SUDAH REAL');
+            $colBelumReal = $this->findColumnStartingWith($header, 'RM BELUM REAL');
+
+            $records = [];
+            foreach (array_slice($matrix, $headerIndex + 1) as $row) {
+                $rawUnitCode = $this->cell($row, $colUnitCode);
+                $unitCode = $this->normaliseCode($rawUnitCode);
+                if (! isset(self::ALLOWED_UNITS[$unitCode])) {
+                    continue;
+                }
+
+                $branch = self::ALLOWED_UNITS[$unitCode];
+                $rmCount = (int) round($this->number($this->cell($row, $colRmCount)) ?? 0);
+                $minHpRp = (float) ($this->number($this->cell($row, $colMinHp)) ?? 0.0);
+                $baruDeb = (int) round($this->number($this->cell($row, $colBaruDeb)) ?? 0);
+                $baruRp = (float) ($this->number($this->cell($row, $colBaruRp)) ?? 0.0);
+                $supDeb = (int) round($this->number($this->cell($row, $colSupDeb)) ?? 0);
+                $supRp = (float) ($this->number($this->cell($row, $colSupRp)) ?? 0.0);
+                $totDeb = (int) round($this->number($this->cell($row, $colTotalDeb)) ?? 0);
+                $totRp = (float) ($this->number($this->cell($row, $colTotalRp)) ?? 0.0);
+                $deltaRp = (float) ($this->number($this->cell($row, $colDeltaRp)) ?? 0.0);
+                $ratas = (float) ($this->number($this->cell($row, $colRatas)) ?? 0.0);
+                $real = (int) round($this->number($this->cell($row, $colReal)) ?? 0);
+                $belumReal = (int) round($this->number($this->cell($row, $colBelumReal)) ?? 0);
+
+                $records[] = [
+                    'branch' => $branch,
+                    'branch_code' => (string) preg_replace('/[^0-9]/', '', $this->cell($row, $colBranchCode)),
+                    'unit_code' => $unitCode,
+                    'unit' => $this->clean($this->cell($row, $colUnit)),
+                    'rm' => '',
+                    'rm_count' => $rmCount,
+                    'min_hp_rp' => $minHpRp,
+                    'cif_baru' => ['deb' => $baruDeb, 'amount_juta' => $baruRp],
+                    'suplesi' => ['deb' => $supDeb, 'amount_juta' => $supRp],
+                    'total' => ['deb' => $totDeb, 'amount_juta' => $totRp],
+                    'delta_hp_rp' => $deltaRp,
+                    'ratas_hp_rm' => $ratas,
+                    'persen_sr' => $this->clean($this->cell($row, $colPersenSr)),
+                    'rm_sudah_real' => $real,
+                    'rm_belum_real' => $belumReal,
+                    'statuses' => [
+                        'cif_baru' => ['deb' => $baruDeb, 'amount_juta' => $baruRp],
+                        'suplesi' => ['deb' => $supDeb, 'amount_juta' => $supRp],
+                        'total_hp' => ['deb' => $totDeb, 'amount_juta' => $totRp],
+                        'minimal_hp' => ['deb' => 0, 'amount_juta' => $minHpRp],
+                        'delta_hp' => ['deb' => 0, 'amount_juta' => $deltaRp],
+                        'rm_real' => ['deb' => $real, 'amount_juta' => 0.0],
+                    ],
+                ];
+            }
+
+            return [
+                'records' => $records,
+                'period_label' => 'November 2026',
+                'is_rekap_uker' => true,
+            ];
+        }
+
         $isSummaryLayout = $this->findColumn($header, ['NAMA RM']) < 0;
         $periodLabel = '';
         foreach (array_slice($matrix, 0, $headerIndex + 1) as $headingRow) {
@@ -711,7 +791,7 @@ final class LandingSmeOperationalService
                 'belum_ots' => [$this->findColumnStartingWith($header, 'BELUM OTS PEMUTUS')],
                 'analisa_rm' => [$this->findColumnStartingWith($header, 'ANALISA RM MAK')],
                 'verifikasi_adk' => [$this->findColumnStartingWith($header, 'VERIFIKASI ADK')],
-                'menunggu_putusan' => [$this->findColumnStartingWith($header, 'MENUNGGU PUTUSAN')],
+                'menunggu_putusan' => [$this->findColumnStartingWith($header, ['MENUNGGU PUTUSAN NSB', 'MENUNGGGU PUTUSAN', 'MENUNGGU PUTUSAN'])],
                 'sudah_diputus' => [$this->findColumnStartingWith($header, 'SUDAH DIPUTUS')],
                 'realisasi' => [$this->findColumnStartingWith($header, 'REALISASI')],
                 'batal' => [$this->findColumnStartingWith($header, 'BATAL')],
@@ -721,7 +801,7 @@ final class LandingSmeOperationalService
                 'belum_ots' => $this->columnsStartingWith($header, 'BELUM OTS PEMUTUS'),
                 'analisa_rm' => [$this->findColumn($header, ['ANALISA RM MAK'])],
                 'verifikasi_adk' => [$this->findColumn($header, ['VERIFIKASI ADK', 'REVIEW SBM'])],
-                'menunggu_putusan' => [$this->findColumn($header, ['MENUNGGU PUTUSAN'])],
+                'menunggu_putusan' => [$this->findColumn($header, ['MENUNGGU PUTUSAN', 'MENUNGGGU PUTUSAN'])],
                 'sudah_diputus' => [$this->findColumn($header, ['SUDAH DIPUTUS'])],
                 'realisasi' => [$this->findColumnStartingWith($header, 'REALISASI')],
                 'batal' => [$this->findColumn($header, ['BATAL'])],
@@ -769,7 +849,7 @@ final class LandingSmeOperationalService
             ];
         }
 
-        return ['records' => $records, 'period_label' => $periodLabel];
+        return ['records' => $records, 'period_label' => $periodLabel, 'is_rekap_uker' => false];
     }
 
     /** @return array<string, mixed> */
@@ -873,8 +953,8 @@ final class LandingSmeOperationalService
             $statuses = [];
             foreach ($statusColumns as $statusKey => $index) {
                 $statuses[$statusKey] = [
-                    'deb' => (int) round($this->number($this->cell($row, $index)) ?? 0),
-                    'amount_juta' => $this->number($this->cell($row, $index + 1)) ?? 0.0,
+                    'deb' => $index < 0 ? 0 : (int) round($this->number($this->cell($row, $index)) ?? 0),
+                    'amount_juta' => $index < 0 ? 0.0 : ($this->number($this->cell($row, $index + 1)) ?? 0.0),
                 ];
             }
 
@@ -1143,6 +1223,89 @@ final class LandingSmeOperationalService
     private function scopeHotProspects(array $source, string $branch): array
     {
         $records = $this->scopeRecords((array) ($source['records'] ?? []), $branch);
+        $isRekapUker = (bool) ($source['is_rekap_uker'] ?? false);
+
+        if ($isRekapUker) {
+            $sumRm = (int) $records->sum('rm_count');
+            $sumMinHp = (float) $records->sum('min_hp_rp');
+            $sumBaruDeb = (int) $records->sum(fn (array $row): int => (int) data_get($row, 'cif_baru.deb', 0));
+            $sumBaruRp = (float) $records->sum(fn (array $row): float => (float) data_get($row, 'cif_baru.amount_juta', 0));
+            $sumSupDeb = (int) $records->sum(fn (array $row): int => (int) data_get($row, 'suplesi.deb', 0));
+            $sumSupRp = (float) $records->sum(fn (array $row): float => (float) data_get($row, 'suplesi.amount_juta', 0));
+            $sumTotalDeb = (int) $records->sum(fn (array $row): int => (int) data_get($row, 'total.deb', 0));
+            $sumTotalRp = (float) $records->sum(fn (array $row): float => (float) data_get($row, 'total.amount_juta', 0));
+            $sumDeltaRp = (float) $records->sum('delta_hp_rp');
+            $sumReal = (int) $records->sum('rm_sudah_real');
+            $sumBelumReal = (int) $records->sum('rm_belum_real');
+
+            $statuses = [
+                [
+                    'key' => 'cif_baru',
+                    'label' => 'CIF Baru',
+                    'deb' => $sumBaruDeb,
+                    'amount_juta' => $sumBaruRp,
+                ],
+                [
+                    'key' => 'suplesi',
+                    'label' => 'Suplesi Fasilitas',
+                    'deb' => $sumSupDeb,
+                    'amount_juta' => $sumSupRp,
+                ],
+                [
+                    'key' => 'total_hp',
+                    'label' => 'Total Hot Prospek',
+                    'deb' => $sumTotalDeb,
+                    'amount_juta' => $sumTotalRp,
+                ],
+                [
+                    'key' => 'minimal_hp',
+                    'label' => 'Target Minimal HP',
+                    'deb' => $sumRm,
+                    'deb_label' => 'Total RM',
+                    'deb_suffix' => ' RM',
+                    'amount_juta' => $sumMinHp,
+                ],
+                [
+                    'key' => 'delta_hp',
+                    'label' => 'Delta thd Target',
+                    'deb' => $sumDeltaRp >= 0 ? 1 : 0,
+                    'deb_label' => 'Status',
+                    'deb_suffix' => $sumDeltaRp >= 0 ? 'Surplus' : 'Defisit',
+                    'amount_juta' => $sumDeltaRp,
+                ],
+                [
+                    'key' => 'rm_real',
+                    'label' => 'RM Realisasi',
+                    'deb' => $sumReal,
+                    'deb_label' => 'RM Real',
+                    'deb_suffix' => ' RM',
+                    'amount_juta' => 0.0,
+                    'amount_label' => 'Belum: '.$sumBelumReal.' RM',
+                ],
+            ];
+
+            $total = [
+                'deb' => $sumTotalDeb,
+                'amount_juta' => $sumTotalRp,
+            ];
+
+            return array_merge($this->moduleMeta($source, $records->isNotEmpty()), [
+                'is_rekap_uker' => true,
+                'period_label' => (string) ($source['period_label'] ?? 'November 2026'),
+                'rm_count' => $sumRm,
+                'unit_count' => $records->count(),
+                'total' => $total,
+                'reconciliation' => [
+                    'status_total' => $total,
+                    'deb_delta' => 0,
+                    'amount_delta_juta' => 0.0,
+                    'matches' => true,
+                ],
+                'statuses' => $statuses,
+                'records' => $records->all(),
+            ]);
+        }
+
         $statuses = [];
         foreach (self::HOT_STATUSES as $key => $label) {
             $statuses[] = [
@@ -1478,7 +1641,16 @@ final class LandingSmeOperationalService
 
     private function stableSourceKey(string $key): string
     {
-        return self::CACHE_KEY.':'.$key.':stable';
+        $sourceId = in_array($key, ['rtl_pipeline', 'extension'], true)
+            ? ':'.self::SOURCES[$key]['spreadsheet_id']
+            : '';
+
+        return self::CACHE_KEY.':'.$key.$sourceId.':stable';
+    }
+
+    private function externalSourceSignature(): string
+    {
+        return hash('sha256', json_encode(self::SOURCES));
     }
 
     private function isSpreadsheetFormulaError(mixed $value): bool
@@ -1552,13 +1724,16 @@ final class LandingSmeOperationalService
         return -1;
     }
 
-    /** @param array<int, string> $row */
-    private function findColumnStartingWith(array $row, string $label): int
+    /** @param array<int, string> $row @param string|array<int, string> $label */
+    private function findColumnStartingWith(array $row, string|array $label): int
     {
-        $needle = $this->normaliseLabel($label);
+        $needles = array_map(fn (string $item): string => $this->normaliseLabel($item), (array) $label);
         foreach ($row as $index => $value) {
-            if (str_starts_with($this->normaliseLabel($value), $needle)) {
-                return $index;
+            $valueNormalised = $this->normaliseLabel($value);
+            foreach ($needles as $needle) {
+                if (str_starts_with($valueNormalised, $needle)) {
+                    return $index;
+                }
             }
         }
 
@@ -1715,6 +1890,7 @@ final class LandingSmeOperationalService
             'pupuk_indonesia' => ['PUPUK INDONESIA'],
             'agen_gas' => ['AGEN GAS'],
             'spbu_hiswana_migas' => ['SPBU'],
+            'transportir_ki' => ['TRANSPORTIR'],
         ];
 
         foreach ($aliases as $key => $names) {

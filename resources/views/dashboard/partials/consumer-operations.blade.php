@@ -4,6 +4,11 @@
     $pipelineSources = array_values((array) data_get($pipeline, 'sources', []));
     $kprPipeline = (array) data_get($consumerOperations, 'kpr_pipeline', []);
     $kprPipelineRows = array_values((array) data_get($kprPipeline, 'rows', []));
+    $hotProspects = (array) data_get($consumerOperations, 'hot_prospects', []);
+    $hotProspectsRecords = array_values((array) data_get($hotProspects, 'records', []));
+    $hotProspectsStatuses = array_values((array) data_get($hotProspects, 'statuses', []));
+    $hotProspectsAvailable = (bool) data_get($hotProspects, 'available', false);
+    $hotProspectsStale = (bool) data_get($hotProspects, 'stale', false);
     $quadrants = (array) data_get($consumerOperations, 'quadrants', []);
     $quadrantBranches = array_values((array) data_get($quadrants, 'branches', []));
     $firstPipelineKey = (string) data_get($pipelineSources, '0.key', '');
@@ -136,6 +141,18 @@
 .consumer-ops-coverage { display:flex; flex-wrap:wrap; gap:.5rem; padding:.62rem 1rem; border-top:1px solid #e4edf6; color:#637a91; background:#f8fbfe; font-size:.66rem; }
 .consumer-ops-coverage strong { color:#17466f; }
 .consumer-ops-coverage__warning { color:#a65d00; }
+.consumer-hot-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:.75rem; padding:1rem 1.15rem; background:#fbfdff; border-bottom:1px solid #dfebf6; }
+.consumer-hot-card { display:flex; flex-direction:column; padding:.8rem 1rem; border:1px solid #d8e7f4; border-radius:14px; background:#fff; box-shadow:0 2px 6px rgba(10,50,90,.04); }
+.consumer-hot-card__head { display:flex; align-items:center; gap:.5rem; margin-bottom:.5rem; }
+.consumer-hot-card__icon { display:grid; width:30px; height:30px; place-items:center; border-radius:8px; font-size:.78rem; }
+.consumer-hot-card[data-status="total"] .consumer-hot-card__icon { color:#0b4b86; background:#e1effc; }
+.consumer-hot-card[data-status="prakarsa"] .consumer-hot-card__icon { color:#825300; background:#fef3d6; }
+.consumer-hot-card[data-status="putusan"] .consumer-hot-card__icon { color:#6b21a8; background:#f3e8ff; }
+.consumer-hot-card[data-status="realisasi"] .consumer-hot-card__icon { color:#065f46; background:#d1fae5; }
+.consumer-hot-card h4 { margin:0; font-size:.75rem; font-weight:850; color:#1e3a5f; }
+.consumer-hot-card__body { display:grid; grid-template-columns:1fr 1fr; gap:.5rem; }
+.consumer-hot-card__stat span { display:block; font-size:.62rem; color:#718096; font-weight:700; text-transform:uppercase; letter-spacing:.05em; }
+.consumer-hot-card__stat strong { display:block; font-size:1.05rem; font-weight:900; color:#0f2d4a; margin-top:.1rem; }
 .consumer-quadrant-modal { max-width:min(680px,calc(100vw - 24px)); }
 .consumer-quadrant-modal__lead { margin:0 0 .75rem; color:#526b87; font-size:.82rem; line-height:1.5; text-align:left; }
 .consumer-quadrant-modal__list { display:grid; max-height:min(390px,48vh); overflow:auto; border:1px solid #d8e4f1; border-radius:10px; background:#fff; text-align:left; }
@@ -442,6 +459,130 @@
             @endif
         </section>
     @endif
+
+    <section class="consumer-ops-section" aria-labelledby="consumer-hot-prospects-title">
+        <div class="consumer-ops-section__head">
+            <div class="consumer-ops-title">
+                <span class="consumer-ops-title__icon"><i class="fas fa-fire-alt" aria-hidden="true"></i></span>
+                <div>
+                    <span class="consumer-ops-kicker">Pipeline Konsumer</span>
+                    <h3 id="consumer-hot-prospects-title">Pipeline Hot Prospek Konsumer</h3>
+                    <p>
+                        Calon debitur dan pipeline RM Konsumer dari Google Sheets.
+                        @if(data_get($hotProspects, 'period_label'))
+                            Posisi {{ data_get($hotProspects, 'period_label') }}: {{ $formatInteger(data_get($hotProspects, 'summary.total.deb', 0)) }} prospek &middot; Rp {{ $formatAmount(data_get($hotProspects, 'summary.total.amount_juta', 0)) }}.
+                        @endif
+                    </p>
+                </div>
+            </div>
+            <span class="consumer-ops-count">{{ $formatInteger(data_get($hotProspects, 'rm_count', 0)) }} RM terpantau</span>
+        </div>
+
+        <div class="consumer-ops-sourcebar">
+            <div class="consumer-ops-sourcebar__identity">
+                <strong>{{ data_get($hotProspects, 'label', 'Pipeline Hot Prospek Konsumer') }} &middot; Worksheet {{ data_get($hotProspects, 'sheet', 'RM') }}</strong>
+                <span>
+                    {{ $formatInteger(data_get($hotProspects, 'rm_count', 0)) }} RM &middot; Total {{ $formatInteger(data_get($hotProspects, 'summary.total.deb', 0)) }} prospek (Rp {{ $formatAmount(data_get($hotProspects, 'summary.total.amount_juta', 0)) }})
+                    <span class="consumer-ops-source-state {{ $hotProspectsStale ? 'is-stale' : ($hotProspectsAvailable ? '' : 'is-offline') }}">
+                        <i class="fas {{ $hotProspectsStale ? 'fa-history' : ($hotProspectsAvailable ? 'fa-check-circle' : 'fa-exclamation-circle') }}" aria-hidden="true"></i>
+                        {{ $hotProspectsStale ? 'Cache terakhir' : ($hotProspectsAvailable ? 'Google Sheets terhubung' : 'Sumber belum tersedia') }}
+                    </span>
+                </span>
+            </div>
+            <a class="consumer-ops-source-link" href="{{ data_get($hotProspects, 'source_url', '#') }}" target="_blank" rel="noopener noreferrer">
+                <i class="fas fa-external-link-alt" aria-hidden="true"></i> Buka sumber
+            </a>
+        </div>
+
+        @if($hotProspectsAvailable && $hotProspectsStatuses !== [])
+            <div class="consumer-hot-grid" aria-label="Ringkasan Status Hot Prospek Konsumer">
+                @foreach($hotProspectsStatuses as $status)
+                    <article class="consumer-hot-card" data-status="{{ data_get($status, 'key') }}">
+                        <div class="consumer-hot-card__head">
+                            <span class="consumer-hot-card__icon"><i class="{{ data_get($status, 'icon', 'fas fa-circle') }}"></i></span>
+                            <h4>{{ data_get($status, 'label') }}</h4>
+                        </div>
+                        <div class="consumer-hot-card__body">
+                            <div class="consumer-hot-card__stat">
+                                <span>Debitur</span>
+                                <strong>{{ $formatInteger(data_get($status, 'deb', 0)) }}</strong>
+                            </div>
+                            <div class="consumer-hot-card__stat">
+                                <span>Plafond</span>
+                                <strong>{{ $formatAmount(data_get($status, 'amount_juta', 0)) }}</strong>
+                            </div>
+                        </div>
+                    </article>
+                @endforeach
+            </div>
+        @endif
+
+        @if($hotProspectsAvailable && $hotProspectsRecords !== [])
+            <div class="consumer-ops-table-wrap" tabindex="0" aria-label="Tabel Pipeline Hot Prospek Konsumer">
+                <table class="consumer-ops-table">
+                    <thead>
+                        <tr>
+                            <th>No</th>
+                            <th>Cabang</th>
+                            <th>Unit Kerja</th>
+                            <th>Nama RM</th>
+                            <th class="is-number">Total Deb</th>
+                            <th class="is-number">Total Plafon</th>
+                            <th class="is-number">Prakarsa Deb</th>
+                            <th class="is-number">Prakarsa Plafon</th>
+                            <th class="is-number">Putusan Deb</th>
+                            <th class="is-number">Putusan Plafon</th>
+                            <th class="is-number">Real Deb</th>
+                            <th class="is-number">Real Plafon</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach($hotProspectsRecords as $record)
+                            <tr>
+                                <td><span class="consumer-ops-rank">{{ $loop->iteration }}</span></td>
+                                <td><strong>{{ data_get($record, 'branch') ?: '-' }}</strong></td>
+                                <td>
+                                    <span>{{ data_get($record, 'unit') ?: '-' }}</span>
+                                    @if(data_get($record, 'unit_code'))
+                                        <small class="text-muted d-block" style="font-size:0.62rem;color:#7890a7;">BC {{ data_get($record, 'unit_code') }}</small>
+                                    @endif
+                                </td>
+                                <td class="consumer-ops-rm">
+                                    <strong>{{ data_get($record, 'rm_name') ?: '-' }}</strong>
+                                    <span>PN {{ data_get($record, 'pn') ?: '-' }}</span>
+                                </td>
+                                <td class="is-number"><strong>{{ $formatInteger(data_get($record, 'total.deb', 0)) }}</strong></td>
+                                <td class="is-number"><span class="consumer-ops-potential">{{ $formatAmount(data_get($record, 'total.amount_juta', 0)) }}</span></td>
+                                <td class="is-number">{{ $formatInteger(data_get($record, 'prakarsa.deb', 0)) }}</td>
+                                <td class="is-number">{{ $formatAmount(data_get($record, 'prakarsa.amount_juta', 0)) }}</td>
+                                <td class="is-number">{{ $formatInteger(data_get($record, 'putusan.deb', 0)) }}</td>
+                                <td class="is-number">{{ $formatAmount(data_get($record, 'putusan.amount_juta', 0)) }}</td>
+                                <td class="is-number"><strong style="color:#08734e;">{{ $formatInteger(data_get($record, 'realisasi.deb', 0)) }}</strong></td>
+                                <td class="is-number"><strong style="color:#08734e;">{{ $formatAmount(data_get($record, 'realisasi.amount_juta', 0)) }}</strong></td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                    <tfoot>
+                        <tr style="background:#0a3d77;color:#fff;font-weight:900;">
+                            <td colspan="4" style="color:#fff;">Total {{ data_get($hotProspects, 'scope_label', 'Area 6') }} ({{ count($hotProspectsRecords) }} RM)</td>
+                            <td class="is-number" style="color:#fff;">{{ $formatInteger(data_get($hotProspects, 'summary.total.deb', 0)) }}</td>
+                            <td class="is-number" style="color:#fff;">{{ $formatAmount(data_get($hotProspects, 'summary.total.amount_juta', 0)) }}</td>
+                            <td class="is-number" style="color:#fff;">{{ $formatInteger(data_get($hotProspects, 'summary.prakarsa.deb', 0)) }}</td>
+                            <td class="is-number" style="color:#fff;">{{ $formatAmount(data_get($hotProspects, 'summary.prakarsa.amount_juta', 0)) }}</td>
+                            <td class="is-number" style="color:#fff;">{{ $formatInteger(data_get($hotProspects, 'summary.putusan.deb', 0)) }}</td>
+                            <td class="is-number" style="color:#fff;">{{ $formatAmount(data_get($hotProspects, 'summary.putusan.amount_juta', 0)) }}</td>
+                            <td class="is-number" style="color:#56f5b0;">{{ $formatInteger(data_get($hotProspects, 'summary.realisasi.deb', 0)) }}</td>
+                            <td class="is-number" style="color:#56f5b0;">{{ $formatAmount(data_get($hotProspects, 'summary.realisasi.amount_juta', 0)) }}</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        @else
+            <div class="consumer-ops-empty" role="status">
+                <div><i class="fas fa-fire-alt" aria-hidden="true"></i>{{ data_get($hotProspects, 'error', 'Data Pipeline Hot Prospek Konsumer belum tersedia untuk lingkup ini.') }}</div>
+            </div>
+        @endif
+    </section>
 
     <section class="consumer-ops-section" aria-labelledby="consumer-quadrant-title">
         <div class="consumer-ops-section__head">

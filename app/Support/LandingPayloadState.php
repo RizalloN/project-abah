@@ -19,4 +19,13 @@ final class LandingPayloadState
 
         return false;
     }
+
+    /**
+     * A full-page reread only helps a page rendered without data. Stale but valid
+     * figures stay on screen while workers refresh the caches in the background.
+     */
+    public static function needsPageRecovery(array $payload): bool
+    {
+        return empty($payload['period']) && self::pending($payload);
+    }
 }

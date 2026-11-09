@@ -22,7 +22,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `layouts.sidebar` | view | 55 | `resources/views/layouts/sidebar.blade.php:1` |
 | `get` | method | 29 | `app/Support/ReportCacheVersion.php:9` |
 | `composite` | method | 28 | `app/Support/ReportCacheVersion.php:17` |
-| `bump` | method | 16 | `app/Support/ReportCacheVersion.php:31` |
+| `bump` | method | 17 | `app/Support/ReportCacheVersion.php:31` |
 | `AppServiceProvider` | class | 15 | `app/Providers/AppServiceProvider.php:25` |
 | `boot` | method | 11 | `app/Providers/AppServiceProvider.php:70` |
 | `shouldFinishEarly` | method | 11 | `app/Http/Middleware/FinishResponseBeforeDeferredCallbacks.php:55` |
@@ -94,9 +94,9 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | platform -> dashboard-pinjaman (references_route) | 14 |
 | platform -> dashboard-simpanan (references_route) | 12 |
 | platform -> core (accepts) | 12 |
+| jobs-snapshots -> platform (calls) | 10 |
 | import -> platform (extends_view) | 10 |
 | dashboard-simpanan -> platform (calls) | 9 |
-| jobs-snapshots -> platform (calls) | 9 |
 | import -> platform (calls) | 8 |
 | dashboard-simpanan -> platform (extends_view) | 8 |
 | platform -> core (references_route) | 8 |

@@ -1225,10 +1225,48 @@
             </div>
         </div>
 
+        <!-- LR Section -->
+        <div class="loan-section-block mb-4" id="lrSection">
+            <div class="loan-section-header">
+                <h3 id="lrTitle">B. LANCAR RESTRUK (LR)</h3>
+                <div class="legend-box ml-auto d-flex align-items-center" style="gap: 1rem;">
+                    <div class="d-flex align-items-center" style="gap: 0.5rem;">
+                        <i class="fas fa-info-circle text-muted"></i>
+                        <span class="text-muted" style="font-size: 0.75rem;">Kol 1, flag restruk Y · Dalam <strong>Rp, Juta</strong></span>
+                    </div>
+                    <button class="btn-snapshot" onclick="window.captureLoanSection('lrSection', 'Snapshot-LR')" title="Ambil Snapshot">
+                        <i class="fas fa-camera"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="table-responsive loan-summary-table-wrap" id="lrTableContainer">
+                @include('report.dashboard-pinjaman._partials._loading_stub', ['label' => 'LR'])
+            </div>
+        </div>
+
+        <!-- LNR Section -->
+        <div class="loan-section-block mb-4" id="lnrSection">
+            <div class="loan-section-header">
+                <h3 id="lnrTitle">C. LANCAR NON RESTRUK (LNR)</h3>
+                <div class="legend-box ml-auto d-flex align-items-center" style="gap: 1rem;">
+                    <div class="d-flex align-items-center" style="gap: 0.5rem;">
+                        <i class="fas fa-info-circle text-muted"></i>
+                        <span class="text-muted" style="font-size: 0.75rem;">Kol 1, flag restruk N · Dalam <strong>Rp, Juta</strong></span>
+                    </div>
+                    <button class="btn-snapshot" onclick="window.captureLoanSection('lnrSection', 'Snapshot-LNR')" title="Ambil Snapshot">
+                        <i class="fas fa-camera"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="table-responsive loan-summary-table-wrap" id="lnrTableContainer">
+                @include('report.dashboard-pinjaman._partials._loading_stub', ['label' => 'LNR'])
+            </div>
+        </div>
+
         <!-- SML Section -->
         <div class="loan-section-block mb-4" id="smlSection">
             <div class="loan-section-header">
-                <h3 id="smlTitle">B. SPECIAL MENTION LOAN (SML)</h3>
+                <h3 id="smlTitle">D. SPECIAL MENTION LOAN (SML)</h3>
                 <div class="legend-box ml-auto d-flex align-items-center" style="gap: 1rem;">
                     <div class="d-flex align-items-center" style="gap: 0.5rem;">
                         <i class="fas fa-info-circle text-muted"></i>
@@ -1247,7 +1285,7 @@
         <!-- NPL Section -->
         <div class="loan-section-block mb-4" id="nplSection">
             <div class="loan-section-header">
-                <h3 id="nplTitle">C. NON-PERFORMING LOAN (NPL)</h3>
+                <h3 id="nplTitle">E. NON-PERFORMING LOAN (NPL)</h3>
                 <div class="legend-box ml-auto d-flex align-items-center" style="gap: 1rem;">
                     <div class="d-flex align-items-center" style="gap: 0.5rem;">
                         <i class="fas fa-info-circle text-muted"></i>
@@ -1260,6 +1298,25 @@
             </div>
             <div class="table-responsive loan-summary-table-wrap" id="nplTableContainer">
                 @include('report.dashboard-pinjaman._partials._loading_stub', ['label' => 'NPL'])
+            </div>
+        </div>
+
+        <!-- LAR Section -->
+        <div class="loan-section-block mb-4" id="larSection">
+            <div class="loan-section-header">
+                <h3 id="larTitle">F. LOAN AT RISK (LAR)</h3>
+                <div class="legend-box ml-auto d-flex align-items-center" style="gap: 1rem;">
+                    <div class="d-flex align-items-center" style="gap: 0.5rem;">
+                        <i class="fas fa-info-circle text-muted"></i>
+                        <span class="text-muted" style="font-size: 0.75rem;">LR + SML + NPL · Dalam <strong>Rp, Juta</strong></span>
+                    </div>
+                    <button class="btn-snapshot" onclick="window.captureLoanSection('larSection', 'Snapshot-LAR')" title="Ambil Snapshot">
+                        <i class="fas fa-camera"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="table-responsive loan-summary-table-wrap" id="larTableContainer">
+                @include('report.dashboard-pinjaman._partials._loading_stub', ['label' => 'LAR'])
             </div>
         </div>
 
@@ -1309,11 +1366,19 @@
 <script src="{{ asset('vendor/html2canvas/html2canvas.min.js') }}"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-    const osTableContainer = document.getElementById('osTableContainer');
     const consolidationTableContainer = document.getElementById('consolidationTableContainer');
     const consolidationSection = document.getElementById('consolidationSection');
-    const smlTableContainer = document.getElementById('smlTableContainer');
-    const nplTableContainer = document.getElementById('nplTableContainer');
+    // Display order requested by the business: OS, LR, LNR, SML, NPL, then LAR (LR + SML + NPL).
+    const LOAN_SECTIONS = [
+        { key: 'os', type: 'Outstanding', title: 'A. OUTSTANDING (OS)', capture: 'Outstanding' },
+        { key: 'lr', type: 'LR', title: 'B. LANCAR RESTRUK (LR)', capture: 'Lancar Restruk' },
+        { key: 'lnr', type: 'LNR', title: 'C. LANCAR NON RESTRUK (LNR)', capture: 'Lancar Non Restruk' },
+        { key: 'sml', type: 'SML', title: 'D. SPECIAL MENTION LOAN (SML)', capture: 'Special Mention' },
+        { key: 'npl', type: 'NPL', title: 'E. NON-PERFORMING LOAN (NPL)', capture: 'Non-Performing' },
+        { key: 'lar', type: 'LAR', title: 'F. LOAN AT RISK (LAR)', capture: 'Loan at Risk' },
+    ];
+    const TYPES_WITHOUT_RKA = ['LNR'];
+    const sectionContainer = key => document.getElementById(`${key}TableContainer`);
     const btnLoadData = document.getElementById('btnLoadData');
     const dashboardMeta = document.getElementById('dashboardMeta');
     const captureAllBtn = document.getElementById('captureAllBtn');
@@ -1346,6 +1411,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function formatPctBadge(value, type) {
+        if (value === null || value === undefined) return '-';
         const num = parseFloat(value) || 0;
         let barClass = '';
         let textClass = '';
@@ -1373,10 +1439,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function isQualityType(type) {
         const typeUpper = (type || '').toUpperCase();
-        return typeUpper.includes('SML')
-            || typeUpper.includes('NPL')
-            || typeUpper.includes('LAR')
-            || typeUpper.includes('LR');
+        return ['SML', 'NPL', 'LR', 'LAR'].includes(typeUpper);
     }
 
     function getPositionDeltaClass(value, type) {
@@ -1667,11 +1730,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (!consolidationSection.classList.contains('d-none')) {
                     sections.push({ id: 'consolidationSection', code: 'CONS', label: 'Konsolidasi Area 6' });
                 }
-                sections.push(
-                    { id: 'osSection', code: 'OS', label: 'Outstanding' },
-                    { id: 'smlSection', code: 'SML', label: 'Special Mention' },
-                    { id: 'nplSection', code: 'NPL', label: 'Non-Performing' }
-                );
+                LOAN_SECTIONS.forEach(section => sections.push({ id: `${section.key}Section`, code: section.key.toUpperCase(), label: section.capture }));
                 
                 const dateStr = String($periodeSel.val() || 'tanpa-periode').replace(/-/g, '');
                 const kategoriStr = $kategoriSel.val().trim().toUpperCase();
@@ -1980,40 +2039,31 @@ document.addEventListener('DOMContentLoaded', function () {
         let rowIndex = 1;
         Object.keys(groups).forEach(branchName => {
             const groupRows = groups[branchName];
-            const subtotal = {
-                ytd: 0, m2: 0, mtm: 0, mtd: 0, selected: 0,
-                d_ytd: 0, d_mom: 0, d_mtd: 0,
-                rka_m1: 0, rka_current: 0,
-                penc_m1_rp: 0, penc_cur_rp: 0
-            };
             const hasMicroCategory = groupRows.some(row => row.category === 'Micro');
-            groupRows.forEach(row => {
-                let shouldAdd = true;
-                if (segmentName === 'Mikro') {
-                    if (hasMicroCategory) {
-                        shouldAdd = (row.category !== 'Micro');
-                    }
-                }
-                
-                if (shouldAdd) {
-                    subtotal.ytd += parseFloat(row.ytd || 0);
-                    subtotal.m2 += parseFloat(row.m2 || 0);
-                    subtotal.mtm += parseFloat(row.mtm || 0);
-                    subtotal.mtd += parseFloat(row.mtd || 0);
-                    subtotal.selected += parseFloat(row.selected || 0);
-                    subtotal.d_ytd += parseFloat(row.delta_ytd || 0);
-                    subtotal.d_mom += parseFloat(row.delta_mom || 0);
-                    subtotal.d_mtd += parseFloat(row.delta_mtd || 0);
-                    subtotal.rka_m1 += parseFloat(row.rka_m1 || 0);
-                    subtotal.rka_current += parseFloat(row.rka_current || 0);
-                    subtotal.penc_m1_rp += parseFloat(row.penc_m1_rp || 0);
-                    subtotal.penc_cur_rp += parseFloat(row.penc_cur_rp || 0);
-                }
-            });
-            
+            const includedRows = groupRows.filter(row => !(segmentName === 'Mikro' && hasMicroCategory && row.category === 'Micro'));
+            // A period without LR/LNR source stays unknown in the subtotal instead of summing to zero.
+            const sumOf = key => includedRows.some(row => row[key] === null)
+                ? null
+                : includedRows.reduce((sum, row) => sum + parseFloat(row[key] || 0), 0);
+            const subtotal = {
+                ytd: sumOf('ytd'), m2: sumOf('m2'), mtm: sumOf('mtm'), mtd: sumOf('mtd'), selected: sumOf('selected'),
+                d_ytd: sumOf('delta_ytd'), d_mom: sumOf('delta_mom'), d_mtd: sumOf('delta_mtd'),
+                rka_m1: sumOf('rka_m1'), rka_current: sumOf('rka_current'),
+                penc_m1_rp: sumOf('penc_m1_rp'), penc_cur_rp: sumOf('penc_cur_rp')
+            };
+            // LR/LAR budgets exist per segment (Small, Konsumer, Mikro) even where a category has no line of its own.
+            const segmentRka = groupRows.find(row => row.segment_rka_current !== undefined && row.segment_rka_current !== null);
+            if (segmentRka) {
+                subtotal.rka_m1 = segmentRka.segment_rka_m1;
+                subtotal.rka_current = segmentRka.segment_rka_current;
+                subtotal.penc_m1_rp = subtotal.selected === null ? null : subtotal.selected - subtotal.rka_m1;
+                subtotal.penc_cur_rp = subtotal.selected === null ? null : subtotal.selected - subtotal.rka_current;
+            }
+
             const shortBranchName = branchName.replace(/KC Madiun/gi, 'KC MDN').replace(/KC Magetan/gi, 'KC MGT').replace(/KC Ngawi/gi, 'KC NGWI').replace(/KC Ponorogo/gi, 'KC PNRG');
-            const sub_m1_pct = calculateRkaPercentage(subtotal.selected, subtotal.rka_m1, typeLabel);
-            const sub_cur_pct = calculateRkaPercentage(subtotal.selected, subtotal.rka_current, typeLabel);
+            const hasRka = !TYPES_WITHOUT_RKA.includes(typeLabel);
+            const sub_m1_pct = hasRka && subtotal.rka_m1 !== null && subtotal.selected !== null ? calculateRkaPercentage(subtotal.selected, subtotal.rka_m1, typeLabel) : null;
+            const sub_cur_pct = hasRka && subtotal.rka_current !== null && subtotal.selected !== null ? calculateRkaPercentage(subtotal.selected, subtotal.rka_current, typeLabel) : null;
             const showBranchSubtotal = segmentName !== 'Mikro';
 
             if (showBranchSubtotal) {
@@ -2098,18 +2148,14 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function showSpinners(kategori) {
         const stub = (label) => `<div class="text-center text-muted py-5"><div class="spinner-border spinner-border-sm text-primary mb-3" role="status"><span class="sr-only">Loading...</span></div><p><strong>Memproses data ${escapeHtml(label)}</strong></p><p style="font-size: 0.85rem;">Untuk Segmen ${escapeHtml(kategori)}...</p></div>`;
-        osTableContainer.innerHTML = stub('Outstanding');
         consolidationSection.classList.add('d-none');
         consolidationTableContainer.innerHTML = '';
-        smlTableContainer.innerHTML = stub('SML');
-        nplTableContainer.innerHTML = stub('NPL');
+        LOAN_SECTIONS.forEach(section => { sectionContainer(section.key).innerHTML = stub(section.type); });
     }
 
     function showErrorMessage(message) {
         const errorHtml = `<div class="alert alert-danger alert-dismissible fade show" role="alert"><strong>Gagal memuat data</strong><br>${escapeHtml(message)}<button type="button" class="close" data-dismiss="alert" aria-label="Tutup"><span aria-hidden="true">&times;</span></button></div>`;
-        osTableContainer.innerHTML = errorHtml; 
-        smlTableContainer.innerHTML = errorHtml; 
-        nplTableContainer.innerHTML = errorHtml;
+        LOAN_SECTIONS.forEach(section => { sectionContainer(section.key).innerHTML = errorHtml; });
     }
 
     // --- Data Loading Logic ---
@@ -2152,12 +2198,10 @@ document.addEventListener('DOMContentLoaded', function () {
                 consolidationSection.classList.add('d-none');
                 consolidationTableContainer.innerHTML = '';
 
-                document.getElementById('osTitle').innerText = `A. OUTSTANDING (OS) - ${kategori}`;
-                osTableContainer.innerHTML = buildTable(data.os, data.header_dates, 'Outstanding', kategori, data.rka_labels, data.display_options);
-                document.getElementById('smlTitle').innerText = `B. SPECIAL MENTION LOAN (SML) - ${kategori}`;
-                smlTableContainer.innerHTML = buildTable(data.sml, data.header_dates, 'SML', kategori, data.rka_labels, data.display_options);
-                document.getElementById('nplTitle').innerText = `C. NON-PERFORMING LOAN (NPL) - ${kategori}`;
-                nplTableContainer.innerHTML = buildTable(data.npl, data.header_dates, 'NPL', kategori, data.rka_labels, data.display_options);
+                LOAN_SECTIONS.forEach(section => {
+                    document.getElementById(`${section.key}Title`).innerText = `${section.title} - ${kategori}`;
+                    sectionContainer(section.key).innerHTML = buildTable(data[section.key], data.header_dates, section.type, kategori, data.rka_labels, data.display_options);
+                });
                 syncSummaryTableHeaders();
                 scheduleSummaryTableSync();
             })

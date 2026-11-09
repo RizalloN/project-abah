@@ -149,6 +149,7 @@ export class ExpressiveMotion {
         const performance = performanceSequence(record.kind, theme, compact);
         const replacedSelectors = new Set(performance.map(spec => spec.selector));
         const sequence = [...expressiveSequence(record.kind, compact).filter(spec => !replacedSelectors.has(spec.selector)), ...performance];
+        const plans = [];
         for (const spec of sequence) {
             [...element.querySelectorAll(spec.selector)].slice(0, 48).forEach((node, index) => {
                 const delay = (spec.delay || 0) + Math.min(300, index * (spec.stagger || 0));
@@ -160,9 +161,11 @@ export class ExpressiveMotion {
                     keyframes.forEach((frame) => { if (typeof frame.opacity === 'number') frame.opacity = Math.min(frame.opacity, .28); });
                 }
                 if (spec.finishAtBase && typeof getComputedStyle === 'function') keyframes[keyframes.length - 1].transform = getComputedStyle(node).transform;
-                promises.push(task.animate(node, keyframes, options));
+                plans.push({ node, keyframes, options });
             });
         }
+        // Read every base projection before animation writes invalidate the next layout read.
+        for (const { node, keyframes, options } of plans) promises.push(task.animate(node, keyframes, options));
         task.wait(horizon).then(async (active) => {
             if (!active) return;
             await Promise.all(promises);

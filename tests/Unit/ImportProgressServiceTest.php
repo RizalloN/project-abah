@@ -179,6 +179,7 @@ class ImportProgressServiceTest extends TestCase
             ->andReturn(1);
 
         $jobsTable = Mockery::mock();
+        $jobsTable->shouldReceive('whereNull')->once()->with('reserved_at')->andReturnSelf();
         $jobsTable->shouldReceive('where')
             ->once()
             ->withArgs(static function (string $column, string $operator, string $value): bool {
@@ -239,6 +240,7 @@ class ImportProgressServiceTest extends TestCase
             ->andReturn(1);
 
         $jobsTable = Mockery::mock();
+        $jobsTable->shouldReceive('whereNull')->once()->with('reserved_at')->andReturnSelf();
         $jobsTable->shouldReceive('where')
             ->once()
             ->withArgs(static function (string $column, string $operator, string $value): bool {
@@ -304,6 +306,7 @@ class ImportProgressServiceTest extends TestCase
             ->andReturn(1);
 
         $jobsTable = Mockery::mock();
+        $jobsTable->shouldReceive('whereNull')->once()->with('reserved_at')->andReturnSelf();
         $jobsTable->shouldReceive('where')
             ->once()
             ->withArgs(static function (string $column, string $operator, string $value): bool {
@@ -669,6 +672,7 @@ class ImportProgressServiceTest extends TestCase
                 ->andReturn(1);
 
             $jobsTable = Mockery::mock();
+            $jobsTable->shouldReceive('whereNull')->once()->with('reserved_at')->andReturnSelf();
             $jobsTable->shouldReceive('where')
                 ->withArgs(static function (string $column, string $operator, string $value): bool {
                     return $column === 'payload'
@@ -757,6 +761,7 @@ class ImportProgressServiceTest extends TestCase
 
         $jobsTable = Mockery::mock();
         $jobsTable->shouldReceive('where')->times(3)->andReturnSelf();
+        $jobsTable->shouldReceive('whereNull')->once()->with('reserved_at')->andReturnSelf();
         $jobsTable->shouldReceive('delete')->once()->andReturn(1);
 
         DB::shouldReceive('table')->with('import_jobs')

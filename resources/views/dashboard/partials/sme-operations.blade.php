@@ -50,6 +50,12 @@
         'realisasi' => 'fas fa-check-circle',
         'batal' => 'fas fa-times-circle',
         'carry_over' => 'fas fa-forward',
+        'cif_baru' => 'fas fa-user-plus',
+        'suplesi' => 'fas fa-layer-group',
+        'total_hp' => 'fas fa-funnel-dollar',
+        'minimal_hp' => 'fas fa-bullseye',
+        'delta_hp' => 'fas fa-chart-line',
+        'rm_real' => 'fas fa-user-check',
     ];
     $extensionIcons = [
         'analisa_rm' => 'fas fa-search-dollar',
@@ -307,17 +313,104 @@
                         </div>
                         <div class="sme-ops-data-pair">
                             <div>
-                                <span>Debitur</span>
-                                <strong>{{ $formatInteger(data_get($status, 'deb', 0)) }}</strong>
+                                <span>{{ data_get($status, 'deb_label', 'Debitur') }}</span>
+                                <strong>{{ $formatInteger(data_get($status, 'deb', 0)) }}{{ data_get($status, 'deb_suffix', '') }}</strong>
                             </div>
                             <div>
-                                <span>Rp Juta</span>
+                                <span>{{ data_get($status, 'amount_label', 'Rp Juta') }}</span>
                                 <strong>{{ $formatAmount(data_get($status, 'amount_juta', 0)) }}</strong>
                             </div>
                         </div>
                     </article>
                 @endforeach
             </div>
+
+            @if(!empty($hotProspects['is_rekap_uker']) && !empty($hotProspects['records']))
+                <div class="sme-ops-hot-table-wrap" style="overflow-x: auto; border: 1px solid #d4e0ed; border-radius: 12px; margin-top: 1rem;">
+                    <table class="sme-ops-hot-table" style="width: 100%; min-width: 920px; border-collapse: collapse; font-size: 0.72rem;">
+                        <thead>
+                            <tr style="color: #fff; background: #0b438e; font-size: 0.65rem; font-weight: 850; text-transform: uppercase;">
+                                <th style="padding: 0.65rem 0.6rem; text-align: center;">No</th>
+                                <th style="padding: 0.65rem 0.7rem; text-align: left;">Cabang</th>
+                                <th style="padding: 0.65rem 0.6rem; text-align: center;">Kode</th>
+                                <th style="padding: 0.65rem 0.75rem; text-align: left;">Unit Kerja</th>
+                                <th style="padding: 0.65rem 0.6rem; text-align: center;">Total RM</th>
+                                <th style="padding: 0.65rem 0.7rem; text-align: right;">Min HP (Jt)</th>
+                                <th style="padding: 0.65rem 0.7rem; text-align: right;">CIF Baru (Deb)</th>
+                                <th style="padding: 0.65rem 0.7rem; text-align: right;">CIF Baru (Jt)</th>
+                                <th style="padding: 0.65rem 0.7rem; text-align: right;">Suplesi (Deb)</th>
+                                <th style="padding: 0.65rem 0.7rem; text-align: right;">Suplesi (Jt)</th>
+                                <th style="padding: 0.65rem 0.7rem; text-align: right;">Total HP (Deb)</th>
+                                <th style="padding: 0.65rem 0.7rem; text-align: right;">Total HP (Jt)</th>
+                                <th style="padding: 0.65rem 0.7rem; text-align: right;">Delta HP (Jt)</th>
+                                <th style="padding: 0.65rem 0.65rem; text-align: center;">RM Real</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach((array) data_get($hotProspects, 'records', []) as $rec)
+                                <tr style="border-bottom: 1px solid #e0e8f1; {{ $loop->even ? 'background: #f6faff;' : 'background: #fff;' }}">
+                                    <td style="padding: 0.55rem 0.6rem; text-align: center; color: #64748b;">{{ $loop->iteration }}</td>
+                                    <td style="padding: 0.55rem 0.7rem; text-align: left; font-weight: 700; color: #1e3a8a;">{{ data_get($rec, 'branch', '-') }}</td>
+                                    <td style="padding: 0.55rem 0.6rem; text-align: center; color: #64748b; font-family: monospace;">{{ data_get($rec, 'unit_code', '-') }}</td>
+                                    <td style="padding: 0.55rem 0.75rem; text-align: left; font-weight: 600; color: #0f172a;">{{ data_get($rec, 'unit', '-') }}</td>
+                                    <td style="padding: 0.55rem 0.6rem; text-align: center; font-weight: 700;">{{ $formatInteger(data_get($rec, 'rm_count', 0)) }}</td>
+                                    <td style="padding: 0.55rem 0.7rem; text-align: right; font-variant-numeric: tabular-nums;">{{ $formatAmount(data_get($rec, 'min_hp_rp', 0)) }}</td>
+                                    <td style="padding: 0.55rem 0.7rem; text-align: right; font-variant-numeric: tabular-nums;">{{ $formatInteger(data_get($rec, 'cif_baru.deb', 0)) }}</td>
+                                    <td style="padding: 0.55rem 0.7rem; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600;">{{ $formatAmount(data_get($rec, 'cif_baru.amount_juta', 0)) }}</td>
+                                    <td style="padding: 0.55rem 0.7rem; text-align: right; font-variant-numeric: tabular-nums;">{{ $formatInteger(data_get($rec, 'suplesi.deb', 0)) }}</td>
+                                    <td style="padding: 0.55rem 0.7rem; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600;">{{ $formatAmount(data_get($rec, 'suplesi.amount_juta', 0)) }}</td>
+                                    <td style="padding: 0.55rem 0.7rem; text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; color: #0754bd;">{{ $formatInteger(data_get($rec, 'total.deb', 0)) }}</td>
+                                    <td style="padding: 0.55rem 0.7rem; text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; color: #0754bd;">{{ $formatAmount(data_get($rec, 'total.amount_juta', 0)) }}</td>
+                                    @php
+                                        $delta = (float) data_get($rec, 'delta_hp_rp', 0);
+                                        $deltaColor = $delta >= 0 ? '#16a34a' : '#dc2626';
+                                    @endphp
+                                    <td style="padding: 0.55rem 0.7rem; text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; color: {{ $deltaColor }};">
+                                        {{ $delta > 0 ? '+' : '' }}{{ $formatAmount($delta) }}
+                                    </td>
+                                    <td style="padding: 0.55rem 0.65rem; text-align: center; font-variant-numeric: tabular-nums;">
+                                        <span style="display: inline-block; padding: 0.15rem 0.4rem; border-radius: 6px; font-size: 0.68rem; font-weight: 700; background: #e0f2fe; color: #0369a1;">
+                                            {{ data_get($rec, 'rm_sudah_real', 0) }} / {{ data_get($rec, 'rm_count', 0) }}
+                                        </span>
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                        <tfoot style="color: #fff; background: #083f83; font-weight: 800; font-size: 0.72rem;">
+                            @php
+                                $recs = collect((array) data_get($hotProspects, 'records', []));
+                                $totRm = (int) $recs->sum('rm_count');
+                                $totMinHp = (float) $recs->sum('min_hp_rp');
+                                $totBaruDeb = (int) $recs->sum(fn($r) => data_get($r, 'cif_baru.deb', 0));
+                                $totBaruRp = (float) $recs->sum(fn($r) => data_get($r, 'cif_baru.amount_juta', 0));
+                                $totSupDeb = (int) $recs->sum(fn($r) => data_get($r, 'suplesi.deb', 0));
+                                $totSupRp = (float) $recs->sum(fn($r) => data_get($r, 'suplesi.amount_juta', 0));
+                                $totAllDeb = (int) $recs->sum(fn($r) => data_get($r, 'total.deb', 0));
+                                $totAllRp = (float) $recs->sum(fn($r) => data_get($r, 'total.amount_juta', 0));
+                                $totDeltaRp = (float) $recs->sum('delta_hp_rp');
+                                $totReal = (int) $recs->sum('rm_sudah_real');
+                            @endphp
+                            <tr>
+                                <td colspan="4" style="padding: 0.65rem 0.75rem; text-align: left; font-weight: 800; text-transform: uppercase;">
+                                    TOTAL {{ strtoupper(data_get($meta, 'scope_label', 'AREA 6')) }} ({{ $recs->count() }} UKER)
+                                </td>
+                                <td style="padding: 0.65rem 0.6rem; text-align: center;">{{ $formatInteger($totRm) }}</td>
+                                <td style="padding: 0.65rem 0.7rem; text-align: right;">{{ $formatAmount($totMinHp) }}</td>
+                                <td style="padding: 0.65rem 0.7rem; text-align: right;">{{ $formatInteger($totBaruDeb) }}</td>
+                                <td style="padding: 0.65rem 0.7rem; text-align: right;">{{ $formatAmount($totBaruRp) }}</td>
+                                <td style="padding: 0.65rem 0.7rem; text-align: right;">{{ $formatInteger($totSupDeb) }}</td>
+                                <td style="padding: 0.65rem 0.7rem; text-align: right;">{{ $formatAmount($totSupRp) }}</td>
+                                <td style="padding: 0.65rem 0.7rem; text-align: right; font-weight: 900;">{{ $formatInteger($totAllDeb) }}</td>
+                                <td style="padding: 0.65rem 0.7rem; text-align: right; font-weight: 900;">{{ $formatAmount($totAllRp) }}</td>
+                                <td style="padding: 0.65rem 0.7rem; text-align: right; font-weight: 900; color: {{ $totDeltaRp >= 0 ? '#86efac' : '#fca5a5' }};">
+                                    {{ $totDeltaRp > 0 ? '+' : '' }}{{ $formatAmount($totDeltaRp) }}
+                                </td>
+                                <td style="padding: 0.65rem 0.65rem; text-align: center;">{{ $totReal }} / {{ $totRm }}</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            @endif
         @else
             <div class="sme-ops-empty"><i class="fas fa-cloud-download-alt"></i>Data Hot Prospek belum tersedia untuk lingkup ini.</div>
         @endif

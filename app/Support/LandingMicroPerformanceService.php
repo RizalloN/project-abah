@@ -21,7 +21,7 @@ final class LandingMicroPerformanceService
 
     private const PERFORMANCE_RM_SNAPSHOT_TABLE = 'performance_rm_snapshots';
 
-    private const CACHE_VERSION = 'v47-mantri-active-notes';
+    private const CACHE_VERSION = 'v48-mantri-contract-targets';
 
     private const PERIOD_LOOKUP_INDEXES = [
         'idx_snapshot_filter_optimized',
@@ -2505,10 +2505,10 @@ final class LandingMicroPerformanceService
         $definitions = $category === 'contract'
             ? [
                 'none' => 'Belum Realisasi',
-                'extreme_low' => 'Extreme Low < 175 jt',
-                'low' => 'Low 175 - 350 jt',
-                'mid' => 'Mid >350 - 450 jt',
-                'high' => 'High > 450 jt',
+                'extreme_low' => 'Extreme Low < 350 jt',
+                'low' => 'Low 350 - 600 jt',
+                'mid' => 'Mid >600 - 800 jt',
+                'high' => 'High > 800 jt',
             ]
             : [
                 'none' => 'Belum Realisasi',
@@ -2530,9 +2530,9 @@ final class LandingMicroPerformanceService
             $amount = (float) ($managerMetric['amount'] ?? 0.0);
             $key = match (true) {
                 $amount === 0.0 => 'none',
-                $category === 'contract' && $amount < 175_000_000 => 'extreme_low',
-                $category === 'contract' && $amount <= 350_000_000 => 'low',
-                $category === 'contract' && $amount <= 450_000_000 => 'mid',
+                $category === 'contract' && $amount < 350_000_000 => 'extreme_low',
+                $category === 'contract' && $amount <= 600_000_000 => 'low',
+                $category === 'contract' && $amount <= 800_000_000 => 'mid',
                 $category === 'contract' => 'high',
                 $amount < 400_000_000 => 'extreme_low',
                 $amount <= 800_000_000 => 'low',

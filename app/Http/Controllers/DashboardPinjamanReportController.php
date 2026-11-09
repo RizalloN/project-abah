@@ -170,15 +170,18 @@ class DashboardPinjamanReportController extends Controller
                 'category' => $selectedCategory,
                 'kanca' => $selectedKanca,
                 'os' => [],
+                'lr' => [],
+                'lnr' => [],
                 'sml' => [],
                 'npl' => [],
+                'lar' => [],
             ]);
         }
 
         $kreditService = app(DashboardPinjamanKreditService::class);
         $periodReferences = $kreditService->calculatePeriodReferences($selectedPeriod);
 
-        $cacheKey = 'dashboard_pinjaman_kredit_unified:v19-month-end-hide-mom:' . md5(json_encode([
+        $cacheKey = 'dashboard_pinjaman_kredit_unified:v22-sme-lar-by-collateral:' . md5(json_encode([
             'cache_version' => $this->kreditCacheVersion(),
             'snapshot_signature' => $this->kreditSnapshotSignature($periodReferences, $selectedKanca),
             'periode' => $selectedPeriod,
@@ -198,8 +201,11 @@ class DashboardPinjamanReportController extends Controller
             fn () => [
                 'status' => 'warming',
                 'os' => [],
+                'lr' => [],
+                'lnr' => [],
                 'sml' => [],
                 'npl' => [],
+                'lar' => [],
             ]
         );
 

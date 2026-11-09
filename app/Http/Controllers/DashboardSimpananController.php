@@ -2262,6 +2262,9 @@ class DashboardSimpananController extends Controller
         $this->appendLandingSection($microPerformance, 'pipeline', fn (): array =>
             app(LandingMicroPipelineService::class)->payload($branchScope)
         );
+        $this->appendLandingSection($microPerformance, 'hot_prospects_rm_kur', fn (): array =>
+            app(LandingMicroPipelineService::class)->hotProspectsPayload($branchScope, $request->boolean('refresh'))
+        );
 
         return view('dashboard.partials.micro-performance', compact('microPerformance'));
     }

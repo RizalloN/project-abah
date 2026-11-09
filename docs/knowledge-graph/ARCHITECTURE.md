@@ -7,16 +7,16 @@ flowchart LR
     d_d942f64886["import"] -->|1071| d_c393a69167["access-control"]
     d_90026ec21f["dashboard-simpanan"] -->|263| d_c393a69167["access-control"]
     d_c1933689a3["dashboard-pinjaman"] -->|251| d_c393a69167["access-control"]
-    d_d942f64886["import"] -->|217| d_0d45f5fd46["core"]
+    d_d942f64886["import"] -->|222| d_0d45f5fd46["core"]
     d_3549b0028b["database"] -->|173| d_0d45f5fd46["core"]
     d_39bcb775e4["bank-pipeline"] -->|136| d_c393a69167["access-control"]
-    d_d942f64886["import"] -->|113| d_7c16aa6a77["jobs-snapshots"]
+    d_d942f64886["import"] -->|114| d_7c16aa6a77["jobs-snapshots"]
     d_3549b0028b["database"] -->|106| d_d942f64886["import"]
     d_0d45f5fd46["core"] -->|88| d_c393a69167["access-control"]
     d_c1933689a3["dashboard-pinjaman"] -->|74| d_0d45f5fd46["core"]
     d_a0a49fdd98["dashboard-harian"] -->|66| d_c393a69167["access-control"]
+    d_7c16aa6a77["jobs-snapshots"] -->|65| d_0d45f5fd46["core"]
     d_0d45f5fd46["core"] -->|65| d_d942f64886["import"]
-    d_7c16aa6a77["jobs-snapshots"] -->|62| d_0d45f5fd46["core"]
     d_0d45f5fd46["core"] -->|61| d_c1933689a3["dashboard-pinjaman"]
     d_3549b0028b["database"] -->|60| d_c1933689a3["dashboard-pinjaman"]
     d_0d45f5fd46["core"] -->|58| d_7c16aa6a77["jobs-snapshots"]
@@ -35,10 +35,10 @@ flowchart LR
     d_0d45f5fd46["core"] -->|30| d_39bcb775e4["bank-pipeline"]
     d_7c16aa6a77["jobs-snapshots"] -->|28| d_90026ec21f["dashboard-simpanan"]
     d_c393a69167["access-control"] -->|26| d_0d45f5fd46["core"]
+    d_7c16aa6a77["jobs-snapshots"] -->|25| d_a0a49fdd98["dashboard-harian"]
     d_90026ec21f["dashboard-simpanan"] -->|24| d_7c16aa6a77["jobs-snapshots"]
     d_d942f64886["import"] -->|23| d_a0a49fdd98["dashboard-harian"]
     d_bfac314fef["presentation"] -->|23| d_90026ec21f["dashboard-simpanan"]
-    d_7c16aa6a77["jobs-snapshots"] -->|22| d_a0a49fdd98["dashboard-harian"]
     d_d294fcce0c["platform"] -->|21| d_0d45f5fd46["core"]
     d_90026ec21f["dashboard-simpanan"] -->|21| d_d942f64886["import"]
     d_7c16aa6a77["jobs-snapshots"] -->|21| d_c393a69167["access-control"]
@@ -50,13 +50,13 @@ flowchart LR
 
 | Domain | Nodes | Detail |
 | --- | ---: | --- |
-| import | 2634 | [open](domains/import.md) |
-| core | 1597 | [open](domains/core.md) |
-| dashboard-pinjaman | 1068 | [open](domains/dashboard-pinjaman.md) |
-| database | 794 | [open](domains/database.md) |
-| jobs-snapshots | 717 | [open](domains/jobs-snapshots.md) |
-| dashboard-simpanan | 641 | [open](domains/dashboard-simpanan.md) |
-| dashboard-harian | 367 | [open](domains/dashboard-harian.md) |
+| import | 2645 | [open](domains/import.md) |
+| core | 1622 | [open](domains/core.md) |
+| dashboard-pinjaman | 1086 | [open](domains/dashboard-pinjaman.md) |
+| database | 798 | [open](domains/database.md) |
+| jobs-snapshots | 722 | [open](domains/jobs-snapshots.md) |
+| dashboard-simpanan | 643 | [open](domains/dashboard-simpanan.md) |
+| dashboard-harian | 369 | [open](domains/dashboard-harian.md) |
 | bank-pipeline | 363 | [open](domains/bank-pipeline.md) |
 | presentation | 291 | [open](domains/presentation.md) |
 | access-control | 200 | [open](domains/access-control.md) |

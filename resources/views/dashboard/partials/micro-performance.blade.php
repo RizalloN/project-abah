@@ -13,6 +13,11 @@
     ])->values()->all();
     $mantriPerformance = (array) data_get($microPerformance, 'mantri_performance', []);
     $rmKurProductivity = (array) data_get($microPerformance, 'rm_kur_productivity', []);
+    $hotProspectsRmKur = (array) data_get($microPerformance, 'hot_prospects_rm_kur', []);
+    $hotProspectsRmKurRecords = array_values((array) data_get($hotProspectsRmKur, 'records', []));
+    $hotProspectsRmKurStatuses = array_values((array) data_get($hotProspectsRmKur, 'statuses', []));
+    $hotProspectsRmKurAvailable = (bool) data_get($hotProspectsRmKur, 'available', false);
+    $hotProspectsRmKurStale = (bool) data_get($hotProspectsRmKur, 'stale', false);
     $burden = (array) data_get($microPerformance, 'burden', []);
     $unproductiveMantri = (array) data_get($microPerformance, 'unproductive_mantri', []);
     $pipeline = (array) data_get($microPerformance, 'pipeline', []);
@@ -909,6 +914,111 @@
                         <div>
                             <strong>Belum ada realisasi RM KUR Kecil Mikro</strong>
                             <span>Tidak ditemukan realisasi MTD KUR Ritel 2015 pada periode dan cabang yang dipilih.</span>
+                        </div>
+                    </div>
+                @endif
+            </article>
+
+            <article class="micro-rm-kur-productivity micro-rm-kur-hot" data-micro-rm-kur-hot aria-labelledby="micro-rm-kur-hot-title">
+                <header class="micro-rm-kur-head">
+                    <span class="micro-rm-kur-head__icon" aria-hidden="true" style="color:#d97706;background:#fef3c7;"><i class="fas fa-fire-alt"></i></span>
+                    <div class="micro-rm-kur-head__copy">
+                        <span class="micro-ops-eyebrow" style="color:#fde68a;">PIPELINE KUR KECIL</span>
+                        <h4 id="micro-rm-kur-hot-title">Hot Prospek RM KUR Mikro</h4>
+                        <p>
+                            Calon debitur dan pipeline RM KUR Mikro dari Google Sheets.
+                            @if(data_get($hotProspectsRmKur, 'period_label'))
+                                Posisi {{ data_get($hotProspectsRmKur, 'period_label') }}: {{ $formatInteger(data_get($hotProspectsRmKur, 'summary.total.deb', 0)) }} prospek &middot; Rp {{ $formatAmount((float) data_get($hotProspectsRmKur, 'summary.total.amount_juta', 0) * 1_000_000) }}.
+                            @endif
+                        </p>
+                    </div>
+                    <div class="micro-rm-kur-head__meta" aria-label="Konteks data Hot Prospek RM KUR Mikro">
+                        <span><i class="fas fa-map-marker-alt" aria-hidden="true"></i>{{ data_get($hotProspectsRmKur, 'scope_label', data_get($meta, 'scope_label', 'Area 6')) }}</span>
+                        <span><i class="fas fa-users" aria-hidden="true"></i>{{ $formatInteger(data_get($hotProspectsRmKur, 'rm_count', 0)) }} RM</span>
+                        <a href="{{ data_get($hotProspectsRmKur, 'source_url', '#') }}" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;gap:0.35rem;padding:0.36rem 0.56rem;color:#fff;background:rgba(255,255,255,0.2);border:1px solid rgba(255,255,255,0.4);border-radius:999px;font-size:0.64rem;font-weight:800;text-decoration:none;">
+                            <i class="fas fa-external-link-alt" aria-hidden="true"></i> Buka Google Sheets
+                        </a>
+                    </div>
+                </header>
+
+                @if($hotProspectsRmKurAvailable && $hotProspectsRmKurStatuses !== [])
+                    <div class="micro-rm-kur-summary" aria-label="Ringkasan Status Hot Prospek RM KUR">
+                        @foreach($hotProspectsRmKurStatuses as $status)
+                            <article style="border-left-color: {{ match(data_get($status, 'key')) { 'total' => '#0754bd', 'prakarsa' => '#d97706', 'putusan' => '#7c3aed', 'realisasi' => '#059669', default => '#0754bd' } }};">
+                                <span>{{ data_get($status, 'label') }}</span>
+                                <strong>{{ $formatInteger(data_get($status, 'deb', 0)) }} Deb</strong>
+                                <small>Plafond {{ $formatAmount((float) data_get($status, 'amount_juta', 0) * 1_000_000) }}</small>
+                            </article>
+                        @endforeach
+                    </div>
+                @endif
+
+                @if($hotProspectsRmKurAvailable && $hotProspectsRmKurRecords !== [])
+                    <div class="micro-rm-kur-table-wrap" tabindex="0" aria-label="Tabel nominatif Hot Prospek RM KUR Mikro">
+                        <table class="micro-ops-table micro-rm-kur-table">
+                            <thead>
+                                <tr>
+                                    <th>No</th>
+                                    <th>Cabang</th>
+                                    <th>Unit Kerja</th>
+                                    <th>RM KUR</th>
+                                    <th>Total Deb</th>
+                                    <th>Total Plafon</th>
+                                    <th>Prakarsa Deb</th>
+                                    <th>Prakarsa Plafon</th>
+                                    <th>Putusan Deb</th>
+                                    <th>Putusan Plafon</th>
+                                    <th>Real Deb</th>
+                                    <th>Real Plafon</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach($hotProspectsRmKurRecords as $row)
+                                    <tr>
+                                        <td>{{ $loop->iteration }}</td>
+                                        <td><strong>{{ data_get($row, 'branch', '-') }}</strong></td>
+                                        <td>
+                                            <span>{{ data_get($row, 'unit', '-') }}</span>
+                                            @if(data_get($row, 'unit_code'))
+                                                <small class="text-muted d-block" style="font-size:0.62rem;color:#7890a7;">BC {{ data_get($row, 'unit_code') }}</small>
+                                            @endif
+                                        </td>
+                                        <th scope="row" class="micro-rm-kur-person">
+                                            <strong>{{ data_get($row, 'rm_name', '-') }}</strong>
+                                            <small>PN {{ data_get($row, 'pn', '-') }}</small>
+                                        </th>
+                                        <td class="strong">{{ $formatInteger(data_get($row, 'total.deb', 0)) }}</td>
+                                        <td class="strong">{{ $formatAmount((float) data_get($row, 'total.amount_juta', 0) * 1_000_000) }}</td>
+                                        <td>{{ $formatInteger(data_get($row, 'prakarsa.deb', 0)) }}</td>
+                                        <td>{{ $formatAmount((float) data_get($row, 'prakarsa.amount_juta', 0) * 1_000_000) }}</td>
+                                        <td>{{ $formatInteger(data_get($row, 'putusan.deb', 0)) }}</td>
+                                        <td>{{ $formatAmount((float) data_get($row, 'putusan.amount_juta', 0) * 1_000_000) }}</td>
+                                        <td class="strong" style="color:#059669;">{{ $formatInteger(data_get($row, 'realisasi.deb', 0)) }}</td>
+                                        <td class="strong" style="color:#059669;">{{ $formatAmount((float) data_get($row, 'realisasi.amount_juta', 0) * 1_000_000) }}</td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                            <tfoot>
+                                <tr>
+                                    <th colspan="4" scope="row">Total {{ data_get($hotProspectsRmKur, 'scope_label', 'Area 6') }} ({{ count($hotProspectsRmKurRecords) }} RM)</th>
+                                    <td>{{ $formatInteger(data_get($hotProspectsRmKur, 'summary.total.deb', 0)) }}</td>
+                                    <td>{{ $formatAmount((float) data_get($hotProspectsRmKur, 'summary.total.amount_juta', 0) * 1_000_000) }}</td>
+                                    <td>{{ $formatInteger(data_get($hotProspectsRmKur, 'summary.prakarsa.deb', 0)) }}</td>
+                                    <td>{{ $formatAmount((float) data_get($hotProspectsRmKur, 'summary.prakarsa.amount_juta', 0) * 1_000_000) }}</td>
+                                    <td>{{ $formatInteger(data_get($hotProspectsRmKur, 'summary.putusan.deb', 0)) }}</td>
+                                    <td>{{ $formatAmount((float) data_get($hotProspectsRmKur, 'summary.putusan.amount_juta', 0) * 1_000_000) }}</td>
+                                    <td style="color:#56f5b0;">{{ $formatInteger(data_get($hotProspectsRmKur, 'summary.realisasi.deb', 0)) }}</td>
+                                    <td style="color:#56f5b0;">{{ $formatAmount((float) data_get($hotProspectsRmKur, 'summary.realisasi.amount_juta', 0) * 1_000_000) }}</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                @else
+                    <div class="micro-rm-kur-empty" role="status">
+                        <i class="fas fa-fire-alt" aria-hidden="true"></i>
+                        <div>
+                            <strong>Belum ada data Hot Prospek RM KUR Mikro</strong>
+                            <span>{{ data_get($hotProspectsRmKur, 'error', 'Tidak ditemukan prospek RM KUR Mikro pada cabang yang dipilih.') }}</span>
                         </div>
                     </div>
                 @endif

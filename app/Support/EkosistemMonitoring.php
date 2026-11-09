@@ -7,12 +7,89 @@ use Carbon\CarbonImmutable;
 /** Read-only equivalents of Index.html health(), filtered(), and allStats(). */
 class EkosistemMonitoring
 {
+    /** Base fields from the supplied Apps Script; additional fields retain their source labels. */
+    private const PROSPECT_FIELDS = [
+        'ID_Prospek', 'ID_Ekosistem', 'Ekosistem', 'KC', 'Jalur_RM', 'Prospek', 'Produk', 'Jenis_Potensi',
+        'Est_Min_Juta', 'Est_Max_Juta', 'Est_Nasabah', 'Dasar_Angka', 'Sumber', 'Catatan_Analis',
+        'Est_Durasi_Hari', 'Peran_PIC', 'Nama_PIC', 'Tgl_Mulai', 'Target_Selesai', 'Tahap', 'Status',
+        'Realisasi_Nominal_Juta', 'Realisasi_Nasabah', 'Kendala', 'Catatan', 'Diubah_Pada', 'Diubah_Oleh',
+        'Sasaran', 'Prasyarat_ID', 'Tgl_Selesai', 'Ring', 'Simpul', 'Status_BRI', 'Bank_Lain',
+        'PN_PIC', 'UKER_PIC', 'Plafon_KUR_Juta',
+        'Arah', 'Kondisi', 'Terlambat', 'Cek_Satuan', 'Ekosistem_Terdaftar',
+    ];
+
+    public function recordedFields(array $row): array
+    {
+        $groups = ['followup' => [], 'offer' => [], 'other' => []];
+        foreach ($row as $key => $value) {
+            if (in_array($key, self::PROSPECT_FIELDS, true) || ! is_scalar($value) || trim((string) $value) === '') {
+                continue;
+            }
+            $name = mb_strtolower((string) $key);
+            $group = preg_match('/penawaran|offering|proposal|negosiasi|nego|harga|quotation|produk.?ditawar|produk.?offer/', $name)
+                ? 'offer'
+                : (preg_match('/(^|[^a-z])tl([^a-z]|$)|tindak|follow|kunjungan|visit|kontak|contact|telepon|meeting|pertemuan|progress|progres|closing|lanjut/', $name) ? 'followup' : 'other');
+            $groups[$group][] = ['label' => str_replace('_', ' ', (string) $key), 'value' => (string) $value];
+        }
+
+        return $groups;
+    }
+
     public const CONDITIONS = [
         'late' => 'Lewat target', 'stale' => 'Mandek > 14 hari', 'due' => 'Jatuh tempo ≤ 7 hari',
         'hold' => 'Tertunda', 'nopic' => 'Prioritas tanpa PIC', 'blocked' => 'Menunggu prasyarat',
         'ready' => 'Siap dimulai', 'ok' => 'Sesuai jadwal', 'unit' => 'Cek satuan nominal',
         'unmapped' => 'Belum terhubung ke ekosistem',
     ];
+
+    /** Recorded dated milestones, not reconstructed historical portfolio balances. */
+    public function chartData(array $rows, string $today): array
+    {
+        $end = CarbonImmutable::parse($today)->startOfDay();
+        $start = $end->subDays(89);
+        $dates = [];
+        for ($day = $start; $day->lte($end); $day = $day->addDay()) {
+            $dates[$day->toDateString()] = ['started' => 0, 'completed' => 0];
+        }
+        $coverage = ['started' => 0, 'completed' => 0];
+        $branches = [];
+        $stages = array_fill_keys(['Pendataan', 'Penawaran', 'Sosialisasi', 'Closing', 'Maintenance'], 0);
+        foreach ($rows as $row) {
+            $branch = trim((string) ($row['KC'] ?? '')) ?: 'Belum dipetakan';
+            $branches[$branch] = ($branches[$branch] ?? 0) + 1;
+            $stage = trim((string) ($row['Tahap'] ?? '')) ?: 'Belum diisi';
+            $stages[$stage] = ($stages[$stage] ?? 0) + 1;
+            foreach (['started' => 'Tgl_Mulai', 'completed' => 'Tgl_Selesai'] as $key => $field) {
+                $date = (string) ($row[$field] ?? '');
+                if (($key === 'completed' && ($row['Status'] ?? '') !== 'Selesai')
+                    || ! preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) || $date > $today) {
+                    continue;
+                }
+                try {
+                    if (CarbonImmutable::createFromFormat('!Y-m-d', $date)->format('Y-m-d') !== $date) {
+                        continue;
+                    }
+                } catch (\Throwable) {
+                    continue;
+                }
+                $coverage[$key]++;
+                if (isset($dates[$date])) {
+                    $dates[$date][$key]++;
+                }
+            }
+        }
+        ksort($branches, SORT_NATURAL | SORT_FLAG_CASE);
+
+        return [
+            'dates' => array_keys($dates),
+            'started' => array_column($dates, 'started'),
+            'completed' => array_column($dates, 'completed'),
+            'coverage' => $coverage,
+            'branches' => $branches,
+            'stages' => $stages,
+            'as_of' => $today,
+        ];
+    }
 
     public function decorate(array $rows, string $today): array
     {

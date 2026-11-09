@@ -387,6 +387,8 @@ class SmartContentHeaderGuardService
             );
         }
 
+        $rowIndexes = array_keys($rows);
+        $rows = array_values($rows);
         $maxScan = min(count($rows), 50);
         for ($i = 0; $i < $maxScan; $i++) {
             $row = (array) ($rows[$i] ?? []);
@@ -401,7 +403,8 @@ class SmartContentHeaderGuardService
 
             // A valid header row consists mostly of TEXT LABELS, not numbers or pure dates
             $textLabelCount = 0;
-            $headerMatchCount = 0;
+            $matchedColumns = [];
+            $genericLabels = [];
             $hasPeriodeOrPosisi = false;
 
             foreach ($nonEmptyCells as $cell) {
@@ -416,8 +419,14 @@ class SmartContentHeaderGuardService
                     $textLabelCount++;
                 }
 
-                if ($tableName && (isset($expectedColumnsLookup[strtolower($norm)]) || $this->hasKnownSemanticAlias($norm, $tableName))) {
-                    $headerMatchCount++;
+                if (preg_match('/^(?:TEXTBOX|COL(?:UMN)?)[_ ]?\d+$/', $norm) === 1) {
+                    $genericLabels[$norm] = true;
+                }
+                $column = isset($expectedColumnsLookup[strtolower($norm)])
+                    ? strtolower($norm)
+                    : $this->resolveAliasCandidate($norm, array_keys($expectedColumnsLookup));
+                if ($column !== null) {
+                    $matchedColumns[$column] = true;
                 }
             }
 
@@ -429,24 +438,35 @@ class SmartContentHeaderGuardService
 
             // Inspect the NEXT rows (i+1 to i+3) to confirm they look like DATA rows
             $dataRowScore = 0;
+            $hasDataEvidence = false;
             $nextRowsSample = array_slice($rows, $i + 1, 3);
             if (!empty($nextRowsSample)) {
                 foreach ($nextRowsSample as $nextRow) {
                     $nextNonEmpty = array_filter((array) $nextRow, static fn ($c): bool => $c !== null && trim((string) $c) !== '');
                     if (count($nextNonEmpty) >= count($nonEmptyCells) * 0.7) {
                         $dataRowScore += 10;
+                        foreach ($nextNonEmpty as $value) {
+                            if (in_array($this->inferValueSemanticType(trim((string) $value)), ['date', 'account_number', 'currency_amount', 'integer_id', 'cif'], true)) {
+                                $hasDataEvidence = true;
+                                break;
+                            }
+                        }
                     }
                 }
             }
 
-            $totalScore = ($labelRatio * 20) + ($headerMatchCount * 15) + $dataRowScore;
+            // A row of customer names/branch names is not header evidence.
+            if (count($matchedColumns) < 2 && ! $hasPeriodeOrPosisi && count($genericLabels) < 2 && ! $hasDataEvidence) {
+                continue;
+            }
+            $totalScore = ($labelRatio * 20) + (count($matchedColumns) * 15) + $dataRowScore;
             if ($hasPeriodeOrPosisi) {
                 $totalScore += 50;
             }
 
             if ($totalScore > $bestScore) {
                 $bestScore = $totalScore;
-                $bestIndex = $i;
+                $bestIndex = $rowIndexes[$i];
             }
         }
 

@@ -26,19 +26,18 @@ import {
     readInitialChoice,
     shouldKeepDeckOpen,
 } from './launcher-choice.js';
-import * as wilayah from './render-wilayah.js';
-import * as kinerja from './render-kinerja.js';
+import { chapter, empty } from './layout.js';
 
 const config = window.__SEGMENT_CONFIG__ || {};
-const RENDERERS = {
-    marketshare: wilayah.marketshare,
-    mapping: wilayah.mapping,
-    sektoral: wilayah.sektoral,
-    simpanan: kinerja.simpanan,
-    pinjaman: kinerja.pinjaman,
-    kualitas: kinerja.kualitas,
-    recovery: kinerja.recovery,
-};
+const RENDERERS = {};
+let wilayahModule;
+let kinerjaModule;
+const loadRenderers = (keys) => Promise.all([
+    keys.some(key => ['marketshare', 'mapping', 'sektoral'].includes(key))
+        ? (wilayahModule ||= import('./render-wilayah.js').then(module => Object.assign(RENDERERS, module)).catch(error => { wilayahModule = null; throw error; })) : null,
+    keys.some(key => PERFORMANCE_KEYS.includes(key))
+        ? (kinerjaModule ||= import('./render-kinerja.js').then(module => Object.assign(RENDERERS, module)).catch(error => { kinerjaModule = null; throw error; })) : null,
+]);
 const ORDER = (config.groups || []).flatMap((group) => group.segments.map((segment) => segment.key));
 const LABELS = Object.fromEntries((config.groups || []).flatMap((group) => group.segments.map((segment) => [segment.key, segment.label])));
 const STORAGE_KEY = 'sg-presentation-choice';
@@ -352,6 +351,7 @@ const buildDeck = async (choice) => {
         needsKinerja ? loadSegments(choice.scope) : Promise.resolve(null),
         // Always: the Kinerja relief places outlets on the map through the same REKAP units.
         loadWilayah(),
+        loadRenderers(choice.segments),
     ]);
     progress(78, 'Menyusun presentasi');
     index = new TerritoryIndex(features, wilayahData?.mapping);
@@ -364,7 +364,7 @@ const buildDeck = async (choice) => {
             return { key, ...RENDERERS[key](ctx) };
         } catch (error) {
             console.error(`Segment ${key} failed to render.`, error);
-            return { key, ...wilayah.emptySegment(key, LABELS[key] || key) };
+            return { key, html: chapter({ key, group: 'Segmen', title: LABELS[key] || key, lede: 'Data belum tersedia.', territory: false, span: 120, sheet: empty('Data belum tersedia untuk cakupan ini.') }) };
         }
     });
     built?.parts.forEach((part) => part.dispose?.());

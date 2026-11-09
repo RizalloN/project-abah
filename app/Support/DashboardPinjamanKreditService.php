@@ -11,6 +11,16 @@ use App\Support\RkaLookupService;
 class DashboardPinjamanKreditService
 {
     private const SNAPSHOT_TABLE = 'dashboard_harian_snapshots';
+    /** Kol-1 split by flag_restruk lives in the snapshot; LAR is derived from the displayed figures. */
+    private const RESTRUK_TYPES = ['lr', 'lnr'];
+    private const SPLIT_TYPES = ['lr', 'lnr', 'lar'];
+    /** RKAP has Restru Lancar and LAR lines, but no line for current non-restructured loans. */
+    private const TYPES_WITHOUT_RKA = ['lnr'];
+    private const QUALITY_RKA_TYPES = ['lr', 'lar'];
+    /** Segment-level target of a scope (Small, Konsumer, Mikro): drives branch subtotals and the grand total. */
+    private const SEGMENT_RKA = '__segment';
+    private const PERIOD_KEYS = ['ytd', 'm2', 'mtm', 'mtd', 'selected'];
+    private const RESTRUK_CATEGORY_COLUMNS = ['kecil_non_cashcoll', 'cashcoll', 'briguna_konsumer', 'kpr', 'kkb', 'briguna_mikro', 'kupedes', 'kur_mikro', 'kur_kecil', 'kur_kpp'];
     private const AREA_6_BRANCHES = [
         'KC Madiun',
         'KC Magetan',
@@ -28,10 +38,12 @@ class DashboardPinjamanKreditService
      */
     private array $rkaCache = [];
 
+    private array $restrukAvailability = [];
+
     private ?RkaLookupService $rkaLookup = null;
     
     /**
-     * Get unified segment data (OS, SML, NPL) in one go
+     * Get unified segment data in display order: OS, LR, LNR, SML, NPL, then LAR (LR + SML + NPL).
      */
     public function getUnifiedSegmentData(
         ?string $selectedPeriod,
@@ -39,7 +51,7 @@ class DashboardPinjamanKreditService
         array|string|null $selectedBranches = null
     ): array {
         if (!$selectedPeriod) {
-            return ['os' => [], 'sml' => [], 'npl' => [], 'header_dates' => [], 'rka_labels' => []];
+            return ['os' => [], 'lr' => [], 'lnr' => [], 'sml' => [], 'npl' => [], 'lar' => [], 'header_dates' => [], 'rka_labels' => []];
         }
 
         $segment = $this->normalizeSegment($segment);
@@ -58,6 +70,8 @@ class DashboardPinjamanKreditService
 
         $res = [
             'os' => $this->formatSegmentType($periods, $scopes, $categories, $segment, 'os', $rkaData),
+            'lr' => $this->formatSegmentType($periods, $scopes, $categories, $segment, 'lr', $rkaData),
+            'lnr' => $this->formatSegmentType($periods, $scopes, $categories, $segment, 'lnr', $rkaData),
             'sml' => $this->formatSegmentType($periods, $scopes, $categories, $segment, 'sml', $rkaData),
             'npl' => $this->formatSegmentType($periods, $scopes, $categories, $segment, 'npl', $rkaData),
             'header_dates' => $periods,
@@ -68,7 +82,113 @@ class DashboardPinjamanKreditService
             'rka_labels' => $this->calculateRkaLabels($selectedPeriod),
         ];
 
-        return DashboardCrossAlignmentGuard::alignCredit($res, $selectedPeriod, $segment);
+        $res = DashboardCrossAlignmentGuard::alignCredit($res, $selectedPeriod, $segment);
+        // After alignment, so LAR adds up from exactly the SML and NPL on screen.
+        $res['lar'] = $this->buildLarRows($res['lr'], $res['sml'], $res['npl'], $segment, $scopes, $categories, $rkaData);
+
+        return $res;
+    }
+
+    private function buildLarRows(array $lrRows, array $smlRows, array $nplRows, string $segment, array $scopes, array $categories, array $rkaData): array
+    {
+        $rows = [];
+        foreach ($lrRows as $index => $lr) {
+            if ($lr['is_total'] ?? false) {
+                continue;
+            }
+
+            $row = $lr;
+            foreach (self::PERIOD_KEYS as $key) {
+                $row[$key] = $lr[$key] === null
+                    ? null
+                    : (float) $lr[$key] + (float) ($smlRows[$index][$key] ?? 0) + (float) ($nplRows[$index][$key] ?? 0);
+            }
+            // Rows follow formatSegmentType's scope x category order.
+            $scope = $scopes[intdiv($index, count($categories))];
+            $category = $categories[$index % count($categories)];
+            $rows[] = $this->withRka($this->withDeltas($row, 'lar'), 'lar', $scope, $category, $rkaData);
+        }
+
+        return $this->appendTotalRow($rows, $segment, 'lar');
+    }
+
+    /**
+     * Category target when RKAP has a line for it (null when not), plus the scope's segment target
+     * for subtotals. Achievement follows the quality direction: lower than target is better.
+     */
+    private function withRka(array $row, string $type, array $scope, string $category, array $rkaData): array
+    {
+        if (!in_array($type, self::QUALITY_RKA_TYPES, true)) {
+            return $row;
+        }
+
+        $scopeKey = $this->scopeRkaKey($scope);
+        $categoryRka = $rkaData[$type][$category][$scopeKey] ?? null;
+        $segmentRka = $rkaData[$type][self::SEGMENT_RKA][$scopeKey] ?? null;
+        $row['rka_m1'] = $categoryRka['m1'] ?? null;
+        $row['rka_current'] = $categoryRka['current'] ?? null;
+        $row['segment_rka_m1'] = $segmentRka['m1'] ?? null;
+        $row['segment_rka_current'] = $segmentRka['current'] ?? null;
+
+        return $this->withAchievement($row, $type);
+    }
+
+    private function withAchievement(array $row, string $type): array
+    {
+        foreach (['m1' => 'rka_m1', 'cur' => 'rka_current'] as $suffix => $field) {
+            $known = $row[$field] !== null && ($row['selected'] ?? null) !== null;
+            $row["penc_{$suffix}_rp"] = $known ? $this->calculateRkaDelta((float) $row['selected'], (float) $row[$field], $type) : null;
+            $row["penc_{$suffix}_pct"] = $known ? $this->calculateRkaPercentage((float) $row['selected'], (float) $row[$field], $type) : null;
+        }
+
+        return $row;
+    }
+
+    /** Deltas stay unknown when either side is unknown; LNR has no RKAP target. */
+    private function withDeltas(array $row, string $type): array
+    {
+        $selected = $row['selected'] ?? null;
+        foreach (['delta_ytd' => 'ytd', 'delta_mom' => 'mtm', 'delta_mtd' => 'mtd'] as $delta => $key) {
+            $row[$delta] = $selected === null || ($row[$key] ?? null) === null ? null : $selected - $row[$key];
+        }
+
+        if (in_array($type, self::TYPES_WITHOUT_RKA, true)) {
+            foreach (['rka_m1', 'rka_current', 'penc_m1_rp', 'penc_m1_pct', 'penc_cur_rp', 'penc_cur_pct'] as $field) {
+                $row[$field] = null;
+            }
+        }
+
+        return $row;
+    }
+
+    /**
+     * LR/LNR exist only where the snapshot was built or backfilled from SSA, which carries flag_restruk.
+     * A period whose kol-1 balance has no LR/LNR at all is shown as unavailable, never as zero.
+     */
+    private function restrukAvailable(?string $period): bool
+    {
+        if (!$period) {
+            return false;
+        }
+
+        if (isset($this->restrukAvailability[$period])) {
+            return $this->restrukAvailability[$period];
+        }
+
+        $currentLoan = 0.0;
+        $split = 0.0;
+        foreach ($this->snapshotCache as $key => $record) {
+            if (!str_starts_with($key, $period . '|')) {
+                continue;
+            }
+
+            foreach (self::RESTRUK_CATEGORY_COLUMNS as $prefix) {
+                $currentLoan += (float) ($record->{"{$prefix}_os"} ?? 0) - (float) ($record->{"{$prefix}_sml"} ?? 0) - (float) ($record->{"{$prefix}_npl"} ?? 0);
+                $split += (float) ($record->{"{$prefix}_lr"} ?? 0) + (float) ($record->{"{$prefix}_lnr"} ?? 0);
+            }
+        }
+
+        return $this->restrukAvailability[$period] = $split > 0 || $currentLoan <= 0;
     }
 
     /**
@@ -92,7 +212,14 @@ class DashboardPinjamanKreditService
 
                 // Values for each period
                 foreach ($periods as $pKey => $pDate) {
-                    $row[$pKey] = $this->getSnapshotValueFromCache($scope, $category, $pDate, $type, $segment);
+                    $row[$pKey] = $pDate && in_array($type, self::RESTRUK_TYPES, true) && !$this->restrukAvailable($pDate)
+                        ? null
+                        : $this->getSnapshotValueFromCache($scope, $category, $pDate, $type, $segment);
+                }
+
+                if (in_array($type, self::SPLIT_TYPES, true)) {
+                    $data[] = $this->withRka($this->withDeltas($row, $type), $type, $scope, $category, $rkaData);
+                    continue;
                 }
 
                 // Deltas
@@ -136,7 +263,7 @@ class DashboardPinjamanKreditService
 
     private function isQualityType(string $type): bool
     {
-        return in_array(strtolower($type), ['sml', 'npl'], true);
+        return in_array(strtolower($type), ['sml', 'npl', 'lr', 'lar'], true);
     }
 
     private function normalizeSegment(string $segment): string
@@ -367,6 +494,15 @@ class DashboardPinjamanKreditService
             'kur_kecil_npl',
             'kur_kpp_npl',
         ];
+        // The LR/LNR split is optional: without its columns those tables show as unavailable.
+        $snapshotColumns = array_flip(DB::getSchemaBuilder()->getColumnListing(self::SNAPSHOT_TABLE));
+        foreach (self::RESTRUK_TYPES as $type) {
+            foreach (self::RESTRUK_CATEGORY_COLUMNS as $prefix) {
+                if (isset($snapshotColumns["{$prefix}_{$type}"])) {
+                    $requiredColumns[] = "{$prefix}_{$type}";
+                }
+            }
+        }
 
         $summaryScopes = array_values(array_filter($scopes, fn (array $scope): bool => !$scope['is_detail']));
         $detailScopes = array_values(array_filter($scopes, fn (array $scope): bool => $scope['is_detail']));
@@ -553,6 +689,34 @@ class DashboardPinjamanKreditService
             'is_total' => true,
         ];
 
+        if (in_array($type, self::SPLIT_TYPES, true)) {
+            $included = array_filter(
+                $rows,
+                fn (array $row): bool => $this->shouldIncludeInGrandTotal($segment, (string) ($row['category'] ?? ''))
+            );
+            foreach (self::PERIOD_KEYS as $key) {
+                $values = array_column($included, $key);
+                $totalRow[$key] = in_array(null, $values, true) ? null : array_sum($values);
+            }
+            $totalRow = $this->withDeltas($totalRow, $type);
+
+            if (in_array($type, self::QUALITY_RKA_TYPES, true)) {
+                // Each scope's segment target once, however many category rows it has.
+                $byScope = [];
+                foreach ($rows as $row) {
+                    $byScope[($row['parent_branch'] ?? '') . '|' . ($row['branch'] ?? '')] = $row;
+                }
+                foreach (['m1' => 'rka_m1', 'current' => 'rka_current'] as $suffix => $field) {
+                    $values = array_column($byScope, "segment_rka_{$suffix}");
+                    $totalRow[$field] = count($values) < count($byScope) || in_array(null, $values, true) ? null : array_sum($values);
+                }
+                $totalRow = $this->withAchievement($totalRow, $type);
+            }
+            $rows[] = $totalRow;
+
+            return $rows;
+        }
+
         foreach ($rows as $row) {
             if (!$this->shouldIncludeInGrandTotal($segment, (string) ($row['category'] ?? ''))) {
                 continue;
@@ -626,7 +790,7 @@ class DashboardPinjamanKreditService
      */
     private function loadRkaForSegment(string $selectedPeriod, string $segment, array $scopes): array
     {
-        $cacheKey = 'sme_segment_rka_v14_strict_uker_kind_detail_rka:' . md5($selectedPeriod . '|' . $segment . '|' . json_encode($scopes));
+        $cacheKey = 'sme_segment_rka_v16_sme_lar_by_collateral:' . md5($selectedPeriod . '|' . $segment . '|' . json_encode($scopes));
 
         // Check local cache first
         if (isset($this->rkaCache[$cacheKey])) {
@@ -721,6 +885,32 @@ class DashboardPinjamanKreditService
                 }
             }
 
+            foreach (self::QUALITY_RKA_TYPES as $type) {
+                $definitions = $this->qualityRkaDefinitions($segment, $type);
+                $rkaData[$type] = [];
+
+                foreach ($scopes as $scope) {
+                    $scopeKey = $this->scopeRkaKey($scope);
+                    if ($scopeKey === '') {
+                        continue;
+                    }
+                    $branch = (string) ($scope['kanca_label'] ?? '');
+                    $unit = ($scope['is_detail'] ?? false) ? (string) ($scope['unit_label'] ?? $scope['label'] ?? '') : null;
+
+                    // These lines sit on every office (KC, KCP, Unit) without a consolidated row,
+                    // so a KC target is the sum of all its offices and a unit target is its own row.
+                    $rkaM1 = $this->getRkaLookupService()->aggregateForScope($definitions, $decemberMonth, $branch, $unit, $decemberYear);
+                    $rkaCurrent = $this->getRkaLookupService()->aggregateForScope($definitions, $currentMonth, $branch, $unit, $currentYear);
+
+                    foreach (array_keys($definitions) as $key) {
+                        $rkaData[$type][$key][$scopeKey] = [
+                            'm1' => (float) ($rkaM1[$key] ?? 0),
+                            'current' => (float) ($rkaCurrent[$key] ?? 0),
+                        ];
+                    }
+                }
+            }
+
             $this->rkaCache[$cacheKey] = $rkaData;
             \Cache::put($cacheKey, $rkaData, now()->addMinutes(60));
             return $rkaData;
@@ -804,6 +994,40 @@ class DashboardPinjamanKreditService
             $result[$type] = [];
         }
         return $result;
+    }
+
+    /**
+     * RKAP lines for LR (Restru Lancar Rp) and LAR (LAR Rp). Categories without their own line
+     * show no target; the segment line feeds subtotals. Total and Medium lines are not shown here:
+     * the Kredit page has no cross-segment total and its SME segment is Kecil only.
+     */
+    private function qualityRkaDefinitions(string $segment, string $type): array
+    {
+        $lines = [
+            'SME' => [
+                'lr' => [self::SEGMENT_RKA => 'Restru Lancar Rp Small', 'Kecil non Cashcoll' => 'Restru Lancar Rp Non Cash Collateral', 'Cashcoll' => 'Restru Lancar Rp  Cash Collateral'],
+                // RKAP has no LAR line per collateral type, but its LAR Rp Small is exactly the sum of
+                // Restru Lancar + DPK + NPL over both types, so each type's target is its own three lines.
+                'lar' => [
+                    self::SEGMENT_RKA => 'LAR Rp Small',
+                    'Kecil non Cashcoll' => ['Restru Lancar Rp Non Cash Collateral', 'DPK Rp Kecil Non Cash Collateral', 'NPL Rp Kecil Non Cash Collateral'],
+                    'Cashcoll' => ['Restru Lancar Rp  Cash Collateral', 'DPK Rp Kecil Cash Collateral', 'NPL Rp Kecil Cash Collateral'],
+                ],
+            ],
+            'Consumer' => [
+                'lr' => [self::SEGMENT_RKA => 'Restru Lancar Rp Konsumer'],
+                'lar' => [self::SEGMENT_RKA => 'LAR Rp Konsumer', 'Briguna Konsumer' => 'LAR Rp Briguna', 'KPR' => 'LAR Rp KPR'],
+            ],
+            'Mikro' => [
+                'lr' => [self::SEGMENT_RKA => 'Restru Lancar Rp Mikro', 'Micro' => 'Restru Lancar Rp Mikro'],
+                'lar' => [self::SEGMENT_RKA => 'LAR Rp Mikro', 'Micro' => 'LAR Rp Mikro'],
+            ],
+        ];
+
+        return array_map(
+            fn (string|array $line): array => ['mata_anggaran' => (array) $line],
+            $lines[$segment][$type] ?? []
+        );
     }
 
     /**

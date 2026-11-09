@@ -41,11 +41,14 @@ class EkosistemMonitoringUiTest extends TestCase
         $this->assertFalse(str_contains($html, 'data-em-detail="P001"'));
         $this->assertFalse(str_contains($html, 'id="em-detail-dialog"'));
         $this->assertTrue(str_contains($html, 'class="em-region"'));
+        foreach (['em-trend-chart', 'em-status-chart', 'em-branch-chart', 'em-network-core', 'data-em-days="30"', 'Data grafik'] as $chart) {
+            $this->assertStringContainsString($chart, $html);
+        }
     }
 
     public function test_each_monitoring_tab_renders_and_has_no_edit_or_import_actions(): void
     {
-        foreach (['overview', 'monitor', 'ecosystems', 'prospects'] as $tab) {
+        foreach (['overview', 'monitor', 'followup', 'ecosystems', 'prospects'] as $tab) {
             $html = $this->monitorView(['view' => $tab])->render();
             $start = strpos($html, '<div class="em" id="eco-workspace">');
             $surface = substr($html, $start, strpos($html, '</section>\n    </div>', $start) ?: 80000);
@@ -73,7 +76,7 @@ class EkosistemMonitoringUiTest extends TestCase
     public function test_locked_branch_cannot_leak_other_kc_data_through_map_reports_filters_or_dialog_payload(): void
     {
         $this->actingAs(new User(['pn' => '0049', 'name' => 'KC Magetan']));
-        foreach (['overview', 'monitor', 'ecosystems', 'prospects'] as $tab) {
+        foreach (['overview', 'monitor', 'followup', 'ecosystems', 'prospects'] as $tab) {
             $view = $this->monitorView(['kc' => 'madiun', 'view' => $tab]);
             $data = $view->getData();
             $this->assertSame('magetan', $data['selectedKc']);
@@ -146,7 +149,7 @@ class EkosistemMonitoringUiTest extends TestCase
         $source = file_get_contents(resource_path('views/report/ekosistem.blade.php'));
         preg_match('/<script>([\s\S]*?)<\/script>/', $source, $match);
         $payload = '<img src=x onerror=alert(1)>';
-        $record = ['P1' => ['ID_Prospek' => 'P1', 'Prospek' => $payload, 'KC' => 'Madiun', 'Kondisi' => ['label' => 'Belum ada PIC'], 'Est_Nasabah' => 0, 'Realisasi_Nominal_Juta' => 0, 'Catatan' => '</script><script>alert(1)</script>']];
+        $record = ['P1' => ['ID_Prospek' => 'P1', 'Prospek' => $payload, 'KC' => 'Madiun', 'Kondisi' => ['label' => 'Belum ada PIC'], 'Est_Nasabah' => 0, 'Realisasi_Nominal_Juta' => 0, 'Catatan' => '</script><script>alert(1)</script>', 'Monitoring_Fields' => ['offer' => [['label' => 'Nominal penawaran', 'value' => '0']], 'followup' => [['label' => 'Hasil TL', 'value' => $payload]]]]];
         $script = str_replace('@json($detailRecords)', json_encode($record, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT), $match[1]);
         $setup = <<<'JS'
 let opened=false,closed=false;
@@ -176,6 +179,69 @@ JS;
         $this->assertSame($payload, $result['title']);
         $this->assertStringContainsString('</script><script>alert(1)</script>', $result['text']);
         $this->assertStringContainsString('Rp0 juta', $result['text']);
+        $this->assertStringContainsString('Nominal penawaran', $result['text']);
+        $this->assertStringContainsString('Hasil TL', $result['text']);
+    }
+
+    public function test_followup_monitor_counts_only_recorded_extra_fields_and_preserves_zero_and_filters(): void
+    {
+        $this->monitorView();
+        $source = Cache::get($this->key());
+        $source['prospek'][0]['Hasil_TL'] = '<img src=x onerror=alert(1)>';
+        $source['prospek'][0]['Nominal_Penawaran'] = '0';
+        $source['prospek'][0]['Penawaran_Qlola'] = 'FALSE';
+        $source['prospek'][0]['UKER_PIC'] = 'UNIT A';
+        $source['prospek'][1]['Produk_Ditawarkan'] = 'Giro & BRIVA';
+        $source['prospek'][2]['Catatan_TL'] = 'Kunjungan Magetan';
+        Cache::put($this->key(), $source, 600);
+        $view = $this->monitorView(['view' => 'followup', 'kc' => 'madiun', 'followup' => 'followup']);
+        $data = $view->getData();
+        $this->assertSame(['total' => 2, 'followup' => 1, 'offer' => 2, 'empty' => 0], $data['followupSummary']);
+        $this->assertSame(['P001'], array_column($data['followupPaginator']->items(), 'ID_Prospek'));
+        $this->assertSame('0', $data['followupPaginator']->items()[0]['Monitoring_Fields']['offer'][0]['value']);
+        $this->assertSame([], $data['followupPaginator']->items()[0]['Monitoring_Fields']['other']);
+        $html = $view->render();
+        $this->assertStringContainsString('id="em-detail-dialog"', $html);
+        $this->assertStringContainsString('&lt;img src=x onerror=alert(1)&gt;', $html);
+        $this->assertStringNotContainsString('<img src=x onerror=alert(1)>', $html);
+        $this->assertStringNotContainsString('Kunjungan Magetan', $html);
+        $this->assertStringContainsString('followup=followup', $html);
+        $this->assertStringContainsString('<dd>Tidak</dd>', $html);
+        $this->assertSame('FALSE', $data['followupPaginator']->items()[0]['Monitoring_Fields']['offer'][1]['value']);
+    }
+
+    public function test_matrix_keeps_separate_micro_and_mantri_routes_and_retains_legacy_source_routes(): void
+    {
+        $this->monitorView();
+        $source = Cache::get($this->key());
+        $source['prospek'][0]['Jalur_RM'] = 'RM Mikro';
+        $source['prospek'][1]['Jalur_RM'] = 'Mantri';
+        $source['prospek'][2]['Jalur_RM'] = 'KUR Mikro & Mantri';
+        Cache::put($this->key(), $source, 600);
+        $data = $this->monitorView(['view' => 'monitor'])->getData();
+        $this->assertSame(1, $data['matrix']['madiun']['RM Mikro']['total']);
+        $this->assertSame(1, $data['matrix']['madiun']['Mantri']['total']);
+        $this->assertSame(1, $data['matrix']['magetan']['KUR Mikro & Mantri']['total']);
+        $this->assertContains('KUR Mikro & Mantri', $data['jalurOptions']);
+    }
+
+    public function test_followup_monitor_paginates_and_keeps_global_filters_and_read_only_actions(): void
+    {
+        $this->seedMoreRows(47);
+        $source = Cache::get($this->key());
+        foreach ($source['prospek'] as &$row) {
+            $row['Hasil_TL'] = 'Sudah dikunjungi';
+        }
+        unset($row);
+        Cache::put($this->key(), $source, 600);
+        $data = $this->monitorView(['view' => 'followup', 'followup' => 'followup', 'jalur' => 'RMFT'])->getData();
+        $this->assertSame(46, $data['followupPaginator']->total());
+        $this->assertCount(20, $data['followupPaginator']->items());
+        $this->assertStringContainsString('followup=followup', $data['followupPaginator']->nextPageUrl());
+        $this->assertStringContainsString('jalur=RMFT', $data['followupPaginator']->nextPageUrl());
+        $next = $this->monitorView(['view' => 'followup', 'followup' => 'followup', 'jalur' => 'RMFT', 'tl_page' => 3])->getData();
+        $this->assertCount(6, $next['followupPaginator']->items());
+        $this->assertSame($data['monitorSummary'], $next['monitorSummary']);
     }
 
     private function monitorView(array $query = []): View

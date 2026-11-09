@@ -103,8 +103,41 @@ class DashboardHarianSnapshotService
         'kur_mikro_npl',
         'kur_kecil_npl',
         'kur_kpp_npl',
+        'kecil_non_cashcoll_lr',
+        'cashcoll_lr',
+        'briguna_konsumer_lr',
+        'kpr_lr',
+        'kkb_lr',
+        'briguna_mikro_lr',
+        'kupedes_lr',
+        'kur_mikro_lr',
+        'kur_kecil_lr',
+        'kur_kpp_lr',
+        'kecil_non_cashcoll_lnr',
+        'cashcoll_lnr',
+        'briguna_konsumer_lnr',
+        'kpr_lnr',
+        'kkb_lnr',
+        'briguna_mikro_lnr',
+        'kupedes_lnr',
+        'kur_mikro_lnr',
+        'kur_kecil_lnr',
+        'kur_kpp_lnr',
         'total_sml_pct_non_commercial',
         'total_npl_pct_non_commercial',
+    ];
+    /** Kredit categories whose kol-1 balance is split by SSA flag_restruk (LR = Y, LNR = N). */
+    private const RESTRUK_LOAN_CATEGORIES = [
+        'kecil_non_cashcoll',
+        'cashcoll',
+        'briguna_konsumer',
+        'kpr',
+        'kkb',
+        'briguna_mikro',
+        'kupedes',
+        'kur_mikro',
+        'kur_kecil',
+        'kur_kpp',
     ];
     private const SOURCE_METADATA_COLUMNS = [
         'source_signature',
@@ -117,6 +150,7 @@ class DashboardHarianSnapshotService
     private ?array $availableSnapshotColumnsCache = null;
     private ?bool $canUseSnapshotMetricsCache = null;
     private array $unitScopeMapCache = [];
+    private ?bool $loanHasRestrukFlag = null;
     /** Memoize resolveSharedPeriods result within a single request lifecycle. */
     private ?array $sharedPeriodsRequestCache = null;
     /** Per-request existence cache: avoids repeated COUNT/EXISTS per period. */
@@ -513,6 +547,47 @@ class DashboardHarianSnapshotService
 
             throw $e;
         }
+    }
+
+    /**
+     * Fills the LR/LNR split on an existing snapshot through the builder's own aggregation,
+     * without deleting rows or touching any other column. Periods built from DLY KAP/L1133
+     * have no restructuring flag and are left at zero.
+     */
+    public function backfillRestrukMetrics(string $period, bool $bumpCache = true): int
+    {
+        $period = $this->normalizeDate($period) ?? $period;
+        if (!$this->loanSourcePeriodExists($period) || !$this->snapshotPeriodHasData($period)) {
+            return 0;
+        }
+
+        [$payload] = $this->buildAggregatedRowsForPeriod($period);
+        $columns = array_flip(array_values(array_filter(
+            $this->availableMetricColumns(),
+            fn (string $column): bool => (bool) preg_match('/_(lr|lnr)$/', $column)
+        )));
+        if ($columns === []) {
+            return 0;
+        }
+        $payload = $this->deduplicateSnapshotPayload($payload);
+        $changed = 0;
+
+        DB::transaction(function () use ($payload, $period, $columns, &$changed): void {
+            foreach ($payload as $row) {
+                $changed += DB::table(self::SNAPSHOT_TABLE)
+                    ->where('snapshot_period', $period)
+                    ->where('kanca_key', $row['kanca_key'])
+                    ->where('unit_key', $row['unit_key'])
+                    ->update(array_intersect_key($row, $columns));
+            }
+        });
+
+        if ($changed > 0 && $bumpCache) {
+            $this->bumpReportCacheVersion();
+        }
+
+        // Rows written, including rows whose split was already current.
+        return count($payload);
     }
 
     private function isSnapshotGuardException(Throwable $e): bool
@@ -1033,7 +1108,7 @@ class DashboardHarianSnapshotService
         $comparison['rka'] = $resolvedRka;
         $sourceRows = (clone $query)->whereIn('snapshot_period', array_values(array_unique(array_filter([
             $comparison['current'], $comparison['ytd'], $comparison['mtd'], $comparison['mtm'], $comparison['h1'],
-        ]))))->get(array_merge(['snapshot_period', 'kanca_key', 'kanca_label', 'unit_key', 'unit_label'], self::METRIC_COLUMNS));
+        ]))))->get(array_merge(['snapshot_period', 'kanca_key', 'kanca_label', 'unit_key', 'unit_label'], $this->availableMetricColumns()));
         $currentRows = $sourceRows->where('snapshot_period', $period);
         if ($currentRows->isEmpty() || ($areaScope && count(array_diff($branchKeys, $currentRows->pluck('kanca_key')->all())) > 0)) {
             throw \Illuminate\Validation\ValidationException::withMessages([
@@ -2234,7 +2309,7 @@ class DashboardHarianSnapshotService
         $loadedFromSnapshot = [];
 
         if ($useSnapshot) {
-            $selects = collect(self::METRIC_COLUMNS)
+            $selects = collect($this->availableMetricColumns())
                 ->map(fn (string $column) => "COALESCE(SUM({$column}), 0) as {$column}")
                 ->implode(",\n");
 
@@ -2712,6 +2787,7 @@ class DashboardHarianSnapshotService
             $query->selectRaw("SUM(CASE WHEN {$combinedCondition} AND {$validKol} THEN {$balance} ELSE 0 END) as {$alias}_os");
             $query->selectRaw("SUM(CASE WHEN {$combinedCondition} AND {$kol} = 2 THEN {$balance} ELSE 0 END) as {$alias}_sml");
             $query->selectRaw("SUM(CASE WHEN {$combinedCondition} AND {$kol} BETWEEN 3 AND 5 THEN {$balance} ELSE 0 END) as {$alias}_npl");
+            $this->selectRestrukCurrentLoan($query, $alias, $combinedCondition, $kol, $balance);
         }
 
         return $query
@@ -2726,6 +2802,24 @@ class DashboardHarianSnapshotService
                 return [$label => $this->finalizeMetrics((array) $row)];
             })
             ->all();
+    }
+
+    /** Kol-1 split by SSA flag_restruk: LR = restruk Y, LNR = restruk N. Only SSA carries the flag. */
+    private function selectRestrukCurrentLoan($query, string $alias, string $condition, string $kol, string $balance): void
+    {
+        if (!in_array($alias, self::RESTRUK_LOAN_CATEGORIES, true)) {
+            return;
+        }
+
+        // Without the flag the split stays zero, which the Kredit dashboard shows as unavailable.
+        $this->loanHasRestrukFlag ??= Schema::hasColumn(self::LOAN_TABLE, 'flag_restruk');
+        if (!$this->loanHasRestrukFlag) {
+            return;
+        }
+
+        $restruk = "UPPER(TRIM(COALESCE(sp.flag_restruk, '')))";
+        $query->selectRaw("SUM(CASE WHEN {$condition} AND {$kol} = 1 AND {$restruk} = 'Y' THEN {$balance} ELSE 0 END) as {$alias}_lr");
+        $query->selectRaw("SUM(CASE WHEN {$condition} AND {$kol} = 1 AND {$restruk} = 'N' THEN {$balance} ELSE 0 END) as {$alias}_lnr");
     }
 
     private function loanSourceGuardColumns(): array
@@ -3026,6 +3120,7 @@ class DashboardHarianSnapshotService
             $query->selectRaw("SUM(CASE WHEN {$combinedCondition} AND {$validKol} THEN {$balance} ELSE 0 END) as {$alias}_os");
             $query->selectRaw("SUM(CASE WHEN {$combinedCondition} AND {$kol} = 2 THEN {$balance} ELSE 0 END) as {$alias}_sml");
             $query->selectRaw("SUM(CASE WHEN {$combinedCondition} AND {$kol} BETWEEN 3 AND 5 THEN {$balance} ELSE 0 END) as {$alias}_npl");
+            $this->selectRestrukCurrentLoan($query, $alias, $combinedCondition, $kol, $balance);
         }
 
         // NOTE: total_os, total_sml_abs_non_commercial, total_npl_abs_non_commercial are computed in finalizeMetrics
@@ -5338,7 +5433,11 @@ class DashboardHarianSnapshotService
         }
 
         $columns = Schema::getColumnListing(self::SNAPSHOT_TABLE);
-        $requiredColumns = array_merge(['snapshot_period', 'source_row_count'], self::METRIC_COLUMNS);
+        // The LR/LNR split is additive; a table migrated before it keeps serving every other metric.
+        $requiredColumns = array_merge(['snapshot_period', 'source_row_count'], array_values(array_filter(
+            self::METRIC_COLUMNS,
+            static fn (string $column): bool => !preg_match('/_(lr|lnr)$/', $column)
+        )));
 
         return $this->canUseSnapshotMetricsCache = array_diff($requiredColumns, $columns) === [];
     }
@@ -5613,6 +5712,26 @@ class DashboardHarianSnapshotService
             'kur_kpp_npl',
             'total_npl_abs_non_commercial',
             'total_os',
+            'kecil_non_cashcoll_lr',
+            'cashcoll_lr',
+            'briguna_konsumer_lr',
+            'kpr_lr',
+            'kkb_lr',
+            'briguna_mikro_lr',
+            'kupedes_lr',
+            'kur_mikro_lr',
+            'kur_kecil_lr',
+            'kur_kpp_lr',
+            'kecil_non_cashcoll_lnr',
+            'cashcoll_lnr',
+            'briguna_konsumer_lnr',
+            'kpr_lnr',
+            'kkb_lnr',
+            'briguna_mikro_lnr',
+            'kupedes_lnr',
+            'kur_mikro_lnr',
+            'kur_kecil_lnr',
+            'kur_kpp_lnr',
         ];
     }
 
