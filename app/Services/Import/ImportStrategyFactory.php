@@ -3,6 +3,11 @@
 namespace App\Services\Import;
 
 use App\Services\Import\Strategies\DailyLoanImportStrategy;
+use App\Services\Import\Strategies\EvaluasiKunjunganImportStrategy;
+use App\Services\Import\Strategies\PipelinePrewashBohImportStrategy;
+use App\Services\Import\Strategies\PipelinePrewashMbmImportStrategy;
+use App\Services\Import\Strategies\MonitoringKsbkImportStrategy;
+use App\Services\Import\Strategies\PipelinePrewashImportStrategy;
 use App\Services\Import\Strategies\ConfiguredExcelImportStrategy;
 use App\Services\Import\Strategies\CrasImportStrategy;
 use App\Services\Import\Strategies\CognosPhImportStrategy;
@@ -29,6 +34,11 @@ class ImportStrategyFactory
     public function all(): array
     {
         return [
+            app(EvaluasiKunjunganImportStrategy::class),
+            app(PipelinePrewashBohImportStrategy::class),
+            app(PipelinePrewashMbmImportStrategy::class),
+            app(MonitoringKsbkImportStrategy::class),
+            app(PipelinePrewashImportStrategy::class),
             app(CrasImportStrategy::class),
             app(DailyLoanImportStrategy::class),
             app(SimpananMultiPnImportStrategy::class),

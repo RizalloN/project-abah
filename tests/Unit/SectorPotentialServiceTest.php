@@ -65,11 +65,10 @@ class SectorPotentialServiceTest extends TestCase
         (new SectorPotentialService)->referenceFromCsv($this->csv()."Desa Dua,Kebonsari,Kabupaten Madiun,A,A,5\n");
     }
 
-    public function test_latest_september_is_used_independently_of_later_ssa_and_numerators_keep_coverage(): void
+    public function test_latest_period_numerators_keep_coverage(): void
     {
         $this->insert('2026-09-05', 'KC Madiun', 'PERDAGANGAN BESAR DAN ECERAN', 900);
         $this->insert('2026-09-30', 'KC Madiun', 'PERDAGANGAN BESAR DAN ECERAN', 100);
-        $this->insert('2026-10-31', 'KC Madiun', 'PERDAGANGAN BESAR DAN ECERAN', 700);
         $this->insert('2026-09-30', 'KC Madiun', '', 65);
         $this->insert('2026-09-30', 'KC Madiun', 'PENERIMA KREDIT BUKAN LAPANGAN USAHA', 2);
         $this->insert('2026-09-30', 'KC Madiun', 'LISTRIK, GAS DAN AIR', 15);
@@ -313,14 +312,57 @@ class SectorPotentialServiceTest extends TestCase
         $this->assertSame(100.0, $payload['totals']['trade']['potential']);
     }
 
-    public function test_missing_september_does_not_fall_back_to_another_month(): void
+    public function test_latest_available_period_is_used_without_september(): void
     {
         $this->insert('2026-08-31', 'KC Madiun', 'PERDAGANGAN BESAR DAN ECERAN', 900);
-        $this->assertFalse($this->service()->payload()['ready']);
-        $this->assertNull($this->service()->payload()['period']);
+        $payload = $this->service()->payload();
+        $this->assertTrue($payload['ready']);
+        $this->assertSame('2026-08-31', $payload['period']);
+        $this->assertSame(900.0, $payload['coverage']['ssa_debtors']);
     }
 
-    public function test_latest_september_is_resolved_within_authorized_branch(): void
+    public function test_new_periods_replace_warm_payloads_without_waiting_for_cache_expiry(): void
+    {
+        $service = $this->service();
+        $this->assertNull($service->payload('madiun')['period']);
+        $this->insert('2026-09-30', 'KC Madiun', 'PERDAGANGAN BESAR DAN ECERAN', 100);
+        $this->assertSame('2026-09-30', $service->payload('madiun')['period']);
+
+        $this->insert('2026-10-31', 'KC Madiun', 'PERDAGANGAN BESAR DAN ECERAN', 150);
+        $october = $service->payload('madiun');
+        $this->assertSame('2026-10-31', $october['period']);
+        $this->assertSame('31 Oktober 2026', $october['period_label']);
+        $this->assertSame(150.0, $october['coverage']['ssa_debtors']);
+        $this->assertSame(150.0, $october['totals']['total']['existing']);
+
+        $this->insert('2027-01-31', 'KC Madiun', 'PERDAGANGAN BESAR DAN ECERAN', 180);
+        $latest = $service->payload('madiun');
+        $this->assertSame('2027-01-31', $latest['period']);
+        $this->assertSame(180.0, $latest['coverage']['ssa_debtors']);
+
+        DB::table('cras')->where('cras_periode', '2027-01-31')->delete();
+        $this->assertSame('2026-10-31', $service->payload('madiun')['period']);
+    }
+
+    public function test_newer_data_in_another_branch_does_not_override_authorized_period(): void
+    {
+        $this->insert('2026-09-30', 'KC Madiun', 'PERDAGANGAN BESAR DAN ECERAN', 100);
+        $this->insert('2026-10-31', 'KC Ngawi', 'PERDAGANGAN BESAR DAN ECERAN', 200, '08888');
+        $payload = UserBranchScope::runAs(UserBranchScope::forKey('madiun'), fn () => $this->service()->payload('ngawi'));
+        $this->assertSame('2026-09-30', $payload['period']);
+        $this->assertSame(100.0, $payload['coverage']['ssa_debtors']);
+        $this->assertSame(['madiun'], array_column($payload['branches'], 'key'));
+    }
+
+    public function test_empty_source_does_not_invent_a_period(): void
+    {
+        $payload = $this->service()->payload('madiun');
+        $this->assertFalse($payload['ready']);
+        $this->assertNull($payload['period']);
+        $this->assertSame('SSA CRAS belum tersedia.', $payload['message']);
+    }
+
+    public function test_latest_period_is_resolved_within_authorized_branch(): void
     {
         $this->insert('2026-09-29', 'KC Madiun', 'PERDAGANGAN BESAR DAN ECERAN', 10);
         $this->insert('2026-09-30', 'KC Ngawi', 'PERDAGANGAN BESAR DAN ECERAN', 20, '08888');

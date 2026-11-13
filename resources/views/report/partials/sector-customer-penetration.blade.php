@@ -8,7 +8,7 @@
 <section class="mss-panel" aria-labelledby="mss-customer-title">
     <header class="mss-panel-head">
         <div><span class="mss-kicker">Potensi pelaku usaha</span><h2 id="mss-customer-title">Penetrasi nasabah BRI per kelompok usaha</h2>
-            <p>Potensi desa kelolaan UKER: {{ $customerSource['source']['label'] ?? 'Spreadsheet pelaku usaha' }}. Debitur: SSA CRAS {{ $customerSource['period_label'] ?? 'September 2026' }}.</p></div>
+            <p>Potensi desa kelolaan UKER: {{ $customerSource['source']['label'] ?? 'Spreadsheet pelaku usaha' }}. Debitur: SSA CRAS {{ $customerSource['period_label'] ?? 'belum tersedia' }}.</p></div>
     </header>
     @if(!empty($customerSource['ready']))
         <div class="mss-kpi-grid" style="grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr))">
@@ -53,6 +53,6 @@
             <a href="{{ $customerSource['source']['url'] ?? '#' }}" target="_blank" rel="noopener">Potensi usaha</a>
             <a href="{{ $customerSource['ownership_source']['url'] ?? '#' }}" target="_blank" rel="noopener">Desa kelolaan UKER</a></footer>
     @else
-        <p class="alert alert-info" role="status">{{ $customerSource['message'] ?? 'Data potensi pelaku usaha dan SSA CRAS September 2026 belum tersedia.' }}</p>
+        <p class="alert alert-info" role="status">{{ $customerSource['message'] ?? 'Data potensi pelaku usaha dan SSA CRAS belum tersedia.' }}</p>
     @endif
 </section>

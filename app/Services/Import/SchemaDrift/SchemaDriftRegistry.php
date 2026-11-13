@@ -2,6 +2,7 @@
 
 namespace App\Services\Import\SchemaDrift;
 
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
@@ -35,6 +36,7 @@ class SchemaDriftRegistry
     public const ACTION_MAP = 'map';
     public const ACTION_WIDEN = 'widen';
     public const ACTION_SKIP = 'skip';
+    public const ACTION_REVIEW = 'review';
 
     /** @var array<string, array<string, string>> */
     private array $aliasCache = [];
@@ -69,6 +71,11 @@ class SchemaDriftRegistry
 
         $table = (string) $report['table'];
         $fingerprint = (string) $report['fingerprint'];
+        // An approval to continue despite source issues belongs to these exact
+        // file contents. Another upload must receive its own review decision.
+        if ($this->pendingReviews((object) ['payload' => $report]) !== [] && !empty($report['source_fingerprint'])) {
+            $fingerprint = hash('sha256', $fingerprint . '|source:' . $report['source_fingerprint']);
+        }
         if ($kind === self::KIND_INCOMPATIBLE) {
             $fingerprint = hash('sha256', $fingerprint . '|' . json_encode(array_map(
                 static fn (array $item): string => ($item['column'] ?? '') . ':' . ($item['code'] ?? ''),
@@ -95,6 +102,11 @@ class SchemaDriftRegistry
             }
             if (in_array($existing->status, [self::STATUS_AUTO_ADAPTED, self::STATUS_ATTENTION], true)) {
                 $update['acknowledged_at'] = null;
+            }
+            // A failed ALTER is not a permanent decision to discard columns.
+            // A fresh scan must let the user correct and retry the proposal.
+            if ($existing->status === self::STATUS_FAILED && !empty($report['has_pending_decision'])) {
+                $update += ['status' => self::STATUS_PENDING, 'payload' => $payload, 'error' => null, 'acknowledged_at' => null];
             }
             DB::table(self::TABLE)->where('id', $existing->id)->update($update);
 
@@ -176,8 +188,21 @@ class SchemaDriftRegistry
             }
 
             $payload = (array) json_decode((string) ($row->payload ?? '{}'), true);
+            // A schema change does not approve a changed row shape or format.
+            // Only an explicit acceptance of the source-bound review does so.
+            $pendingReviews = $this->pendingReviews((object) ['payload' => $payload]);
+            $reviewEvidence = false;
+            if ($pendingReviews !== []) {
+                $approved = array_fill_keys($this->approvedReviewKeys($table, (string) ($payload['source_fingerprint'] ?? '')), true);
+                foreach ($pendingReviews as $review) {
+                    if (!isset($approved[(string) ($review['key'] ?? '')])) {
+                        continue 2;
+                    }
+                }
+                $reviewEvidence = true;
+            }
             $open = false;
-            $evidence = false;
+            $evidence = $reviewEvidence;
             foreach ((array) ($payload['new_columns'] ?? []) as $column) {
                 if (($column['decision'] ?? 'pending') !== 'pending') {
                     continue;
@@ -302,15 +327,84 @@ class SchemaDriftRegistry
         return $this->aliasCache[$table] = $aliases;
     }
 
+    /** @return array<int, string> Explicit continuations for this exact source. */
+    public function approvedReviewKeys(string $table, string $sourceFingerprint): array
+    {
+        if ($sourceFingerprint === '') {
+            return [];
+        }
+
+        $keys = [];
+        foreach ($this->appliedEntries($table) as $entry) {
+            if (($entry['action'] ?? '') === self::ACTION_REVIEW
+                && is_string($entry['source_fingerprint'] ?? null)
+                && hash_equals($sourceFingerprint, $entry['source_fingerprint'])
+                && !empty($entry['key'])) {
+                $keys[(string) $entry['key']] = true;
+            }
+        }
+
+        return array_keys($keys);
+    }
+
     /**
      * @param array<int, array{proposed_column: string, action?: string, name?: string, type?: string, target?: string, include?: bool}> $selections
      * @param array<int, array{column: string, to_type?: string, include?: bool}> $adjustmentSelections
      */
-    public function accept(int $id, string $actor, array $selections = [], array $adjustmentSelections = []): object
+    public function accept(int $id, string $actor, array $selections = [], array $adjustmentSelections = [], array $reviewSelections = [], ?string $expectedSourceFingerprint = null): object
+    {
+        $lock = Cache::lock('import-schema-decision:' . $id, 300);
+        if (!$lock->get()) {
+            throw new RuntimeException('Keputusan untuk struktur ini sedang diproses. Tunggu sampai selesai.');
+        }
+
+        try {
+            return $this->applyAcceptance($id, $actor, $selections, $adjustmentSelections, $reviewSelections, $expectedSourceFingerprint);
+        } finally {
+            $lock->release();
+        }
+    }
+
+    private function applyAcceptance(int $id, string $actor, array $selections, array $adjustmentSelections, array $reviewSelections, ?string $expectedSourceFingerprint): object
     {
         $event = $this->requirePending($id);
+        $this->assertExpectedSource($event, $expectedSourceFingerprint);
         $table = (string) $event->table_name;
         $canEvolve = app(SchemaEvolutionPolicy::class)->canEvolve($table);
+
+        $reviewMap = [];
+        foreach ($reviewSelections as $selection) {
+            $key = (string) ($selection['key'] ?? '');
+            if ($key === '' || isset($reviewMap[$key])) {
+                throw new RuntimeException('Keputusan pemeriksaan sumber tidak valid atau berulang.');
+            }
+            $reviewMap[$key] = (string) ($selection['action'] ?? '');
+        }
+        $reviewed = [];
+        foreach ($this->pendingReviews($event) as $review) {
+            if (!empty($review['blocking'])) {
+                throw new RuntimeException('Sumber harus diperbaiki sebelum import: ' . ($review['title'] ?? $review['code'] ?? 'Struktur sumber tidak valid.'));
+            }
+            $key = (string) ($review['key'] ?? '');
+            if (($reviewMap[$key] ?? '') !== 'continue') {
+                throw new RuntimeException('Konfirmasikan secara eksplisit setiap perubahan bentuk/isi sumber sebelum melanjutkan import.');
+            }
+            $sourceFingerprint = (string) ($event->payload['source_fingerprint'] ?? '');
+            if ($sourceFingerprint === '') {
+                throw new RuntimeException('Identitas file untuk keputusan ini tidak tersedia. Pindai ulang preview.');
+            }
+            $reviewed[] = [
+                'action' => self::ACTION_REVIEW,
+                'key' => $key,
+                'name' => $key,
+                'code' => $review['code'] ?? '',
+                'source_fingerprint' => $sourceFingerprint,
+            ];
+            unset($reviewMap[$key]);
+        }
+        if ($reviewMap !== []) {
+            throw new RuntimeException('Keputusan pemeriksaan tidak cocok dengan hasil pemindaian. Pindai ulang preview.');
+        }
 
         $selectionMap = [];
         foreach ($selections as $selection) {
@@ -329,7 +423,7 @@ class SchemaDriftRegistry
 
         $toAdd = [];
         $toMap = [];
-        $excluded = [];
+        $excluded = (array) json_decode((string) ($event->rejected_columns ?? '[]'), true);
         foreach ($this->pendingColumns($event) as $column) {
             $key = strtolower((string) $column['proposed_column']);
             $selection = $selectionMap[$key] ?? [];
@@ -379,11 +473,23 @@ class SchemaDriftRegistry
             ];
         }
 
-        $applied = [];
+        $mapped = $this->evolution->validateMappings($table, $toMap);
+        $claimedTargets = [];
+        foreach ((array) ($event->payload['columns'] ?? []) as $sourceColumn) {
+            if (($sourceColumn['state'] ?? '') === 'matched' && !empty($sourceColumn['db_column'])) {
+                $claimedTargets[strtolower((string) $sourceColumn['db_column'])] = (string) ($sourceColumn['canonical'] ?? '');
+            }
+        }
+        foreach ($mapped as $mapping) {
+            if (isset($claimedTargets[$mapping['name']]) && $claimedTargets[$mapping['name']] !== $mapping['source_key']) {
+                throw new RuntimeException('Kolom ' . $mapping['name'] . ' sudah diisi kolom sumber lain. Dua sumber tidak boleh saling menimpa.');
+            }
+        }
+        // Invalid input keeps the decision open so the user can correct it.
+        $this->evolution->validateAdditions($table, $toAdd);
+
+        $applied = $reviewed;
         try {
-            // Mapping and widening are validated before any column is added, so a
-            // bad selection never leaves the table half-evolved.
-            $mapped = $this->evolution->validateMappings($table, $toMap);
             $widened = $toWiden === [] ? [] : $this->evolution->widenColumns($table, $toWiden);
             $added = $toAdd === [] ? [] : $this->evolution->addColumns($table, $toAdd);
 
@@ -415,8 +521,15 @@ class SchemaDriftRegistry
             throw $e instanceof RuntimeException ? $e : new RuntimeException($e->getMessage(), 0, $e);
         }
 
+        $payload = $event->payload;
+        foreach ($payload['review_issues'] ?? [] as $index => $review) {
+            if (($review['decision'] ?? 'pending') === 'pending') {
+                $payload['review_issues'][$index]['decision'] = 'approved';
+            }
+        }
         DB::table(self::TABLE)->where('id', $id)->update([
             'status' => $applied === [] ? self::STATUS_REJECTED : self::STATUS_APPLIED,
+            'payload' => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             'applied_columns' => json_encode($applied, JSON_UNESCAPED_UNICODE),
             'rejected_columns' => $excluded === [] ? null : json_encode(array_values(array_unique($excluded))),
             'decided_by' => mb_substr($actor, 0, 150),
@@ -433,20 +546,50 @@ class SchemaDriftRegistry
         return $this->find($id);
     }
 
-    public function reject(int $id, string $actor): object
+    public function reject(int $id, string $actor, ?string $expectedSourceFingerprint = null): object
+    {
+        $lock = Cache::lock('import-schema-decision:' . $id, 300);
+        if (!$lock->get()) {
+            throw new RuntimeException('Keputusan untuk struktur ini sedang diproses. Tunggu sampai selesai.');
+        }
+
+        try {
+            return $this->applyRejection($id, $actor, $expectedSourceFingerprint);
+        } finally {
+            $lock->release();
+        }
+    }
+
+    private function applyRejection(int $id, string $actor, ?string $expectedSourceFingerprint): object
     {
         $event = $this->requirePending($id);
+        $this->assertExpectedSource($event, $expectedSourceFingerprint);
+        $reviewsRemain = $this->pendingReviews($event) !== [];
         $rejected = array_merge(
             array_map(static fn (array $column): string => strtolower((string) $column['proposed_column']), $this->pendingColumns($event)),
             array_map(static fn (array $adjustment): string => 'adjust:' . strtolower((string) $adjustment['column']), $this->pendingAdjustments($event))
         );
 
+        if ($reviewsRemain && $rejected === []) {
+            throw new RuntimeException('Pemeriksaan bentuk/isi sumber belum dikonfirmasi. Batalkan import atau pilih keputusan pada setiap pemeriksaan.');
+        }
+        $rejected = array_merge($rejected, (array) json_decode((string) ($event->rejected_columns ?? '[]'), true));
+        $payload = $event->payload;
+        foreach (['new_columns', 'adjustments'] as $group) {
+            foreach ($payload[$group] ?? [] as $index => $item) {
+                if (($item['decision'] ?? 'pending') === 'pending') {
+                    $payload[$group][$index]['decision'] = 'rejected';
+                }
+            }
+        }
+
         DB::table(self::TABLE)->where('id', $id)->update([
-            'status' => self::STATUS_REJECTED,
+            'status' => $reviewsRemain ? self::STATUS_PENDING : self::STATUS_REJECTED,
+            'payload' => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
             'rejected_columns' => json_encode(array_values(array_unique($rejected))),
             'decided_by' => mb_substr($actor, 0, 150),
             'decided_at' => now(),
-            'acknowledged_at' => now(),
+            'acknowledged_at' => $reviewsRemain ? null : now(),
             'updated_at' => now(),
         ]);
 
@@ -531,6 +674,8 @@ class SchemaDriftRegistry
             'new_columns' => array_values((array) ($event->payload['new_columns'] ?? [])),
             'adjustments' => array_values((array) ($event->payload['adjustments'] ?? [])),
             'adaptations' => array_values((array) ($event->payload['adaptations'] ?? [])),
+            'review_issues' => array_values((array) ($event->payload['review_issues'] ?? [])),
+            'source_fingerprint' => $event->payload['source_fingerprint'] ?? null,
             'applied_columns' => array_values((array) json_decode((string) ($event->applied_columns ?? '[]'), true)),
             'rejected_columns' => array_values((array) json_decode((string) ($event->rejected_columns ?? '[]'), true)),
         ];
@@ -603,6 +748,26 @@ class SchemaDriftRegistry
         ));
     }
 
+    /** @return array<int, array<string, mixed>> */
+    private function pendingReviews(object $event): array
+    {
+        return array_values(array_filter(
+            (array) ($event->payload['review_issues'] ?? []),
+            static fn (array $review): bool => ($review['decision'] ?? 'pending') === 'pending'
+        ));
+    }
+
+    private function assertExpectedSource(object $event, ?string $expectedSourceFingerprint): void
+    {
+        if ($expectedSourceFingerprint === null) {
+            return;
+        }
+        $actual = (string) ($event->payload['source_fingerprint'] ?? '');
+        if ($actual === '' || !hash_equals($actual, $expectedSourceFingerprint)) {
+            throw new RuntimeException('File sumber untuk keputusan ini sudah berubah. Pindai ulang preview sebelum mengonfirmasi.');
+        }
+    }
+
     private function requirePending(int $id): object
     {
         $event = $this->find($id);
@@ -653,6 +818,7 @@ class SchemaDriftRegistry
             $pending = array_filter((array) ($report['new_columns'] ?? []), static fn (array $column): bool => ($column['decision'] ?? '') === 'pending');
             $renames = array_filter($pending, static fn (array $column): bool => in_array($column['suggestion']['action'] ?? null, ['map', 'review'], true));
             $adjustments = array_filter((array) ($report['adjustments'] ?? []), static fn (array $item): bool => ($item['decision'] ?? '') === 'pending');
+            $reviews = $this->pendingReviews((object) ['payload' => $report]);
             $parts = array_filter([
                 count($pending) - count($renames) > 0 ? sprintf('%d kolom baru (%s)', count($pending) - count($renames), implode(', ', array_slice(array_map(
                     static fn (array $column): string => (string) $column['header'],
@@ -666,6 +832,7 @@ class SchemaDriftRegistry
                     static fn (array $item): string => strtoupper((string) $item['column']),
                     $adjustments
                 ), 0, 3))) : null,
+                $reviews !== [] ? sprintf('%d perubahan bentuk/isi sumber perlu dikonfirmasi', count($reviews)) : null,
             ]);
 
             return $label . ': ' . implode('; ', $parts) . ' — menunggu keputusan.';

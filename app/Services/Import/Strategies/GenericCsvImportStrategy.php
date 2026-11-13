@@ -5,6 +5,11 @@ namespace App\Services\Import\Strategies;
 class GenericCsvImportStrategy implements ImportStrategyInterface
 {
     private const SPECIALIZED_TABLES = [
+        'evaluasi_aktivitas_kunjungan_pemasar',
+        'pipeline_prewash_boh',
+        'monitoring_tl_pipeline_mbm',
+        'monitoring_realisasi_ksbk',
+        'pipeline_prewash',
         'cras',
         'daily_loan_dinamis',
         'simpanan_multipn',

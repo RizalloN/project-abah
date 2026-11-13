@@ -454,6 +454,7 @@ class ImportCasaBrilinkController extends Controller
                     return;
                 }
 
+                app(\App\Services\Import\SchemaDrift\SchemaDriftImportGuard::class)->assertReady($tableName, $absolutePath);
                 $context = $this->buildCsvContext($absolutePath, $periode, $requestedDelimiter);
                 $handle = fopen($absolutePath, 'r');
                 if ($handle === false) {

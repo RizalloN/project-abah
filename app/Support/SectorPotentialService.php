@@ -50,19 +50,21 @@ class SectorPotentialService
         $branchKey = isset(self::BRANCHES[(string) $branchKey]) ? $branchKey : null;
         $reference = $this->reference();
         $ownership = app(VillageOwnershipReferenceService::class)->reference();
-        $period = Schema::hasTable('cras') ? Cache::remember('sector_potential:period:2026-09:v2:'.($branchKey ?? 'area6'), now()->addMinutes(10), function () use ($branchKey) {
-            $query = DB::table('cras')->whereBetween('cras_periode', ['2026-09-01', '2026-09-30']);
+        // Resolve from the indexed source on each request so a newly imported period
+        // immediately selects its own payload cache instead of reusing an older month.
+        $period = null;
+        if (Schema::hasTable('cras')) {
+            $query = DB::table('cras')->whereNotNull('cras_periode');
             if ($branchKey) {
                 $query->where('ket_kanca', self::BRANCHES[$branchKey]);
             }
-
-            return $query->max('cras_periode');
-        }) : null;
+            $period = $query->orderByDesc('cras_periode')->value('cras_periode');
+        }
         $base = [
             'ready' => false,
             'source' => $reference['source'] ?? ['spreadsheet_id' => self::SPREADSHEET_ID, 'url' => $this->sourceUrl()],
             'period' => $period ? Carbon::parse($period)->toDateString() : null,
-            'period_label' => $period ? Carbon::parse($period)->locale('id')->translatedFormat('d F Y') : 'September 2026 belum tersedia',
+            'period_label' => $period ? Carbon::parse($period)->locale('id')->translatedFormat('d F Y') : 'Periode SSA CRAS belum tersedia',
             'source_sectors' => $reference['source_sectors'] ?? [],
             'ownership_source' => $ownership['source'] ?? ['spreadsheet_id' => VillageOwnershipReferenceService::SPREADSHEET_ID],
             'comparison_groups' => $this->groups(),
@@ -84,7 +86,7 @@ class SectorPotentialService
             'branches' => [], 'districts' => [], 'villages' => [], 'units' => [], 'unmapped_units' => [], 'coverage' => [],
         ];
         if ($reference === null || $ownership === null || $period === null) {
-            return $base + ['message' => $reference === null ? 'Sumber potensi sektoral belum dapat dibaca.' : ($ownership === null ? 'Mapping kepemilikan desa belum dapat dibaca.' : 'SSA CRAS September 2026 belum tersedia.')];
+            return $base + ['message' => $reference === null ? 'Sumber potensi sektoral belum dapat dibaca.' : ($ownership === null ? 'Mapping kepemilikan desa belum dapat dibaca.' : 'SSA CRAS belum tersedia.')];
         }
         $key = 'sector_potential:payload:v9:'.self::SPREADSHEET_ID.':'.$reference['source']['data_sha256'].':'.VillageOwnershipReferenceService::SPREADSHEET_ID.':'.$ownership['source']['data_sha256'].':'.$period.':'.($branchKey ?? 'area6');
         $computed = Cache::remember($key, now()->addMinutes(5), fn () => $this->build($reference, $ownership, Carbon::parse($period)->toDateString(), $branchKey));

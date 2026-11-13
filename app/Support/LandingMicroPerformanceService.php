@@ -221,6 +221,11 @@ final class LandingMicroPerformanceService
      * @param  array<string, mixed>|null  $branchScope
      * @return array<string, mixed>
      */
+    public static function mbmReference(): array
+    {
+        return self::AREA_MBM_REFERENCE;
+    }
+
     public function payload(?string $requestedPeriod, ?array $branchScope = null, bool $forceRefresh = false): array
     {
         $empty = $this->emptyPayload($branchScope);

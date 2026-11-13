@@ -658,3 +658,32 @@ it('keeps responsive map and table guardrails in the CRAS view', function (): vo
         ->toContain("npl: ['#fff1f3'")
         ->toContain("sml: ['#fff8e8'");
 });
+
+
+it('detects new CRAS periods immediately and keeps an explicitly selected historical period', function (): void {
+    $service = app(\App\Support\CrasMappingService::class);
+    $row = (array) DB::table('cras')->where('ket_kanca', 'KC Madiun')->first();
+    $first = $service->payload(['wilayah' => 'madiun']);
+    expect($first['filters']['selected']['periode'])->toBe('2026-06-30');
+
+    foreach (['2026-09-30', '2026-10-31', '2027-01-31'] as $period) {
+        DB::table('cras')->insert(array_merge($row, ['cras_uuid' => 'latest-'.$period, 'cras_periode' => $period, 'jumlah_debitur' => '123']));
+        $latest = $service->payload(['wilayah' => 'madiun']);
+        expect($latest['filters']['selected']['periode'])->toBe($period)
+            ->and($latest['metrics']['jumlah_debitur'])->toBe(123.0);
+    }
+
+    $historical = $service->payload(['wilayah' => 'madiun', 'periode' => '2026-09-30']);
+    expect($historical['filters']['selected']['periode'])->toBe('2026-09-30');
+});
+
+it('chooses the latest CRAS period within the authorized branch', function (): void {
+    $row = (array) DB::table('cras')->where('ket_kanca', 'KC Madiun')->first();
+    DB::table('cras')->insert(array_merge($row, [
+        'cras_uuid' => 'ngawi-october', 'cras_periode' => '2026-10-31', 'ket_kanca' => 'KC Ngawi',
+    ]));
+    $payload = \App\Support\UserBranchScope::runAs(\App\Support\UserBranchScope::forKey('madiun'),
+        fn () => app(\App\Support\CrasMappingService::class)->payload(['wilayah' => 'ngawi']));
+    expect($payload['filters']['selected']['periode'])->toBe('2026-06-30')
+        ->and($payload['filters']['selected']['wilayah'])->toBe('madiun');
+});

@@ -441,6 +441,7 @@ class ImportCognosPhController extends Controller
                     return;
                 }
 
+                app(\App\Services\Import\SchemaDrift\SchemaDriftImportGuard::class)->assertReady(self::TABLE_NAME, $absolutePath);
                 $workingPath = $this->resolveWorkingImportPath($relativePath);
                 $context = $this->buildCsvContext($workingPath);
 

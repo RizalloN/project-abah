@@ -7,29 +7,29 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Kind | Count |
 | --- | ---: |
 | command | 4 |
-| file | 81 |
-| method | 868 |
-| route | 38 |
+| file | 83 |
+| method | 871 |
+| route | 39 |
 | class | 36 |
-| table | 14 |
-| view | 45 |
+| table | 15 |
+| view | 47 |
 
 ## Main Hubs
 
 | Node | Kind | Degree | Source |
 | --- | --- | ---: | --- |
 | `DashboardPinjamanReportController` | class | 156 | `app/Http/Controllers/DashboardPinjamanReportController.php:29` |
+| `daily_loan_dinamis` | table | 107 | - |
 | `KinerjaRmReportController` | class | 105 | `app/Http/Controllers/Report/KinerjaRmReportController.php:25` |
-| `daily_loan_dinamis` | table | 99 | - |
 | `KinerjaRmMikroReportController` | class | 88 | `app/Http/Controllers/Report/KinerjaRmMikroReportController.php:21` |
 | `SyncBrihcReferenceCommand` | class | 53 | `app/Console/Commands/SyncBrihcReferenceCommand.php:18` |
 | `lw325_ph` | table | 51 | - |
 | `DashboardPinjamanKreditService` | class | 46 | `app/Support/DashboardPinjamanKreditService.php:11` |
 | `brihc_pemasar` | table | 39 | - |
+| `DashboardPinjamanChartPeriodikService` | class | 36 | `app/Support/DashboardPinjamanChartPeriodikService.php:14` |
 | `Lw321DailyLoanMapper` | class | 35 | `app/Support/Lw321DailyLoanMapper.php:7` |
 | `Lw321DailyLoanSyncService` | class | 34 | `app/Support/Lw321DailyLoanSyncService.php:9` |
 | `index` | method | 34 | `app/Http/Controllers/Report/KinerjaRmReportController.php:864` |
-| `DashboardPinjamanChartPeriodikService` | class | 33 | `app/Support/DashboardPinjamanChartPeriodikService.php:14` |
 | `LandingLoanAnalyticsService` | class | 33 | `app/Support/LandingLoanAnalyticsService.php:14` |
 | `MantriIncentiveService` | class | 32 | `app/Services/Reports/MantriIncentiveService.php:29` |
 | `MantriSourceInputStore` | class | 32 | `app/Support/MantriSourceInputStore.php:13` |
@@ -45,9 +45,9 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `report.dashboard-pinjaman.kinerjarmmikro` | view | 22 | `resources/views/report/dashboard-pinjaman/kinerjarmmikro.blade.php:1` |
 | `captureLw321Period` | method | 21 | `app/Support/MantriSourceInputStore.php:342` |
 | `LandingLoanRiskCacheService` | class | 20 | `app/Support/LandingLoanRiskCacheService.php:11` |
+| `buildChartPayload` | method | 20 | `app/Support/DashboardPinjamanChartPeriodikService.php:69` |
 | `nativeDailyLoanQuery` | method | 20 | `app/Http/Controllers/DashboardPinjamanReportController.php:3040` |
 | `captureDailyLoanPeriod` | method | 19 | `app/Support/MantriSourceInputStore.php:230` |
-| `mapPortableRow` | method | 19 | `app/Support/Lw321DailyLoanSyncService.php:1016` |
 
 ## Route Nodes
 
@@ -81,6 +81,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `report.dashboard-pinjaman.realisasi-6-bulan-menunggak.filters` - `report/dashboard-pinjaman/realisasi-6-bulan-menunggak/filters`
 - `report.dashboard-pinjaman.run-off` - `report/dashboard-pinjaman/run-off`
 - `report.dashboard-pinjaman.summary` - `report/dashboard-pinjaman/summary`
+- `report.dashboard-pinjaman.suspect-reaktivasi` - `report/dashboard-pinjaman/suspect-reaktivasi`
 - `report.dashboard-pinjaman.tunggakan-kecil` - `report/dashboard-pinjaman/tunggakan-kecil`
 - `report.dashboard-pinjaman.tunggakan-kecil.data` - `report/dashboard-pinjaman/tunggakan-kecil/data`
 - `report.dashboard-pinjaman.tunggakan-kecil.export` - `report/dashboard-pinjaman/tunggakan-kecil/export`
@@ -174,6 +175,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `report.dashboard-pinjaman.realisasi-6-bulan-menunggak` - `resources/views/report/dashboard-pinjaman/realisasi-6-bulan-menunggak.blade.php`
 - `report.dashboard-pinjaman.run-off` - `resources/views/report/dashboard-pinjaman/run-off.blade.php`
 - `report.dashboard-pinjaman.summary` - `resources/views/report/dashboard-pinjaman/summary.blade.php`
+- `report.dashboard-pinjaman.suspect-reaktivasi` - `resources/views/report/dashboard-pinjaman/suspect-reaktivasi.blade.php`
+- `report.dashboard-pinjaman.suspect-reaktivasi-results` - `resources/views/report/dashboard-pinjaman/suspect-reaktivasi-results.blade.php`
 - `report.dashboard-pinjaman.tunggakan-kecil` - `resources/views/report/dashboard-pinjaman/tunggakan-kecil.blade.php`
 - `report.kinerja-new-payroll` - `resources/views/report/kinerja-new-payroll.blade.php`
 - `report.kinerjarm` - `resources/views/report/kinerjarm.blade.php`
@@ -200,27 +203,28 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `performance_new_payroll_snapshots`
 - `pinjaman`
 - `ssa_pinjaman`
+- `suspect_reaktivasi_pinjaman`
 
 ## Cross-Domain Links
 
 | Direction | Count |
 | --- | ---: |
 | dashboard-pinjaman -> core (calls) | 284 |
-| dashboard-pinjaman -> access-control (protected_by) | 228 |
+| dashboard-pinjaman -> access-control (protected_by) | 234 |
 | dashboard-pinjaman -> core (accepts) | 102 |
 | dashboard-pinjaman -> core (instantiates) | 62 |
-| database -> dashboard-pinjaman (checks_table) | 26 |
-| core -> dashboard-pinjaman (reads_table) | 24 |
+| core -> dashboard-pinjaman (reads_table) | 28 |
+| database -> dashboard-pinjaman (checks_table) | 27 |
 | dashboard-pinjaman -> access-control (calls) | 23 |
 | dashboard-simpanan -> dashboard-pinjaman (reads_table) | 22 |
+| core -> dashboard-pinjaman (checks_table) | 21 |
 | jobs-snapshots -> dashboard-pinjaman (reads_table) | 18 |
 | database -> dashboard-pinjaman (alters_table) | 17 |
-| core -> dashboard-pinjaman (checks_table) | 17 |
 | dashboard-pinjaman -> jobs-snapshots (uses_trait) | 17 |
 | dashboard-pinjaman -> platform (calls) | 16 |
-| dashboard-pinjaman -> platform (extends_view) | 15 |
-| platform -> dashboard-pinjaman (references_route) | 14 |
-| database -> dashboard-pinjaman (defines_table) | 11 |
+| dashboard-pinjaman -> platform (extends_view) | 16 |
+| platform -> dashboard-pinjaman (references_route) | 15 |
+| database -> dashboard-pinjaman (defines_table) | 12 |
 | dashboard-simpanan -> dashboard-pinjaman (checks_table) | 11 |
 | dashboard-pinjaman -> core (reads_table) | 11 |
 | core -> dashboard-pinjaman (calls) | 11 |

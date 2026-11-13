@@ -113,6 +113,12 @@ class ImportReportPhIntegrityTest extends TestCase
         fputcsv($handle, array_map(static fn ($header) => $data[$header] ?? '', $headers));
         fclose($handle);
 
+        // This fixture exercises rejected staging after source review; the
+        // dedicated review tests cover refusal before staging can start.
+        $this->mock(\App\Services\Import\SchemaDrift\SchemaDriftImportGuard::class, function ($mock) use ($sourcePath): void {
+            $mock->shouldReceive('assertReady')->once()->with('lw325_ph', $sourcePath)->andReturn([]);
+        });
+
         $result = app(ImportReportPhController::class)->executeQueuedImport([
             'params' => [
                 'file_path' => $relative,

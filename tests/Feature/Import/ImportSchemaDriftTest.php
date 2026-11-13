@@ -148,10 +148,11 @@ it('notifies a compatible format change against the learned baseline', function 
 
     expect($baseline['status'])->toBe('match')
         ->and($baseline['event'])->toBeNull()
-        ->and($changed['status'])->toBe('adapted')
+        ->and($changed['status'])->toBe('drift')
         ->and($formatChange['severity'])->toBe('info')
         ->and($formatChange['detail'])->toContain('DD/MM/YYYY')->toContain('MM/DD/YYYY hh:mm:ss AM/PM')
-        ->and($changed['event']['status'])->toBe('auto_adapted');
+        ->and($changed['event']['status'])->toBe('pending')
+        ->and($changed['has_pending_decision'])->toBeTrue();
 });
 
 it('flags values that cannot fit the target column type', function () {
@@ -159,10 +160,10 @@ it('flags values that cannot fit the target column type', function () {
 
     $report = app(SchemaDriftAnalyzer::class)->analyze('demo_ph', $path);
 
-    expect($report['status'])->toBe('attention')
+    expect($report['status'])->toBe('drift')
         ->and($report['has_blocking_issue'])->toBeTrue()
         ->and(collect($report['adaptations'])->pluck('code')->all())->toContain('not_date', 'not_numeric')
-        ->and($report['event']['kind'])->toBe('incompatibility');
+        ->and($report['event']['kind'])->toBe('new_columns');
 });
 
 it('guards schema evolution against unsafe input and running imports', function () {

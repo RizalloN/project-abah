@@ -7,24 +7,24 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Kind | Count |
 | --- | ---: |
 | command | 16 |
-| file | 135 |
-| method | 909 |
-| unresolved_symbol | 392 |
+| file | 144 |
+| method | 980 |
+| unresolved_symbol | 398 |
 | route | 16 |
-| class | 87 |
-| table | 15 |
-| view | 52 |
+| class | 93 |
+| table | 16 |
+| view | 55 |
 
 ## Main Hubs
 
 | Node | Kind | Degree | Source |
 | --- | --- | ---: | --- |
-| `nama_report` | table | 160 | - |
-| `LandingMicroPerformanceService` | class | 85 | `app/Support/LandingMicroPerformanceService.php:16` |
-| `normalize` | method | 84 | `app/Support/StrictDateParser.php:185` |
+| `nama_report` | table | 180 | - |
+| `normalize` | method | 87 | `app/Support/StrictDateParser.php:185` |
+| `LandingMicroPerformanceService` | class | 86 | `app/Support/LandingMicroPerformanceService.php:16` |
 | `ReportDataSyncService` | class | 72 | `app/Support/ReportDataSyncService.php:19` |
 | `LandingSmeOperationalService` | class | 65 | `app/Support/LandingSmeOperationalService.php:16` |
-| `Controller` | class | 58 | `app/Http/Controllers/Controller.php:7` |
+| `Controller` | class | 59 | `app/Http/Controllers/Controller.php:7` |
 | `ManagedReportManagementService` | class | 52 | `app/Support/ManagedReportManagementService.php:11` |
 | `DataPhReportController` | class | 44 | `app/Http/Controllers/Report/DataPhReportController.php:16` |
 | `LandingConsumerOperationalService` | class | 44 | `app/Support/LandingConsumerOperationalService.php:15` |
@@ -38,17 +38,17 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `FileManagementController` | class | 30 | `app/Http/Controllers/Admin/FileManagementController.php:24` |
 | `index` | method | 29 | `app/Http/Controllers/Report/DataPhReportController.php:31` |
 | `analyzeTable` | method | 24 | `app/Support/ReportDataSyncService.php:23` |
-| `buildPayload` | method | 23 | `app/Support/LandingMicroPerformanceService.php:538` |
+| `PipelinePrewashService` | class | 23 | `app/Support/PipelinePrewashService.php:14` |
+| `buildPayload` | method | 23 | `app/Support/LandingMicroPerformanceService.php:543` |
 | `drive.index` | view | 23 | `resources/views/drive/index.blade.php:1` |
 | `ShadowColumnRuleEngine` | class | 22 | `app/Services/Shadow/ShadowColumnRuleEngine.php:8` |
 | `SppgReportService` | class | 21 | `app/Services/Reports/SppgReportService.php:15` |
-| `fetchPlafondRealizationRows` | method | 21 | `app/Support/LandingMicroPerformanceService.php:1377` |
+| `fetchPlafondRealizationRows` | method | 21 | `app/Support/LandingMicroPerformanceService.php:1382` |
 | `index` | method | 21 | `app/Http/Controllers/EkosistemController.php:78` |
 | `index` | method | 21 | `app/Http/Controllers/Report/KinerjaNonPtpReportController.php:52` |
 | `LinkManagementController` | class | 20 | `app/Http/Controllers/Admin/LinkManagementController.php:17` |
 | `PhpMyAdminGateway` | class | 20 | `app/Services/ControlCenter/PhpMyAdminGateway.php:21` |
 | `quadrantPayload` | method | 20 | `app/Support/LandingConsumerOperationalService.php:906` |
-| `PruneReportDailyHistoryCommand` | class | 19 | `app/Console/Commands/PruneReportDailyHistoryCommand.php:19` |
 
 ## Route Nodes
 
@@ -56,7 +56,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `file-management.destroy` - `file-management/delete`
 - `file-management.download` - `file-management/download`
 - `file-management.index` - `file-management`
-- `generated::ifiQVzIvVqWTmG8o` - `up`
+- `generated::oChREIryeoNjIdoO` - `up`
 - `home` - `/`
 - `link-management.index` - `link-management`
 - `link-management.update` - `link-management`
@@ -96,7 +96,10 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `KolaborasiReportController` - `app/Http/Controllers/Report/KolaborasiReportController.php`
 - `KolaborasiReportService` - `app/Services/Reports/KolaborasiReportService.php`
 - `LandingConsumerOperationalService` - `app/Support/LandingConsumerOperationalService.php`
+- `LandingMicroKsbkService` - `app/Support/LandingMicroKsbkService.php`
 - `LandingMicroPerformanceService` - `app/Support/LandingMicroPerformanceService.php`
+- `LandingMicroPrewashBohService` - `app/Support/LandingMicroPrewashBohService.php`
+- `LandingMicroPrewashMbmService` - `app/Support/LandingMicroPrewashMbmService.php`
 - `LandingPayloadState` - `app/Support/LandingPayloadState.php`
 - `LandingPnMismatchService` - `app/Support/LandingPnMismatchService.php`
 - `LandingRmKurDistribution` - `app/Support/LandingRmKurDistribution.php`
@@ -111,6 +114,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `ManagedReportRecoveryStore` - `app/Support/ManagedReportRecoveryStore.php`
 - `MicroCifNettRule` - `app/Support/MicroCifNettRule.php`
 - `MicroNettDisbursementCalculator` - `app/Support/MicroNettDisbursementCalculator.php`
+- `MicroReportNominativeService` - `app/Support/MicroReportNominativeService.php`
 - `MicroRmProductivityReference` - `app/Support/MicroRmProductivityReference.php`
 - `MicroRmRosterReference` - `app/Support/MicroRmRosterReference.php`
 - `MicroSameAccountTopupDetector` - `app/Support/MicroSameAccountTopupDetector.php`
@@ -120,6 +124,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `OptimizedRkaLookupService` - `app/Support/OptimizedRkaLookupService.php`
 - `PhpCliBinary` - `app/Support/PhpCliBinary.php`
 - `PhpMyAdminGateway` - `app/Services/ControlCenter/PhpMyAdminGateway.php`
+- `PipelinePrewashService` - `app/Support/PipelinePrewashService.php`
 - `ProductivitySourceQuality` - `app/Support/ProductivitySourceQuality.php`
 - `PruneReportDailyHistoryCommand` - `app/Console/Commands/PruneReportDailyHistoryCommand.php`
 - `PublicAccessHealthService` - `app/Services/Network/PublicAccessHealthService.php`
@@ -146,11 +151,6 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `ServerRuntimeService` - `app/Services/ServerRuntimeService.php`
 - `ShadowColumnHealthService` - `app/Services/ControlCenter/ShadowColumnHealthService.php`
 - `ShadowColumnRuleEngine` - `app/Services/Shadow/ShadowColumnRuleEngine.php`
-- `ShadowStatusCommand` - `app/Console/Commands/ShadowStatusCommand.php`
-- `ShadowValidateConsistencyCommand` - `app/Console/Commands/ShadowValidateConsistencyCommand.php`
-- `SimulateDeleteScenarioCommand` - `app/Console/Commands/SimulateDeleteScenarioCommand.php`
-- `SppgReportService` - `app/Services/Reports/SppgReportService.php`
-- `SpreadsheetFileFormatDetector` - `app/Support/SpreadsheetFileFormatDetector.php`
 
 ## Command Nodes
 
@@ -192,6 +192,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `dashboard.partials.landing-motion` - `resources/views/dashboard/partials/landing-motion.blade.php`
 - `dashboard.partials.landing-page-recovery` - `resources/views/dashboard/partials/landing-page-recovery.blade.php`
 - `dashboard.partials.micro-performance` - `resources/views/dashboard/partials/micro-performance.blade.php`
+- `dashboard.partials.monitoring-ksbk` - `resources/views/dashboard/partials/monitoring-ksbk.blade.php`
+- `dashboard.partials.pipeline-prewash` - `resources/views/dashboard/partials/pipeline-prewash.blade.php`
 - `dashboard.partials.pn-mismatch` - `resources/views/dashboard/partials/pn-mismatch.blade.php`
 - `dashboard.partials.sme-operations` - `resources/views/dashboard/partials/sme-operations.blade.php`
 - `dashboard.partials.tariff-relief` - `resources/views/dashboard/partials/tariff-relief.blade.php`
@@ -218,6 +220,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 - `report.partials.floating-scrollbar` - `resources/views/report/partials/floating-scrollbar.blade.php`
 - `report.partials.productivity-source-quality` - `resources/views/report/partials/productivity-source-quality.blade.php`
 - `report.partials.sector-customer-penetration` - `resources/views/report/partials/sector-customer-penetration.blade.php`
+- `report.partials.sector-territory-atlas` - `resources/views/report/partials/sector-territory-atlas.blade.php`
 - `report.partials.sticky-table-viewport-script` - `resources/views/report/partials/sticky-table-viewport-script.blade.php`
 - `report.partials.sticky-table-viewport-style` - `resources/views/report/partials/sticky-table-viewport-style.blade.php`
 - `report.performance-edc` - `resources/views/report/performance-edc.blade.php`
@@ -230,6 +233,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 - `current_timestamp`
 - `dly_kap_resegmentasi`
+- `evaluasi_aktivitas_kunjungan_pemasar`
 - `external_report_links`
 - `l1133`
 - `lw321_npd`
@@ -248,11 +252,11 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Direction | Count |
 | --- | ---: |
-| import -> core (calls) | 666 |
-| import -> core (instantiates) | 301 |
+| import -> core (calls) | 751 |
+| import -> core (instantiates) | 412 |
 | dashboard-pinjaman -> core (calls) | 284 |
-| import -> core (accepts) | 227 |
-| dashboard-simpanan -> core (calls) | 202 |
+| import -> core (accepts) | 242 |
+| dashboard-simpanan -> core (calls) | 204 |
 | bank-pipeline -> core (calls) | 167 |
 | jobs-snapshots -> core (calls) | 117 |
 | dashboard-pinjaman -> core (accepts) | 102 |
@@ -260,21 +264,21 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | database -> core (instantiates) | 79 |
 | prognosa -> core (calls) | 79 |
 | core -> access-control (protected_by) | 75 |
+| database -> core (writes_table) | 74 |
 | presentation -> core (calls) | 69 |
 | access-control -> core (calls) | 66 |
 | bank-pipeline -> core (accepts) | 63 |
-| database -> core (writes_table) | 62 |
 | database -> core (checks_table) | 62 |
 | dashboard-pinjaman -> core (instantiates) | 62 |
-| dashboard-simpanan -> core (accepts) | 60 |
+| dashboard-simpanan -> core (accepts) | 61 |
 | platform -> core (calls) | 37 |
 | bank-pipeline -> core (instantiates) | 37 |
 | database -> core (calls) | 36 |
 | jobs-snapshots -> core (uses_trait) | 35 |
 | prognosa -> core (accepts) | 34 |
+| import -> core (reads_table) | 32 |
 | almafacts -> core (calls) | 32 |
-| import -> core (reads_table) | 30 |
+| core -> platform (calls) | 29 |
 | access-control -> core (accepts) | 29 |
 | presentation -> core (accepts) | 29 |
-| prognosa -> core (instantiates) | 28 |
-| core -> bank-pipeline (references_route) | 28 |
+| core -> dashboard-pinjaman (reads_table) | 28 |

@@ -8,6 +8,11 @@ class ImportPeriodGuardService
 {
     /** @var array<string, array{column: string, type: 'date'|'year'}> */
     private const REPORT_PERIODS = [
+        'pipeline_prewash_boh' => ['column' => 'tahun', 'type' => 'year'],
+        'monitoring_tl_pipeline_mbm' => ['column' => 'tahun', 'type' => 'year'],
+        'pipeline_prewash' => ['column' => 'tahun', 'type' => 'year'],
+        'evaluasi_aktivitas_kunjungan_pemasar' => ['column' => 'periode', 'type' => 'date'],
+        'suspect_reaktivasi_pinjaman' => ['column' => 'periode', 'type' => 'date'],
         'daily_loan_dinamis' => ['column' => 'periode', 'type' => 'date'],
         'lw321pn' => ['column' => 'periode', 'type' => 'date'],
         'lw325_ph' => ['column' => 'periode', 'type' => 'date'],

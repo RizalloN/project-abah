@@ -73,29 +73,29 @@ afterEach(function () {
     }
 });
 
-it('treats columns of the first document as the baseline instead of announcing them', function () {
+it('requires a decision for first-document columns that have no destination', function () {
     $first = ($this->write)(['POSISI', 'KODE_UKER', 'SALDO_POSISI', 'KETERANGAN_LAMA'], ($this->rows)(1));
 
     $report = app(SchemaDriftAnalyzer::class)->analyze('demo_report', $first);
 
     expect($report['baseline_established'])->toBeFalse()
-        ->and($report['status'])->not->toBe('drift')
-        ->and($report['stats']['new'])->toBe(0)
-        ->and($report['stats']['unmapped'])->toBe(1)
-        ->and($report['unmapped_columns'][0]['header'])->toBe('KETERANGAN_LAMA')
-        ->and($report['event'])->toBeNull()
-        ->and($report['headline'])->toContain('acuan struktur')
-        ->and(app(SourceHeaderBaseline::class)->knownKeys('demo_report'))->toEqualCanonicalizing(['posisi', 'kode_uker', 'saldo_posisi', 'keterangan_lama']);
+        ->and($report['status'])->toBe('drift')
+        ->and($report['stats']['new'])->toBe(1)
+        ->and($report['stats']['unmapped'])->toBe(0)
+        ->and($report['new_columns'][0]['header'])->toBe('KETERANGAN_LAMA')
+        ->and($report['event']['status'])->toBe('pending')
+        ->and(app(SourceHeaderBaseline::class)->knownKeys('demo_report'))->toBe([]);
 
-    // The same layout again: still quiet, the ignored column stays informational.
+    // Repeating an upload never grants permission to discard a pending column.
     $again = app(SchemaDriftAnalyzer::class)->analyze('demo_report', $first);
-    expect($again['baseline_established'])->toBeTrue()
-        ->and($again['stats']['unmapped'])->toBe(1)
-        ->and($again['headline'])->toContain('tidak disimpan sejak awal')
-        ->and(app(SchemaDriftRegistry::class)->notifications()['count'])->toBe(0);
+    expect($again['baseline_established'])->toBeFalse()
+        ->and($again['stats']['new'])->toBe(1)
+        ->and($again['stats']['unmapped'])->toBe(0)
+        ->and($again['has_pending_decision'])->toBeTrue()
+        ->and(app(SchemaDriftRegistry::class)->notifications()['count'])->toBe(1);
 });
 
-it('asks only about a column that appears after the baseline', function () {
+it('keeps previously undecided columns pending when another column appears', function () {
     app(SchemaDriftAnalyzer::class)->analyze('demo_report', ($this->write)(['POSISI', 'KODE_UKER', 'SALDO_POSISI', 'KETERANGAN_LAMA'], ($this->rows)(1)));
 
     $changed = app(SchemaDriftAnalyzer::class)->analyze(
@@ -104,8 +104,8 @@ it('asks only about a column that appears after the baseline', function () {
     );
 
     expect($changed['status'])->toBe('drift')
-        ->and(collect($changed['new_columns'])->pluck('header')->all())->toBe(['FLAG_BARU'])
-        ->and(collect($changed['unmapped_columns'])->pluck('header')->all())->toBe(['KETERANGAN_LAMA'])
+        ->and(collect($changed['new_columns'])->pluck('header')->all())->toBe(['KETERANGAN_LAMA', 'FLAG_BARU'])
+        ->and($changed['unmapped_columns'])->toBe([])
         ->and($changed['event']['status'])->toBe('pending')
         // A pending column stays outside the baseline until it is decided.
         ->and(app(SourceHeaderBaseline::class)->knownKeys('demo_report'))->not->toContain('flag_baru');

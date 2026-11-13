@@ -20,13 +20,13 @@ final class SchemaEvolutionPolicy
      * which maps source headers to table columns by name.
      */
     private const FIXED_LAYOUT_TABLES = [
+        'monitoring_realisasi_ksbk',
         'cognos_ph',
         'cognos_recovery',
         'performance_pis_per_produk',
         'cras',
         'casa_brilink_web',
         'casa_brilink_edc',
-        'daily_loan_dinamis',
         'simpanan_multipn',
         'gi405_rec_dh',
         'gi405_singlerow',

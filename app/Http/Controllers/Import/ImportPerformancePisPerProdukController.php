@@ -898,6 +898,8 @@ class ImportPerformancePisPerProdukController extends Controller
                     return;
                 }
 
+                app(\App\Services\Import\SchemaDrift\SchemaDriftImportGuard::class)->assertReady(self::TABLE_NAME, $absolutePath);
+
                 if ($jobId > 0) {
                     DB::table('import_jobs')->where('id', $jobId)->update([
                         'status' => 'processing',

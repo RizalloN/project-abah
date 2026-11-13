@@ -409,6 +409,45 @@ it('locks marketshare sektoral to the signed in branch', function (): void {
         ->assertDontSee('KC Madiun');
 });
 
+it('keeps marketshare sektoral polygons within the signed in branch and preserves the industry reference', function (): void {
+    $values = ['total' => ['potential' => 100, 'intra' => 20, 'extra' => 5, 'existing' => 25, 'existing_source' => 25, 'penetration' => 25, 'penetration_raw' => 25]];
+    $this->mock(\App\Support\SectorPotentialService::class)->shouldReceive('payload')->once()->with('magetan')->andReturn([
+        'ready' => true,
+        'period_label' => '31 Oktober 2026',
+        'comparison_groups' => [['key' => 'total', 'label' => 'Seluruh sektor usaha']],
+        'totals' => $values,
+        'branches' => [['key' => 'magetan', 'label' => 'KC Magetan', 'values' => $values]],
+        'districts' => [['code' => '35.20.01', 'name' => 'Poncol', 'regency' => 'Kabupaten Magetan', 'branch' => 'magetan', 'allocation_estimate' => true, 'values' => $values]],
+    ]);
+    $user = User::factory()->create(['pn' => '0049']);
+    $response = $this->actingAs($user)->get(route('report.dashboard-dana.market-share.sektoral', ['cabang' => 'madiun']));
+    $response->assertOk()->assertSee('mss-territory-map', false)->assertSee('Komposisi sektor usaha')->assertSee('Pembanding industri sektoral')->assertSee('Maret 2026')->assertSee('31 Oktober 2026')->assertDontSee('KC Madiun');
+    preg_match('/<script type="application\/json" id="mss-atlas-data">(.*?)<\/script>/s', $response->getContent(), $match);
+    $atlas = json_decode($match[1], true, 512, JSON_THROW_ON_ERROR);
+    expect($atlas['scope'])->toBe('magetan')
+        ->and(array_column($atlas['branches'], 'key'))->toBe(['magetan'])
+        ->and(array_column($atlas['districts'], 'branch'))->toBe(['magetan'])
+        ->and($atlas['totals']['total']['potential'])->toBe(100);
+    $response->assertSee('data-mss-district-ready="true"', false);
+    preg_match('/<select id="mss-atlas-district"([^>]*)>(.*?)<\/select>/s', $response->getContent(), $districtSelect);
+    expect($districtSelect[1])->not->toContain('disabled')
+        ->and(substr_count($districtSelect[2], '<option'))->toBe(2);
+});
+
+it('withholds marketshare sektoral district options until a KC is selected', function (): void {
+    $values = ['total' => ['potential' => 100, 'intra' => 20, 'extra' => 5, 'existing' => 25, 'penetration' => 25]];
+    $this->mock(\App\Support\SectorPotentialService::class)->shouldReceive('payload')->once()->with('area6')->andReturn([
+        'ready' => true, 'totals' => $values, 'comparison_groups' => [['key' => 'total', 'label' => 'Seluruh sektor usaha']],
+        'districts' => [['code' => '35.20.01', 'name' => 'Poncol', 'regency' => 'Kabupaten Magetan', 'branch' => 'magetan', 'values' => $values]],
+    ]);
+    $user = User::factory()->create(['pn' => '90170001']);
+    $response = $this->actingAs($user)->get(route('report.dashboard-dana.market-share.sektoral', ['kecamatan' => '35.20.01']));
+    $response->assertOk()->assertSee('data-mss-custom-select="KC"', false)->assertSee('data-mss-district-ready="false"', false)->assertSee('Pilih KC terlebih dahulu');
+    preg_match('/<select id="mss-atlas-district"([^>]*)>(.*?)<\/select>/s', $response->getContent(), $districtSelect);
+    expect($districtSelect[1])->toContain('disabled')
+        ->and(substr_count($districtSelect[2], '<option'))->toBe(1);
+});
+
 it('renders market share mapping as a separate office 365 workbook view', function (): void {
     config()->set('services.market_share_mapping.title', 'Mapping Test');
     config()->set('services.market_share_mapping.public_token', 'abc');

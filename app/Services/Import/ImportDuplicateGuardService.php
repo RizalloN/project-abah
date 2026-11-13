@@ -36,6 +36,11 @@ class ImportDuplicateGuardService
      * slot key-nya (posisi + kantor_cabang), bukan hanya posisi.
      */
     private const REPORT_POLICY = [
+        'suspect_reaktivasi_pinjaman' => [
+            'slot_table' => 'suspect_reaktivasi_pinjaman',
+            'slot_columns' => ['periode'],
+            'slot_label' => 'periode',
+        ],
         // [table_name => policy]
         'simpanan_multipn' => [
             'slot_table'       => 'simpanan_multipn',

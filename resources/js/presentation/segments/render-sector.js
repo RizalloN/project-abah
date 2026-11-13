@@ -13,7 +13,7 @@ export const renderSector = (ctx) => {
     const view = sectorView(ctx);
     const { source, label, groups } = view;
     if (!source.ready || !groups.length) return { html: chapter({ key: 'sektoral', group: 'Wilayah', title: 'Penetrasi sektoral.',
-        lede: source.message || 'Sumber potensi sektoral atau SSA CRAS September 2026 belum tersedia.', territory: false, span: 120,
+        lede: source.message || 'Sumber potensi sektoral atau SSA CRAS belum tersedia.', territory: false, span: 120,
         sheet: empty('Angka REKAP lama tidak digunakan sebagai pengganti sumber sektoral baru.') }) };
     ctx.presentationState ||= {};
     const state = ctx.presentationState.sektoral ||= {};

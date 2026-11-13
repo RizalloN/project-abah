@@ -12239,6 +12239,7 @@ body.sme-vendor-modal-open { overflow: hidden; }
 @endsection
 
 @section('scripts')
+<script src="{{ asset('js/micro-report-nominatives.js') }}?v={{ filemtime(public_path('js/micro-report-nominatives.js')) }}" defer></script>
 <script src="{{ asset('vendor/chartjs/chart.min.js') }}"></script>
 <script>
 // Relocate loading overlays to document body immediately to bypass parent transitions/transforms and guarantee perfect centering
@@ -13757,6 +13758,7 @@ document.addEventListener('DOMContentLoaded', function() {
   };
 
   const loadMicroPerformance = (forceRefresh = false) => {
+    window.MicroReportNominatives?.close();
     if (!microPerformanceDashboard || !microPerformanceDashboard.dataset.url) {
       return Promise.resolve();
     }

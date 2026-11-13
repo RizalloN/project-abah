@@ -2,6 +2,8 @@
 
 namespace App\Services\Import\Strategies;
 
+use App\Services\Import\CrasSourceService;
+
 class CrasImportStrategy implements ImportStrategyInterface
 {
     public function key(): string
@@ -35,7 +37,9 @@ class CrasImportStrategy implements ImportStrategyInterface
 
     public function transformHeaders(array $headers): array
     {
-        return $headers;
+        $columns = array_combine(CrasSourceService::SOURCE_HEADERS, CrasSourceService::SOURCE_COLUMNS);
+
+        return array_map(static fn ($header) => $columns[trim((string) $header)] ?? $header, $headers);
     }
 
     public function importMode(array $context = []): string

@@ -68,27 +68,63 @@ class ImportSchemaDriftController extends Controller
             'adjustments.*.column' => ['required', 'string', 'max:64'],
             'adjustments.*.to_type' => ['sometimes', 'string', 'max:40'],
             'adjustments.*.include' => ['sometimes'],
+            'reviews' => ['sometimes', 'array', 'max:200'],
+            'reviews.*.key' => ['required', 'string', 'max:160'],
+            'reviews.*.action' => ['required', 'string', 'in:continue,abort'],
+            'source_fingerprint' => ['sometimes', 'nullable', 'string', 'size:64'],
+            'source' => ['sometimes', 'string'],
         ]);
 
         return $this->decide(
-            fn () => $this->registry->accept(
-                $event,
-                $this->actor($request),
-                (array) ($validated['columns'] ?? []),
-                (array) ($validated['adjustments'] ?? [])
-            ),
-            'Keputusan diterapkan. Import berikutnya langsung memakai struktur kolom yang baru.'
+            function () use ($request, $event, $validated) {
+                $this->assertDecisionSource($event, $validated);
+
+                return $this->registry->accept(
+                    $event,
+                    $this->actor($request),
+                    (array) ($validated['columns'] ?? []),
+                    (array) ($validated['adjustments'] ?? []),
+                    (array) ($validated['reviews'] ?? []),
+                    $validated['source_fingerprint'] ?? null
+                );
+            },
+            'Keputusan diterapkan. Pindai ulang untuk memastikan seluruh kolom dan perubahan sumber sudah diselesaikan sebelum import.'
         );
     }
 
     public function reject(Request $request, int $event): JsonResponse
     {
-        return $this->decide(fn () => $this->registry->reject($event, $this->actor($request)), 'Kolom baru ditolak. Import tetap berjalan tanpa kolom tersebut dan sistem tidak akan menanyakannya lagi.');
+        $validated = $request->validate(['source_fingerprint' => ['sometimes', 'nullable', 'string', 'size:64']]);
+
+        return $this->decide(fn () => $this->registry->reject($event, $this->actor($request), $validated['source_fingerprint'] ?? null), 'Kolom baru dilewati sesuai keputusan Anda. Pemeriksaan bentuk/isi sumber tetap harus diselesaikan sebelum import.');
     }
 
     public function acknowledge(Request $request, int $event): JsonResponse
     {
         return $this->decide(fn () => $this->registry->acknowledge($event, $this->actor($request)), 'Notifikasi ditandai sudah dibaca.');
+    }
+
+    private function assertDecisionSource(int $eventId, array $validated): void
+    {
+        // Legacy notification decisions have no source token. Preview decisions
+        // carry it and must still describe the file that was actually scanned.
+        if (!array_key_exists('source', $validated)) {
+            return;
+        }
+        $source = SchemaDriftSourceToken::read($validated['source']);
+        $event = $this->registry->find($eventId);
+        if ($source === null || $event === null
+            || strtolower($source['table']) !== strtolower((string) $event->table_name)) {
+            throw new RuntimeException('Referensi file tidak cocok dengan keputusan ini atau sudah kedaluwarsa. Pindai ulang preview.');
+        }
+        if (!is_file($source['path']) || !is_readable($source['path'])) {
+            throw new RuntimeException('File sumber untuk keputusan ini sudah tidak tersedia. Buka ulang preview.');
+        }
+        $expected = (string) ($validated['source_fingerprint'] ?? $event->payload['source_fingerprint'] ?? '');
+        $current = @hash_file('sha256', $source['path']);
+        if ($expected === '' || !is_string($current) || !hash_equals($expected, $current)) {
+            throw new RuntimeException('Isi file sumber sudah berubah sejak pemindaian. Pindai ulang preview sebelum menerapkan perubahan kolom.');
+        }
     }
 
     private function decide(callable $action, string $message): JsonResponse

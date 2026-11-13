@@ -3,6 +3,7 @@
 use App\Http\Controllers\Import\ImportDailyLoanBackendController;
 use App\Services\Import\ExcelImportJobService;
 use App\Services\Import\ImportExecutionService;
+use App\Services\Import\SchemaDrift\SchemaDriftImportGuard;
 use Illuminate\Http\Request;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Cache;
@@ -102,6 +103,9 @@ it('rejects backend source files outside configured import roots', function () {
 
 it('queues backend daily loan import from a local csv file', function () {
     $csvPath = createDailyLoanBackendCsv('backend-daily-loan.csv');
+    $this->mock(SchemaDriftImportGuard::class, function (MockInterface $mock) use ($csvPath): void {
+        $mock->shouldReceive('assertReady')->once()->with('daily_loan_dinamis', realpath($csvPath))->andReturn([]);
+    });
 
     $this->mock(ImportExecutionService::class, function (MockInterface $mock): void {
         $mock->shouldReceive('dispatch')
@@ -167,6 +171,9 @@ it('rejects backend daily loan import when requested period does not match the c
 
 it('queues backend daily loan import from business-header semicolon csv file', function () {
     $csvPath = createDailyLoanBackendBusinessHeaderCsv('backend-daily-loan-business-header.csv');
+    $this->mock(SchemaDriftImportGuard::class, function (MockInterface $mock) use ($csvPath): void {
+        $mock->shouldReceive('assertReady')->once()->with('daily_loan_dinamis', realpath($csvPath))->andReturn([]);
+    });
 
     $this->mock(ImportExecutionService::class, function (MockInterface $mock): void {
         $mock->shouldReceive('dispatch')
@@ -192,3 +199,25 @@ it('queues backend daily loan import from business-header semicolon csv file', f
     expect($payload['detected_periods'] ?? null)->toBe(['2025-03-31']);
     expect(DB::table('import_jobs')->count())->toBe(1);
 });
+
+it('retains an unreviewed backend source without creating an import job', function (string $mode) {
+    $csvPath = createDailyLoanBackendCsv('backend-unreviewed-' . $mode . '.csv');
+    $this->mock(SchemaDriftImportGuard::class, function (MockInterface $mock) use ($csvPath): void {
+        $mock->shouldReceive('assertReady')->once()->with('daily_loan_dinamis', realpath($csvPath))
+            ->andThrow(new RuntimeException('Import ditahan: tinjau kolom sumber.'));
+        $mock->shouldReceive('lastReport')->once()->andReturn(['has_pending_decision' => true]);
+    });
+    $this->mock(ImportExecutionService::class, function (MockInterface $mock): void {
+        $mock->shouldNotReceive('dispatch');
+    });
+    $request = Request::create('/import/backend/daily-loan/local-file', 'POST', [
+        'source_path' => $csvPath, 'mode' => $mode,
+    ]);
+
+    $response = app(ImportDailyLoanBackendController::class)->importLocalCsv($request);
+
+    expect($response->getStatusCode())->toBe(422)
+        ->and($response->getData(true)['message'])->toContain('Import ditahan')
+        ->and(DB::table('import_jobs')->count())->toBe(0)
+        ->and(is_file($csvPath))->toBeTrue();
+})->with(['queue', 'sync']);

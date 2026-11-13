@@ -1,5 +1,6 @@
 @php
     $meta = (array) data_get($microPerformance, 'meta', []);
+    $microReportContext = ['branch_key' => data_get($meta, 'branch_key', 'area6'), 'period' => data_get($meta, 'period', request()->query('periode', ''))];
     $decisionIdentityCoverage = (array) data_get($meta, 'identity_coverage', []);
     $realization = (array) data_get($microPerformance, 'realization', []);
     $netDisbursement = (array) data_get($microPerformance, 'net_disbursement', []);
@@ -81,6 +82,95 @@
     $kupedesPendingTotal = count($kupedesPending);
     $mantriRosterSummary = (array) data_get($realization, 'mantri_roster', []);
 @endphp
+
+@once
+    <style data-micro-card-layout>
+        .micro-ops[data-micro-performance-ready] {
+            --micro-card-gap: 1.5rem;
+            --micro-card-inset: 1.25rem;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr);
+            gap: var(--micro-card-gap);
+            box-sizing: border-box;
+            min-width: 0;
+            padding: var(--micro-card-inset);
+        }
+        .micro-ops[data-micro-performance-ready] > .micro-ops-section,
+        .micro-ops[data-micro-performance-ready] > .pn-mismatch[data-segment="micro"] {
+            min-width: 0;
+            max-width: 100%;
+            margin: 0;
+            border-radius: 16px;
+        }
+        .micro-ops[data-micro-performance-ready] .micro-product-grid,
+        .micro-ops[data-micro-performance-ready] .micro-pattern-grid,
+        .micro-ops[data-micro-performance-ready] .micro-burden-grid,
+        .micro-ops[data-micro-performance-ready] .micro-tier-panels,
+        .micro-ops[data-micro-performance-ready] .micro-inactive-metrics,
+        .micro-ops[data-micro-performance-ready] .micro-pipeline-kpis,
+        .micro-ops[data-micro-performance-ready] .micro-billing-kpis,
+        .micro-ops[data-micro-performance-ready] .micro-billing-calendar-grid { gap: 1rem; }
+        .micro-ops[data-micro-performance-ready] .micro-rm-kur-productivity {
+            margin: var(--micro-card-gap) var(--micro-card-inset);
+        }
+        .micro-ops[data-micro-performance-ready] > .pn-mismatch[data-segment="micro"] {
+            border-color: #cbdced;
+            box-shadow: none;
+        }
+        .micro-ops[data-micro-performance-ready] > .pn-mismatch[data-segment="micro"] .pn-mismatch__head {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            align-items: start;
+            gap: 1rem 1.5rem;
+            padding: var(--micro-card-inset);
+            border-bottom: 1px solid #dce7f2;
+            background: #f4f8fd;
+        }
+        .micro-ops[data-micro-performance-ready] .pn-mismatch__head > div { min-width: 0; }
+        .micro-ops[data-micro-performance-ready] .pn-mismatch__head p { max-width: 80ch; margin-top: .4rem; line-height: 1.65; }
+        .micro-ops[data-micro-performance-ready] .pn-mismatch__head > strong {
+            display: flex;
+            align-items: baseline;
+            gap: .35rem;
+            padding: .55rem .75rem;
+            border: 1px solid #ead7be;
+            border-radius: 8px;
+            background: #fffbf4;
+            line-height: 1.3;
+            white-space: nowrap;
+            font-variant-numeric: tabular-nums;
+        }
+        .micro-ops[data-micro-performance-ready] .pn-mismatch__scroll { position: relative; min-width: 0; padding: .35rem 0; }
+        .micro-ops[data-micro-performance-ready] .pn-mismatch__scroll:focus-visible { outline: 3px solid #087fc8; outline-offset: -3px; }
+        .micro-ops[data-micro-performance-ready] > .pn-mismatch[data-segment="micro"] th,
+        .micro-ops[data-micro-performance-ready] > .pn-mismatch[data-segment="micro"] td { padding: .85rem var(--micro-card-inset); }
+        .micro-ops[data-micro-performance-ready] > .pn-mismatch[data-segment="micro"] thead th { border-top: 0; }
+        .micro-ops[data-micro-performance-ready] > .pn-mismatch[data-segment="micro"] th:last-child,
+        .micro-ops[data-micro-performance-ready] > .pn-mismatch[data-segment="micro"] td:last-child { text-align: right; }
+        .micro-ops[data-micro-performance-ready] > .pn-mismatch[data-segment="micro"] button[data-pn-mismatch-open] {
+            min-height: 44px;
+            padding: .5rem .8rem;
+            touch-action: manipulation;
+        }
+        @media (max-width: 640px) {
+            .micro-ops[data-micro-performance-ready] { --micro-card-gap: 1rem; --micro-card-inset: .75rem; }
+            .micro-ops[data-micro-performance-ready] .micro-product-grid,
+            .micro-ops[data-micro-performance-ready] .micro-pattern-grid,
+            .micro-ops[data-micro-performance-ready] .micro-burden-grid,
+            .micro-ops[data-micro-performance-ready] .micro-tier-panels,
+            .micro-ops[data-micro-performance-ready] .micro-inactive-metrics,
+            .micro-ops[data-micro-performance-ready] .micro-pipeline-kpis,
+            .micro-ops[data-micro-performance-ready] .micro-billing-kpis,
+            .micro-ops[data-micro-performance-ready] .micro-billing-calendar-grid { gap: .75rem; }
+            .micro-ops[data-micro-performance-ready] > .pn-mismatch[data-segment="micro"] .pn-mismatch__head { grid-template-columns: minmax(0, 1fr); }
+            .micro-ops[data-micro-performance-ready] .pn-mismatch__head > strong { justify-self: start; }
+            .micro-ops[data-micro-performance-ready] > .pn-mismatch[data-segment="micro"] table { min-width: 0; }
+            .micro-ops[data-micro-performance-ready] > .pn-mismatch[data-segment="micro"] th:nth-child(2),
+            .micro-ops[data-micro-performance-ready] > .pn-mismatch[data-segment="micro"] td:nth-child(2) { display: none; }
+            .micro-ops[data-micro-performance-ready] > .pn-mismatch[data-segment="micro"] button[data-pn-mismatch-open] { white-space: nowrap; }
+        }
+    </style>
+@endonce
 
 <div class="micro-ops" data-micro-performance-ready="1"
      data-refresh-pending="{{ (!empty($meta['refresh_pending']) || !empty($rmKurProductivity['refresh_pending'])) ? '1' : '0' }}"
@@ -264,7 +354,6 @@
                         <strong>Seluruh Mantri telah realisasi Kupedes.</strong>
                     </div>
                 @endif
-                </div>
             </div>
         </section>
 
@@ -768,154 +857,147 @@
                 <div class="micro-ops-empty micro-ops-empty--compact" role="status"><strong>Roster Mantri belum tersedia</strong></div>
             @endif
 
-            <article class="micro-rm-kur-productivity" data-micro-rm-kur-productivity aria-labelledby="micro-rm-kur-title">
-                <header class="micro-rm-kur-head">
-                    <span class="micro-rm-kur-head__icon" aria-hidden="true"><i class="fas fa-user-tie"></i></span>
-                    <div class="micro-rm-kur-head__copy">
-                        <span class="micro-ops-eyebrow">RM KUR KECIL MIKRO</span>
+            <article class="micro-rm-kur-productivity micro-rm-kur-productivity--refined" data-micro-rm-kur-productivity aria-labelledby="micro-rm-kur-title">
+                <header class="micro-rm-kur-overview">
+                    <div>
                         <h4 id="micro-rm-kur-title">Produktivitas RM KUR Kecil Mikro</h4>
-                        <p>Nett disbursement MTD produk KUR Ritel 2015 per RM, berdasarkan snapshot Daily Loan dan roster BRIHC.</p>
+                        <p>KUR Ritel 2015 · Realisasi bulan berjalan</p>
                     </div>
-                    <div class="micro-rm-kur-head__meta" aria-label="Konteks data produktivitas RM KUR Kecil Mikro">
+                    <div class="micro-rm-kur-context" aria-label="Konteks data produktivitas RM KUR Kecil Mikro">
                         <span><i class="fas fa-map-marker-alt" aria-hidden="true"></i>{{ data_get($rmKurProductivity, 'scope_label', data_get($meta, 'scope_label', 'Area 6')) }}</span>
                         <span><i class="far fa-calendar-alt" aria-hidden="true"></i>{{ data_get($rmKurProductivity, 'period_label', '-') }}</span>
                         @if(!empty($rmKurProductivity['refresh_pending']))
-                            <span title="Snapshot periode yang diminta sedang diperbarui"><i class="fas fa-sync-alt" aria-hidden="true"></i>Snapshot diperbarui</span>
+                            <span class="micro-rm-kur-context__pending" role="status"><i class="fas fa-sync-alt" aria-hidden="true"></i>Snapshot diperbarui</span>
                         @endif
                     </div>
                 </header>
 
-                <div class="micro-rm-kur-summary" aria-label="Ringkasan produktivitas RM KUR Kecil Mikro">
-                    <article>
-                        <span>RM Produktif</span>
-                        <strong>{{ $formatInteger(max(0, data_get($rmKurProductivity, 'distribution.total.rm_count', 0) - data_get($rmKurProductivity, 'distribution.total.counts.zero', 0))) }}</strong>
-                        <small>PN BRIHC dengan realisasi MTD</small>
-                    </article>
-                    <article>
-                        <span>Debitur Realisasi</span>
-                        <strong>{{ $formatInteger(data_get($rmKurProductivity, 'total.realisasi_deb', 0)) }}</strong>
-                        <small>Rekening baru bulan berjalan</small>
-                    </article>
-                    <article>
-                        <span>Nett Disbursement</span>
-                        <strong>{{ $formatAmount(data_get($rmKurProductivity, 'total.realisasi_os', 0)) }}</strong>
-                        <small>Akumulasi MTD</small>
-                    </article>
-                    <article>
-                        <span>Jumlah RM</span>
-                        <strong>{{ $formatInteger(data_get($rmKurProductivity, 'distribution.total.rm_count', 0)) }}</strong>
-                        <small>Personel dalam roster BRIHC</small>
-                    </article>
-                </div>
+                <dl class="micro-rm-kur-metrics" aria-label="Ringkasan produktivitas RM KUR Kecil Mikro">
+                    <div class="micro-rm-kur-metrics__primary">
+                        <dt>Nett disbursement</dt>
+                        <dd>{{ $formatAmount(data_get($rmKurProductivity, 'total.realisasi_os', 0)) }}<small>MTD</small></dd>
+                    </div>
+                    <div>
+                        <dt>Rekening realisasi</dt>
+                        <dd>{{ $formatInteger(data_get($rmKurProductivity, 'total.realisasi_deb', 0)) }}<small>rekening baru</small></dd>
+                    </div>
+                    <div>
+                        <dt>RM produktif</dt>
+                        <dd>{{ $formatInteger(max(0, data_get($rmKurProductivity, 'distribution.total.rm_count', 0) - data_get($rmKurProductivity, 'distribution.total.counts.zero', 0))) }}<small>dari {{ $formatInteger(data_get($rmKurProductivity, 'distribution.total.rm_count', 0)) }} RM</small></dd>
+                    </div>
+                </dl>
 
-                <section class="micro-rm-kur-guidance" aria-labelledby="micro-rm-kur-distribution-title">
-                    <h5 id="micro-rm-kur-distribution-title">Persebaran Nett Disbursement RM Mikro</h5>
-                    <p>Jumlah orang dan persentase terhadap RM pada masing-masing BO/KCP. Batas kategori mengikuti guidance produktivitas RM Mikro; nilai mengikuti posisi tanggal di atas. Roster menggunakan BRIHC yang tersedia saat ini.</p>
+                <section class="micro-rm-kur-distribution" aria-labelledby="micro-rm-kur-distribution-title">
+                    <div class="micro-rm-kur-distribution__head">
+                        <h5 id="micro-rm-kur-distribution-title">Sebaran produktivitas</h5>
+                        <span>Jumlah RM dan % per BO/KCP</span>
+                    </div>
                     @if(data_get($rmKurProductivity, 'distribution.total.rm_count', 0) > 0)
-                        <div class="micro-mantri-table-wrap" tabindex="0" role="region" aria-label="Persebaran RM per BO dan KCP, geser untuk melihat semua kategori">
-                            <table class="micro-mantri-table micro-rm-kur-distribution-table">
-                                <caption class="sr-only">Persebaran nett disbursement MTD RM Mikro per BO/KCP</caption>
+                        <div class="micro-rm-kur-scroll" data-abah-no-table-guard="1" tabindex="0" role="region" aria-label="Persebaran RM per BO dan KCP, geser untuk melihat semua kategori">
+                            <table class="micro-rm-kur-distribution-table micro-rm-kur-matrix">
+                                <caption class="sr-only">Persebaran nett disbursement MTD RM Mikro per BO/KCP. Setiap kategori menampilkan jumlah orang dan persentase terhadap jumlah RM dalam kelompok.</caption>
                                 <thead>
                                     <tr>
-                                        <th rowspan="2" scope="col">Branch Office</th>
-                                        <th rowspan="2" scope="col">Kode BO/KCP</th>
-                                        <th rowspan="2" scope="col">Unit Kerja</th>
-                                        <th rowspan="2" scope="col">Jumlah RM</th>
+                                        <th scope="col" class="micro-rm-kur-matrix__branch">Branch Office<span class="micro-rm-kur-subline">Kode BO/KCP</span></th>
+                                        <th scope="col" class="micro-rm-kur-matrix__unit">Unit Kerja</th>
+                                        <th scope="col">RM</th>
                                         @foreach(data_get($rmKurProductivity, 'distribution.tiers', []) as $tier)
-                                            <th colspan="2" scope="colgroup">{{ $tier['label'] }}<span class="micro-rm-kur-range">{{ $tier['range'] }}</span></th>
-                                        @endforeach
-                                    </tr>
-                                    <tr>
-                                        @foreach(data_get($rmKurProductivity, 'distribution.tiers', []) as $tier)
-                                            <th scope="col">Org</th><th scope="col">%</th>
+                                            <th scope="col">{{ $tier['label'] }}</th>
                                         @endforeach
                                     </tr>
                                 </thead>
                                 <tbody>
                                     @foreach(data_get($rmKurProductivity, 'distribution.rows', []) as $group)
                                         <tr>
-                                            <th scope="row">{{ $group['cabang'] }}</th>
-                                            <td>{{ $group['branch_code'] }}</td>
-                                            <td>{{ $group['unit'] }}</td>
-                                            <td class="strong">{{ $formatInteger($group['rm_count']) }}</td>
+                                            <th scope="row" class="micro-rm-kur-matrix__branch">{{ $group['cabang'] }}<span class="micro-rm-kur-subline">{{ $group['branch_code'] }}</span></th>
+                                            <td class="micro-rm-kur-matrix__unit">{{ $group['unit'] }}</td>
+                                            <td class="micro-rm-kur-matrix__headcount">{{ $formatInteger($group['rm_count']) }}</td>
                                             @foreach(array_keys(data_get($rmKurProductivity, 'distribution.tiers', [])) as $key)
-                                                <td class="strong">{{ $formatInteger($group['counts'][$key]) }}</td>
-                                                <td>{{ number_format($group['percentages'][$key], 1, ',', '.') }}%</td>
+                                                <td>
+                                                    <span class="micro-rm-kur-score {{ $group['counts'][$key] > 0 ? 'micro-rm-kur-score--active' : '' }}">
+                                                        <strong>{{ $formatInteger($group['counts'][$key]) }}<span class="sr-only"> orang</span></strong>
+                                                        <small>{{ number_format($group['percentages'][$key], 1, ',', '.') }}%</small>
+                                                    </span>
+                                                </td>
                                             @endforeach
                                         </tr>
                                     @endforeach
                                 </tbody>
                                 <tfoot>
                                     <tr>
-                                        <th colspan="3" scope="row">Total {{ data_get($rmKurProductivity, 'scope_label', 'Area 6') }}</th>
+                                        <th colspan="2" scope="row">Total {{ data_get($rmKurProductivity, 'scope_label', 'Area 6') }}</th>
                                         <td>{{ $formatInteger(data_get($rmKurProductivity, 'distribution.total.rm_count', 0)) }}</td>
                                         @foreach(array_keys(data_get($rmKurProductivity, 'distribution.tiers', [])) as $key)
-                                            <td>{{ $formatInteger(data_get($rmKurProductivity, "distribution.total.counts.$key", 0)) }}</td>
-                                            <td>{{ number_format(data_get($rmKurProductivity, "distribution.total.percentages.$key", 0), 1, ',', '.') }}%</td>
+                                            <td><span class="micro-rm-kur-score"><strong>{{ $formatInteger(data_get($rmKurProductivity, "distribution.total.counts.$key", 0)) }}<span class="sr-only"> orang</span></strong><small>{{ number_format(data_get($rmKurProductivity, "distribution.total.percentages.$key", 0), 1, ',', '.') }}%</small></span></td>
                                         @endforeach
                                     </tr>
                                 </tfoot>
                             </table>
                         </div>
                         @if(data_get($rmKurProductivity, 'distribution.unassigned_amount', 0) != 0)
-                            <p role="note">Nett disbursement {{ $formatAmount(data_get($rmKurProductivity, 'distribution.unassigned_amount')) }} belum terhubung ke PN RM aktif BRIHC. Nilainya tetap ada di rincian, tetapi tidak dihitung sebagai orang dalam persebaran. Kategori Belum Realisasi berarti belum ada realisasi yang terhubung ke PN tersebut; persebaran belum final selama identitas ini belum lengkap.</p>
+                            <p class="micro-rm-kur-coverage" role="note"><i class="fas fa-info-circle" aria-hidden="true"></i><span><strong>{{ $formatAmount(data_get($rmKurProductivity, 'distribution.unassigned_amount')) }}</strong> belum terhubung ke PN RM aktif; belum masuk sebaran orang.</span></p>
                         @endif
                     @else
-                        <p role="status">Persebaran belum tersedia: diperlukan snapshot periode dan roster RM Mikro BRIHC. Data yang belum tersedia tidak dianggap sebagai belum realisasi.</p>
+                        <p class="micro-rm-kur-unavailable" role="status">Persebaran belum tersedia. Diperlukan snapshot periode dan roster RM Mikro BRIHC; data yang belum tersedia tidak dianggap sebagai belum realisasi.</p>
                     @endif
+
+                    <details class="micro-rm-kur-explanation">
+                        <summary>Kategori dan sumber data</summary>
+                        <div class="micro-rm-kur-explanation__body">
+                            <dl class="micro-rm-kur-tier-guide">
+                                @foreach(data_get($rmKurProductivity, 'distribution.tiers', []) as $tier)
+                                    <div><dt>{{ $tier['label'] }}</dt><dd>{{ $tier['range'] }}</dd></div>
+                                @endforeach
+                            </dl>
+                            <p>Nett disbursement MTD menggunakan snapshot Daily Loan. Jumlah RM: Personel dalam roster BRIHC yang tersedia saat ini. Persentase memakai jumlah RM pada masing-masing BO/KCP.</p>
+                            <p>Belum Realisasi berarti belum ada realisasi yang terhubung ke PN tersebut. Nominal yang belum terhubung tetap ada di rincian, tetapi tidak dihitung sebagai orang dalam sebaran; persebaran belum final selama identitas belum lengkap.</p>
+                        </div>
+                    </details>
                 </section>
 
                 @if(!empty($rmKurProductivity['available']))
-                    <div class="micro-mantri-table-wrap micro-rm-kur-table-wrap">
-                        <table class="micro-mantri-table micro-rm-kur-table">
-                            <caption class="sr-only">Produktivitas realisasi MTD RM KUR Kecil Mikro</caption>
-                            <thead>
-                                <tr>
-                                    <th>No.</th>
-                                    <th>Kode BO</th>
-                                    <th>Branch Office</th>
-                                    <th>RM KUR Kecil Mikro</th>
-                                    <th>Unit Kerja</th>
-                                    <th>Debitur</th>
-                                    <th>Nett Disbursement (Rp Juta)</th>
-                                    <th>Rata-rata / Debitur (Rp Juta)</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach((array) data_get($rmKurProductivity, 'rows', []) as $row)
+                    <details class="micro-rm-kur-roster">
+                        <summary><span>Rincian realisasi per RM</span><span class="micro-rm-kur-roster__count">{{ $formatInteger(count((array) data_get($rmKurProductivity, 'rows', []))) }} baris</span></summary>
+                        <div class="micro-rm-kur-scroll" data-abah-no-table-guard="1" tabindex="0" role="region" aria-label="Rincian realisasi RM KUR Kecil Mikro, geser untuk melihat seluruh kolom">
+                            <table class="micro-rm-kur-roster-table">
+                                <caption class="sr-only">Produktivitas realisasi MTD RM KUR Kecil Mikro. Nominal dalam Rp juta.</caption>
+                                <thead>
                                     <tr>
-                                        <td>{{ $loop->iteration }}</td>
-                                        <td>{{ data_get($row, 'branch_code', '-') }}</td>
-                                        <td>{{ data_get($row, 'cabang', '-') }}</td>
-                                        <th scope="row" class="micro-rm-kur-person">
-                                            <strong>{{ data_get($row, 'nama', '-') }}</strong>
-                                            <small>PN {{ data_get($row, 'pn', '-') }}</small>
-                                        </th>
-                                        <td>{{ data_get($row, 'unit', '-') }}</td>
-                                        <td class="strong">{{ $formatInteger(data_get($row, 'realisasi_deb', 0)) }}</td>
-                                        <td class="strong">{{ $formatJuta(data_get($row, 'realisasi_os', 0)) }}</td>
-                                        <td>{{ $formatJuta(data_get($row, 'average_per_debtor', 0)) }}</td>
+                                        <th scope="col">No.</th>
+                                        <th scope="col">RM KUR Kecil Mikro</th>
+                                        <th scope="col">Branch Office</th>
+                                        <th scope="col">Unit Kerja</th>
+                                        <th scope="col">Debitur</th>
+                                        <th scope="col">Nett disbursement<span class="micro-rm-kur-subline">Rp juta</span></th>
+                                        <th scope="col">Rata-rata / debitur<span class="micro-rm-kur-subline">Rp juta</span></th>
                                     </tr>
-                                @endforeach
-                            </tbody>
-                            <tfoot>
-                                <tr>
-                                    <th colspan="5" scope="row">Total {{ data_get($rmKurProductivity, 'scope_label', 'Area 6') }}</th>
-                                    <td>{{ $formatInteger(data_get($rmKurProductivity, 'total.realisasi_deb', 0)) }}</td>
-                                    <td>{{ $formatJuta(data_get($rmKurProductivity, 'total.realisasi_os', 0)) }}</td>
-                                    <td>{{ $formatJuta(data_get($rmKurProductivity, 'total.average_per_debtor', 0)) }}</td>
-                                </tr>
-                            </tfoot>
-                        </table>
-                    </div>
-                @else
-                    <div class="micro-rm-kur-empty" role="status">
-                        <i class="fas fa-user-clock" aria-hidden="true"></i>
-                        <div>
-                            <strong>Belum ada realisasi RM KUR Kecil Mikro</strong>
-                            <span>Tidak ditemukan realisasi MTD KUR Ritel 2015 pada periode dan cabang yang dipilih.</span>
+                                </thead>
+                                <tbody>
+                                    @foreach((array) data_get($rmKurProductivity, 'rows', []) as $row)
+                                        <tr>
+                                            <td>{{ $loop->iteration }}</td>
+                                            <th scope="row"><strong>{{ data_get($row, 'nama', '-') }}</strong><span class="micro-rm-kur-subline">PN {{ data_get($row, 'pn', '-') }}</span></th>
+                                            <td>{{ data_get($row, 'cabang', '-') }}<span class="micro-rm-kur-subline">{{ data_get($row, 'branch_code', '-') }}</span></td>
+                                            <td>{{ data_get($row, 'unit', '-') }}</td>
+                                            <td>{{ $formatInteger(data_get($row, 'realisasi_deb', 0)) }}</td>
+                                            <td class="micro-rm-kur-roster-table__amount">{{ $formatJuta(data_get($row, 'realisasi_os', 0)) }}</td>
+                                            <td>{{ $formatJuta(data_get($row, 'average_per_debtor', 0)) }}</td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                                <tfoot>
+                                    <tr>
+                                        <th colspan="4" scope="row">Total {{ data_get($rmKurProductivity, 'scope_label', 'Area 6') }}</th>
+                                        <td>{{ $formatInteger(data_get($rmKurProductivity, 'total.realisasi_deb', 0)) }}</td>
+                                        <td>{{ $formatJuta(data_get($rmKurProductivity, 'total.realisasi_os', 0)) }}</td>
+                                        <td>{{ $formatJuta(data_get($rmKurProductivity, 'total.average_per_debtor', 0)) }}</td>
+                                    </tr>
+                                </tfoot>
+                            </table>
                         </div>
-                    </div>
+                    </details>
+                @else
+                    <div class="micro-rm-kur-empty" role="status"><i class="fas fa-user-clock" aria-hidden="true"></i><div><strong>Belum ada realisasi RM KUR Kecil Mikro</strong><span>Tidak ditemukan realisasi MTD KUR Ritel 2015 pada periode dan cabang yang dipilih.</span></div></div>
                 @endif
             </article>
 
@@ -1147,6 +1229,39 @@
         </section>
 
         <section class="micro-ops-section micro-ops-section--pipeline" aria-labelledby="micro-pipeline-title">
+            @once
+                <style>
+                    .micro-prewash-switch{position:relative;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));align-items:start;gap:1rem .65rem;min-width:0;margin:0;padding:var(--micro-card-inset,1.25rem);border:0}
+                    .micro-prewash-switch>input[type="radio"]{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+                    .micro-prewash-switch>label{display:flex;align-items:center;justify-content:center;min-height:44px;margin:0;padding:.65rem .85rem;border:1px solid #bad0e7;border-radius:8px;color:#174c83;background:#f6faff;cursor:pointer;font-size:.8rem;font-weight:700;line-height:1.45;text-align:center;touch-action:manipulation}
+                    .micro-prewash-switch>label:hover{border-color:#0754bd;background:#edf5ff}
+                    .micro-prewash-switch>.micro-prewash-original-panel,.micro-prewash-switch>.micro-prewash-boh-panel,.micro-prewash-switch>.micro-prewash-mbm-panel,.micro-prewash-switch>.micro-prewash-ksbk-panel{grid-column:1/-1;min-width:0;max-width:100%}
+                    .micro-prewash-boh-panel>.pipeline-prewash,.micro-prewash-mbm-panel>.pipeline-prewash{margin-top:0}
+                    #micro-prewash-original:checked+label,#micro-prewash-boh:checked+label,#micro-prewash-mbm:checked+label,#micro-prewash-ksbk:checked+label{background:#0754bd;border-color:#0754bd;color:#fff}
+                    .micro-prewash-switch>input:focus-visible+label{outline:3px solid #d97706;outline-offset:3px}
+                    .micro-prewash-boh-panel,.micro-prewash-mbm-panel,.micro-prewash-ksbk-panel{display:none}
+                    #micro-prewash-boh:checked~.micro-prewash-original-panel,#micro-prewash-mbm:checked~.micro-prewash-original-panel,#micro-prewash-ksbk:checked~.micro-prewash-original-panel{display:none}
+                    #micro-prewash-boh:checked~.micro-prewash-boh-panel{display:block}
+                    #micro-prewash-mbm:checked~.micro-prewash-mbm-panel{display:block}
+                    #micro-prewash-ksbk:checked~.micro-prewash-ksbk-panel{display:block}
+                    .micro-prewash-ksbk-panel>.micro-ksbk{margin:0;border:1px solid #d9e5f0;border-radius:14px;background:#fff;overflow:hidden}
+                    .micro-prewash-ksbk-panel .micro-ops-section__head{padding:1.15rem 1.25rem;border-bottom:1px solid #d9e5f0;background:#fff}
+                    .micro-prewash-ksbk-panel .micro-ksbk__notice,.micro-prewash-ksbk-panel #micro-ksbk-note{margin:.85rem 1.25rem}
+                    .micro-prewash-ksbk-panel .micro-ksbk__scroll{margin:1rem 1.25rem}
+                    @media(max-width:640px){.micro-prewash-switch{grid-template-columns:repeat(2,minmax(0,1fr));row-gap:.65rem}.micro-prewash-switch>label{font-size:.75rem;padding:.6rem .75rem}.micro-prewash-switch>.micro-prewash-original-panel,.micro-prewash-switch>.micro-prewash-boh-panel,.micro-prewash-switch>.micro-prewash-mbm-panel,.micro-prewash-switch>.micro-prewash-ksbk-panel{margin-top:.35rem}.micro-prewash-ksbk-panel .micro-ops-section__head{padding:1rem}.micro-prewash-ksbk-panel .micro-ksbk__notice,.micro-prewash-ksbk-panel #micro-ksbk-note{margin:.75rem 1rem}.micro-prewash-ksbk-panel .micro-ksbk__scroll{margin:.75rem 1rem}}
+                </style>
+            @endonce
+            <fieldset class="micro-prewash-switch">
+                <legend class="sr-only">Pilih laporan Pipeline Mikro</legend>
+                <input class="sr-only" type="radio" name="micro-prewash-view" id="micro-prewash-original" aria-controls="micro-prewash-original-panel" value="pipeline" checked>
+                <label for="micro-prewash-original" id="micro-prewash-original-label">Pipeline Prewash</label>
+                <input class="sr-only" type="radio" name="micro-prewash-view" id="micro-prewash-boh" aria-controls="micro-prewash-boh-panel" value="boh">
+                <label for="micro-prewash-boh" id="micro-prewash-boh-label">TL Pipeline Pre-wash BOH</label>
+                <input class="sr-only" type="radio" name="micro-prewash-view" id="micro-prewash-mbm" aria-controls="micro-prewash-mbm-panel" value="mbm">
+                <label for="micro-prewash-mbm" id="micro-prewash-mbm-label">TL Pipeline Pre-wash PIC MBM</label>
+                <input class="sr-only" type="radio" name="micro-prewash-view" id="micro-prewash-ksbk" aria-controls="micro-prewash-ksbk-panel" value="ksbk">
+                <label for="micro-prewash-ksbk" id="micro-prewash-ksbk-label">Realisasi KSBK</label>
+                <div class="micro-prewash-original-panel" id="micro-prewash-original-panel" role="region" aria-labelledby="micro-prewash-original-label">
             <div class="micro-ops-section__head">
                 <div>
                     <span class="micro-ops-section__number">09</span>
@@ -1427,6 +1542,54 @@
             @else
                 <div class="micro-pipeline-empty" role="status"><i class="fas fa-project-diagram" aria-hidden="true"></i><div><strong>Pipeline Mikro belum siap ditampilkan</strong><span>{{ data_get($pipeline, 'error', 'Jalankan sinkronisasi sumber Pipeline Mikro.') }}</span></div></div>
             @endif
+                    @include('dashboard.partials.pipeline-prewash', [
+                        'pipelinePrewash' => data_get($microPerformance, 'pipeline_prewash', []),
+                        'microReportContext' => $microReportContext,
+                        'prewashPrefix' => 'pipeline-prewash',
+                        'prewashTitle' => 'Pipeline Prewash',
+                        'prewashLabel' => 'Pipeline Pre-washed SLIK Hijau',
+                        'prewashViews' => [
+                            'bo' => ['label' => 'BO', 'description' => 'Branch Office', 'identity_columns' => 3],
+                            'mbm' => ['label' => 'MBM', 'description' => 'Manajer Bisnis Mikro', 'identity_columns' => 5],
+                            'unit' => ['label' => 'Unit', 'description' => 'Unit Kerja', 'identity_columns' => 3],
+                        ],
+                    ])
+                </div>
+                <div class="micro-prewash-boh-panel" id="micro-prewash-boh-panel" role="region" aria-labelledby="micro-prewash-boh-label">
+                    @include('dashboard.partials.pipeline-prewash', [
+                        'pipelinePrewash' => data_get($microPerformance, 'pipeline_prewash_boh', []),
+                        'microReportContext' => $microReportContext,
+                        'prewashPrefix' => 'pipeline-prewash-boh',
+                        'prewashTitle' => 'Monitoring Tindak Lanjut Pipeline Prewash PIC BOH',
+                        'prewashLabel' => 'Pipeline Pre-washed PIC BOH',
+                        'prewashViews' => [
+                            'bo' => ['label' => 'BO', 'description' => 'Branch Office', 'identity_columns' => 3],
+                            'unit' => ['label' => 'Unit', 'description' => 'Unit Kerja', 'identity_columns' => 3],
+                        ],
+                    ])
+                </div>
+                <div class="micro-prewash-mbm-panel" id="micro-prewash-mbm-panel" role="region" aria-labelledby="micro-prewash-mbm-label">
+                    @include('dashboard.partials.pipeline-prewash', [
+                        'pipelinePrewash' => data_get($microPerformance, 'monitoring_tl_pipeline_mbm', []),
+                        'microReportContext' => $microReportContext,
+                        'prewashPrefix' => 'pipeline-prewash-mbm',
+                        'prewashTitle' => 'Monitoring Tindak Lanjut Pipeline Prewash PIC MBM',
+                        'prewashLabel' => 'Pipeline Pre-washed PIC MBM',
+                        'prewashVariant' => 'mbm',
+                        'prewashViews' => [
+                            'bo' => ['label' => 'BO', 'description' => 'Branch Office', 'identity_columns' => 3],
+                            'mbm' => ['label' => 'MBM', 'description' => 'Manajer Bisnis Mikro', 'identity_columns' => 5],
+                            'unit' => ['label' => 'Unit', 'description' => 'Unit Kerja', 'identity_columns' => 6, 'show_mbm' => true, 'show_unit_code' => true],
+                        ],
+                    ])
+                </div>
+                <div class="micro-prewash-ksbk-panel" id="micro-prewash-ksbk-panel" role="region" aria-labelledby="micro-prewash-ksbk-label">
+                    @include('dashboard.partials.monitoring-ksbk', [
+                        'monitoringKsbk' => data_get($microPerformance, 'monitoring_realisasi_ksbk', []),
+                        'microReportContext' => $microReportContext,
+                    ])
+                </div>
+            </fieldset>
         </section>
 
         <section class="micro-ops-section micro-ops-section--billing" aria-labelledby="micro-billing-title" data-micro-billing-section>
@@ -1839,6 +2002,84 @@
         .micro-rm-kur-empty strong,
         .micro-rm-kur-empty span { display: block; }
         .micro-rm-kur-empty span { margin-top: 0.15rem; font-size: 0.7rem; }
+        .micro-rm-kur-productivity--refined { border-color: #d5e3f0; border-radius: 16px; box-shadow: none; color: #173f66; }
+        .micro-rm-kur-overview { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1.15rem 1.25rem; border-bottom: 1px solid #e0e9f2; }
+        .micro-rm-kur-overview>div { min-width: 0; }
+        .micro-rm-kur-overview h4 { margin: 0; color: #084b9e; font-size: clamp(1rem, 1.5vw, 1.15rem); font-weight: 800; line-height: 1.4; }
+        .micro-rm-kur-overview p { margin: .3rem 0 0; color: #5b738c; font-size: .73rem; line-height: 1.5; }
+        .micro-rm-kur-context { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: .4rem; flex-shrink: 0; max-width: 360px; }
+        .micro-rm-kur-context span { display: inline-flex; align-items: center; gap: .4rem; min-height: 30px; padding: .3rem .6rem; border: 1px solid #d5e4f4; border-radius: 6px; background: #f5f9fe; color: #24517c; font-size: .68rem; line-height: 1.4; font-weight: 700; }
+        .micro-rm-kur-context .micro-rm-kur-context__pending { background: #fffbef; border-color: #efdfb2; color: #805709; }
+        .micro-rm-kur-metrics { display: grid; grid-template-columns: 1.4fr 1fr 1fr; margin: 0; padding: 1.2rem 0; background: #f4f8fe; border-bottom: 1px solid #e0e9f2; }
+        .micro-rm-kur-metrics>div { min-width: 0; padding: 0 1.25rem; border-left: 1px solid #d9e5f1; }
+        .micro-rm-kur-metrics>div:first-child { border-left: 0; }
+        .micro-rm-kur-metrics dt { margin: 0 0 .4rem; color: #526c86; font-size: .73rem; line-height: 1.4; font-weight: 650; }
+        .micro-rm-kur-metrics dd { display: flex; align-items: baseline; flex-wrap: wrap; gap: .5rem; margin: 0; color: #123e73; font-size: clamp(1.25rem, 2.2vw, 1.75rem); line-height: 1.25; font-weight: 800; font-variant-numeric: tabular-nums; }
+        .micro-rm-kur-metrics dd small { color: #5b738c; font-size: .68rem; font-weight: 500; line-height: 1.5; }
+        .micro-rm-kur-metrics__primary dd { color: #0754bd; }
+        .micro-rm-kur-distribution { padding: 1.15rem 1.25rem 0; min-width: 0; }
+        .micro-rm-kur-distribution__head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .35rem 1rem; margin-bottom: .8rem; }
+        .micro-rm-kur-distribution__head h5 { margin: 0; color: #173f66; font-size: .9rem; line-height: 1.4; font-weight: 800; }
+        .micro-rm-kur-distribution__head>span { color: #627c96; font-size: .68rem; line-height: 1.5; }
+        .micro-rm-kur-scroll { position: relative; min-width: 0; max-width: 100%; overflow: auto; overscroll-behavior-x: contain; scrollbar-width: thin; }
+        .micro-rm-kur-scroll:focus-visible, .micro-rm-kur-explanation>summary:focus-visible, .micro-rm-kur-roster>summary:focus-visible { outline: 3px solid #087fc8; outline-offset: -3px; }
+        .micro-rm-kur-matrix, .micro-rm-kur-roster-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: .75rem; line-height: 1.45; font-variant-numeric: tabular-nums; }
+        .micro-rm-kur-productivity--refined .micro-rm-kur-matrix { min-width: 800px; table-layout: fixed; border: 1px solid #d9e6f2; border-radius: 8px; overflow: hidden; }
+        .micro-rm-kur-matrix th, .micro-rm-kur-matrix td { padding: .65rem .65rem; border-bottom: 1px solid #e3ebf4; text-align: center; vertical-align: middle; }
+        .micro-rm-kur-matrix thead th { color: #fff; background: #0754bd; font-size: .7rem; line-height: 1.45; font-weight: 750; }
+        .micro-rm-kur-matrix .micro-rm-kur-matrix__branch { width: 18%; text-align: left; overflow-wrap: anywhere; }
+        .micro-rm-kur-matrix .micro-rm-kur-matrix__unit { width: 20%; text-align: left; overflow-wrap: anywhere; }
+        .micro-rm-kur-matrix thead th:nth-child(3) { width: 6%; }
+        .micro-rm-kur-matrix tbody th { color: #173f66; font-weight: 750; }
+        .micro-rm-kur-matrix tbody td.micro-rm-kur-matrix__unit { color: #58718a; font-size: .69rem; }
+        .micro-rm-kur-matrix tbody tr:nth-child(even) { background: #f8fbff; }
+        .micro-rm-kur-matrix__headcount { color: #244d76; font-weight: 800; }
+        .micro-rm-kur-subline { display: block; margin-top: .16rem; color: #6a829b; font-size: .65rem; line-height: 1.4; font-weight: 500; }
+        .micro-rm-kur-matrix thead .micro-rm-kur-subline, .micro-rm-kur-matrix tfoot .micro-rm-kur-subline { color: #d3e7ff; }
+        .micro-rm-kur-score { display: inline-flex; min-width: 58px; align-items: baseline; justify-content: center; gap: .45rem; padding: .3rem .4rem; border-radius: 5px; white-space: nowrap; }
+        .micro-rm-kur-score strong { color: #526981; font-size: .88rem; font-weight: 750; }
+        .micro-rm-kur-score small { color: #5c7087; font-size: .7rem; }
+        .micro-rm-kur-score--active { background: #e6f1ff; }
+        .micro-rm-kur-score--active strong { color: #0754bd; }
+        .micro-rm-kur-score--active small { color: #365f8c; }
+        .micro-rm-kur-matrix tfoot th, .micro-rm-kur-matrix tfoot td { background: #eaf3ff; color: #113f76; border-top: 1px solid #accbee; border-bottom: 0; font-weight: 800; }
+        .micro-rm-kur-matrix tfoot th { text-align: left; }
+        .micro-rm-kur-matrix tfoot .micro-rm-kur-score strong { color: #113f76; }
+        .micro-rm-kur-matrix tfoot .micro-rm-kur-score small { color: #476b93; }
+        .micro-rm-kur-coverage { display: flex; align-items: baseline; gap: .45rem; margin: .75rem 0 0; color: #68768b; font-size: .7rem; line-height: 1.6; }
+        .micro-rm-kur-coverage i { color: #0754bd; }
+        .micro-rm-kur-coverage strong { color: #365778; font-weight: 700; }
+        .micro-rm-kur-unavailable { margin: 0; padding: 1rem; color: #526c86; background: #f5f9fe; border-left: 3px solid #9abfe5; font-size: .75rem; line-height: 1.7; }
+        .micro-rm-kur-explanation { margin-top: .55rem; }
+        .micro-rm-kur-explanation>summary, .micro-rm-kur-roster>summary { display: flex; align-items: center; gap: .55rem; min-height: 44px; cursor: pointer; list-style: none; touch-action: manipulation; }
+        .micro-rm-kur-explanation>summary::-webkit-details-marker, .micro-rm-kur-roster>summary::-webkit-details-marker { display: none; }
+        .micro-rm-kur-explanation>summary::before, .micro-rm-kur-roster>summary::before { content: '+'; font-weight: 700; font-size: 1rem; line-height: 1; }
+        .micro-rm-kur-explanation[open]>summary::before, .micro-rm-kur-roster[open]>summary::before { content: '−'; }
+        .micro-rm-kur-explanation>summary { color: #426b96; font-size: .7rem; }
+        .micro-rm-kur-explanation__body { padding: .1rem 0 1rem; color: #61768c; font-size: .7rem; line-height: 1.65; }
+        .micro-rm-kur-explanation__body p { max-width: 95ch; margin: .65rem 0 0; }
+        .micro-rm-kur-tier-guide { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .5rem; margin: .25rem 0 .8rem; }
+        .micro-rm-kur-tier-guide>div { min-width: 0; padding: .55rem .65rem; border-left: 2px solid #b9d5f1; background: #f6f9fd; }
+        .micro-rm-kur-tier-guide dt { color: #365c84; font-weight: 750; }
+        .micro-rm-kur-tier-guide dd { margin: .2rem 0 0; color: #61768c; overflow-wrap: anywhere; }
+        .micro-rm-kur-roster { border-top: 1px solid #e0e9f2; background: #fff; }
+        .micro-rm-kur-roster>summary { justify-content: flex-start; min-height: 52px; padding: .8rem 1.25rem; color: #1c4f85; font-size: .78rem; font-weight: 750; }
+        .micro-rm-kur-roster>summary:hover, .micro-rm-kur-explanation>summary:hover { color: #0754bd; }
+        .micro-rm-kur-roster__count { margin-left: auto; color: #627c96; font-size: .68rem; font-weight: 500; }
+        .micro-rm-kur-roster[open]>summary { background: #f4f8fe; border-bottom: 1px solid #dce8f4; }
+        .micro-rm-kur-roster-table { min-width: 880px; }
+        .micro-rm-kur-roster-table th, .micro-rm-kur-roster-table td { padding: .7rem .8rem; border-bottom: 1px solid #e5edf5; vertical-align: middle; text-align: right; }
+        .micro-rm-kur-roster-table thead th { background: #edf5ff; color: #365c84; font-size: .68rem; font-weight: 750; }
+        .micro-rm-kur-roster-table tbody th, .micro-rm-kur-roster-table tbody td:nth-child(3), .micro-rm-kur-roster-table tbody td:nth-child(4), .micro-rm-kur-roster-table thead th:nth-child(2), .micro-rm-kur-roster-table thead th:nth-child(3), .micro-rm-kur-roster-table thead th:nth-child(4) { text-align: left; }
+        .micro-rm-kur-roster-table tbody th { min-width: 170px; color: #244d76; font-weight: 650; }
+        .micro-rm-kur-roster-table tbody tr:nth-child(even) { background: #f8fbff; }
+        .micro-rm-kur-roster-table__amount { color: #0754bd; font-weight: 750; }
+        .micro-rm-kur-roster-table tfoot th, .micro-rm-kur-roster-table tfoot td { background: #eaf3ff; color: #113f76; border-top: 1px solid #accbee; border-bottom: 0; font-weight: 800; }
+        .micro-rm-kur-roster-table tfoot th { text-align: left; }
+        .micro-ops[data-micro-performance-ready] .micro-rm-kur-productivity--refined :is(.micro-rm-kur-matrix,.micro-rm-kur-roster-table) { width: 100%; margin-inline: auto; }
+        .micro-ops[data-micro-performance-ready] .micro-rm-kur-productivity--refined :is(.micro-rm-kur-matrix,.micro-rm-kur-roster-table) :is(th,td) { text-align: center; }
+        @media(max-width:760px){.micro-rm-kur-overview{align-items:flex-start;flex-direction:column;gap:.7rem;padding:1rem}.micro-rm-kur-context{justify-content:flex-start;max-width:none}.micro-rm-kur-metrics{grid-template-columns:repeat(2,minmax(0,1fr));padding:0}.micro-rm-kur-metrics>div{padding:.9rem 1rem}.micro-rm-kur-metrics>div:first-child{grid-column:1/-1;border-bottom:1px solid #d9e5f1}.micro-rm-kur-metrics>div:nth-child(2){border-left:0}.micro-rm-kur-distribution{padding:1rem 1rem 0}.micro-rm-kur-tier-guide{grid-template-columns:repeat(2,minmax(0,1fr))}.micro-rm-kur-roster>summary{padding:.8rem 1rem}}
+        @media(prefers-reduced-motion:reduce){.micro-rm-kur-productivity--refined *{scroll-behavior:auto}}
         .micro-ops-section--billing {
             --billing-nusantara: var(--micro-nusantara, #0754bd);
             --billing-nusantara-dark: #043f8c;

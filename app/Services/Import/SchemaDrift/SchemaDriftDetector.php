@@ -85,6 +85,11 @@ class SchemaDriftDetector
         $previousDocument = (array) ($options['previous_document'] ?? []);
         $sourceHeaders = array_values($sourceHeaders);
         $profiles = $this->profiler->profileColumns($sourceHeaders, $sampleRows);
+        foreach ((array) ($options['profile_values'] ?? []) as $index => $values) {
+            if (isset($sourceHeaders[$index])) {
+                $profiles[$index] = $this->profiler->profile($values, (string) $sourceHeaders[$index]);
+            }
+        }
         $resolution = $this->resolveColumns($sourceHeaders, $canonicalHeaders, $ignored, $aliases, $meta, $tableColumnsLower);
 
         $columns = [];
@@ -149,22 +154,8 @@ class SchemaDriftDetector
             $proposedType = $this->proposeSqlType($profile);
             $isRejected = isset($rejected[$proposedName]);
 
-            // A header the report has always carried (or the very first document
-            // of a table, which defines the baseline) is an existing column the
-            // import never stored — not a sudden addition worth a decision.
-            if (!$isRejected && (!$baselineEstablished || isset($knownHeaders[$canonical]))) {
-                $unmappedColumns[] = [
-                    'index' => $index,
-                    'header' => $label,
-                    'proposed_column' => $proposedName,
-                    'proposed_type' => $proposedType,
-                    'kind' => $profile['kind'],
-                    'label' => $profile['label'],
-                    'samples' => array_slice((array) $profile['samples'], 0, 3),
-                ];
-                $columns[] = $this->columnEntry($index, $label, $canonical, null, 'unmapped', $profile, []);
-                continue;
-            }
+            // Observation is not consent to discard data. Even an empty or
+            // historically observed header needs an explicit add/map/skip.
 
             $newColumns[] = [
                 'index' => $index,
@@ -215,7 +206,48 @@ class SchemaDriftDetector
 
         $pendingNew = array_values(array_filter($newColumns, static fn (array $column): bool => $column['decision'] === 'pending'));
         $pendingAdjustments = array_values(array_filter($adjustments, static fn (array $adjustment): bool => $adjustment['decision'] === 'pending'));
-        $hasPendingDecision = $pendingNew !== [] || $pendingAdjustments !== [];
+        $reviews = [];
+        foreach ($columns as $column) {
+            if ($column['state'] === 'duplicate') {
+                $finding = $column['findings'][0];
+                $reviews[] = $this->reviewIssue('duplicate:'.$column['index'], $finding['code'], $finding['title'], $finding['detail'], true);
+            }
+            if (trim((string) $column['header']) === '' && (int) ($options['structural_scan']['column_non_empty'][$column['index']] ?? 0) > 0) {
+                $reviews[] = $this->reviewIssue('unnamed:'.$column['index'], 'unnamed_header', 'Kolom berisi tanpa nama header', 'Isi kolom nomor '.($column['index'] + 1).' belum mempunyai header. Perbaiki header sumber agar nilainya dapat dipetakan.', true);
+            }
+        }
+        foreach ($adaptations as $finding) {
+            // Capacity changes already have their own explicit widening decision.
+            if (isset($finding['adjustment'])) {
+                continue;
+            }
+            $code = (string) ($finding['code'] ?? '');
+            if ($code !== 'format_changed' && $code !== 'column_dropped'
+                && !in_array($finding['severity'], [self::SEVERITY_WARNING, self::SEVERITY_DANGER], true)) {
+                continue;
+            }
+            // A proposed rename already presents the missing destination in
+            // the add/map decision; it must not need a second acknowledgement.
+            if ($code === 'column_dropped' && in_array($finding['column'], $mappedTargets, true)) {
+                continue;
+            }
+            $blocking = in_array($code, ['not_date', 'not_numeric', 'unparsed_dates', 'unparsed_numbers'], true);
+            $reviews[] = $this->reviewIssue($code.':'.($finding['column'] ?? ''), $code, $finding['title'], $finding['detail'], $blocking);
+        }
+        $scan = (array) ($options['structural_scan'] ?? []);
+        if ((int) ($scan['misaligned_rows'] ?? 0) > 0) {
+            $examples = implode(', ', array_map(static fn ($row) => '#'.$row['row'].' ('.$row['actual'].'/'.$row['expected'].' kolom)', $scan['examples'] ?? []));
+            $reviews[] = $this->reviewIssue('row_width', 'row_width', 'Struktur baris berbeda dari header', $scan['misaligned_rows'].' baris mempunyai jumlah kolom berbeda: '.$examples.'. Perbaiki sumber; baris tidak akan dipotong atau dilewati diam-diam.', true);
+        }
+        $approved = array_fill_keys((array) ($options['approved_review_keys'] ?? []), true);
+        foreach ($reviews as &$review) {
+            if (!$review['blocking'] && isset($approved[$review['key']])) {
+                $review['decision'] = 'continued';
+            }
+        }
+        unset($review);
+        $pendingReviews = array_values(array_filter($reviews, static fn ($review) => $review['decision'] === 'pending'));
+        $hasPendingDecision = $pendingNew !== [] || $pendingAdjustments !== [] || $pendingReviews !== [];
         $severities = array_column($adaptations, 'severity');
         $status = match (true) {
             $hasPendingDecision => self::STATUS_DRIFT,
@@ -252,10 +284,16 @@ class SchemaDriftDetector
             'missing_columns' => $missing,
             'adaptations' => $adaptations,
             'date_orders' => $dateOrders,
-            'fingerprint' => $this->fingerprint($table, $pendingNew, $formatChanges, $pendingAdjustments),
+            'review_issues' => $reviews,
+            'fingerprint' => hash('sha256', $this->fingerprint($table, $pendingNew, $formatChanges, $pendingAdjustments).'|'.json_encode(array_column($pendingReviews, 'key'))),
             'has_pending_decision' => $hasPendingDecision,
-            'has_blocking_issue' => in_array(self::SEVERITY_DANGER, $severities, true),
+            'has_blocking_issue' => in_array(self::SEVERITY_DANGER, $severities, true) || array_filter($pendingReviews, static fn ($review) => $review['blocking']) !== [],
         ];
+    }
+
+    private function reviewIssue(string $key, string $code, string $title, string $detail, bool $blocking): array
+    {
+        return ['key' => $key, 'code' => $code, 'title' => $title, 'detail' => $detail, 'severity' => $blocking ? self::SEVERITY_DANGER : self::SEVERITY_WARNING, 'blocking' => $blocking, 'decision' => 'pending'];
     }
 
     /**
@@ -276,22 +314,6 @@ class SchemaDriftDetector
         }
 
         $dropped = array_diff_key($previousColumns, $matchedDb);
-        $kept = count($previousColumns) - count($dropped);
-
-        // A column that only ever arrived empty loses nothing when it disappears.
-        $dropped = array_filter($dropped, static function ($row): bool {
-            $signature = strtolower(trim((string) ($row->signature ?? '')));
-
-            return $signature !== '' && $signature !== ColumnValueProfiler::KIND_EMPTY;
-        });
-
-        // A different layout variant of the same report (e.g. the Excel and the
-        // CSV export) shares few columns with the previous document; comparing
-        // them column by column would only produce noise.
-        if ($dropped === [] || $kept < count($previousColumns) * 0.6) {
-            return [];
-        }
-
         return $dropped;
     }
 
@@ -798,10 +820,8 @@ class SchemaDriftDetector
                 : 'Struktur cocok dengan tabel tujuan.',
         };
 
-        if (!$baselineEstablished) {
-            $headline .= ' Dokumen ini menjadi acuan struktur; kolom yang muncul di import berikutnya akan diberitahukan.';
-        } elseif ($unmappedCount > 0 && $status !== self::STATUS_DRIFT) {
-            $headline .= " {$unmappedCount} kolom sumber memang tidak disimpan sejak awal.";
+        if ($status === self::STATUS_DRIFT && $decisions === []) {
+            $headline = 'Perubahan isi atau struktur baris perlu diperiksa sebelum import.';
         }
 
         return $headline;

@@ -134,6 +134,7 @@ class DashboardPinjamanChartPeriodikService
         $topPattern = $pieLabels[0] ?? null;
 
         $selectedUnitCount = count($selectedUnitsFiltered);
+        $quality = $this->buildQualityPatterns($resolvedPeriod, $branchScope, $selectedUnitsFiltered, $pieCounts);
 
         return [
             'selected_period' => $resolvedPeriod,
@@ -152,6 +153,8 @@ class DashboardPinjamanChartPeriodikService
                 'labels' => $pieLabels,
                 'values' => $pieValues,
             ],
+            'quality' => $quality,
+            'composition' => $this->buildCompositionGroups($pieCounts, $quality),
             'summary' => [
                 'total_rekening' => array_sum($pieValues),
                 'pattern_count' => count($pieLabels),
@@ -296,6 +299,111 @@ class DashboardPinjamanChartPeriodikService
             ->get();
     }
 
+    private function buildQualityPatterns(string $period, array $branches, array $units, array $patternCounts): array
+    {
+        $patterns = array_keys($patternCounts);
+        $result = $this->emptyQualityPatterns($patterns);
+        if (! Schema::hasTable(self::RAW_TABLE) || ! Schema::hasColumn(self::RAW_TABLE, 'kolek')) {
+            return $result;
+        }
+
+        // Aggregate one indexed Daily Loan period first, avoiding hundreds of thousands of PK lookups.
+        $query = DB::table(self::RAW_TABLE.' as d')->where('d.periode', $period)->whereIn('d.cabang1', $branches)
+            ->whereNotNull('d.nomor_rekening1')->where('d.nomor_rekening1', '<>', '');
+        $this->applyUnitFilter($query, $units, self::RAW_TABLE);
+        $rows = $query->selectRaw('d.kolek, d.ln_type, COUNT(*) as total_count')->groupBy('d.kolek', 'd.ln_type')->get();
+
+        // Use the small lookup after aggregation, then reconcile to the active snapshot below.
+        if (! Schema::hasTable(self::LOOKUP_TABLE)) {
+            return $result;
+        }
+        $mappingRows = DB::table(self::LOOKUP_TABLE)->selectRaw('loan_type as ln_type, pola_pembayaran')->get();
+        $byType = [];
+        foreach ($mappingRows as $row) {
+            $type = strtoupper(trim((string) $row->ln_type));
+            $pattern = $this->normalizePatternLabel($row->pola_pembayaran);
+            if (isset($byType[$type]) && $byType[$type] !== $pattern) {
+                $result['reason'] = 'Pemetaan pola pembayaran pada periode ini belum konsisten. Data kolektibilitas belum dapat ditampilkan.';
+
+                return $result;
+            }
+            $byType[$type] = $pattern;
+        }
+        $observed = array_fill_keys($patterns, 0);
+        foreach ($rows as $row) {
+            $pattern = $byType[strtoupper(trim((string) $row->ln_type))] ?? 'TIDAK TERPETAKAN';
+            $count = (int) $row->total_count;
+            $observed[$pattern] = ($observed[$pattern] ?? 0) + $count;
+            $value = trim((string) $row->kolek);
+            $quality = preg_match('/^[1-5](?:\.0+)?$/D', $value) ? (int) $value : 0;
+            if ($quality === 0) {
+                $result['unclassified'] += $count;
+
+                continue;
+            }
+            $index = array_search($pattern, $patterns, true);
+            if ($index !== false) {
+                $result['groups'][$quality - 1]['values'][$index] += $count;
+            }
+            $result['groups'][$quality - 1]['total'] += $count;
+            $result['classified'] += $count;
+        }
+        // Never present a partial or stale source as a complete breakdown of the active composition.
+        ksort($observed);
+        ksort($patternCounts);
+        if ($observed !== $patternCounts) {
+            $result = $this->emptyQualityPatterns($patterns);
+            $result['reason'] = 'Data kolektibilitas Daily Loan belum sinkron dengan komposisi periode aktif. Pilih periode lain atau muat ulang setelah data diperbarui.';
+
+            return $result;
+        }
+        $result['available'] = true;
+        $result['reason'] = null;
+
+        return $result;
+    }
+
+    private function buildCompositionGroups(array $patternCounts, array $quality): array
+    {
+        $labels = array_keys($patternCounts);
+        $groups = [[
+            'key' => 'total', 'label' => 'Total Pinjaman', 'basis' => 'Seluruh kolektibilitas',
+            'available' => true, 'labels' => $labels, 'values' => array_values($patternCounts),
+            'total' => array_sum($patternCounts), 'reason' => null,
+        ]];
+        foreach (['sml' => ['SML', 'Kolek 2', [2]], 'npl' => ['NPL', 'Kolek 3–5', [3, 4, 5]]] as $key => [$label, $basis, $buckets]) {
+            $values = array_fill(0, count($labels), 0);
+            foreach ($quality['groups'] as $group) {
+                if (in_array($group['kolek'], $buckets, true)) {
+                    foreach ($group['values'] as $index => $count) {
+                        $values[$index] += $count;
+                    }
+                }
+            }
+            $available = (bool) $quality['available'];
+            $groups[] = [
+                'key' => $key, 'label' => $label, 'basis' => $basis, 'available' => $available,
+                'labels' => $labels, 'values' => $available ? $values : [],
+                'total' => $available ? array_sum($values) : null, 'reason' => $quality['reason'],
+            ];
+        }
+
+        return $groups;
+    }
+
+    private function emptyQualityPatterns(array $patterns = []): array
+    {
+        return [
+            'available' => false,
+            'reason' => 'Data kolektibilitas Daily Loan pada periode ini belum tersedia.',
+            'classified' => 0,
+            'unclassified' => 0,
+            'groups' => collect([1 => 'Lancar', 2 => 'SML', 3 => 'Kurang Lancar', 4 => 'Diragukan', 5 => 'Macet'])
+                ->map(fn ($label, $number) => ['kolek' => $number, 'label' => $label, 'total' => 0, 'labels' => $patterns, 'values' => array_fill(0, count($patterns), 0)])
+                ->values()->all(),
+        ];
+    }
+
     private function applyUnitFilter($query, array $selectedUnits, ?string $sourceTable = null): void
     {
         if ($selectedUnits === []) {
@@ -366,6 +474,8 @@ class DashboardPinjamanChartPeriodikService
                 'labels' => [],
                 'values' => [],
             ],
+            'quality' => $this->emptyQualityPatterns(),
+            'composition' => $this->buildCompositionGroups([], $this->emptyQualityPatterns()),
             'summary' => [
                 'total_rekening' => 0,
                 'pattern_count' => 0,

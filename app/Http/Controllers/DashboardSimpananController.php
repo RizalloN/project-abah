@@ -2262,9 +2262,27 @@ class DashboardSimpananController extends Controller
         $this->appendLandingSection($microPerformance, 'pipeline', fn (): array =>
             app(LandingMicroPipelineService::class)->payload($branchScope)
         );
+        $this->appendLandingSection($microPerformance, 'pipeline_prewash_boh', fn (): array =>
+            app(\App\Support\LandingMicroPrewashBohService::class)->payload($branchScope)
+        );
+        $this->appendLandingSection($microPerformance, 'monitoring_tl_pipeline_mbm', fn (): array =>
+            app(\App\Support\LandingMicroPrewashMbmService::class)->payload($branchScope)
+        );
+        $this->appendLandingSection($microPerformance, 'monitoring_realisasi_ksbk', fn (): array =>
+            app(\App\Support\LandingMicroKsbkService::class)->payload($branchScope)
+        );
+        $this->appendLandingSection($microPerformance, 'pipeline_prewash', fn (): array =>
+            app(\App\Support\PipelinePrewashService::class)->payload($request->query('periode'), $branchScope, $request->boolean('refresh'))
+        );
         $this->appendLandingSection($microPerformance, 'hot_prospects_rm_kur', fn (): array =>
             app(LandingMicroPipelineService::class)->hotProspectsPayload($branchScope, $request->boolean('refresh'))
         );
+        $branchKey = $branchScope['key'] ?? UserBranchScope::AREA_SCOPE;
+        $microPerformance['meta']['branch_key'] = $branchKey;
+        foreach (['pipeline_prewash' => 'prewash', 'pipeline_prewash_boh' => 'boh', 'monitoring_tl_pipeline_mbm' => 'mbm', 'monitoring_realisasi_ksbk' => 'ksbk'] as $section => $sourceKey) {
+            $microPerformance[$section]['source_key'] = $sourceKey;
+            $microPerformance[$section]['view_context'] = ['branch_key' => $branchKey, 'periode' => $request->query('periode', data_get($microPerformance, 'meta.period'))];
+        }
 
         return view('dashboard.partials.micro-performance', compact('microPerformance'));
     }
@@ -2283,6 +2301,28 @@ class DashboardSimpananController extends Controller
             $payload[$section] = ['available' => false, 'refresh_pending' => true];
             $payload['meta']['refresh_pending'] = true;
         }
+    }
+
+    public function microReportNominatives(Request $request): \Illuminate\Http\JsonResponse
+    {
+        if (($lockedScope = UserBranchScope::current()) !== null) {
+            $request->merge(['cabang' => $lockedScope['key']]);
+        }
+        $filters = $request->validate([
+            'report' => 'required|in:prewash,boh,mbm,ksbk',
+            'level' => 'sometimes|in:bo,mbm,unit',
+            'metric' => 'sometimes|in:all,visited,unvisited,realized,unrealized,ksbk,non_ksbk,small,large',
+            'cabang' => 'sometimes|in:area6,madiun,magetan,ngawi,ponorogo',
+            'periode' => 'required|date_format:Y-m-d',
+            'branch' => 'nullable|string|max:100',
+            'unit' => 'nullable|string|max:64',
+            'mbm' => 'nullable|string|max:255',
+            'page' => 'sometimes|integer|min:1|max:100000',
+        ]);
+        $this->configureLandingBranchScope($request);
+        $this->releaseSessionLockIfNeeded();
+
+        return response()->json(app(\App\Support\MicroReportNominativeService::class)->page($filters, $this->effectiveDashboardBranchScope()));
     }
 
     public function pnMismatchNominatives(Request $request): \Illuminate\Http\JsonResponse

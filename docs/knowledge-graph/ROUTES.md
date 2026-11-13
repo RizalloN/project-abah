@@ -2,8 +2,8 @@
 
 | Methods | URI | Name | Domain | Handler |
 | --- | --- | --- | --- | --- |
-| POST | `confirm-password` | `generated::4e4aCalWuqOPhnk6` | access-control | `App\Http\Controllers\Auth\ConfirmablePasswordController::store` |
-| POST | `login` | `generated::lFlSsxvETuEHeQtY` | access-control | `App\Http\Controllers\Auth\AuthenticatedSessionController::store` |
+| POST | `confirm-password` | `generated::Cux7jEvVLJRuBncu` | access-control | `App\Http\Controllers\Auth\ConfirmablePasswordController::store` |
+| POST | `login` | `generated::VXjthWVSuC5qzWjX` | access-control | `App\Http\Controllers\Auth\AuthenticatedSessionController::store` |
 | GET | `login` | `login` | access-control | `App\Http\Controllers\Auth\AuthenticatedSessionController::create` |
 | POST | `logout` | `logout` | access-control | `App\Http\Controllers\Auth\AuthenticatedSessionController::destroy` |
 | GET | `confirm-password` | `password.confirm` | access-control | `App\Http\Controllers\Auth\ConfirmablePasswordController::show` |
@@ -53,7 +53,7 @@
 | POST | `file-management/delete` | `file-management.destroy` | core | `App\Http\Controllers\Admin\FileManagementController::destroy` |
 | GET | `file-management/download` | `file-management.download` | core | `App\Http\Controllers\Admin\FileManagementDownloadController::__invoke` |
 | GET | `file-management` | `file-management.index` | core | `App\Http\Controllers\Admin\FileManagementController::index` |
-| GET | `up` | `generated::ifiQVzIvVqWTmG8o` | core | Closure |
+| GET | `up` | `generated::oChREIryeoNjIdoO` | core | Closure |
 | GET | `/` | `home` | core | Closure |
 | GET | `link-management` | `link-management.index` | core | `App\Http\Controllers\Admin\LinkManagementController::index` |
 | POST | `link-management` | `link-management.update` | core | `App\Http\Controllers\Admin\LinkManagementController::update` |
@@ -103,6 +103,7 @@
 | GET | `report/dashboard-pinjaman/realisasi-6-bulan-menunggak/filters` | `report.dashboard-pinjaman.realisasi-6-bulan-menunggak.filters` | dashboard-pinjaman | `App\Http\Controllers\DashboardPinjamanReportController::sixMonthArrearsFilters` |
 | GET | `report/dashboard-pinjaman/run-off` | `report.dashboard-pinjaman.run-off` | dashboard-pinjaman | `App\Http\Controllers\Report\RunOffReportController::index` |
 | GET | `report/dashboard-pinjaman/summary` | `report.dashboard-pinjaman.summary` | dashboard-pinjaman | `App\Http\Controllers\DashboardPinjamanReportController::summaryIndex` |
+| GET | `report/dashboard-pinjaman/suspect-reaktivasi` | `report.dashboard-pinjaman.suspect-reaktivasi` | dashboard-pinjaman | `App\Http\Controllers\Report\SuspectReaktivasiReportController::index` |
 | GET | `report/dashboard-pinjaman/tunggakan-kecil` | `report.dashboard-pinjaman.tunggakan-kecil` | dashboard-pinjaman | `App\Http\Controllers\DashboardPinjamanReportController::smallArrearsIndex` |
 | GET | `report/dashboard-pinjaman/tunggakan-kecil/data` | `report.dashboard-pinjaman.tunggakan-kecil.data` | dashboard-pinjaman | `App\Http\Controllers\DashboardPinjamanReportController::smallArrearsData` |
 | GET | `report/dashboard-pinjaman/tunggakan-kecil/export` | `report.dashboard-pinjaman.tunggakan-kecil.export` | dashboard-pinjaman | `App\Http\Controllers\DashboardPinjamanReportController::smallArrearsExport` |
@@ -118,6 +119,7 @@
 | GET | `dashboard/micro-one-time-nominatives` | `dashboard.micro-one-time-nominatives` | dashboard-simpanan | `App\Http\Controllers\DashboardSimpananController::microOneTimeNominatives` |
 | GET | `dashboard/micro-performance` | `dashboard.micro-performance` | dashboard-simpanan | `App\Http\Controllers\DashboardSimpananController::microPerformance` |
 | GET | `dashboard/micro-pipeline` | `dashboard.micro-pipeline` | dashboard-simpanan | `App\Http\Controllers\DashboardSimpananController::microPipeline` |
+| GET | `dashboard/micro-report-nominatives` | `dashboard.micro-report-nominatives` | dashboard-simpanan | `App\Http\Controllers\DashboardSimpananController::microReportNominatives` |
 | GET | `dashboard/pn-mismatch-nominatives` | `dashboard.pn-mismatch-nominatives` | dashboard-simpanan | `App\Http\Controllers\DashboardSimpananController::pnMismatchNominatives` |
 | GET | `dashboard/presentation` | `dashboard.presentation` | dashboard-simpanan | `App\Http\Controllers\DashboardSimpananController::presentation` |
 | GET | `dashboard/presentation-data` | `dashboard.presentation-data` | dashboard-simpanan | `App\Http\Controllers\DashboardSimpananController::presentationData` |

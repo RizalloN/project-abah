@@ -5,6 +5,7 @@ namespace App\Services\Import\SchemaDrift;
 use App\Services\Import\ImportStrategyFactory;
 use App\Services\Import\SchemaIntrospectionService;
 use App\Services\Import\Strategies\Lw325PhImportStrategy;
+use App\Support\Import\ImportHeaderAliases;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
@@ -22,6 +23,8 @@ class SchemaDriftAnalyzer
      * source column with the same name is not treated as data.
      */
     private const MANAGED_COLUMNS = [
+        'monitoring_realisasi_ksbk' => ['uniqueid_namareport', 'cek_real', 'plafond', 'ln_type', 'ksbk_non'],
+        'cras' => ['cras_uuid', 'cras_periode'],
         'lw325_ph' => ['uniqueid_namareport'],
         'daily_loan_dinamis' => [
             'uniqueid_namareport', 'segmen_kinerja', 'produk_kinerja', 'cabang_normalized', 'unit_normalized',
@@ -60,6 +63,11 @@ class SchemaDriftAnalyzer
         $tableColumnsLower = array_keys($this->schema->getColumnMetadata($table));
 
         $sample = $this->sampler->sample($absolutePath, $canonicalize, $tableColumnsLower, $options);
+        // Header discovery must inspect source labels. Apply the import's
+        // positional layout only after discovery so data is never a header.
+        if ($table === 'ssa_almafacts') {
+            $sample['canonical_headers'] = ImportHeaderAliases::ssaAlmafactsHeaders($sample['canonical_headers']);
+        }
 
         // Without the baseline table (migration not yet run) the detector keeps
         // its original strict behaviour instead of silently accepting headers.
@@ -74,6 +82,9 @@ class SchemaDriftAnalyzer
             'baseline_established' => !$baselineAvailable || $this->baseline->isEstablished($table),
             'previous_document' => $baselineAvailable ? $this->baseline->previousDocument($table) : [],
             'column_aliases' => $this->registry->columnAliases($table),
+            'profile_values' => $sample['profile_values'] ?? [],
+            'structural_scan' => $sample['structural_scan'] ?? [],
+            'approved_review_keys' => $this->registry->approvedReviewKeys($table, (string) ($sample['structural_scan']['source_fingerprint'] ?? '')),
             'report_label' => $options['report_label'] ?? $this->reportLabel($table),
         ]);
 
@@ -98,7 +109,9 @@ class SchemaDriftAnalyzer
             'header_row' => $sample['header_index'] + 1,
             'metadata' => $sample['metadata'],
             'misaligned_rows' => $sample['misaligned_rows'],
+            'structural_scan' => $sample['structural_scan'] ?? [],
         ];
+        $report['source_fingerprint'] = (string) ($sample['structural_scan']['source_fingerprint'] ?? '');
         $report['analyzed_in_ms'] = (int) round((microtime(true) - $startedAt) * 1000);
 
         $event = null;
@@ -112,8 +125,12 @@ class SchemaDriftAnalyzer
         }
 
         if (($options['remember'] ?? true) === true) {
-            $this->detector->rememberFormats($report);
-            if ($baselineAvailable) {
+            // Unreviewed source content must not replace the last accepted
+            // format/layout reference or erase evidence of a change.
+            if (!$report['has_pending_decision'] && !$report['has_blocking_issue']) {
+                $this->detector->rememberFormats($report);
+            }
+            if ($baselineAvailable && !$report['has_pending_decision'] && !$report['has_blocking_issue']) {
                 $this->baseline->record($table, (array) $report['columns']);
             }
         }

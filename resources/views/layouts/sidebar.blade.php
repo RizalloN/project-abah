@@ -839,6 +839,12 @@
                                 <p>Run OFF</p>
                             </a>
                         </li>
+                        <li class="nav-item">
+                            <a href="{{ route('report.dashboard-pinjaman.suspect-reaktivasi') }}" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman.suspect-reaktivasi') ? 'active' : '' }}">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>Suspect Reaktivasi</p>   
+                            </a>
+                        </li>
 
                         <li class="nav-item">
                             <a href="{{ route('report.dashboard-pinjaman.kinerja-non-ptp') }}" class="nav-link {{ request()->routeIs('report.dashboard-pinjaman.kinerja-non-ptp') ? 'active' : '' }}">

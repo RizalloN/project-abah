@@ -148,8 +148,9 @@ export const bindSubsectors = (root, ctx, studio) => {
         status.textContent = 'Memuat data subsektor SSA CRAS…';
         const url = new URL(ctx.crasUrl, window.location.origin);
         url.searchParams.set('wilayah', branchKey);
-        const crasPeriod = ctx.wilayah?.sektoral?.period || ctx.period;
-        if (crasPeriod) url.searchParams.set('periode', crasPeriod);
+        // CRAS has its own latest period, independent of the performance deck or
+        // a previously loaded wilayah snapshot. The server resolves it per branch.
+        url.searchParams.delete('periode');
         url.searchParams.set('sektor', state.sektor);
         url.searchParams.set('sub_sektor', state.sub_sektor);
         try {

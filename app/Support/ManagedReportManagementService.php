@@ -141,6 +141,27 @@ class ManagedReportManagementService
     ];
 
     private const MANAGEMENT_SCOPE_COLUMN_OVERRIDES = [
+        'monitoring_realisasi_ksbk' => [
+            'period_priority' => ['tgl_inject'],
+            'kanca_priority' => ['bo'],
+        ],
+        'pipeline_prewash' => [
+            'period_priority' => ['tahun'],
+            'kanca_priority' => ['nama_kanca'],
+        ],
+        'pipeline_prewash_boh' => [
+            'period_priority' => ['tahun'],
+            'kanca_priority' => ['nama_kanca'],
+        ],
+        'monitoring_tl_pipeline_mbm' => [
+            'period_priority' => ['tahun'],
+            'kanca_priority' => ['nama_kanca'],
+        ],
+        'evaluasi_aktivitas_kunjungan_pemasar' => [
+            'period_priority' => ['periode'],
+            'kanca_priority' => ['kode_main_branch'],
+            'kanca_label_fallback_priority' => ['main_branch'],
+        ],
         'cras' => [
             'period_priority' => ['cras_periode'],
             'kanca_priority' => ['ket_kanca'],
@@ -1631,7 +1652,7 @@ class ManagedReportManagementService
             return '(Blank)';
         }
 
-        if ($tableName === 'lw321pn') {
+        if (in_array($tableName, ['lw321pn', 'evaluasi_aktivitas_kunjungan_pemasar'], true)) {
             $fallback = trim((string) ($fallbackRaw ?? ''));
             if ($fallback !== '') {
                 return $fallback;

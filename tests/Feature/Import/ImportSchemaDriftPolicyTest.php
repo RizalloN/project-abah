@@ -78,7 +78,7 @@ it('classifies fixed-layout pipelines as monitor and the generic importer as evo
     $policy = app(SchemaEvolutionPolicy::class);
 
     expect($policy->modeFor('cognos_ph'))->toBe('monitor')
-        ->and($policy->modeFor('daily_loan_dinamis'))->toBe('monitor')
+        ->and($policy->modeFor('daily_loan_dinamis'))->toBe('evolve')
         ->and($policy->modeFor('lw325_ph'))->toBe('evolve')
         ->and($policy->modeFor('ssa_simpanan'))->toBe('evolve')
         ->and($policy->modeFor('SSA_PINJAMAN'))->toBe('evolve');

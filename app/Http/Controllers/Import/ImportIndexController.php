@@ -63,6 +63,20 @@ class ImportIndexController extends Controller
     ];
 
     private const DELETE_INDEX_HINTS = [
+        'pipeline_prewash' => [
+            'index' => 'idx_prewash_year_branch',
+            'period' => 'tahun',
+            'kanca' => 'nama_kanca',
+            'identity' => 'uniqueid_namareport',
+            'chunk_size' => 25000,
+        ],
+        'evaluasi_aktivitas_kunjungan_pemasar' => [
+            'index' => 'idx_kunjungan_period_branch',
+            'period' => 'periode',
+            'kanca' => 'kode_main_branch',
+            'identity' => 'uniqueid_namareport',
+            'chunk_size' => 25000,
+        ],
         'cras' => [
             'index' => 'idx_cras_period_branch_uuid',
             'period' => 'cras_periode',
@@ -1676,10 +1690,36 @@ class ImportIndexController extends Controller
             ], 422)];
         }
 
+        if (in_array($tableName, [\App\Services\Import\EvaluasiKunjunganSourceService::TABLE, \App\Services\Import\PipelinePrewashSourceService::TABLE], true) && $this->hasActiveKunjunganImport($tableName)) {
+            return [null, response()->json([
+                'status' => 'error',
+                'message' => 'Masih ada import report ini yang berjalan. Tunggu import selesai sebelum menghapus data.',
+            ], 409)];
+        }
+
         $tableColumns = Schema::getColumnListing($tableName);
         [$periodColumn, $kancaColumn] = $this->reportManagementService()->resolveManagementScopeColumns($tableName, $tableColumns);
 
         $scopes = $this->normalizeDeleteScopes($validated);
+        if ($tableName === \App\Services\Import\PipelinePrewashSourceService::TABLE) {
+            foreach ($scopes as $scope) {
+                if (($scope['period_is_null'] ?? false) || preg_match('/^(19\d{2}|20\d{2}|21\d{2})$/D', (string) ($scope['period_filter'] ?? '')) !== 1) {
+                    return [null, response()->json(['status' => 'error', 'message' => 'Pilih tahun laporan Pipeline Prewash yang valid (YYYY).'], 422)];
+                }
+            }
+        }
+        if ($tableName === \App\Services\Import\EvaluasiKunjunganSourceService::TABLE) {
+            try {
+                foreach ($scopes as $scope) {
+                    if ((bool) ($scope['period_is_null'] ?? false) || trim((string) ($scope['period_filter'] ?? '')) === '') {
+                        throw new \InvalidArgumentException('Periode Date Printed wajib dipilih untuk menghapus Aktivitas Kunjungan Pemasar.');
+                    }
+                    $this->buildKunjunganPeriodConstraint((string) $scope['period_filter']);
+                }
+            } catch (\InvalidArgumentException $error) {
+                return [null, response()->json(['status' => 'error', 'message' => $error->getMessage()], 422)];
+            }
+        }
         $firstScope = $scopes[0] ?? [
             'period_filter' => null,
             'kanca_filter' => null,
@@ -4115,6 +4155,11 @@ class ImportIndexController extends Controller
 
     private function applyManagedPeriodFilterConstraint($query, string $tableName, string $periodColumn, string $periodFilter): void
     {
+        if ($tableName === \App\Services\Import\EvaluasiKunjunganSourceService::TABLE && $periodColumn === 'periode') {
+            $this->applyDeleteConstraints($query, [$this->buildKunjunganPeriodConstraint($periodFilter)]);
+
+            return;
+        }
         $normalizedFilter = trim($periodFilter);
         if (preg_match('/^\d{4}-\d{2}$/', $normalizedFilter) === 1) {
             $safeColumn = str_replace('`', '``', $periodColumn);
@@ -4664,6 +4709,9 @@ class ImportIndexController extends Controller
             $scope,
             $deleteId
         ): int {
+            if (in_array($tableName, [\App\Services\Import\EvaluasiKunjunganSourceService::TABLE, \App\Services\Import\PipelinePrewashSourceService::TABLE], true) && $this->hasActiveKunjunganImport($tableName)) {
+                throw new \RuntimeException('Delete report dihentikan karena ada import yang sedang berjalan.');
+            }
             $limit = max(1, (int) ($chunkSize ?? self::DELETE_CHUNK_SIZE));
             $connection = $baseQuery->getConnection();
             $driverName = $connection->getDriverName();
@@ -4915,7 +4963,9 @@ class ImportIndexController extends Controller
 
             $filter = $meta['filter'];
             if ($filter !== null && $filter !== '') {
-                if ($dimension === 'period' && $this->shouldUseMonthPrefixDeleteConstraint($column, (string) $filter)) {
+                if ($dimension === 'period' && $tableName === \App\Services\Import\EvaluasiKunjunganSourceService::TABLE) {
+                    $constraints[] = $this->buildKunjunganPeriodConstraint((string) $filter);
+                } elseif ($dimension === 'period' && $this->shouldUseMonthPrefixDeleteConstraint($column, (string) $filter)) {
                     $constraints[] = [
                         'column' => $column,
                         'mode' => 'month_prefix',
@@ -5003,6 +5053,11 @@ class ImportIndexController extends Controller
             $mode = (string) ($constraint['mode'] ?? '');
 
             if ($column === '' || $mode === '') {
+                continue;
+            }
+
+            if ($mode === 'date_range') {
+                $query->where($column, '>=', $constraint['start'])->where($column, '<', $constraint['end']);
                 continue;
             }
 
@@ -5150,6 +5205,13 @@ class ImportIndexController extends Controller
 
             $wrappedColumn = $wrappedAlias . '`' . str_replace('`', '``', $column) . '`';
 
+            if ($mode === 'date_range') {
+                $clauses[] = "{$wrappedColumn} >= ? AND {$wrappedColumn} < ?";
+                $bindings[] = $constraint['start'];
+                $bindings[] = $constraint['end'];
+                continue;
+            }
+
             if ($mode === 'equal') {
                 $clauses[] = "{$wrappedColumn} = ?";
                 $bindings[] = (string) ($constraint['value'] ?? '');
@@ -5265,7 +5327,7 @@ LIMIT {$limit}
         }
 
         foreach ($constraints as $constraint) {
-            if (($constraint['mode'] ?? '') !== 'equal') {
+            if (!in_array(($constraint['mode'] ?? ''), ['equal', 'date_range'], true)) {
                 return false;
             }
         }
@@ -5366,6 +5428,34 @@ WHERE {$whereSql}
                 }
             }
         }
+    }
+
+    private function hasActiveKunjunganImport(string $tableName = \App\Services\Import\EvaluasiKunjunganSourceService::TABLE): bool
+    {
+        if (!Schema::hasTable('import_jobs')) {
+            return false;
+        }
+
+        return DB::table('import_jobs')
+            ->whereIn('id_report', DB::table('nama_report')->select('id_report')->where('table_name', $tableName))
+            ->whereIn('status', ['queued', 'staging', 'processing'])
+            ->exists();
+    }
+
+    private function buildKunjunganPeriodConstraint(string $filter): array
+    {
+        $filter = trim($filter);
+        if (preg_match('/^(19|20|21)\d{2}-(0[1-9]|1[0-2])$/D', $filter) === 1) {
+            $start = Carbon::createFromFormat('!Y-m', $filter);
+
+            return ['column' => 'periode', 'mode' => 'date_range', 'start' => $start->format('Y-m-d'), 'end' => $start->addMonth()->format('Y-m-d')];
+        }
+        $date = StrictDateParser::normalize($filter);
+        if ($date === null || preg_match('/^\d{4}-\d{2}-\d{2}$/D', $date) !== 1) {
+            throw new \InvalidArgumentException('Periode Date Printed tidak valid. Gunakan tanggal lengkap atau bulan YYYY-MM.');
+        }
+
+        return ['column' => 'periode', 'mode' => 'equal', 'value' => $date];
     }
 
     private function shouldUseMonthPrefixDeleteConstraint(string $column, string $value): bool

@@ -48,26 +48,7 @@ class SchemaEvolutionService
     public function addColumns(string $table, array $columns): array
     {
         $table = strtolower(trim($table));
-        $this->assertEvolvableTable($table);
-
-        $prepared = [];
-        $seen = [];
-        foreach ($columns as $column) {
-            $name = strtolower(trim((string) ($column['name'] ?? '')));
-            $type = $this->normalizeType((string) ($column['type'] ?? ''));
-
-            if (!SchemaDriftDetector::isSafeColumnName($name)) {
-                throw new RuntimeException("Nama kolom \"{$name}\" tidak valid. Gunakan huruf kecil, angka, dan garis bawah (maks. 64 karakter).");
-            }
-            if (!SchemaDriftDetector::isAllowedType($type)) {
-                throw new RuntimeException("Tipe kolom \"{$type}\" tidak diizinkan.");
-            }
-            if (isset($seen[$name])) {
-                throw new RuntimeException("Nama kolom \"{$name}\" dipakai lebih dari satu kali.");
-            }
-            $seen[$name] = true;
-            $prepared[] = ['name' => $name, 'type' => $type];
-        }
+        $prepared = $this->validateAdditions($table, $columns);
 
         if ($prepared === []) {
             return [];
@@ -83,19 +64,56 @@ class SchemaEvolutionService
                 }
             }
 
-            $applied = [];
-            foreach ($prepared as $column) {
-                $algorithm = $this->runAlter(
-                    $table,
-                    sprintf('ALTER TABLE `%s` ADD COLUMN `%s` %s NULL', $table, $column['name'], $column['type']),
-                    fn (Blueprint $blueprint) => $this->blueprintColumn($blueprint, $column['name'], $column['type'])->nullable(),
-                    "menambah kolom {$column['name']}"
-                );
-                $applied[] = $column + ['algorithm' => $algorithm];
-            }
+            // One ALTER keeps an accepted group of new columns together and
+            // avoids repeatedly changing metadata on a large report table.
+            $clauses = array_map(static fn (array $column): string => sprintf('ADD COLUMN `%s` %s NULL', $column['name'], $column['type']), $prepared);
+            $algorithm = $this->runAlter(
+                $table,
+                sprintf('ALTER TABLE `%s` %s', $table, implode(', ', $clauses)),
+                function (Blueprint $blueprint) use ($prepared): void {
+                    foreach ($prepared as $column) {
+                        $this->blueprintColumn($blueprint, $column['name'], $column['type'])->nullable();
+                    }
+                },
+                'menambah ' . count($prepared) . ' kolom sumber'
+            );
 
-            return $applied;
+            return array_map(static fn (array $column): array => $column + ['algorithm' => $algorithm], $prepared);
         });
+    }
+
+    /** Validate an entire selection before any schema-changing action runs. */
+    public function validateAdditions(string $table, array $columns): array
+    {
+        if ($columns === []) {
+            return [];
+        }
+
+        $table = strtolower(trim($table));
+        $this->assertEvolvableTable($table);
+        $existing = $this->freshColumns($table);
+        $prepared = [];
+        $seen = [];
+        foreach ($columns as $column) {
+            $name = strtolower(trim((string) ($column['name'] ?? '')));
+            $type = $this->normalizeType((string) ($column['type'] ?? ''));
+            if (!SchemaDriftDetector::isSafeColumnName($name)) {
+                throw new RuntimeException("Nama kolom \"{$name}\" tidak valid. Gunakan huruf kecil, angka, dan garis bawah (maks. 64 karakter).");
+            }
+            if (!SchemaDriftDetector::isAllowedType($type)) {
+                throw new RuntimeException("Tipe kolom \"{$type}\" tidak diizinkan.");
+            }
+            if (isset($seen[$name])) {
+                throw new RuntimeException("Nama kolom \"{$name}\" dipakai lebih dari satu kali.");
+            }
+            if (isset($existing[$name])) {
+                throw new RuntimeException("Kolom \"{$name}\" sudah ada di tabel {$table}. Pilih nama lain, atau gunakan aksi \"Petakan ke kolom yang ada\".");
+            }
+            $seen[$name] = true;
+            $prepared[] = ['name' => $name, 'type' => $type];
+        }
+
+        return $prepared;
     }
 
     /**

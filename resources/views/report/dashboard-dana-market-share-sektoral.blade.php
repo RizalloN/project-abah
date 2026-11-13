@@ -25,38 +25,31 @@
 <main class="mss-page">
     <section class="mss-hero" aria-labelledby="mss-title">
         <div>
-            <span class="mss-kicker">Sector intelligence</span>
+            <div class="mss-breadcrumb"><i class="fas fa-chart-pie" aria-hidden="true"></i><span>Marketshare</span><span aria-hidden="true">/</span><span>Analisis wilayah</span></div>
             <h1 id="mss-title">{{ $payload['title'] ?? 'Marketshare Sektoral' }}</h1>
-            <p>{{ $payload['subtitle'] ?? '' }}</p>
-        </div>
-        <div class="mss-hero-meta">
-            <span><i class="far fa-calendar-alt"></i>{{ $payload['period'] ?? 'Maret 2026' }}</span>
-            <span><i class="fas fa-map-marker-alt"></i>{{ $payload['selected_scope_label'] ?? '-' }}</span>
-            <span><i class="fas fa-coins"></i>{{ $payload['unit'] ?? 'Rp dalam Miliar' }}</span>
-        </div>
-    </section>
-
-    <section class="mss-filter-card">
-        <div class="mss-filter-intro">
-            <span class="mss-kicker">Cakupan laporan</span>
-            <strong>{{ $scopeLocked ? 'Cabang mengikuti wilayah user' : 'Pilih wilayah analisis' }}</strong>
-            <small>{{ $scopeLocked ? 'Pilihan dikunci sesuai otorisasi akun.' : 'Area 6 menampilkan konsolidasi empat cabang.' }}</small>
+            <p>Peta potensi pelaku usaha dan penetrasi BRI pada setiap wilayah.</p>
+            <div class="mss-data-caption"><span><i class="far fa-calendar-alt" aria-hidden="true"></i>Debitur SSA CRAS · {{ $payload['customer_penetration']['period_label'] ?? 'Belum tersedia' }}</span><span><i class="fas fa-layer-group" aria-hidden="true"></i>Potensi desa kelolaan UKER</span></div>
         </div>
         <form method="GET" action="{{ route('report.dashboard-dana.market-share.sektoral') }}" class="mss-scope-form">
-            <label for="mss-cabang">Wilayah</label>
-            <div class="mss-select-wrap {{ $scopeLocked ? 'is-locked' : '' }}">
-                <i class="fas {{ $scopeLocked ? 'fa-lock' : 'fa-map-marked-alt' }}"></i>
-                <select id="mss-cabang" name="cabang" @disabled($scopeLocked) @if(!$scopeLocked) onchange="this.form.submit()" @endif>
+            <label for="mss-cabang">{{ $scopeLocked ? 'KC sesuai akses akun' : 'Kantor cabang (KC)' }}</label>
+            <div class="mss-select-wrap mss-custom-select {{ $scopeLocked ? 'is-locked' : '' }}">
+                <i class="fas {{ $scopeLocked ? 'fa-lock' : 'fa-map-marked-alt' }}" aria-hidden="true"></i>
+                <select id="mss-cabang" name="cabang" data-mss-custom-select="KC" @disabled($scopeLocked) @if(!$scopeLocked) onchange="this.form.submit()" @endif>
                     @foreach($scopes as $key => $label)
                         <option value="{{ $key }}" @selected($selectedScope === $key)>{{ $label }}</option>
                     @endforeach
                 </select>
             </div>
+            <small class="mss-scope-hint" data-mss-branch-hint aria-live="polite">{{ $scopeLocked ? 'Pilihan dikunci sesuai otorisasi akun.' : 'Pilih KC untuk membuka filter kecamatan.' }}</small>
             <noscript><button type="submit">Terapkan</button></noscript>
         </form>
     </section>
 
-    @include('report.partials.sector-customer-penetration')
+    @include('report.partials.sector-territory-atlas')
+
+    <details class="mss-industry-disclosure" id="mss-industry-reference">
+        <summary><div><strong>Pembanding industri sektoral</strong><small>{{ $payload['period'] ?? 'Maret 2026' }} · {{ $payload['unit'] ?? 'Rp dalam Miliar' }} · {{ $payload['selected_scope_label'] ?? '' }}</small></div><i class="fas fa-chevron-down" aria-hidden="true"></i></summary>
+        <div class="mss-industry-body">
 
     <section class="mss-kpi-grid" aria-label="Ringkasan posisi sektoral">
         <article class="mss-kpi-card">
@@ -163,6 +156,8 @@
             <span><i class="far fa-file-excel"></i>{{ $payload['source'] ?? '-' }}</span>
         </footer>
     </section>
+        </div>
+    </details>
 </main>
 @endsection
 
@@ -262,10 +257,12 @@
         .mss-hero-meta span { white-space:normal; }
     }
 </style>
+<style>{!! file_get_contents(resource_path('css/marketshare-sektoral.css')) !!}</style>
 @endsection
 
 @section('scripts')
 <script src="{{ asset('vendor/chartjs/chart.min.js') }}"></script>
+<script type="module" src="{{ asset('js/marketshare-sektoral.js') }}?v={{ filemtime(public_path('js/marketshare-sektoral.js')) }}"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     const rows = @json($rows);
@@ -356,7 +353,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 indexAxis: 'y',
                 responsive: true,
                 maintainAspectRatio: false,
-                animation: { duration: 240 },
+                animation: { duration: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 240 },
                 interaction: { intersect: false, mode: 'index' },
                 layout: { padding: { right: 92 } },
                 plugins: {
@@ -393,6 +390,9 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     renderBar(sortSelect ? sortSelect.value : 'market_share_os');
+    document.getElementById('mss-industry-reference')?.addEventListener('toggle', event => {
+        if (event.target.open) renderBar(sortSelect ? sortSelect.value : 'market_share_os');
+    });
     if (sortSelect) sortSelect.addEventListener('change', event => renderBar(event.target.value));
 
     const search = document.getElementById('mss-sector-search');

@@ -8,10 +8,8 @@ use Illuminate\Support\Facades\Schema;
 use Throwable;
 
 /**
- * The set of source headers a report normally carries. The first analysed
- * document of a table becomes its baseline, so columns the import has always
- * ignored are never announced as "new"; only a header that later appears on
- * top of that baseline asks for an accept/reject decision.
+ * Last reviewed source headers and their destinations. Observing a header
+ * does not approve its omission: only an explicit decision can skip a field.
  */
 class SourceHeaderBaseline
 {

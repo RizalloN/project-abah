@@ -95,13 +95,14 @@ class CrasMappingService
             return $this->emptyPayload('Data SSA CRAS belum tersedia.');
         }
 
-        $periodOptions = $this->periodOptions();
+        $selected = $this->selectedFilters($input, '');
+        $periodOptions = $this->periodOptions($selected['wilayah']);
         if ($periodOptions === []) {
             return $this->emptyPayload('Belum ada periode SSA CRAS yang dapat ditampilkan.');
         }
 
         $period = $this->resolvePeriod((string) ($input['periode'] ?? ''), $periodOptions);
-        $selected = $this->selectedFilters($input, $period);
+        $selected['periode'] = $period;
         $cacheKey = 'cras_mapping:v4:'.md5(json_encode($selected));
 
         $computed = Cache::remember($cacheKey, now()->addMinutes(5), function () use ($selected): array {
@@ -203,7 +204,7 @@ class CrasMappingService
                     'numerator_basis' => 'uker_berdesa_aktif_dan_ph_tanpa_consumer',
                     'denominator_basis' => 'potensi_kategori_sektor_induk_di_wilayah_terpilih',
                     'unit_potential_basis' => 'Jumlah pelaku usaha kategori sektor induk hanya pada desa milik UKER menurut mapping desa.',
-                    'note' => $referenceReady ? 'Cakupan subsektor memakai debitur Intra/AKTIF dan Ekstra/PH tanpa Consumer pada UKER pemilik desa, dibagi potensi kategori sektor induk desa milik UKER. Ekstra tetap merupakan BRI PH. Debitur dinormalisasi ke sektor usaha BPS seperti Penetrasi Sektoral; kode umum (Jasa Kegiatan Lainnya, Perdagangan Ekspor Hasil Tanaman) tidak dihitung penuh pada sektor induknya.' : 'Referensi sektor mengikuti SSA September 2026. Periode report pilihan berbeda atau data referensi belum tersedia; cakupan referensi tidak dihitung.',
+                    'note' => $referenceReady ? 'Cakupan subsektor memakai debitur Intra/AKTIF dan Ekstra/PH tanpa Consumer pada UKER pemilik desa, dibagi potensi kategori sektor induk desa milik UKER. Ekstra tetap merupakan BRI PH. Debitur dinormalisasi ke sektor usaha BPS seperti Penetrasi Sektoral; kode umum (Jasa Kegiatan Lainnya, Perdagangan Ekspor Hasil Tanaman) tidak dihitung penuh pada sektor induknya.' : 'Referensi sektor mengikuti periode SSA CRAS terbaru pada wilayah terpilih. Periode report pilihan berbeda atau data referensi belum tersedia; cakupan referensi tidak dihitung.',
                 ],
             ],
             'source' => [
@@ -449,25 +450,25 @@ class CrasMappingService
         return $label === '' ? 'Seluruh Area 6' : 'KC '.$label;
     }
 
-    private function periodOptions(): array
+    private function periodOptions(string $region): array
     {
-        return Cache::remember('cras_mapping:periods:v1', now()->addMinutes(10), function (): array {
-            return DB::table(self::TABLE)
-                ->whereNotNull('cras_periode')
-                ->select('cras_periode')
-                ->distinct()
-                ->orderByDesc('cras_periode')
-                ->pluck('cras_periode')
-                ->map(function ($period): array {
-                    $value = Carbon::parse($period)->toDateString();
+        $query = DB::table(self::TABLE)->whereNotNull('cras_periode');
+        $this->applyRegionFilter($query, $region);
 
-                    return [
-                        'value' => $value,
-                        'label' => Carbon::parse($value)->translatedFormat('d M Y'),
-                    ];
-                })
-                ->all();
-        });
+        // Read the small indexed list live; cached period options can hide an import.
+        return $query->select('cras_periode')
+            ->distinct()
+            ->orderByDesc('cras_periode')
+            ->pluck('cras_periode')
+            ->map(function ($period): array {
+                $value = Carbon::parse($period)->toDateString();
+
+                return [
+                    'value' => $value,
+                    'label' => Carbon::parse($value)->translatedFormat('d M Y'),
+                ];
+            })
+            ->all();
     }
 
     private function resolvePeriod(string $requested, array $options): string

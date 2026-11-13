@@ -80,6 +80,17 @@ class ImportDailyLoanBackendController extends Controller
             ], 422);
         }
 
+        $sourceGuard = app(\App\Services\Import\SchemaDrift\SchemaDriftImportGuard::class);
+        try {
+            $sourceGuard->assertReady(self::DAILY_LOAN_TABLE, $sourcePath);
+        } catch (\RuntimeException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+                'report' => $sourceGuard->lastReport(),
+            ], 422);
+        }
+
         $replaceExistingPeriods = $request->boolean('replace_existing_periods', true);
         $replaceTargetRows = 0;
         if ($replaceExistingPeriods && $detectedPeriods !== [] && Schema::hasTable(self::DAILY_LOAN_TABLE)) {

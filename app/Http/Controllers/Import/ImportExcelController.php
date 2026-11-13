@@ -23,6 +23,7 @@ use App\Services\Import\MySqlBulkLoadService;
 use App\Services\Import\SchemaDrift\ColumnFormatMemory;
 use App\Support\Import\ImportHeaderAliases;
 use App\Services\Import\SchemaDrift\SchemaDriftRegistry;
+use App\Services\Import\SchemaDrift\SchemaDriftImportGuard;
 use App\Services\Import\SchemaIntrospectionService;
 use App\Services\Import\SmartContentHeaderGuardService;
 use App\Services\Import\Strategies\Lw321PnImportStrategy;
@@ -208,6 +209,8 @@ class ImportExcelController extends Controller
         return (int) session('active_id_report') === self::DAILY_LOAN_REPORT_ID;
     }
 
+    private ?object $kunjunganActiveReport = null;
+
     private function resolveActiveReport(): ?object
     {
         $idReport = session('active_id_report');
@@ -215,7 +218,15 @@ class ImportExcelController extends Controller
             return null;
         }
 
-        return DB::table('nama_report')->where('id_report', $idReport)->first();
+        if ($this->kunjunganActiveReport !== null && (int) $this->kunjunganActiveReport->id_report === (int) $idReport) {
+            return $this->kunjunganActiveReport;
+        }
+        $report = DB::table('nama_report')->where('id_report', $idReport)->first();
+        if (in_array($report->table_name ?? '', [\App\Services\Import\EvaluasiKunjunganSourceService::TABLE, \App\Services\Import\PipelinePrewashSourceService::TABLE], true)) {
+            $this->kunjunganActiveReport = $report;
+        }
+
+        return $report;
     }
 
     protected function resolveActiveTableName(string $default = 'daily_loan_dinamis'): string
@@ -279,22 +290,7 @@ class ImportExcelController extends Controller
 
     private function forceSsaAlmafactsPositionHeadersByIndex(array $headers): array
     {
-        if (count($headers) < 6) {
-            return $headers;
-        }
-
-        foreach ([
-            0 => 'month_day_year_of_posisi',
-            1 => 'kanca_konsolidasi',
-            2 => 'kode_unit_kerja',
-            3 => 'unit_kerja',
-            4 => 'keterangan',
-            5 => 'saldo',
-        ] as $index => $header) {
-            $headers[$index] = $header;
-        }
-
-        return $headers;
+        return ImportHeaderAliases::ssaAlmafactsHeaders($headers);
     }
 
     private function normalizeSsaAlmafactsForwardFillRow(array $row, array &$lastValues): array
@@ -1029,88 +1025,7 @@ class ImportExcelController extends Controller
      */
     private function dailyLoanSourceHeaderAliasMap(): array
     {
-        return [
-            'PERIODE' => 'PERIODE',
-            'KODE_KANWIL' => 'KODE_KANWIL1',
-            'KODE_KANWIL1' => 'KODE_KANWIL1',
-            'KANWIL' => 'KANWIL1',
-            'KANWIL1' => 'KANWIL1',
-            'KODE_CABANG' => 'KODE_CABANG1',
-            'KODE_CABANG1' => 'KODE_CABANG1',
-            'CABANG' => 'CABANG1',
-            'CABANG1' => 'CABANG1',
-            'BRANCH' => 'BRANCH1',
-            'BRANCH1' => 'BRANCH1',
-            'UNIT' => 'UNIT1',
-            'UNIT1' => 'UNIT1',
-            'CURTYP' => 'CURTYP',
-            'AO_NAME' => 'AO_NAME',
-            'AO' => 'AO_NAME',
-            'CIFNO' => 'CIFNO',
-            'NOMOR_REKENING' => 'NOMOR_REKENING1',
-            'NOMOR_REKENING1' => 'NOMOR_REKENING1',
-            'STATUS_REKENING' => 'STATUS_REKENING1',
-            'STATUS_REKENING1' => 'STATUS_REKENING1',
-            'LN_TYPE' => 'LN_TYPE',
-            'NAMA_DEBITUR' => 'NAMA_DEBITUR1',
-            'NAMA_DEBITUR1' => 'NAMA_DEBITUR1',
-            'RATE' => 'RATE',
-            'JANGKA_WAKTU' => 'JANGKA_WAKTU1',
-            'JANGKA_WAKTU1' => 'JANGKA_WAKTU1',
-            'PLAFON' => 'PLAFON',
-            'BAKI_DEBET' => 'BAKI_DEBET1',
-            'BAKI_DEBET1' => 'BAKI_DEBET1',
-            'CKPN' => 'CKPN',
-            'NILAI_TERCATAT' => 'NILAI_TERCATAT1',
-            'NILAI_TERCATAT1' => 'NILAI_TERCATAT1',
-            'KOL_ADK' => 'KOL_ADK1',
-            'KOL_ADK1' => 'KOL_ADK1',
-            'JML_ANGSURAN' => 'JML_ANGSURAN1',
-            'JML_ANGSURAN1' => 'JML_ANGSURAN1',
-            'PN_NAME' => 'PN_NAME1',
-            'PN_NAME1' => 'PN_NAME1',
-            'PN_PEMRAKARSA' => 'PN_PEMRAKARSA1',
-            'PN_PEMRAKARSA1' => 'PN_PEMRAKARSA1',
-            'PN_REFERRAL' => 'PN_REFERRAL1',
-            'PN_REFERRAL1' => 'PN_REFERRAL1',
-            'PN_RESTRUK' => 'PN_RESTRUK1',
-            'PN_RESTRUK1' => 'PN_RESTRUK1',
-            'PN_PEMUTUS' => 'PN_PEMUTUS1',
-            'PN_PEMUTUS1' => 'PN_PEMUTUS1',
-            'PN_CRM' => 'PN_CRM1',
-            'PN_CRM1' => 'PN_CRM1',
-            'PN_REFERRAL_NAIK_KELAS' => 'PN_REFERRAL_NAIK_KELAS1',
-            'PN_REFERRAL_NAIK_KELAS1' => 'PN_REFERRAL_NAIK_KELAS1',
-            'JUMLAH_PN' => 'JUMLAH_PN1',
-            'JUMLAH_PN1' => 'JUMLAH_PN1',
-            'JUMLAH_PN_ALL' => 'JUMLAH_PN_ALL1',
-            'JUMLAH_PN_ALL1' => 'JUMLAH_PN_ALL1',
-            'RESTRUK_KE' => 'RESTRUK_KE1',
-            'RESTRUK_KE1' => 'RESTRUK_KE1',
-            'JENIS_RESTRUK' => 'JENIS_RESTRUK1',
-            'JENIS_RESTRUK1' => 'JENIS_RESTRUK1',
-            'FLAG_RESTRUK_COVID' => 'FLAG_RESTRUK_COVID1',
-            'FLAG_RESTRUK_COVID1' => 'FLAG_RESTRUK_COVID1',
-            'FLAG_COMMODITY_CHAIN' => 'FLAG_COMMODITY_CHAIN1',
-            'FLAG_COMMODITY_CHAIN1' => 'FLAG_COMMODITY_CHAIN1',
-            'FLAG_BRIGUNA_DIGITAL' => 'FLAG_BRIGUNA_DIGITAL1',
-            'FLAG_BRIGUNA_DIGITAL1' => 'FLAG_BRIGUNA_DIGITAL1',
-            'PMTAMT_BASE' => 'PMTAMT_Base',
-            'LAST_DATE_MAINTENANCE_BILLING' => 'LAST_DATE_MAINTENANCE_BILLING',
-            'TGL_LAST_MAINTENANCE_BILLING' => 'LAST_DATE_MAINTENANCE_BILLING',
-            'NEXT_PMT_DATE' => 'NEXT_PMT_DATE',
-            'TGL_NEXT_PMT' => 'NEXT_PMT_DATE',
-            'NEXT_PMT_INT_DATE' => 'NEXT_PMT_INT_DATE',
-            'TGL_NEXT_PMT_INT' => 'NEXT_PMT_INT_DATE',
-            'LBDOTU' => 'LBDOTU',
-            'TOTAL_OS_BUNGA_YANG_DITUNDA_DAN_BELUM_DIJADWALKAN' => 'LBDOTU',
-            'TEXTBOX20' => 'Textbox20',
-            'TEXTBOX21' => 'Textbox21',
-            'TAGIHAN_POKOK' => 'BILPRN',
-            'TAGIHAN_BUNGA' => 'BILINT',
-            'TAGIHAN_DENDA' => 'BILLC',
-            'TOTAL_DEFERRED_INTEREST_DITUNDA_DAN_BELUM_DIJADWALKAN' => 'LBDOTU',
-        ];
+        return ImportHeaderAliases::dailyLoanSourceHeaderAliasMap();
     }
 
     private function lw325PhTargetColumns(): array
@@ -1133,55 +1048,7 @@ class ImportExcelController extends Controller
 
     private function canonicalizeDailyLoanSourceHeaders(array $headers): array
     {
-        if (!$this->isDailyLoanTable()) {
-            return array_values($headers);
-        }
-
-        $aliasMap = $this->dailyLoanSourceHeaderAliasMap();
-        $canonicalHeaders = [];
-        $matched = 0;
-        $normalize = static fn (string $value): string => trim((string) preg_replace('/[^A-Z0-9]+/', '_', strtoupper(trim($value))), '_');
-        $presentHeaders = array_fill_keys(array_map(static fn ($header): string => $normalize((string) $header), $headers), true);
-
-        foreach (array_values($headers) as $index => $header) {
-            $header = trim((string) $header);
-            if ($header === '') {
-                $canonicalHeaders[$index] = 'COL_' . $index;
-                continue;
-            }
-
-            $normalizedHeader = $normalize($header);
-
-            // A legacy name (PN_PEMUTUS) only stands in for a column the file
-            // lacks. When the file carries both, they are different fields and
-            // aliasing would let the legacy column overwrite the real one.
-            if (isset($aliasMap[$normalizedHeader])
-                && $normalize($aliasMap[$normalizedHeader]) !== $normalizedHeader
-                && isset($presentHeaders[$normalize($aliasMap[$normalizedHeader])])) {
-                $canonicalHeaders[$index] = $header;
-                continue;
-            }
-
-            if (isset($aliasMap[$normalizedHeader])) {
-                $canonicalHeaders[$index] = $aliasMap[$normalizedHeader];
-                $matched++;
-                continue;
-            }
-
-            $canonicalHeaders[$index] = $header;
-        }
-
-        $hasCoreSignature = isset($canonicalHeaders[0], $canonicalHeaders[1], $canonicalHeaders[9], $canonicalHeaders[17])
-            && $canonicalHeaders[0] === 'PERIODE'
-            && $canonicalHeaders[1] === 'KODE_KANWIL1'
-            && $canonicalHeaders[9] === 'CIFNO'
-            && $canonicalHeaders[17] === 'BAKI_DEBET1';
-
-        if ($matched >= 12 || $hasCoreSignature) {
-            return $canonicalHeaders;
-        }
-
-        return array_values($headers);
+        return $this->isDailyLoanTable() ? ImportHeaderAliases::dailyLoanSourceHeaders($headers) : array_values($headers);
     }
 
     private function isDailyLoanSourceHeaderRow(array $row): bool
@@ -3015,9 +2882,18 @@ class ImportExcelController extends Controller
 
         $relativePath = $this->normalizeStoredSpreadsheetExtension($relativePath);
         try {
-            $relativePath = $this->normalizeSsaSpreadsheetUpload($tableName, $relativePath);
+            $relativePath = $this->normalizeSsaSpreadsheetUpload($tableName, $relativePath, trim((string) $request->input('periode', '')));
         } catch (\Throwable $e) {
-            return $this->invalidSpreadsheetUploadResponse($request, 'Normalisasi SSA gagal: '.$e->getMessage());
+            $label = match ($tableName) {
+                \App\Services\Import\EvaluasiKunjunganSourceService::TABLE => 'Evaluasi Aktivitas Kunjungan Pemasar',
+                \App\Services\Import\PipelinePrewashBohSourceService::TABLE => 'Pipeline Prewash PIC BOH',
+                \App\Services\Import\PipelinePrewashSourceService::TABLE => 'Pipeline Prewash',
+                \App\Services\Import\PipelinePrewashMbmSourceService::TABLE => 'Pipeline Prewash PIC MBM',
+                \App\Services\Import\MonitoringKsbkSourceService::TABLE => 'Monitoring Realisasi KSBK',
+                \App\Services\Import\SuspectReaktivasiSourceService::TABLE => 'Suspect Reaktivasi',
+                default => 'SSA',
+            };
+            return $this->invalidSpreadsheetUploadResponse($request, 'Normalisasi '.$label.' gagal: '.$e->getMessage());
         }
         $this->normalizeSsaAlmafactsCsvEncoding($tableName, $relativePath);
 
@@ -3169,6 +3045,11 @@ class ImportExcelController extends Controller
         $relativePath = (string) ($eligibility['relative_path'] ?? '');
         $absolutePath = (string) ($eligibility['absolute_path'] ?? '');
         $totalRows = (int) ($eligibility['total_rows'] ?? 0);
+
+        $reviewResponse = $this->validateSourceStructureOrResponse('daily_loan_dinamis', $absolutePath);
+        if ($reviewResponse !== null) {
+            return $reviewResponse;
+        }
 
         request()->session()->save();
 
@@ -4036,7 +3917,7 @@ class ImportExcelController extends Controller
                 if (isset($evolvedColumnsLookup[$candidateLower])) {
                     $hasEvolvedTarget = true;
                 }
-                if (isset($evolvedColumnsLookup[$candidateLower]) && is_array($candidateMeta)) {
+                if ((isset($evolvedColumnsLookup[$candidateLower]) || $aliasTarget !== null) && is_array($candidateMeta)) {
                     $evolvedNumericKind ??= !empty($candidateMeta['is_decimal'])
                         ? 'decimal'
                         : (in_array($candidateBaseType, ['tinyint', 'smallint', 'mediumint', 'int', 'integer', 'bigint'], true) ? 'integer' : null);
@@ -4080,9 +3961,11 @@ class ImportExcelController extends Controller
                 'db_candidates' => $mappedDbCandidates,
                 // Polars only normalizes the fixed report layout; evolved columns
                 // arrive as source text and must go through the full parsers.
-                'source_pre_normalized' => $fastSourcePreNormalized && !$hasEvolvedTarget,
+                'source_pre_normalized' => $fastSourcePreNormalized && !$hasEvolvedTarget && $aliasTarget === null,
                 'allow_locale_date_text' => $this->allowsLocaleDateTextForImport($tableName),
-                'preserve_source_text' => in_array($normalizedTableName, ['simpanan_multipn', 'lw321pn'], true)
+                'preserve_source_text' => ($normalizedTableName === \App\Services\Import\SuspectReaktivasiSourceService::TABLE && $hasTextualTarget)
+                    || ($hasTextualTarget && ($hasEvolvedTarget || $aliasTarget !== null || preg_match('/(^|_)(rekening|norek|acctno|cifno|kode|pn)(_|$|\d)/i', (string) ($mappedDbCandidates[0] ?? ''))))
+                    || in_array($normalizedTableName, ['simpanan_multipn', 'lw321pn'], true)
                     && $hasTextualTarget
                     && !isset($dateColumnsLookup[$normalizedHeader])
                     && !isset($decimalColumnsLookup[$normalizedHeader])
@@ -10366,6 +10249,21 @@ class ImportExcelController extends Controller
 
     private function prepareCsvPreviewPayload(string $path): array
     {
+        if ($this->resolveActiveTableName() === \App\Services\Import\PipelinePrewashSourceService::TABLE) {
+            return app(\App\Services\Import\PipelinePrewashSourceService::class)->preview($path);
+        }
+        if ($this->resolveActiveTableName() === \App\Services\Import\PipelinePrewashBohSourceService::TABLE) {
+            return app(\App\Services\Import\PipelinePrewashBohSourceService::class)->preview($path);
+        }
+        if ($this->resolveActiveTableName() === \App\Services\Import\MonitoringKsbkSourceService::TABLE) {
+            return app(\App\Services\Import\MonitoringKsbkSourceService::class)->preview($path);
+        }
+        if ($this->resolveActiveTableName() === \App\Services\Import\PipelinePrewashMbmSourceService::TABLE) {
+            return app(\App\Services\Import\PipelinePrewashMbmSourceService::class)->preview($path);
+        }
+        if ($this->resolveActiveTableName() === \App\Services\Import\EvaluasiKunjunganSourceService::TABLE) {
+            return app(\App\Services\Import\EvaluasiKunjunganSourceService::class)->preview($path);
+        }
         if ($this->isSsaAlmafactsTable()) {
             return $this->prepareSsaAlmafactsCsvPreviewFastPath($path);
         }
@@ -12423,9 +12321,18 @@ class ImportExcelController extends Controller
 
         $path = $this->normalizeStoredSpreadsheetExtension($file->store('excel_imports'));
         try {
-            $path = $this->normalizeSsaSpreadsheetUpload($tableName, $path);
+            $path = $this->normalizeSsaSpreadsheetUpload($tableName, $path, $manualPeriode);
         } catch (\Throwable $e) {
-            return $this->invalidSpreadsheetUploadResponse($request, 'Normalisasi SSA gagal: '.$e->getMessage());
+            $label = match ($tableName) {
+                \App\Services\Import\EvaluasiKunjunganSourceService::TABLE => 'Evaluasi Aktivitas Kunjungan Pemasar',
+                \App\Services\Import\PipelinePrewashBohSourceService::TABLE => 'Pipeline Prewash PIC BOH',
+                \App\Services\Import\PipelinePrewashSourceService::TABLE => 'Pipeline Prewash',
+                \App\Services\Import\PipelinePrewashMbmSourceService::TABLE => 'Pipeline Prewash PIC MBM',
+                \App\Services\Import\MonitoringKsbkSourceService::TABLE => 'Monitoring Realisasi KSBK',
+                \App\Services\Import\SuspectReaktivasiSourceService::TABLE => 'Suspect Reaktivasi',
+                default => 'SSA',
+            };
+            return $this->invalidSpreadsheetUploadResponse($request, 'Normalisasi '.$label.' gagal: '.$e->getMessage());
         }
         $this->normalizeSsaAlmafactsCsvEncoding($tableName, $path);
         $cacheKey = 'excel_preview_' . md5($path . '|' . (auth()->id() ?? 'guest') . '|' . microtime(true));
@@ -12466,8 +12373,70 @@ class ImportExcelController extends Controller
         return redirect($previewRedirect);
     }
 
-    private function normalizeSsaSpreadsheetUpload(string $tableName, string $path): string
+    private function normalizeSsaSpreadsheetUpload(string $tableName, string $path, ?string $manualPeriod = null): string
     {
+        if ($tableName === \App\Services\Import\MonitoringKsbkSourceService::TABLE) {
+            if (strtolower(pathinfo($path, PATHINFO_EXTENSION)) !== 'xlsx') {
+                throw new \RuntimeException('Gunakan workbook XLSX asli Monitoring Realisasi KSBK.');
+            }
+            $normalizedPath = 'excel_imports/'.Str::uuid()->toString().'.csv';
+            app(\App\Services\Import\MonitoringKsbkSourceService::class)->stage(Storage::path($path), Storage::path($normalizedPath));
+
+            return $normalizedPath;
+        }
+        if ($tableName === \App\Services\Import\PipelinePrewashSourceService::TABLE) {
+            if (preg_match('/^(19\d{2}|20\d{2}|21\d{2})$/D', (string) $manualPeriod) !== 1) {
+                throw new \RuntimeException('Tahun laporan Pipeline Prewash wajib diisi dalam format YYYY (1900-2199).');
+            }
+            if (strtolower(pathinfo($path, PATHINFO_EXTENSION)) !== 'xlsx') {
+                throw new \RuntimeException('Gunakan workbook XLSX asli Pipeline Prewash.');
+            }
+            $normalizedPath = 'excel_imports/'.Str::uuid()->toString().'.csv';
+            app(\App\Services\Import\PipelinePrewashSourceService::class)->stage(Storage::path($path), Storage::path($normalizedPath), (int) $manualPeriod);
+            Storage::delete($path);
+
+            return $normalizedPath;
+        }
+        if ($tableName === \App\Services\Import\PipelinePrewashBohSourceService::TABLE) {
+            if (preg_match('/^[12]\d{3}$/D', (string) $manualPeriod) !== 1) {
+                throw new \RuntimeException('Tahun laporan Pipeline Prewash PIC BOH wajib diisi empat digit (1000-2999).');
+            }
+            if (strtolower(pathinfo($path, PATHINFO_EXTENSION)) !== 'xlsx') {
+                throw new \RuntimeException('Gunakan workbook XLSX asli Pipeline Prewash PIC BOH.');
+            }
+            $normalizedPath = 'excel_imports/'.Str::uuid()->toString().'.csv';
+            app(\App\Services\Import\PipelinePrewashBohSourceService::class)->stage(Storage::path($path), Storage::path($normalizedPath), (int) $manualPeriod);
+
+            return $normalizedPath;
+        }
+        if ($tableName === \App\Services\Import\PipelinePrewashMbmSourceService::TABLE) {
+            if (preg_match('/^[12]\d{3}$/D', (string) $manualPeriod) !== 1) {
+                throw new \RuntimeException('Tahun laporan Pipeline Prewash PIC MBM wajib diisi empat digit (1000-2999).');
+            }
+            if (strtolower(pathinfo($path, PATHINFO_EXTENSION)) !== 'xlsx') {
+                throw new \RuntimeException('Gunakan workbook XLSX asli Pipeline Prewash PIC MBM.');
+            }
+            $normalizedPath = 'excel_imports/'.Str::uuid()->toString().'.csv';
+            app(\App\Services\Import\PipelinePrewashMbmSourceService::class)->stage(Storage::path($path), Storage::path($normalizedPath), (int) $manualPeriod);
+
+            return $normalizedPath;
+        }
+        if ($tableName === \App\Services\Import\EvaluasiKunjunganSourceService::TABLE) {
+            if (strtolower(pathinfo($path, PATHINFO_EXTENSION)) !== 'csv') {
+                throw new \RuntimeException('Gunakan CSV asli Evaluasi Aktivitas Kunjungan Pemasar.');
+            }
+            $normalizedPath = 'excel_imports/'.Str::uuid()->toString().'.csv';
+            app(\App\Services\Import\EvaluasiKunjunganSourceService::class)->stage(Storage::path($path), Storage::path($normalizedPath));
+            Storage::delete($path);
+
+            return $normalizedPath;
+        }
+        if ($tableName === \App\Services\Import\SuspectReaktivasiSourceService::TABLE) {
+            $normalizedPath = 'excel_imports/'.Str::uuid()->toString().'.csv';
+            app(\App\Services\Import\SuspectReaktivasiSourceService::class)->stage(Storage::path($path), Storage::path($normalizedPath));
+
+            return $normalizedPath;
+        }
         $staging = app(\App\Services\Import\SsaSpreadsheetStagingService::class);
         // CRAS has its own controller and normalizes in its preview stream.
         if ($tableName === \App\Services\Import\CrasSourceService::TABLE
@@ -12607,6 +12576,35 @@ class ImportExcelController extends Controller
         }
 
         $tableName = $this->resolveActiveTableName();
+
+        if (in_array($tableName, [\App\Services\Import\EvaluasiKunjunganSourceService::TABLE, \App\Services\Import\PipelinePrewashBohSourceService::TABLE, \App\Services\Import\PipelinePrewashMbmSourceService::TABLE, \App\Services\Import\MonitoringKsbkSourceService::TABLE, \App\Services\Import\PipelinePrewashSourceService::TABLE], true)) {
+            $previewReportLabel = $tableName === \App\Services\Import\MonitoringKsbkSourceService::TABLE ? 'Monitoring Realisasi KSBK' : ($tableName === \App\Services\Import\PipelinePrewashSourceService::TABLE ? 'Pipeline Prewash' : 'Aktivitas Kunjungan Pemasar');
+            $send && $send('progress', ['percent' => 22, 'message' => 'Membaca preview '.$previewReportLabel.'...', 'mode' => 'preview', 'phase' => 'preview', 'step' => 1]);
+            $sourceService = match ($tableName) {
+                \App\Services\Import\PipelinePrewashSourceService::TABLE => \App\Services\Import\PipelinePrewashSourceService::class,
+                \App\Services\Import\PipelinePrewashBohSourceService::TABLE => \App\Services\Import\PipelinePrewashBohSourceService::class,
+                \App\Services\Import\PipelinePrewashMbmSourceService::TABLE => \App\Services\Import\PipelinePrewashMbmSourceService::class,
+                \App\Services\Import\MonitoringKsbkSourceService::TABLE => \App\Services\Import\MonitoringKsbkSourceService::class,
+                default => \App\Services\Import\EvaluasiKunjunganSourceService::class,
+            };
+            $payload = app($sourceService)->preview(
+                $path,
+                $send === null ? null : static function (int $rows, float $ratio) use ($send, $previewReportLabel): void {
+                    $send('progress', ['percent' => 22 + (int) floor(50 * $ratio), 'message' => number_format($rows, 0, ',', '.').' baris '.$previewReportLabel.' terbaca...', 'rows_done' => $rows, 'mode' => 'preview', 'phase' => 'preview', 'step' => 1]);
+                }
+            );
+            Cache::put($cacheKey, [
+                'headers' => $payload['headers'], 'sourceHeaders' => $payload['sourceHeaders'],
+                'normalizedHeaders' => $payload['headers'], 'preview' => $payload['preview'],
+                'formattedUniqueValues' => $payload['formattedUniqueValues'],
+                'displayFilterMap' => array_combine(array_keys($payload['headers']), array_keys($payload['headers'])),
+                'path' => $relativePath, 'stagedCsvPath' => $path,
+                'headerIndex' => 0, 'total_rows' => $payload['total_rows'], 'delimiter' => ',',
+            ], now()->addHour());
+            $send && $send('progress', ['percent' => 75, 'message' => 'Preview '.$previewReportLabel.' siap. Membuka filter data...', 'mode' => 'preview', 'phase' => 'preview', 'step' => 1]);
+
+            return;
+        }
 
         if ($this->isLw321PnTable($tableName) && !$this->isCsvFile($path)) {
             $this->primeLw321PnPreviewCache($relativePath, $path, $cacheKey, $send);
@@ -13320,7 +13318,8 @@ class ImportExcelController extends Controller
                     $cached['streamRoute'] = $streamRoute;
                     $cached['previewStateKey'] = $previewStateKey;
                     $cached['filtersDisabled'] = $filtersDisabled;
-                    $cached['disableFilterPrefetch'] = $this->isSsaAlmafactsTable($activeTableName);
+                    $cached['disableFilterPrefetch'] = $this->isSsaAlmafactsTable($activeTableName)
+                        || in_array($activeTableName, [\App\Services\Import\EvaluasiKunjunganSourceService::TABLE, \App\Services\Import\PipelinePrewashBohSourceService::TABLE, \App\Services\Import\PipelinePrewashMbmSourceService::TABLE, \App\Services\Import\MonitoringKsbkSourceService::TABLE, \App\Services\Import\PipelinePrewashSourceService::TABLE], true);
                     $cached['pageTitle'] = $this->resolvePreviewPageTitle();
                     $cached['previewBannerTitle'] = $this->resolvePreviewBannerTitle();
                     return view('import.preview_excel', $cached);
@@ -13410,7 +13409,8 @@ class ImportExcelController extends Controller
                 'streamRoute' => $streamRoute,
                 'previewStateKey' => $previewStateKey,
                 'filtersDisabled' => $filtersDisabled,
-                'disableFilterPrefetch' => $this->isSsaAlmafactsTable($tableName),
+                'disableFilterPrefetch' => $this->isSsaAlmafactsTable($tableName)
+                    || in_array($tableName, [\App\Services\Import\EvaluasiKunjunganSourceService::TABLE, \App\Services\Import\PipelinePrewashBohSourceService::TABLE, \App\Services\Import\PipelinePrewashMbmSourceService::TABLE, \App\Services\Import\MonitoringKsbkSourceService::TABLE, \App\Services\Import\PipelinePrewashSourceService::TABLE], true),
                 'pageTitle' => $this->resolvePreviewPageTitle(),
                 'previewBannerTitle' => $this->resolvePreviewBannerTitle(),
             ]);
@@ -13553,7 +13553,8 @@ class ImportExcelController extends Controller
             'streamRoute' => $streamRoute,
             'previewStateKey' => $previewStateKey,
             'filtersDisabled' => $filtersDisabled,
-            'disableFilterPrefetch' => $this->isSsaAlmafactsTable($tableName),
+            'disableFilterPrefetch' => $this->isSsaAlmafactsTable($tableName)
+                || in_array($tableName, [\App\Services\Import\EvaluasiKunjunganSourceService::TABLE, \App\Services\Import\PipelinePrewashBohSourceService::TABLE, \App\Services\Import\PipelinePrewashMbmSourceService::TABLE, \App\Services\Import\MonitoringKsbkSourceService::TABLE, \App\Services\Import\PipelinePrewashSourceService::TABLE], true),
             'pageTitle' => $this->resolvePreviewPageTitle(),
             'previewBannerTitle' => $this->resolvePreviewBannerTitle(),
         ]);
@@ -14052,6 +14053,7 @@ class ImportExcelController extends Controller
                     'header_index' => $headerIndex,
                     'table_name' => $tableName,
                     'file_path' => $relativePath,
+                    'schema_drift_source_path' => $minimalParams['schema_drift_source_path'] ?? $filePath,
                     'staged_csv_path' => $stagedCsvPath !== '' && file_exists($stagedCsvPath) ? $stagedCsvPath : null,
                     'active_filters' => $normalizedActiveFilters,
                     'total_rows' => $totalRows,
@@ -14148,6 +14150,22 @@ class ImportExcelController extends Controller
         }
     }
 
+    private function validateSourceStructureOrResponse(string $tableName, string $path): ?\Illuminate\Http\JsonResponse
+    {
+        $guard = app(SchemaDriftImportGuard::class);
+        try {
+            $guard->assertReady($tableName, $path);
+
+            return null;
+        } catch (\RuntimeException $e) {
+            return response()->json([
+                'status' => 'error',
+                'text' => $e->getMessage(),
+                'schema_drift' => $guard->lastReport(),
+            ], 422);
+        }
+    }
+
     public function initExcelImport(Request $request)
     {
         @ini_set('memory_limit', '2048M');
@@ -14210,6 +14228,13 @@ class ImportExcelController extends Controller
                 'text' => 'Report import tidak valid. Silakan ulangi dari menu report yang benar.',
             ], 422);
         }
+
+        $reviewResponse = $this->validateSourceStructureOrResponse($tableName, $path);
+        if ($reviewResponse !== null) {
+            return $reviewResponse;
+        }
+        // Preserve the reviewed upload when a report stages a normalized file.
+        $schemaDriftSourcePath = $relativePath;
 
         if ($tableName === 'rka' && trim((string) session('excel_manual_kanca', '')) === '') {
             return response()->json(['status' => 'error', 'text' => 'Kanca wajib dipilih untuk import RKA.'], 422);
@@ -14374,7 +14399,10 @@ class ImportExcelController extends Controller
         // ────────────────────────────────────────────────────────────────
 
         // Create job record dengan status 'queued' dan MINIMAL params
-        $jobId = $this->excelImportJobService()->createImportJobRecord((int) $idReport, $path, 0, [
+        $kunjunganRows = in_array($tableName, [\App\Services\Import\EvaluasiKunjunganSourceService::TABLE, \App\Services\Import\PipelinePrewashBohSourceService::TABLE, \App\Services\Import\PipelinePrewashMbmSourceService::TABLE, \App\Services\Import\MonitoringKsbkSourceService::TABLE, \App\Services\Import\PipelinePrewashSourceService::TABLE], true)
+            ? max(0, (int) ($previewMetaForHeaders['total_rows'] ?? 0) - 1)
+            : 0;
+        $jobId = $this->excelImportJobService()->createImportJobRecord((int) $idReport, $path, $kunjunganRows, [
             'controller' => static::class,
             'mode' => 'import_optimized',
             'table_name' => $tableName,
@@ -14398,10 +14426,27 @@ class ImportExcelController extends Controller
             $initialHeaders = array_values($this->resolveImportStrategy($tableName)->transformHeaders($initialHeaders));
         }
 
+        if ($tableName === \App\Services\Import\EvaluasiKunjunganSourceService::TABLE) {
+            $initialHeaders = \App\Services\Import\EvaluasiKunjunganSourceService::IMPORT_COLUMNS;
+        }
+        if ($tableName === \App\Services\Import\PipelinePrewashMbmSourceService::TABLE) {
+            $initialHeaders = \App\Services\Import\PipelinePrewashMbmSourceService::IMPORT_COLUMNS;
+        }
+        if ($tableName === \App\Services\Import\MonitoringKsbkSourceService::TABLE) {
+            $initialHeaders = \App\Services\Import\MonitoringKsbkSourceService::IMPORT_COLUMNS;
+        }
+        if ($tableName === \App\Services\Import\PipelinePrewashBohSourceService::TABLE) {
+            $initialHeaders = \App\Services\Import\PipelinePrewashBohSourceService::IMPORT_COLUMNS;
+        }
+        if ($tableName === \App\Services\Import\PipelinePrewashSourceService::TABLE) {
+            $initialHeaders = \App\Services\Import\PipelinePrewashSourceService::IMPORT_COLUMNS;
+        }
+
         // Set minimal job state untuk digunakan di import execution
         $jobParams = [
             'table_name' => $tableName,
             'file_path' => $relativePath,
+            'schema_drift_source_path' => $schemaDriftSourcePath,
             'active_filters' => $normalizedActiveFilters,
             'manual_kanca' => $tableName === 'rka' ? trim((string) session('excel_manual_kanca', '')) : null,
             'manual_periode' => $tableName === 'rka' ? trim((string) session('excel_manual_periode', '')) : null,
@@ -14410,6 +14455,12 @@ class ImportExcelController extends Controller
             'disable_inline_fallback' => $disableInlineFallback,
             'job_id' => $jobId,
         ];
+
+        if (in_array($tableName, [\App\Services\Import\EvaluasiKunjunganSourceService::TABLE, \App\Services\Import\PipelinePrewashBohSourceService::TABLE, \App\Services\Import\PipelinePrewashMbmSourceService::TABLE, \App\Services\Import\MonitoringKsbkSourceService::TABLE, \App\Services\Import\PipelinePrewashSourceService::TABLE], true)) {
+            $jobParams['header_index'] = 0;
+            $jobParams['total_rows'] = $kunjunganRows;
+            $jobParams['delimiter'] = ',';
+        }
 
         if ($stagedCsvPath !== '') {
             $jobParams['staged_csv_path'] = $stagedCsvPath;
@@ -15891,6 +15942,13 @@ class ImportExcelController extends Controller
 
     public function executeQueuedImport(array $state, ?callable $send = null): array
     {
+        $params = (array) ($state['params'] ?? []);
+        $sourcePath = (string) ($params['schema_drift_source_path'] ?? $params['file_path'] ?? '');
+        app(SchemaDriftImportGuard::class)->assertReady(
+            (string) ($params['table_name'] ?? 'daily_loan_dinamis'),
+            $this->resolveImportAbsolutePath($sourcePath)
+        );
+
         return $this->excelQueuedImportService()->execute($state, [
             'resolve_import_strategy' => fn(string $tableName) => $this->resolveImportStrategy($tableName),
             'mark_failed' => fn(int $jobId, string $message, int $success = 0, int $failed = 0) => $this->progressService()->markFailed($jobId, $message, $success, $failed),
@@ -16052,6 +16110,13 @@ class ImportExcelController extends Controller
             'Target tabel import tidak sesuai dengan report aktif.'
         );
 
+        if (in_array($tableName, [\App\Services\Import\EvaluasiKunjunganSourceService::TABLE, \App\Services\Import\PipelinePrewashBohSourceService::TABLE, \App\Services\Import\PipelinePrewashMbmSourceService::TABLE, \App\Services\Import\MonitoringKsbkSourceService::TABLE, \App\Services\Import\PipelinePrewashSourceService::TABLE], true)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Report ini wajib memakai antrean import presisi, bukan insert per chunk.',
+            ], 422);
+        }
+
         $job = DB::table('import_jobs')->where('id', $jobId)->first();
         abort_if(!$job, 404, 'Job import tidak ditemukan.');
         abort_unless(
@@ -16082,6 +16147,14 @@ class ImportExcelController extends Controller
             ['excel_imports'],
             ['xlsx', 'xls', 'csv', 'txt']
         );
+
+        $reviewedSource = (string) ($jobParams['schema_drift_source_path'] ?? $stateFilePath);
+        $reviewResponse = $this->validateSourceStructureOrResponse(
+            $tableName, $this->resolveImportAbsolutePath($reviewedSource)
+        );
+        if ($reviewResponse !== null) {
+            return $reviewResponse;
+        }
 
         ini_set('memory_limit', '2048M');
         set_time_limit(0);

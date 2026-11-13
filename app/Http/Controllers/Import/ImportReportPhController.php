@@ -1776,6 +1776,8 @@ class ImportReportPhController extends Controller
             ];
         }
 
+        app(\App\Services\Import\SchemaDrift\SchemaDriftImportGuard::class)->assertReady(self::TABLE_NAME, $absolutePath);
+
         $selectedColumns = $this->normalizeSelectedColumns((array) ($params['selected_columns'] ?? []));
         $activeFilters = (array) ($params['active_filters'] ?? []);
         $delimiter = (string) ($params['delimiter'] ?? self::COLUMN_DELIMITER);

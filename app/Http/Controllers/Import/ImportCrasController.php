@@ -504,6 +504,7 @@ class ImportCrasController extends Controller
         $uuidPrefix = (string) ($params['uuid_prefix'] ?? '');
         $previewStateKey = (string) ($params['preview_state_key'] ?? '');
         $absolutePath = $this->resolveUploadedPath($relativePath);
+        app(\App\Services\Import\SchemaDrift\SchemaDriftImportGuard::class)->assertReady(CrasSourceService::TABLE, $absolutePath);
         $sourceType = strtolower((string) pathinfo($absolutePath, PATHINFO_EXTENSION)) === 'xlsx'
             ? 'XLSX'
             : 'UTF-16LE';

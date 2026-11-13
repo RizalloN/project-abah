@@ -1,15 +1,16 @@
 <?php
 
-uses(\Tests\TestCase::class);
-
-use App\Support\ReportSnapshotBuilder;
-use App\Support\DashboardPinjamanChartPeriodikService;
 use App\Jobs\RebuildChartPeriodikPeriodJob;
+use App\Support\DashboardPinjamanChartPeriodikService;
+use App\Support\ReportSnapshotBuilder;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
+use Tests\TestCase;
+
+uses(TestCase::class);
 
 beforeEach(function () {
     if (config('database.default') !== 'sqlite') {
@@ -35,6 +36,7 @@ beforeEach(function () {
         $table->string('unit1', 150)->nullable()->index();
         $table->string('branch1', 180)->nullable()->index();
         $table->string('ln_type', 100)->nullable();
+        $table->string('kolek', 10)->nullable();
         $table->decimal('baki_debet1', 20, 2)->default(0);
         $table->string('segmen_dashboard', 100)->nullable();
         $table->string('produk_dashboard', 150)->nullable();
@@ -83,8 +85,6 @@ beforeEach(function () {
     DB::table('daily_loan_dinamis')->insert($rows);
 
     app(ReportSnapshotBuilder::class)->rebuildChartPeriodik(null, true);
-    Schema::dropIfExists('daily_loan_dinamis');
-    Schema::dropIfExists('loan_type');
 });
 
 afterEach(function () {
@@ -191,6 +191,7 @@ it('normalizes composite unit keys from the request format', function () {
 it('does not scan raw daily loan data from web requests when chart periodik snapshot is empty', function () {
     Queue::fake();
     DB::table('dashboard_pinjaman_chart_periodik_snapshots')->truncate();
+    Schema::dropIfExists('daily_loan_dinamis');
 
     Schema::create('daily_loan_dinamis', function (Blueprint $table) {
         $table->string('uniqueid_namareport', 255)->primary();
@@ -232,4 +233,81 @@ it('does not scan raw daily loan data from web requests when chart periodik snap
 
         return $period->getValue($job) === '2026-04-25';
     });
+});
+
+it('maps all five source collectibility values and reconciles every payment pattern', function () {
+    DB::table('daily_loan_dinamis')->where('uniqueid_namareport', 'dld-07')->update(['kolek' => '1']);
+    DB::table('daily_loan_dinamis')->where('uniqueid_namareport', 'dld-08')->update(['kolek' => '2.00']);
+    DB::table('daily_loan_dinamis')->where('uniqueid_namareport', 'dld-09')->update(['kolek' => '5']);
+    DB::table('daily_loan_dinamis')->where('uniqueid_namareport', 'dld-10')->update(['kolek' => '4']);
+    $chart = app(DashboardPinjamanChartPeriodikService::class)->buildChartPayload('2026-04-20');
+    expect($chart['quality']['available'])->toBeTrue();
+    expect(array_column($chart['quality']['groups'], 'total'))->toBe([1, 1, 0, 1, 1]);
+    expect($chart['quality']['classified'])->toBe($chart['summary']['total_rekening']);
+    expect($chart['quality']['unclassified'])->toBe(0);
+    foreach ($chart['pie']['labels'] as $index => $label) {
+        expect(array_sum(array_column(array_column($chart['quality']['groups'], 'values'), $index)))->toBe($chart['pie']['values'][$index]);
+    }
+    DB::table('daily_loan_dinamis')->where('uniqueid_namareport', 'dld-07')->update(['kolek' => '3']);
+    $chart = app(DashboardPinjamanChartPeriodikService::class)->buildChartPayload('2026-04-20');
+    expect($chart['quality']['groups'][2]['total'])->toBe(1);
+});
+
+it('applies branch unit and period filters to collectibility and rejects changed lookup mappings', function () {
+    DB::table('daily_loan_dinamis')->where('periode', '2026-04-20')->update(['kolek' => '2']);
+    $chart = app(DashboardPinjamanChartPeriodikService::class)->buildChartPayload('2026-04-20', 'KC PONOROGO', ['KC PONOROGO||3887']);
+    expect($chart['quality']['available'])->toBeTrue();
+    expect($chart['quality']['classified'])->toBe(3);
+    expect($chart['quality']['groups'][1]['total'])->toBe(3);
+    expect($chart['quality']['groups'][1]['labels'])->toBe(['MUSIMAN', 'BULANAN']);
+    expect($chart['quality']['groups'][1]['values'])->toBe([2, 1]);
+    DB::table('loan_type')->where('loan_type', 'LT02')->update(['pola_pembayaran' => 'CHANGED AFTER SNAPSHOT']);
+    $chart = app(DashboardPinjamanChartPeriodikService::class)->buildChartPayload('2026-04-20', 'KC PONOROGO', ['KC PONOROGO||3887']);
+    expect($chart['quality']['available'])->toBeFalse();
+    expect($chart['quality']['reason'])->toContain('belum sinkron');
+});
+
+it('keeps unknown collectibility separate and does not misclassify invalid numeric values', function () {
+    DB::table('daily_loan_dinamis')->where('uniqueid_namareport', 'dld-07')->update(['kolek' => '1oops']);
+    DB::table('daily_loan_dinamis')->where('uniqueid_namareport', 'dld-08')->update(['kolek' => '0']);
+    DB::table('daily_loan_dinamis')->where('uniqueid_namareport', 'dld-09')->update(['kolek' => '5']);
+    $chart = app(DashboardPinjamanChartPeriodikService::class)->buildChartPayload('2026-04-20');
+    expect($chart['quality']['available'])->toBeTrue();
+    expect($chart['quality']['unclassified'])->toBe(3);
+    expect($chart['quality']['classified'])->toBe(1);
+    expect($chart['quality']['groups'][0]['total'])->toBe(0);
+    expect(array_column($chart['composition'], 'total'))->toBe([4, 0, 1]);
+});
+
+it('splits active composition into total loans SML and all three NPL collectibility buckets', function () {
+    foreach (['dld-07' => '3', 'dld-08' => '2', 'dld-09' => '4', 'dld-10' => '5'] as $id => $quality) {
+        DB::table('daily_loan_dinamis')->where('uniqueid_namareport', $id)->update(['kolek' => $quality]);
+    }
+    $chart = app(DashboardPinjamanChartPeriodikService::class)->buildChartPayload('2026-04-20');
+    expect(array_column($chart['composition'], 'key'))->toBe(['total', 'sml', 'npl']);
+    expect(array_column($chart['composition'], 'total'))->toBe([4, 1, 3]);
+    expect(array_column($chart['composition'], 'available'))->toBe([true, true, true]);
+    expect($chart['composition'][0]['values'])->toBe($chart['pie']['values']);
+    expect($chart['composition'][1]['values'])->toBe([1, 0, 0]);
+    expect($chart['composition'][2]['values'])->toBe([1, 1, 1]);
+    foreach ($chart['composition'] as $group) {
+        expect($group['labels'])->toBe($chart['pie']['labels']);
+        expect(array_sum($group['values']))->toBe($group['total']);
+    }
+    $unit = app(DashboardPinjamanChartPeriodikService::class)->buildChartPayload('2026-04-20', 'KC PONOROGO', ['KC PONOROGO||3887']);
+    expect(array_column($unit['composition'], 'total'))->toBe([3, 1, 2]);
+});
+
+it('reports unavailable source or source snapshot mismatch instead of displaying false zero breakdowns', function () {
+    DB::table('daily_loan_dinamis')->where('uniqueid_namareport', 'dld-07')->delete();
+    $chart = app(DashboardPinjamanChartPeriodikService::class)->buildChartPayload('2026-04-20');
+    expect($chart['quality']['available'])->toBeFalse();
+    expect($chart['quality']['reason'])->toContain('belum sinkron');
+    expect($chart['summary']['total_rekening'])->toBe(4);
+    expect(array_column($chart['composition'], 'total'))->toBe([4, null, null]);
+    expect(array_column($chart['composition'], 'available'))->toBe([true, false, false]);
+    Schema::drop('daily_loan_dinamis');
+    $chart = app(DashboardPinjamanChartPeriodikService::class)->buildChartPayload('2026-04-20');
+    expect($chart['quality']['available'])->toBeFalse();
+    expect($chart['summary']['total_rekening'])->toBe(4);
 });

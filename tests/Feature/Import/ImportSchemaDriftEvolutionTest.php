@@ -109,20 +109,35 @@ it('warns when a column the report always carried disappears', function () {
     $report = ($this->analyze)(['POSISI', 'NO_REKENING', 'NAMA_NASABAH']);
     $dropped = collect($report['adaptations'])->firstWhere('code', 'column_dropped');
 
-    expect($report['status'])->toBe('attention')
+    expect($report['status'])->toBe('drift')
         ->and($dropped['column'])->toBe('saldo')
         ->and($dropped['severity'])->toBe('warning')
         ->and($report['stats']['dropped'])->toBe(1)
-        ->and($report['event']['kind'])->toBe('incompatibility')
-        ->and($report['event']['summary'])->toContain('hilang dari dokumen sumber');
+        ->and($report['event']['kind'])->toBe('new_columns')
+        ->and(collect($report['review_issues'])->pluck('code')->all())->toContain('column_dropped')
+        ->and($report['event']['summary'])->toContain('perlu dikonfirmasi');
 });
 
-it('does not compare against a different layout variant of the same report', function () {
+it('reopens a failed schema change after a fresh scan instead of stranding the preview', function () {
+    $report = ($this->analyze)(['POSISI', 'NO_REKENING', 'SALDO', 'FLAG_BARU']);
+    DB::table(SchemaDriftRegistry::TABLE)->where('id', $report['event']['id'])->update([
+        'status' => SchemaDriftRegistry::STATUS_FAILED,
+        'error' => 'Temporary schema lock',
+    ]);
+    $again = ($this->analyze)(['POSISI', 'NO_REKENING', 'SALDO', 'FLAG_BARU']);
+
+    expect($again['event']['status'])->toBe(SchemaDriftRegistry::STATUS_PENDING)
+        ->and($again['has_pending_decision'])->toBeTrue()
+        ->and(DB::table(SchemaDriftRegistry::TABLE)->where('id', $again['event']['id'])->value('error'))->toBeNull();
+});
+
+it('requires review when a different layout variant omits previously stored fields', function () {
     ($this->analyze)(['POSISI', 'NO_REKENING', 'NAMA_NASABAH', 'SALDO']);
 
     $variant = ($this->analyze)(['POSISI', 'NAMA_NASABAH', 'KETERANGAN', 'CATATAN']);
 
-    expect(collect($variant['adaptations'])->pluck('code')->all())->not->toContain('column_dropped');
+    expect(collect($variant['adaptations'])->pluck('code')->all())->toContain('column_dropped')
+        ->and($variant['has_pending_decision'])->toBeTrue();
 });
 
 it('fills a renamed new column through the generic importer mapping', function () {
@@ -143,7 +158,7 @@ it('fills a renamed new column through the generic importer mapping', function (
         ->and($context['import_indexes'])->toContain(3);
 });
 
-it('keeps a single notification per decision even when another column changes format', function () {
+it('opens a source-bound decision when another upload changes format', function () {
     ($this->analyze)(['POSISI', 'NO_REKENING', 'SALDO']);
 
     $first = ($this->analyze)(['POSISI', 'NO_REKENING', 'SALDO', 'FLAG_BARU']);
@@ -156,8 +171,9 @@ it('keeps a single notification per decision even when another column changes fo
     $second = app(SchemaDriftAnalyzer::class)->analyze('demo_evolve', $path);
 
     expect(collect($second['adaptations'])->pluck('code')->all())->toContain('format_changed')
-        ->and($second['event']['id'])->toBe($first['event']['id'])
-        ->and(DB::table('import_schema_drift_events')->where('status', 'pending')->count())->toBe(1);
+        ->and($second['event']['id'])->not->toBe($first['event']['id'])
+        ->and($second['source_fingerprint'])->not->toBe($first['source_fingerprint'])
+        ->and(DB::table('import_schema_drift_events')->where('status', 'pending')->count())->toBe(2);
 });
 
 it('resolves a pending decision once the column exists by other means', function () {
@@ -172,6 +188,187 @@ it('resolves a pending decision once the column exists by other means', function
     expect($after['resolved_events'])->toBe([$pending['event']['id']])
         ->and(DB::table('import_schema_drift_events')->where('id', $pending['event']['id'])->value('status'))->toBe('resolved')
         ->and(app(SchemaDriftRegistry::class)->notifications()['pending'])->toBe(0);
+});
+
+function sourceReviewReport(string $source = 'source-one', bool $blocking = false, bool $newColumn = false): array
+{
+    $report = app(SchemaDriftDetector::class)->detect('demo_evolve', ['POSISI', 'NO_REKENING', 'SALDO'], [
+        ['18/10/2026', '0814601000001', '1,500.25'],
+    ]);
+    $report['source_fingerprint'] = hash('sha256', $source);
+    $report['review_issues'] = [[
+        'key' => 'source:row-shape',
+        'code' => 'row_shape_changed',
+        'title' => 'Susunan baris berubah',
+        'detail' => 'Perubahan harus ditinjau sebelum sumber ini diimpor.',
+        'severity' => $blocking ? 'danger' : 'warning',
+        'blocking' => $blocking,
+        'decision' => 'pending',
+    ]];
+    if ($newColumn) {
+        $report['new_columns'][] = [
+            'header' => 'CATATAN_BARU', 'canonical' => 'catatan_baru',
+            'proposed_column' => 'catatan_baru', 'proposed_type' => 'VARCHAR(50)',
+            'decision' => 'pending',
+        ];
+    }
+    $report['has_pending_decision'] = true;
+    $report['fingerprint'] = hash('sha256', 'review-plan:' . (int) $newColumn);
+
+    return $report;
+}
+
+it('requires an explicit source-bound continuation and never reuses it for another file', function () {
+    $registry = app(SchemaDriftRegistry::class);
+    $report = sourceReviewReport();
+    $event = $registry->record($report, 'source.csv');
+
+    expect(fn () => $registry->accept($event->id, 'tester'))->toThrow(RuntimeException::class, 'eksplisit')
+        ->and($registry->find($event->id)->status)->toBe('pending');
+
+    $accepted = $registry->accept($event->id, 'tester', [], [], [
+        ['key' => 'source:row-shape', 'action' => 'continue'],
+    ], $report['source_fingerprint']);
+
+    expect($accepted->status)->toBe('applied')
+        ->and($accepted->payload['review_issues'][0]['decision'])->toBe('approved')
+        ->and($registry->approvedReviewKeys('demo_evolve', $report['source_fingerprint']))->toBe(['source:row-shape'])
+        ->and($registry->approvedReviewKeys('demo_evolve', hash('sha256', 'other-file')))->toBe([]);
+
+    $other = $registry->record(sourceReviewReport('other-file'), 'other.csv');
+    expect($other->id)->not->toBe($event->id)
+        ->and($other->status)->toBe('pending');
+});
+
+it('refuses continuation of a structurally invalid source even with an explicit selection', function () {
+    $registry = app(SchemaDriftRegistry::class);
+    $report = sourceReviewReport('bad-structure', true);
+    $event = $registry->record($report);
+
+    expect(fn () => $registry->accept($event->id, 'tester', [], [], [
+        ['key' => 'source:row-shape', 'action' => 'continue'],
+    ], $report['source_fingerprint']))->toThrow(RuntimeException::class, 'harus diperbaiki')
+        ->and($registry->find($event->id)->status)->toBe('pending')
+        ->and($registry->approvedReviewKeys('demo_evolve', $report['source_fingerprint']))->toBe([]);
+});
+
+it('rejects a stale source decision before adding any selected column', function () {
+    $registry = app(SchemaDriftRegistry::class);
+    $report = sourceReviewReport('current-file', false, true);
+    $event = $registry->record($report);
+
+    expect(fn () => $registry->accept($event->id, 'tester', [], [], [
+        ['key' => 'source:row-shape', 'action' => 'continue'],
+    ], hash('sha256', 'stale-file')))->toThrow(RuntimeException::class, 'sudah berubah')
+        ->and(Schema::hasColumn('demo_evolve', 'catatan_baru'))->toBeFalse()
+        ->and($registry->find($event->id)->status)->toBe('pending');
+});
+
+it('returns an actionable HTTP error for a stale preview approval', function () {
+    $report = sourceReviewReport('current-preview', false, true);
+    $event = app(SchemaDriftRegistry::class)->record($report);
+    $admin = \App\Models\User::factory()->make(['id' => 1, 'role' => 'admin', 'name' => 'Admin Uji', 'pn' => '00000001']);
+
+    $this->actingAs($admin)->withoutMiddleware()
+        ->postJson(route('import.schema-drift.accept', ['event' => $event->id]), [
+            'source_fingerprint' => hash('sha256', 'older-preview'),
+            'reviews' => [['key' => 'source:row-shape', 'action' => 'continue']],
+        ])
+        ->assertStatus(422)
+        ->assertJsonPath('status', 'error');
+
+    expect(Schema::hasColumn('demo_evolve', 'catatan_baru'))->toBeFalse();
+});
+
+it('refuses preview decisions when source bytes change after the scan', function (bool $includeFingerprint) {
+    $path = ($this->write)(['POSISI', 'NO_REKENING', 'SALDO']);
+    $report = sourceReviewReport('preview-file', false, true);
+    $report['source_fingerprint'] = hash_file('sha256', $path);
+    $registry = app(SchemaDriftRegistry::class);
+    $event = $registry->record($report);
+    $token = \App\Services\Import\SchemaDrift\SchemaDriftSourceToken::issue('demo_evolve', $path);
+    file_put_contents($path, "\nchanged after preview", FILE_APPEND);
+    $body = [
+        'source' => $token,
+        'reviews' => [['key' => 'source:row-shape', 'action' => 'continue']],
+    ];
+    if ($includeFingerprint) {
+        $body['source_fingerprint'] = $report['source_fingerprint'];
+    }
+    $admin = \App\Models\User::factory()->make(['id' => 1, 'role' => 'admin', 'name' => 'Admin Uji', 'pn' => '00000001']);
+
+    $this->actingAs($admin)->withoutMiddleware()
+        ->postJson(route('import.schema-drift.accept', ['event' => $event->id]), $body)
+        ->assertStatus(422)
+        ->assertJsonPath('status', 'error')
+        ->assertJsonPath('message', 'Isi file sumber sudah berubah sejak pemindaian. Pindai ulang preview sebelum menerapkan perubahan kolom.');
+
+    expect(Schema::hasColumn('demo_evolve', 'catatan_baru'))->toBeFalse()
+        ->and($registry->find($event->id)->status)->toBe('pending')
+        ->and($registry->approvedReviewKeys('demo_evolve', $report['source_fingerprint']))->toBe([]);
+})->with([true, false]);
+
+it('applies a preview decision when its token and current source still match', function () {
+    $path = ($this->write)(['POSISI', 'NO_REKENING', 'SALDO']);
+    $report = sourceReviewReport('matching-preview', false, true);
+    $report['source_fingerprint'] = hash_file('sha256', $path);
+    $registry = app(SchemaDriftRegistry::class);
+    $event = $registry->record($report);
+    $admin = \App\Models\User::factory()->make(['id' => 1, 'role' => 'admin', 'name' => 'Admin Uji', 'pn' => '00000001']);
+
+    $this->actingAs($admin)->withoutMiddleware()
+        ->postJson(route('import.schema-drift.accept', ['event' => $event->id]), [
+            'source' => \App\Services\Import\SchemaDrift\SchemaDriftSourceToken::issue('demo_evolve', $path),
+            'source_fingerprint' => $report['source_fingerprint'],
+            'reviews' => [['key' => 'source:row-shape', 'action' => 'continue']],
+        ])
+        ->assertOk()
+        ->assertJsonPath('event.status', 'applied');
+
+    expect(Schema::hasColumn('demo_evolve', 'catatan_baru'))->toBeTrue()
+        ->and($registry->approvedReviewKeys('demo_evolve', $report['source_fingerprint']))->toBe(['source:row-shape']);
+});
+
+it('keeps source reviews open after the user skips new columns', function () {
+    $registry = app(SchemaDriftRegistry::class);
+    $report = sourceReviewReport('file-with-extra', false, true);
+    $event = $registry->record($report);
+    $after = $registry->reject($event->id, 'tester', $report['source_fingerprint']);
+
+    expect($after->status)->toBe('pending')
+        ->and($after->payload['new_columns'][0]['decision'])->toBe('rejected')
+        ->and($after->payload['review_issues'][0]['decision'])->toBe('pending')
+        ->and($registry->rejectedColumns('demo_evolve'))->toContain('catatan_baru')
+        ->and($registry->approvedReviewKeys('demo_evolve', $report['source_fingerprint']))->toBe([])
+        ->and(Schema::hasColumn('demo_evolve', 'catatan_baru'))->toBeFalse();
+
+    $accepted = $registry->accept($event->id, 'tester', [], [], [
+        ['key' => 'source:row-shape', 'action' => 'continue'],
+    ], $report['source_fingerprint']);
+    expect($accepted->status)->toBe('applied')
+        ->and(Schema::hasColumn('demo_evolve', 'catatan_baru'))->toBeFalse()
+        ->and($registry->rejectedColumns('demo_evolve'))->toContain('catatan_baru');
+});
+
+it('does not reconcile away an unapproved source review when every database column exists', function () {
+    $registry = app(SchemaDriftRegistry::class);
+    $report = sourceReviewReport();
+    $event = $registry->record($report);
+
+    expect($registry->reconcile($report))->toBe([])
+        ->and($registry->find($event->id)->status)->toBe('pending')
+        ->and(fn () => $registry->reject($event->id, 'tester'))->toThrow(RuntimeException::class, 'belum dikonfirmasi');
+});
+
+it('refuses mapping a second source header onto an already populated target', function () {
+    $report = ($this->analyze)(['POSISI', 'NO_REKENING', 'SALDO', 'SALDO_LAIN']);
+    $registry = app(SchemaDriftRegistry::class);
+
+    expect(fn () => $registry->accept($report['event']['id'], 'tester', [[
+        'proposed_column' => 'saldo_lain', 'action' => 'map', 'target' => 'saldo',
+    ]]))->toThrow(RuntimeException::class, 'sudah diisi kolom sumber lain')
+        ->and($registry->columnAliases('demo_evolve'))->toBe([])
+        ->and($registry->find($report['event']['id'])->status)->toBe('pending');
 });
 
 it('refuses ambiguous or unsafe execution choices', function () {

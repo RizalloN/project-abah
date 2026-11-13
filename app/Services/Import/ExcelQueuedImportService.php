@@ -107,6 +107,126 @@ class ExcelQueuedImportService
                 return $fail($e->getMessage());
             }
 
+            if ($tableName === PipelinePrewashSourceService::TABLE) {
+                $handle = fopen($path, 'rb');
+                if ($handle === false) {
+                    return $fail('Staging Pipeline Prewash tidak dapat dibaca.');
+                }
+                try {
+                    fgetcsv($handle, 0, ',', '"', '');
+                    $firstRow = fgetcsv($handle, 0, ',', '"', '');
+                    $year = (int) ($firstRow[count(PipelinePrewashSourceService::BASE_COLUMNS)] ?? 0);
+                } finally {
+                    fclose($handle);
+                }
+                $inserted = app(PipelinePrewashSourceService::class)->import($path, $normalizedHeaders, $activeFilters,
+                    static function (int $scanned, int $selected) use ($send, $estimatedTotalRows): void {
+                        $send('progress', [
+                            'percent' => min(88, 10 + (int) (78 * $scanned / max(1, (int) $estimatedTotalRows))),
+                            'message' => 'Memvalidasi dan menyiapkan Pipeline Prewash dengan angka sumber utuh...',
+                            'processed_rows' => $scanned, 'rows_done' => $scanned,
+                            'total_rows' => $estimatedTotalRows ?? $scanned, 'selected_rows' => $selected,
+                        ]);
+                    });
+                \App\Support\ManagedReportManagementService::invalidateTableCache($tableName);
+                \App\Support\ReportCacheVersion::bump();
+                $message = 'Seluruh baris Pipeline Prewash berhasil disimpan dan diverifikasi.';
+                if ($inserted > 0) {
+                    $send('progress', ['percent' => 92, 'message' => 'Menghitung kunjungan bulanan dan realisasi Pipeline Prewash...', 'processed_rows' => $inserted]);
+                    try {
+                        $derived = app(\App\Support\PipelinePrewashService::class)->refresh($year, true);
+                        if (!$derived['available']) {
+                            $message .= ' Perhitungan menunggu sumber: '.($derived['message'] ?? 'sumber belum tersedia');
+                        }
+                    } catch (\Throwable $error) {
+                        $message .= ' Perhitungan lanjutan belum selesai; muat ulang Pipeline Prewash untuk mencoba kembali.';
+                        Log::warning('Perhitungan Pipeline Prewash tertunda setelah data sumber tersimpan.', ['job_id' => $jobId, 'tahun' => $year, 'error' => $error->getMessage()]);
+                    }
+                }
+                $result = ['status' => 'completed', 'total_rows' => $inserted, 'total_success' => $inserted, 'total_failed' => 0];
+                $payload = [...$result, 'percent' => 100, 'processed_rows' => $inserted, 'message' => $message];
+                if ($jobId > 0) {
+                    $updateJob($jobId, ['status' => 'completed', 'total_files' => $inserted, 'total_success' => $inserted, 'total_failed' => 0], $payload);
+                }
+                $send('complete', $payload);
+                try {
+                    ($callbacks['cleanup_successful_import_artifacts'])($jobId, $relativePath, $path, []);
+                } catch (\Throwable $error) {
+                    Log::warning('Cleanup artefak Pipeline Prewash gagal setelah import selesai.', ['job_id' => $jobId, 'error' => $error->getMessage()]);
+                }
+
+                return $result;
+            }
+
+            if (in_array($tableName, [EvaluasiKunjunganSourceService::TABLE, PipelinePrewashBohSourceService::TABLE, PipelinePrewashMbmSourceService::TABLE, MonitoringKsbkSourceService::TABLE], true)) {
+                $preciseReportLabel = match ($tableName) {
+                    PipelinePrewashMbmSourceService::TABLE => 'Pipeline Prewash PIC MBM',
+                    MonitoringKsbkSourceService::TABLE => 'Monitoring Realisasi KSBK',
+                    PipelinePrewashBohSourceService::TABLE => 'Pipeline Prewash PIC BOH',
+                    default => 'Kunjungan Pemasar',
+                };
+                $sourceService = match ($tableName) {
+                    PipelinePrewashMbmSourceService::TABLE => PipelinePrewashMbmSourceService::class,
+                    MonitoringKsbkSourceService::TABLE => MonitoringKsbkSourceService::class,
+                    PipelinePrewashBohSourceService::TABLE => PipelinePrewashBohSourceService::class,
+                    default => EvaluasiKunjunganSourceService::class,
+                };
+                $inserted = app($sourceService)->import(
+                    $path,
+                    $normalizedHeaders,
+                    $activeFilters,
+                    static function (int $scanned, int $selected) use ($send, $estimatedTotalRows, $preciseReportLabel): void {
+                        $send('progress', [
+                            'percent' => min(90, 10 + (int) (80 * $scanned / max(1, (int) $estimatedTotalRows))),
+                            'message' => 'Memvalidasi dan menyiapkan import '.$preciseReportLabel.' tanpa pembulatan angka...',
+                            'processed_rows' => $scanned, 'rows_done' => $scanned,
+                            'total_rows' => $estimatedTotalRows ?? $scanned,
+                            'selected_rows' => $selected,
+                        ]);
+                    }
+                );
+                $message = 'Seluruh baris terpilih berhasil disimpan dan diverifikasi.';
+                if ($tableName === MonitoringKsbkSourceService::TABLE) {
+                    \App\Support\ManagedReportManagementService::invalidateTableCache($tableName);
+                    try {
+                        $monitoring = app(\App\Support\LandingMicroKsbkService::class)->payload(null);
+                        if (! empty($monitoring['message'])) {
+                            $message .= ' '.$monitoring['message'];
+                        }
+                    } catch (\Throwable $error) {
+                        $message .= ' Lookup realisasi belum selesai; buka monitoring KSBK untuk mencoba kembali.';
+                        Log::warning('Lookup KSBK tertunda setelah data sumber tersimpan.', ['job_id' => $jobId, 'error' => $error->getMessage()]);
+                    }
+                }
+
+                if ($tableName === PipelinePrewashMbmSourceService::TABLE && \Illuminate\Support\Facades\Schema::hasTable($tableName)) {
+                    try {
+                        $monitoring = app(\App\Support\LandingMicroPrewashMbmService::class)->payload(null);
+                        if (! empty($monitoring['message'])) {
+                            $message .= ' '.$monitoring['message'];
+                        }
+                    } catch (\Throwable $error) {
+                        $message .= ' Perhitungan lanjutan belum selesai; buka monitoring PIC MBM untuk mencoba kembali.';
+                        Log::warning('Perhitungan PIC MBM tertunda setelah data sumber tersimpan.', ['job_id' => $jobId, 'error' => $error->getMessage()]);
+                    }
+                }
+                $result = ['status' => 'completed', 'total_rows' => $inserted, 'total_success' => $inserted, 'total_failed' => 0];
+                $payload = [...$result, 'percent' => 100, 'processed_rows' => $inserted, 'message' => $message];
+                if ($jobId > 0) {
+                    $updateJob($jobId, [
+                        'status' => 'completed', 'total_files' => $inserted, 'total_success' => $inserted, 'total_failed' => 0,
+                    ], $payload);
+                }
+                $send('complete', $payload);
+                try {
+                    ($callbacks['cleanup_successful_import_artifacts'])($jobId, $relativePath, $path, []);
+                } catch (\Throwable $cleanupError) {
+                    Log::warning('Cleanup artefak Kunjungan Pemasar gagal setelah import selesai.', ['job_id' => $jobId, 'error' => $cleanupError->getMessage()]);
+                }
+
+                return $result;
+            }
+
             $hasEmptyFilter = false;
             foreach ($activeFilters as $allowedValues) {
                 $allowedValues = (array) $allowedValues;

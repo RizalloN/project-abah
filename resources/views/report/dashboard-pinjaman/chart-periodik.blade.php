@@ -259,7 +259,8 @@
         border-radius: 0px !important;
         box-shadow: none !important;
         padding: 1rem 1.25rem !important;
-        min-height: 100px !important;
+        min-height: 112px !important;
+        min-width: 0;
         display: flex;
         flex-direction: column;
         justify-content: space-between;
@@ -300,7 +301,7 @@
     .chart-periodik-summary {
         display: grid;
         grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 1rem;
+        gap: 20px;
     }
 
     /* Chart Cards and Canvas */
@@ -349,6 +350,68 @@
         width: 100%;
     }
 
+    .cp-chart-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: 1fr; gap: 20px; margin-bottom: 28px; align-items: stretch; }
+    .cp-dashboard .loan-title-hero__wrap { width: 100%; min-width: 0; }
+    .cp-dashboard .loan-title-hero__desc { display: block !important; -webkit-line-clamp: unset !important; max-width: 780px; margin: 8px auto 0; white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.7; }
+    .cp-chart-column { min-width: 0; display: flex; }
+    .cp-chart-row .chart-card { width: 100%; min-width: 0; margin: 0; display: flex; flex-direction: column; }
+    .cp-chart-row .chart-card__header { min-height: 68px; flex-shrink: 0; }
+    .cp-chart-row .chart-card__body { display: flex; flex-direction: column; min-width: 0; }
+    .cp-chart-row .chart-canvas-wrap { flex: 1; min-height: 280px; height: 300px; }
+    .cp-composition-groups { display: grid; gap: 18px; min-width: 0; }
+    .cp-composition-group { min-width: 0; padding-top: 16px; border-top: 1px solid #dce7f3; }
+    .cp-composition-group:first-child { padding-top: 0; border-top: 0; }
+    .cp-composition-group header { display: flex; align-items: start; justify-content: space-between; gap: 14px; margin-bottom: 12px; }
+    .cp-composition-group h3 { font-size: 13px; font-weight: 750; color: #153e6d; margin: 0 0 3px; }
+    .cp-composition-group header p { font-size: 10px; color: #60758f; margin: 0; }
+    .cp-composition-total { font-size: 17px; font-weight: 750; color: #145fba; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .cp-composition-total small { font-size: 10px; font-weight: 500; color: #60758f; margin-left: 5px; }
+    .cp-composition-group .cp-bar-list { gap: 6px; }
+    .cp-composition-group .cp-bar-row { grid-template-columns: minmax(116px, 1fr) minmax(32px, 1fr) auto; align-items: center; gap: 8px; min-height: 20px; }
+    .cp-composition-group .cp-bar-label { grid-column: 1; grid-row: 1; font-size: 10px; }
+    .cp-composition-group .cp-bar-track { grid-column: 2; grid-row: 1; height: 7px; }
+    .cp-composition-group .cp-bar-value { grid-column: 3; grid-row: 1; font-size: 11px; gap: 6px; }
+    .cp-composition-unavailable { font-size: 11px; line-height: 1.8; background: #f7faff; color: #60758f; padding: 12px; margin: 0; }
+    .cp-trend-legend { display: flex; flex-wrap: wrap; gap: 10px 16px; padding-top: 18px; font-size: 11px; color: #42526b; }
+    .cp-trend-legend button { display: inline-flex; align-items: center; gap: 7px; max-width: 100%; overflow-wrap: anywhere; border: 0; background: transparent; color: inherit; font: inherit; padding: 3px 0; text-align: left; min-height: 24px; }
+    .cp-trend-legend button[aria-pressed="false"] { opacity: .55; text-decoration: line-through; }
+    .cp-trend-legend button:focus-visible { outline: 2px solid #307fe2; outline-offset: 4px; }
+    .cp-trend-legend i { width: 9px; height: 9px; flex-shrink: 0; border-radius: 50%; }
+    .cp-bar-list { display: grid; gap: 15px; min-width: 0; }
+    .cp-bar-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 7px 12px; }
+    .cp-bar-label { font-size: 11px; font-weight: 650; color: #385474; overflow-wrap: anywhere; line-height: 1.6; }
+    .cp-bar-value { display: flex; align-items: baseline; gap: 8px; font-size: 13px; font-weight: 750; color: #123e74; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .cp-bar-value small { font-size: 10px; font-weight: 500; color: #60758f; min-width: 38px; text-align: right; }
+    .cp-bar-track { grid-column: 1 / -1; height: 9px; background: #edf3fa; border-radius: 3px; overflow: hidden; }
+    .cp-bar-fill { height: 100%; border-radius: 3px; }
+    .cp-bar-caption { font-size: 11px; line-height: 1.7; color: #60758f; margin: 0 0 20px; }
+    .cp-quality-section { margin-top: 8px; margin-bottom: 24px; }
+    .cp-quality-heading { display: flex; justify-content: space-between; align-items: start; gap: 18px; margin: 10px 0 18px; }
+    .cp-quality-heading h2 { font-size: 18px; font-weight: 750; color: #093a74; margin: 0 0 7px; }
+    .cp-quality-heading p { margin: 0; max-width: 800px; font-size: 12px; line-height: 1.8; color: #60758f; }
+    .cp-quality-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); grid-auto-rows: 1fr; gap: 20px; align-items: stretch; }
+    .cp-quality-card { grid-column: span 2; min-width: 0; border: 1px solid #d2e0ef; background: #fff; padding: 20px; border-top: 3px solid #307fe2; display: flex; flex-direction: column; }
+    .cp-quality-card:nth-child(4) { grid-column: 2 / span 2; }
+    .cp-quality-card:nth-child(5) { grid-column: 4 / span 2; }
+    .cp-quality-card header { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 12px; min-height: 92px; padding-bottom: 16px; margin-bottom: 18px; border-bottom: 1px solid #e4edf7; }
+    .cp-quality-card h3 { min-height: 38px; line-height: 1.4; font-size: 14px; font-weight: 750; color: #153e6d; margin: 0 0 5px; overflow-wrap: anywhere; }
+    .cp-quality-card > .cp-bar-list { flex: 1; min-height: 298px; align-content: space-between; }
+    .cp-quality-card header p { font-size: 11px; color: #60758f; margin: 0; }
+    .cp-quality-total { font-size: 22px; font-weight: 750; color: #145fba; font-variant-numeric: tabular-nums; white-space: nowrap; line-height: 1.1; text-align: right; }
+    .cp-quality-total small { display: block; margin-top: 6px; font-size: 10px; font-weight: 500; color: #60758f; }
+    .cp-quality-note { font-size: 12px; color: #7e5b1e; background: #fff9ee; border: 1px solid #efdfba; padding: 12px 16px; line-height: 1.8; margin: 0 0 16px; }
+    .cp-quality-empty { flex: 1; min-height: 298px; display: grid; place-items: center; margin: 0; padding: 24px 12px; background: #f7faff; text-align: center; color: #60758f; font-size: 12px; }
+    @media (min-width: 1900px) { .cp-quality-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); } .cp-quality-card:nth-child(n) { grid-column: auto; } }
+    @media (max-width: 1319.98px) { .cp-quality-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } .cp-quality-card:nth-child(n) { grid-column: span 2; } .cp-quality-card:last-child { grid-column: 2 / span 2; } }
+    @media (max-width: 991.98px) { .cp-chart-row { grid-template-columns: minmax(0, 1fr); grid-auto-rows: auto; } }
+    @media (max-width: 575.98px) {
+        .cp-composition-group .cp-bar-row { grid-template-columns: minmax(0, 1fr) auto; gap: 5px 12px; }
+        .cp-composition-group .cp-bar-track { grid-column: 1 / -1; grid-row: 2; }
+        .cp-composition-group .cp-bar-value { grid-column: 2; }
+        .cp-composition-group .cp-bar-list { gap: 12px; }
+    }
+    @media (max-width: 767.98px) { .cp-quality-grid { grid-template-columns: minmax(0, 1fr); } .cp-quality-card:nth-child(n) { grid-column: auto; } .cp-quality-heading { flex-direction: column; } .cp-quality-card { padding: 18px; } .cp-quality-card header { min-height: 82px; } .cp-quality-card > .cp-bar-list, .cp-quality-empty { min-height: 270px; } .cp-bar-value { font-size: 12px; gap: 6px; } .cp-trend-legend { font-size: 10px; } }
+
     .chart-empty-state {
         height: 320px;
         display: flex;
@@ -362,15 +425,15 @@
 
     /* Toolbar Layout */
     .loan-filter-toolbar {
-        display: flex;
-        flex-wrap: wrap;
+        display: grid;
+        grid-template-columns: 180px minmax(0, 1fr) minmax(0, 1fr) auto;
         align-items: flex-end;
         gap: 0.75rem;
         width: 100%;
     }
 
     .loan-filter-item {
-        flex: 1 1 200px;
+        min-width: 0;
     }
 
     .loan-filter-item.item-period {
@@ -392,12 +455,22 @@
         .chart-periodik-summary {
             grid-template-columns: repeat(2, minmax(0, 1fr));
         }
+        .loan-filter-toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .loan-filter-actions { justify-content: flex-end; }
     }
 
     @media (max-width: 575.98px) {
         .chart-periodik-summary {
-            grid-template-columns: 1fr;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
         }
+        .chart-periodik-kpi { padding: 14px !important; min-height: 112px !important; }
+        .chart-periodik-kpi__value { font-size: 1.3rem !important; overflow-wrap: anywhere; }
+        .chart-periodik-kpi__hint { font-size: .65rem !important; line-height: 1.6; }
+        .loan-filter-toolbar { grid-template-columns: minmax(0, 1fr); }
+        .loan-filter-actions { justify-content: stretch; }
+        .loan-filter-actions .btn-flat-primary { flex: 1; }
+        .cp-chart-row { gap: 20px; }
 
         .chart-card__header {
             flex-direction: column;
@@ -407,7 +480,7 @@
     }
 </style>
 
-<div class="loan-dashboard pt-4 px-3">
+<div class="loan-dashboard cp-dashboard pt-4 px-3">
     <div class="loan-title-hero d-flex flex-wrap justify-content-center align-items-center animate-reveal">
         <div class="loan-title-hero__wrap text-center">
             <div class="loan-title-hero__badge mx-auto">
@@ -562,8 +635,8 @@
         </div>
     </div>
 
-    <div class="row animate-reveal" style="row-gap: 1rem;">
-        <div class="col-lg-7">
+    <div class="animate-reveal cp-chart-row">
+        <div class="cp-chart-column">
             <div class="chart-card">
                 <div class="chart-card__header">
                     <div>
@@ -575,6 +648,7 @@
                     </div>
                 </div>
                 <div class="chart-card__body">
+                    <p class="cp-bar-caption">Perbandingan jumlah rekening menurut pola pembayaran pada hingga enam posisi laporan terakhir.</p>
                     <div id="chartPeriodikTrendEmpty" class="chart-empty-state d-none">
                         <div>
                             <strong>Belum ada data trend</strong>
@@ -582,19 +656,20 @@
                         </div>
                     </div>
                     <div class="chart-canvas-wrap">
-                        <canvas id="chartPeriodikTrendCanvas"></canvas>
+                        <canvas id="chartPeriodikTrendCanvas" role="img" aria-label="Tren jumlah rekening menurut pola pembayaran"></canvas>
                     </div>
+                    <div id="chartPeriodikTrendLegend" class="cp-trend-legend" aria-label="Legenda pola pembayaran"></div>
                 </div>
             </div>
         </div>
-        <div class="col-lg-5">
+        <div class="cp-chart-column">
             <div class="chart-card">
                 <div class="chart-card__header">
                     <div>
                         <h5 class="chart-card__title">Komposisi Periode Aktif</h5>
                     </div>
                     <div class="chart-card__badge">
-                        <i class="fas fa-chart-pie"></i>
+                        <i class="fas fa-chart-bar" aria-hidden="true"></i>
                         <span id="chartPeriodikPieBadge">{{ $selected_period_label ?? '-' }}</span>
                     </div>
                 </div>
@@ -605,13 +680,17 @@
                             <span>Distribusi pola pembayaran akan tampil setelah data tersedia.</span>
                         </div>
                     </div>
-                    <div class="chart-canvas-wrap">
-                        <canvas id="chartPeriodikPieCanvas"></canvas>
-                    </div>
+                    <p class="cp-bar-caption">Pola pembayaran untuk Total Pinjaman, SML, dan NPL. Jumlah rekening dan persentase dihitung dalam masing-masing kelompok.</p>
+                    <div id="chartPeriodikCompositionBars" class="cp-composition-groups" aria-label="Pola pembayaran Total Pinjaman, SML, dan NPL"></div>
                 </div>
             </div>
         </div>
     </div>
+    <section class="cp-quality-section" aria-labelledby="chartPeriodikQualityTitle">
+        <header class="cp-quality-heading"><div><h2 id="chartPeriodikQualityTitle">Pola pembayaran per kolektibilitas</h2><p>Komposisi rekening pada periode aktif untuk kolek 1–5. Panjang batang dan persentase menunjukkan proporsi dalam masing-masing kolek.</p></div><span class="chart-card__badge" id="chartPeriodikQualityBadge">{{ $selected_period_label ?? '-' }}</span></header>
+        <p id="chartPeriodikQualityNote" class="cp-quality-note" role="status" hidden></p>
+        <div id="chartPeriodikQualityGrid" class="cp-quality-grid" aria-live="polite"></div>
+    </section>
 </div>
 
 @push('scripts')
@@ -650,7 +729,10 @@
         const trendBadgeEl = document.getElementById('chartPeriodikTrendBadge');
         const pieBadgeEl = document.getElementById('chartPeriodikPieBadge');
         const trendCanvas = document.getElementById('chartPeriodikTrendCanvas');
-        const pieCanvas = document.getElementById('chartPeriodikPieCanvas');
+        const compositionBars = document.getElementById('chartPeriodikCompositionBars');
+        const trendLegend = document.getElementById('chartPeriodikTrendLegend');
+        const qualityGrid = document.getElementById('chartPeriodikQualityGrid');
+        const qualityNote = document.getElementById('chartPeriodikQualityNote');
         const trendEmpty = document.getElementById('chartPeriodikTrendEmpty');
         const pieEmpty = document.getElementById('chartPeriodikPieEmpty');
 
@@ -668,7 +750,6 @@
         const initialSelectedUnits = @json($selectedUnitValues);
 
         let trendChart = null;
-        let pieChart = null;
         let filtersController = null;
         let dataController = null;
         let suppressFilterReload = false;
@@ -832,10 +913,6 @@
                 trendChart = null;
             }
 
-            if (pieChart) {
-                pieChart.destroy();
-                pieChart = null;
-            }
         }
 
         function toggleEmptyState(canvas, emptyState, hasData) {
@@ -849,6 +926,126 @@
             emptyState.classList.remove('d-none');
         }
 
+        function renderBars(container, labels, values, total, colorFor) {
+            container.replaceChildren();
+            labels.forEach((label, index) => {
+                const value = Number(values[index] || 0);
+                const share = total > 0 ? value / total * 100 : 0;
+                const row = document.createElement('div');
+                row.className = 'cp-bar-row';
+                row.setAttribute('role', 'listitem');
+                const name = document.createElement('span');
+                name.className = 'cp-bar-label';
+                name.textContent = label;
+                const number = document.createElement('span');
+                number.className = 'cp-bar-value';
+                number.textContent = formatNumber(value);
+                const percent = document.createElement('small');
+                percent.textContent = share > 0 && share < 0.1 ? '<0,1%' : share.toLocaleString('id-ID', { maximumFractionDigits: 1, minimumFractionDigits: 1 }) + '%';
+                number.append(percent);
+                const track = document.createElement('div');
+                track.className = 'cp-bar-track';
+                track.setAttribute('aria-hidden', 'true');
+                const fill = document.createElement('div');
+                fill.className = 'cp-bar-fill';
+                fill.style.width = share + '%';
+                fill.style.backgroundColor = colorFor(label);
+                track.append(fill);
+                row.append(name, number, track);
+                container.append(row);
+            });
+        }
+
+        function renderComposition(payload, colorFor) {
+            compositionBars.replaceChildren();
+            (payload.composition || []).forEach(group => {
+                const section = document.createElement('section');
+                section.className = 'cp-composition-group';
+                section.dataset.group = group.key;
+                const header = document.createElement('header');
+                const copy = document.createElement('div');
+                const title = document.createElement('h3');
+                title.id = `cp-composition-${group.key}-title`;
+                title.textContent = group.label;
+                section.setAttribute('aria-labelledby', title.id);
+                const basis = document.createElement('p');
+                basis.textContent = group.basis;
+                copy.append(title, basis);
+                const total = document.createElement('div');
+                total.className = 'cp-composition-total';
+                total.textContent = group.available ? formatNumber(group.total) : '—';
+                const unit = document.createElement('small');
+                unit.textContent = group.available ? 'rekening' : 'belum tersedia';
+                total.append(unit);
+                header.append(copy, total);
+                section.append(header);
+                if (group.available) {
+                    const bars = document.createElement('div');
+                    bars.className = 'cp-bar-list';
+                    bars.setAttribute('role', 'list');
+                    bars.setAttribute('aria-label', `Jumlah rekening dan proporsi pola pembayaran ${group.label}`);
+                    renderBars(bars, group.labels || [], group.values || [], group.total || 0, colorFor);
+                    section.append(bars);
+                } else {
+                    const notice = document.createElement('p');
+                    notice.className = 'cp-composition-unavailable';
+                    notice.textContent = group.reason || 'Rincian kolektibilitas belum tersedia pada periode ini.';
+                    section.append(notice);
+                }
+                compositionBars.append(section);
+            });
+        }
+
+        function renderQuality(payload, colorFor) {
+            const quality = payload.quality || {};
+            document.getElementById('chartPeriodikQualityBadge').textContent = payload.selected_period_label || '-';
+            qualityGrid.replaceChildren();
+            qualityNote.hidden = quality.available && !quality.unclassified;
+            qualityNote.textContent = quality.available
+                ? `${formatNumber(quality.unclassified || 0)} rekening belum terklasifikasi karena nilai kolek sumber kosong atau tidak valid. Rekening ini tetap dihitung dalam komposisi periode aktif.`
+                : (quality.reason || 'Data kolektibilitas pada periode ini belum tersedia.');
+            const groups = quality.groups || [
+                { kolek: 1, label: 'Lancar' }, { kolek: 2, label: 'SML' },
+                { kolek: 3, label: 'Kurang Lancar' }, { kolek: 4, label: 'Diragukan' }, { kolek: 5, label: 'Macet' },
+            ];
+            groups.forEach(group => {
+                const card = document.createElement('article');
+                card.className = 'cp-quality-card';
+                card.dataset.kolek = group.kolek;
+                const header = document.createElement('header');
+                const copy = document.createElement('div');
+                const title = document.createElement('h3');
+                title.id = `cp-quality-${group.kolek}-title`;
+                title.textContent = `Kolek ${group.kolek} · ${group.label}`;
+                card.setAttribute('aria-labelledby', title.id);
+                const hint = document.createElement('p');
+                hint.textContent = 'Pola pembayaran pada periode aktif';
+                copy.append(title, hint);
+                const total = document.createElement('div');
+                total.className = 'cp-quality-total';
+                total.textContent = quality.available ? formatNumber(group.total || 0) : '—';
+                const caption = document.createElement('small');
+                caption.textContent = quality.available ? 'rekening' : 'belum tersedia';
+                total.append(caption);
+                header.append(copy, total);
+                card.append(header);
+                if (quality.available && group.total > 0) {
+                    const bars = document.createElement('div');
+                    bars.className = 'cp-bar-list';
+                    bars.setAttribute('role', 'list');
+                    bars.setAttribute('aria-label', `Jumlah rekening menurut pola pembayaran pada kolek ${group.kolek}`);
+                    renderBars(bars, group.labels || [], group.values || [], group.total, colorFor);
+                    card.append(bars);
+                } else {
+                    const empty = document.createElement('p');
+                    empty.className = 'cp-quality-empty';
+                    empty.textContent = quality.available ? 'Tidak ada rekening pada kolek ini untuk filter aktif.' : 'Rincian kolektibilitas belum tersedia.';
+                    card.append(empty);
+                }
+                qualityGrid.append(card);
+            });
+        }
+
         function renderCharts(payload) {
             updateSummary(payload);
             destroyCharts();
@@ -858,9 +1055,33 @@
             const pieLabels = payload.pie?.labels || [];
             const pieValues = payload.pie?.values || [];
             const palette = ['#0857c3', '#ff671f', '#14b8a6', '#7c3aed', '#0f9d58', '#f59e0b', '#64748b', '#ec4899'];
+            const patternOrder = [...new Set([...trendDatasets.map(item => item.label), ...pieLabels])];
+            const colorFor = label => palette[Math.max(0, patternOrder.indexOf(label)) % palette.length];
+            trendLegend.replaceChildren();
+            trendDatasets.forEach((dataset, index) => {
+                const item = document.createElement('button');
+                item.type = 'button';
+                item.setAttribute('aria-pressed', 'true');
+                item.setAttribute('aria-label', `Tampilkan atau sembunyikan tren ${dataset.label}`);
+                const dot = document.createElement('i');
+                dot.style.backgroundColor = colorFor(dataset.label);
+                dot.setAttribute('aria-hidden', 'true');
+                item.append(dot, document.createTextNode(dataset.label));
+                item.addEventListener('click', () => {
+                    if (!trendChart) return;
+                    const visible = !trendChart.isDatasetVisible(index);
+                    trendChart.setDatasetVisibility(index, visible);
+                    trendChart.update();
+                    item.setAttribute('aria-pressed', String(visible));
+                });
+                trendLegend.append(item);
+            });
 
             toggleEmptyState(trendCanvas, trendEmpty, trendLabels.length > 0 && trendDatasets.length > 0);
-            toggleEmptyState(pieCanvas, pieEmpty, pieLabels.length > 0 && pieValues.length > 0);
+            trendCanvas.parentElement.classList.toggle('d-none', !trendLabels.length || !trendDatasets.length);
+            toggleEmptyState(compositionBars, pieEmpty, pieLabels.length > 0 && pieValues.length > 0);
+            renderComposition(payload, colorFor);
+            renderQuality(payload, colorFor);
 
             if (trendLabels.length > 0 && trendDatasets.length > 0) {
                 trendChart = new Chart(trendCanvas.getContext('2d'), {
@@ -882,12 +1103,14 @@
                     options: {
                         responsive: true,
                         maintainAspectRatio: false,
+                        animation: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? false : { duration: 300 },
                         interaction: {
                             mode: 'index',
                             intersect: false,
                         },
                         plugins: {
                             legend: {
+                                display: false,
                                 position: 'bottom',
                                 labels: {
                                     usePointStyle: true,
@@ -915,8 +1138,11 @@
                                 ticks: {
                                     color: '#6c7f99',
                                     maxRotation: 0,
+                                    autoSkip: true,
+                                    maxTicksLimit: window.innerWidth < 768 ? 3 : 6,
                                     font: {
                                         family: 'inherit',
+                                        size: 10,
                                     },
                                 },
                             },
@@ -940,49 +1166,6 @@
                 });
             }
 
-            if (pieLabels.length > 0 && pieValues.length > 0) {
-                pieChart = new Chart(pieCanvas.getContext('2d'), {
-                    type: 'doughnut',
-                    data: {
-                        labels: pieLabels,
-                        datasets: [{
-                            data: pieValues,
-                            backgroundColor: pieLabels.map((_, index) => palette[index % palette.length]),
-                            borderColor: '#ffffff',
-                            borderWidth: 2,
-                            hoverOffset: 6,
-                        }],
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        cutout: '62%',
-                        plugins: {
-                            legend: {
-                                position: 'bottom',
-                                labels: {
-                                    usePointStyle: true,
-                                    color: '#42526b',
-                                    font: {
-                                        family: 'inherit',
-                                        weight: '600',
-                                    },
-                                },
-                            },
-                            tooltip: {
-                                callbacks: {
-                                    label: function (context) {
-                                        const total = context.dataset.data.reduce((sum, value) => sum + Number(value || 0), 0);
-                                        const value = Number(context.raw || 0);
-                                        const pct = total > 0 ? ((value / total) * 100).toFixed(1) : '0.0';
-                                        return `${context.label}: ${formatNumber(value)} (${pct}%)`;
-                                    },
-                                },
-                            },
-                        },
-                    },
-                });
-            }
         }
 
         function updateUrl() {

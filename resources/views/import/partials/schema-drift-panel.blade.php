@@ -1,10 +1,10 @@
 {{--
     Pemindai Struktur Sumber: membandingkan dokumen sumber dengan tabel tujuan
     sebelum import. Kolom baru menunggu keputusan Terima/Tolak; perbedaan format
-    yang kompatibel (misalnya tanggal yang kini memuat jam) disesuaikan otomatis.
+    data dan struktur baris harus ditinjau sebelum import dapat dijalankan.
 --}}
 @if(!empty($schemaDriftSource) && \Illuminate\Support\Facades\Route::has('import.schema-drift.analyze'))
-<section class="sdp" id="schemaDriftPanel" data-state="loading" aria-labelledby="sdpTitle"
+<section class="sdp" id="schemaDriftPanel" data-state="loading" aria-labelledby="sdpTitle" tabindex="-1"
     data-analyze-url="{{ route('import.schema-drift.analyze') }}"
     data-accept-url="{{ route('import.schema-drift.accept', ['event' => '__ID__']) }}"
     data-reject-url="{{ route('import.schema-drift.reject', ['event' => '__ID__']) }}"
@@ -17,7 +17,7 @@
             <span class="sdp__glyph" aria-hidden="true"><i class="fas fa-shield-alt"></i></span>
             <div class="sdp__titles">
                 <h3 class="sdp__title" id="sdpTitle">Pemindai Struktur Sumber</h3>
-                <p class="sdp__headline" data-sdp-headline aria-live="polite">Membaca header dan sampel data dokumen sumber…</p>
+                <p class="sdp__headline" data-sdp-headline aria-live="polite">Memeriksa kolom, isi data, dan struktur baris sumber…</p>
             </div>
         </div>
         <div class="sdp__head-actions">
@@ -38,8 +38,8 @@
 
         <div class="sdp__block sdp__block--new" data-sdp-new hidden>
             <div class="sdp__block-head">
-                <h4 class="sdp__block-title"><i class="fas fa-plus-square" aria-hidden="true"></i> Kolom baru di dokumen sumber</h4>
-                <p class="sdp__block-note" data-sdp-new-note>Terima untuk menambah kolom ke tabel tujuan (NULLABLE, di akhir tabel; data lama tidak berubah) — atau Tolak agar import tetap berjalan tanpa kolom ini.</p>
+                <h4 class="sdp__block-title"><i class="fas fa-plus-square" aria-hidden="true"></i> Kolom sumber yang perlu diputuskan</h4>
+                <p class="sdp__block-note" data-sdp-new-note>Setiap kolom sumber harus memiliki tujuan penyimpanan atau keputusan lewati yang Anda konfirmasi.</p>
             </div>
             <div class="sdp__table-wrap">
                 <table class="sdp__table">
@@ -77,26 +77,32 @@
             </div>
         </div>
 
+        <div class="sdp__block" data-sdp-review hidden>
+            <h4 class="sdp__block-title"><i class="fas fa-tasks" aria-hidden="true"></i> Perubahan isi dan struktur baris</h4>
+            <p class="sdp__block-note">Periksa dampak setiap perubahan. Baris yang tidak dapat dipetakan dengan aman harus diperbaiki pada file sumber.</p>
+            <ul class="sdp__reviews" data-sdp-review-rows></ul>
+        </div>
+
         <div class="sdp__block sdp__decision-wrap" data-sdp-decision-wrap hidden>
             <div class="sdp__decision">
                 <button type="button" class="sdp__btn sdp__btn--accept" data-sdp-accept>
                     <i class="fas fa-check" aria-hidden="true"></i> <span data-sdp-accept-label>Terima &amp; tambah kolom</span>
                 </button>
                 <button type="button" class="sdp__btn sdp__btn--reject" data-sdp-reject>
-                    <i class="fas fa-times" aria-hidden="true"></i> <span data-sdp-reject-label>Tolak, import tanpa kolom ini</span>
+                    <i class="fas fa-times" aria-hidden="true"></i> <span data-sdp-reject-label>Lewati kolom dengan konfirmasi</span>
                 </button>
                 <span class="sdp__decision-status" data-sdp-decision-status role="status" aria-live="polite"></span>
             </div>
         </div>
 
         <div class="sdp__block" data-sdp-adapt hidden>
-            <h4 class="sdp__block-title"><i class="fas fa-magic" aria-hidden="true"></i> Penyesuaian format otomatis</h4>
+            <h4 class="sdp__block-title"><i class="fas fa-magic" aria-hidden="true"></i> Hasil pemeriksaan format</h4>
             <ul class="sdp__findings" data-sdp-findings></ul>
         </div>
 
         <details class="sdp__block sdp__details" data-sdp-unmapped hidden>
-            <summary><i class="fas fa-eye-slash" aria-hidden="true"></i> Kolom sumber yang tidak disimpan <span data-sdp-unmapped-count></span></summary>
-            <p class="sdp__block-note">Kolom ini memang selalu ada di dokumen sumber tetapi tidak menjadi bagian tabel tujuan. Hanya informasi — import tidak terpengaruh.</p>
+            <summary><i class="fas fa-exclamation-triangle" aria-hidden="true"></i> Kolom sumber belum memiliki tujuan <span data-sdp-unmapped-count></span></summary>
+            <p class="sdp__block-note">Nilai kolom berikut belum memiliki tujuan penyimpanan. Selesaikan pemetaan atau keputusan lewati sebelum menjalankan import.</p>
             <div class="sdp__chips" data-sdp-unmapped-list></div>
         </details>
 
@@ -127,9 +133,11 @@
     </div>
 
     <p class="sdp__error" data-sdp-error hidden role="alert"></p>
+    <p class="sdp__gate" id="sdpImportGate" data-sdp-gate role="status" aria-live="polite">Import menunggu pemeriksaan struktur sumber.</p>
 </section>
 
 <style>
+    .sdp [hidden] { display: none !important; }
     .sdp {
         --sdp-accent: var(--bri-nusantara, #0857c3);
         --sdp-accent-soft: var(--app-info-soft, #edf6ff);
@@ -202,6 +210,14 @@
     .sdp__stat--hot { border-color: var(--sdp-accent); background: var(--sdp-accent-soft); }
     .sdp__stat--hot dd { color: var(--sdp-accent); }
     .sdp__source { margin: 0 0 .25rem; font-size: .8rem; color: var(--app-muted, #526987); overflow-wrap: anywhere; }
+    .sdp__gate { margin: .9rem 0 0; padding: .65rem .8rem; border-radius: 9px; background: var(--sdp-accent-soft); color: var(--app-ink, #0b1f3a); font-size: .82rem; font-weight: 700; line-height: 1.5; }
+    .sdp__reviews { display: grid; gap: .65rem; margin: .65rem 0 0; padding: 0; list-style: none; }
+    .sdp__review { padding: .8rem; border: 1px solid var(--app-line, #d8e5f7); border-left: 3px solid #bc7913; border-radius: 9px; background: var(--app-surface-soft, #f7faff); }
+    .sdp__review--blocking { border-left-color: #b42332; }
+    .sdp__review p { margin: .25rem 0 .45rem; font-size: .82rem; line-height: 1.5; overflow-wrap: anywhere; }
+    .sdp__review label { display: flex; gap: .55rem; align-items: flex-start; margin: .5rem 0 0; font-size: .82rem; cursor: pointer; }
+    .sdp__review input { flex: 0 0 auto; width: 18px; height: 18px; margin-top: .12rem; accent-color: var(--sdp-accent); }
+    .sdp :is(button, select, input, summary):focus-visible, .sdp:focus-visible { outline: 3px solid #087bd3; outline-offset: 3px; }
 
     .sdp__block { margin-top: 1rem; padding-top: .9rem; border-top: 1px dashed var(--app-line, #d8e5f7); }
     .sdp__block-title { margin: 0 0 .25rem; font-size: .9rem; font-weight: 800; display: flex; align-items: center; gap: .45rem; }
@@ -313,20 +329,41 @@
     var panel = document.getElementById('schemaDriftPanel');
     if (!panel) { return; }
 
-    var state = { report: null, busy: false, confirmedWithoutDecision: false };
-    // Monitor mode: the report has a fixed import layout, so drift is shown and
-    // can be acknowledged, but no column is offered and the import is not held.
+    var state = { report: null, busy: false, error: false };
+    // Fixed-layout reports still require an explicit decision for source data
+    // that the pipeline cannot store. Monitor mode never bypasses this review.
     var monitorMode = panel.dataset.mode === 'monitor';
     var reloadOnAccept = panel.dataset.reloadOnAccept === '1';
     function pendingColumns() { return ((state.report && state.report.new_columns) || []).filter(function (c) { return c.decision === 'pending'; }); }
     function pendingAdjustments() { return ((state.report && state.report.adjustments) || []).filter(function (a) { return a.decision === 'pending'; }); }
-    window.SchemaDriftPanel = {
-        hasPendingDecision: function () {
-            if (!state.report || !pendingEvent()) { return false; }
-            // A fixed-layout report never holds the import for new columns, but a
-            // column that would truncate data is worth one confirmation.
-            return pendingAdjustments().length > 0 || (!monitorMode && pendingColumns().length > 0);
+    function pendingReviews() { return ((state.report && state.report.review_issues) || []).filter(function (r) { return !r.decision || r.decision === 'pending'; }); }
+    function blockedReason() {
+        if (state.busy || !state.report) { return state.error ? 'Pemeriksaan belum berhasil. Pindai ulang sebelum import.' : 'Import menunggu pemeriksaan struktur sumber.'; }
+        if (state.error) { return 'Pemeriksaan belum berhasil. Pindai ulang sebelum import.'; }
+        if (state.report.has_blocking_issue || pendingReviews().some(function (r) { return r.blocking; })) { return 'Import ditahan karena data belum dapat disimpan dengan aman. Perbaiki masalah sumber yang ditandai.'; }
+        if (state.report.has_pending_decision || pendingColumns().length || pendingAdjustments().length || pendingReviews().length || (state.report.unmapped_columns || []).length) { return 'Import menunggu keputusan Anda untuk seluruh kolom dan perubahan yang ditandai.'; }
+        return '';
+    }
+    function updateGate() {
+        var reason = blockedReason();
+        var form = document.getElementById('importForm');
+        var gate = $('[data-sdp-gate]');
+        gate.textContent = reason || 'Pemeriksaan selesai. Keputusan struktur sudah diterapkan; import dapat dijalankan.';
+        if (form) {
+            var source = form.querySelector('input[name="schema_drift_source"]');
+            if (!source) { source = el('input'); source.type = 'hidden'; source.name = 'schema_drift_source'; form.appendChild(source); }
+            source.value = panel.dataset.source;
+            form.querySelectorAll('button[type="submit"], input[type="submit"]').forEach(function (button) {
+                if (reason && !button.disabled) { button.dataset.sdpDisabled = '1'; button.disabled = true; }
+                else if (!reason && button.dataset.sdpDisabled === '1') { button.disabled = false; delete button.dataset.sdpDisabled; }
+                button.setAttribute('aria-describedby', 'sdpImportGate');
+            });
         }
+        document.dispatchEvent(new CustomEvent('schema-drift:state', { detail: { blocked: !!reason, reason: reason, report: state.report } }));
+    }
+    window.SchemaDriftPanel = {
+        hasPendingDecision: function () { return !!blockedReason(); },
+        canImport: function () { return !blockedReason(); }
     };
 
     var STATUS = {
@@ -375,23 +412,26 @@
     function analyze() {
         if (state.busy) { return; }
         state.busy = true;
+        state.error = false;
+        updateGate();
         $('[data-sdp-error]').hidden = true;
         $('[data-sdp-skeleton]').hidden = false;
         $('[data-sdp-body]').hidden = true;
         panel.dataset.state = 'loading';
-        $('[data-sdp-headline]').textContent = 'Membaca header dan sampel data dokumen sumber…';
+        $('[data-sdp-headline]').textContent = 'Memeriksa kolom, isi data, dan struktur baris sumber…';
         $('[data-sdp-pill]').textContent = 'Memindai';
 
         request(panel.dataset.analyzeUrl, { source: panel.dataset.source })
             .then(function (data) { render(data.report); })
             .catch(function (error) {
-                setState('error', 'Pemindaian tidak dapat diselesaikan. Import tetap dapat dijalankan seperti biasa.');
+                state.error = true;
+                setState('error', 'Pemeriksaan belum selesai. Pindai ulang untuk memastikan seluruh data dapat disimpan.');
                 var box = $('[data-sdp-error]');
                 box.textContent = error.message;
                 box.hidden = false;
                 $('[data-sdp-skeleton]').hidden = true;
             })
-            .finally(function () { state.busy = false; });
+            .finally(function () { state.busy = false; updateGate(); });
     }
 
     function render(report) {
@@ -403,6 +443,7 @@
         renderSource(report);
         renderNewColumns(report);
         renderAdjustments(report);
+        renderReviews(report);
         renderDecision();
         renderFindings(report);
         renderUnmapped(report);
@@ -435,11 +476,13 @@
 
     function renderSource(report) {
         var source = report.source || {};
+        var scan = source.structural_scan || report.structural_scan || {};
         var delimiter = { ',': 'koma', ';': 'titik koma', '\t': 'tab', '|': 'pipe' }[source.delimiter] || (source.format === 'spreadsheet' ? 'Excel' : '-');
         var parts = [
             source.name,
             'header di baris ' + source.header_row,
             (report.stats.sample_rows || 0).toLocaleString('id-ID') + ' baris sampel',
+            scan.complete ? 'struktur ' + Number(scan.total_rows || scan.scanned_rows || 0).toLocaleString('id-ID') + ' baris diperiksa' : null,
             'pemisah ' + delimiter,
             'dipindai ' + report.analyzed_in_ms + ' ms'
         ];
@@ -462,8 +505,8 @@
             return;
         }
 
-        $('[data-sdp-new-note]').textContent = 'Pilih aksi per kolom: tambah sebagai kolom baru (NULLABLE, di akhir tabel; data lama tidak berubah), petakan ke kolom yang sudah ada bila hanya berganti nama, atau lewati agar import tetap berjalan tanpa kolom ini.';
-        var mapTargets = (report.missing_columns || []).slice().sort();
+        $('[data-sdp-new-note]').textContent = 'Pilih tujuan setiap kolom: tambah kolom database, gunakan kolom database yang ada bila sumber berganti nama, atau lewati dengan konfirmasi bahwa nilainya tidak disimpan. Pilihan baru diterapkan saat Anda menekan tombol Terapkan.';
+        var mapTargets = (report.mapping_targets || report.missing_columns || []).slice().sort();
         pending.forEach(function (column) {
             var tr = el('tr');
             tr.dataset.proposed = column.proposed_column;
@@ -474,7 +517,7 @@
             var action = el('select');
             action.dataset.role = 'action';
             action.setAttribute('aria-label', 'Aksi untuk kolom ' + column.header);
-            [['add', 'Tambah kolom baru'], ['map', 'Petakan ke kolom yang ada'], ['skip', 'Lewati']].forEach(function (pair) {
+            [['add', 'Tambah kolom database'], ['map', 'Gunakan kolom database yang ada'], ['skip', 'Lewati, nilai tidak disimpan']].forEach(function (pair) {
                 if (pair[0] === 'map' && !mapTargets.length && !suggestsMap) { return; }
                 var option = el('option', null, pair[1]);
                 option.value = pair[0];
@@ -486,7 +529,7 @@
 
             var sourceCell = el('td');
             sourceCell.appendChild(el('div', 'sdp__header-name', column.header));
-            sourceCell.appendChild(el('span', 'sdp__kind', column.label + ' · ' + (column.non_empty || 0) + ' nilai terisi'));
+            sourceCell.appendChild(el('span', 'sdp__kind', column.label + ' · ' + columnPopulation(report, column)));
             var chips = el('div', 'sdp__chips');
             (column.samples || []).slice(0, 3).forEach(function (sample) { chips.appendChild(el('span', 'sdp__chip', sample)); });
             sourceCell.appendChild(chips);
@@ -594,34 +637,66 @@
         });
     }
 
+    function renderReviews(report) {
+        var issues = report.review_issues || [];
+        var block = $('[data-sdp-review]');
+        var rows = $('[data-sdp-review-rows]');
+        block.hidden = issues.length === 0;
+        rows.textContent = '';
+        issues.forEach(function (issue) {
+            var pending = !issue.decision || issue.decision === 'pending';
+            var item = el('li', 'sdp__review' + (issue.blocking && pending ? ' sdp__review--blocking' : ''));
+            item.dataset.reviewKey = issue.key;
+            item.appendChild(el('strong', null, issue.title));
+            item.appendChild(el('p', null, issue.detail));
+            if (!pending) {
+                item.appendChild(el('span', 'sdp__kind', 'Keputusan sudah dicatat'));
+            } else if (issue.blocking) {
+                item.appendChild(el('span', 'sdp__kind', 'Import ditahan. Perbaiki file sumber dan pindai ulang.'));
+            } else {
+                var label = el('label');
+                var input = el('input');
+                input.type = 'checkbox';
+                input.dataset.role = 'review-continue';
+                input.dataset.reviewKey = issue.key;
+                label.appendChild(input);
+                label.appendChild(el('span', null, 'Saya memahami dampak perubahan ini dan menyetujui import dengan hasil yang dijelaskan.'));
+                item.appendChild(label);
+            }
+            rows.appendChild(item);
+        });
+    }
+
     function renderDecision() {
         var event = pendingEvent();
         var columns = pendingColumns();
         var adjustments = pendingAdjustments();
+        var reviews = pendingReviews();
         var wrap = $('[data-sdp-decision-wrap]');
-        wrap.hidden = columns.length === 0 && adjustments.length === 0;
+        wrap.hidden = columns.length === 0 && adjustments.length === 0 && reviews.length === 0;
         if (wrap.hidden) { return; }
 
         // A fixed-layout report can still widen columns; new columns are review-only.
-        $('[data-sdp-accept]').hidden = monitorMode && adjustments.length === 0;
-        $('[data-sdp-reject-label]').textContent = monitorMode ? 'Tandai sudah ditinjau' : 'Tolak semua, import tanpa perubahan';
-        $('[data-sdp-accept]').disabled = !event;
+        $('[data-sdp-accept]').hidden = monitorMode && adjustments.length === 0 && reviews.length === 0;
+        $('[data-sdp-reject]').hidden = columns.length === 0;
+        $('[data-sdp-reject-label]').textContent = 'Lewati ' + columns.length + ' kolom, nilai tidak disimpan';
+        $('[data-sdp-accept]').disabled = !event || reviews.some(function (review) { return review.blocking; });
         $('[data-sdp-reject]').disabled = !event;
-        $('[data-sdp-decision-status]').textContent = event ? '' : 'Notifikasi belum tercatat; muat ulang untuk memutuskan.';
+        $('[data-sdp-decision-status]').textContent = event ? (reviews.some(function (review) { return review.blocking; }) ? 'Perbaiki masalah sumber yang memblokir import, lalu pindai ulang.' : '') : 'Keputusan belum dapat disimpan. Pindai ulang atau muat ulang preview.';
         updateAcceptLabel();
     }
 
     function renderMonitorColumns(pending, rows, event) {
-        $('[data-sdp-new-note]').textContent = 'Report ini memakai layout import kolom tetap, jadi kolom baru dicatat sebagai notifikasi tanpa ditambahkan ke tabel. Data tetap masuk seperti biasa; tandai sebagai ditinjau setelah Anda memeriksanya.';
+        $('[data-sdp-new-note]').textContent = 'Kolom berikut belum dapat disimpan oleh layout import report ini. Sesuaikan sumber atau mapping report. Jika Anda memilih lewati, seluruh nilai kolom tersebut tidak disimpan dan keputusan itu akan dicatat.';
         $('[data-sdp-accept]').hidden = true;
-        $('[data-sdp-reject-label]').textContent = 'Tandai sudah ditinjau';
+        $('[data-sdp-reject-label]').textContent = 'Lewati kolom, nilai tidak disimpan';
         pending.forEach(function (column) {
             var tr = el('tr');
             tr.dataset.proposed = column.proposed_column;
             tr.appendChild(el('td', 'sdp__col-check', '—'));
             var sourceCell = el('td');
             sourceCell.appendChild(el('div', 'sdp__header-name', column.header));
-            sourceCell.appendChild(el('span', 'sdp__kind', column.label + ' · ' + (column.non_empty || 0) + ' nilai terisi'));
+            sourceCell.appendChild(el('span', 'sdp__kind', column.label + ' · ' + columnPopulation(state.report, column)));
             var chips = el('div', 'sdp__chips');
             (column.samples || []).slice(0, 3).forEach(function (sample) { chips.appendChild(el('span', 'sdp__chip', sample)); });
             sourceCell.appendChild(chips);
@@ -655,6 +730,15 @@
         });
     }
 
+    function columnPopulation(report, column) {
+        var scan = ((report.source || {}).structural_scan || report.structural_scan || {});
+        var counts = scan.column_non_empty || {};
+        if (scan.complete && Object.prototype.hasOwnProperty.call(counts, column.index)) {
+            return Number(counts[column.index]).toLocaleString('id-ID') + ' nilai terisi dari ' + Number(scan.total_rows || 0).toLocaleString('id-ID') + ' baris sumber';
+        }
+        return Number(column.non_empty || 0).toLocaleString('id-ID') + ' nilai terisi pada sampel';
+    }
+
     function updateAcceptLabel() {
         var counts = { add: 0, map: 0 };
         if (!monitorMode) {
@@ -667,7 +751,9 @@
         if (counts.add) { parts.push('tambah ' + counts.add + ' kolom'); }
         if (counts.map) { parts.push('petakan ' + counts.map); }
         if (widen) { parts.push('perlebar ' + widen); }
-        $('[data-sdp-accept-label]').textContent = parts.length ? 'Terapkan: ' + parts.join(', ') : 'Terapkan tanpa perubahan';
+        var reviews = pendingReviews().filter(function (review) { return !review.blocking; }).length;
+        if (reviews) { parts.push('konfirmasi ' + reviews + ' perubahan'); }
+        $('[data-sdp-accept-label]').textContent = parts.length ? 'Terapkan: ' + parts.join(', ') : 'Simpan keputusan';
     }
 
     function renderFindings(report) {
@@ -749,11 +835,35 @@
         });
     }
 
-    function decide(kind) {
+    function collectReviews() {
+        return Array.prototype.map.call(panel.querySelectorAll('[data-role="review-continue"]:checked'), function (input) {
+            return { key: input.dataset.reviewKey, action: 'continue' };
+        });
+    }
+
+    function confirmDiscard(headers) {
+        var message = headers.length + ' kolom akan dilewati: ' + headers.join(', ') + '. Seluruh nilai kolom tersebut tidak disimpan untuk import ini. Keputusan lewati akan dicatat.';
+        var swal = window.ImportSwal && typeof window.ImportSwal.fire === 'function' ? window.ImportSwal : window.Swal;
+        if (swal && typeof swal.fire === 'function') {
+            return swal.fire({ icon: 'warning', title: 'Konfirmasi nilai yang tidak disimpan', text: message, showCancelButton: true, confirmButtonText: 'Ya, lewati kolom tersebut', cancelButtonText: 'Kembali meninjau', focusCancel: true }).then(function (result) { return result.isConfirmed; });
+        }
+        return Promise.resolve(window.confirm(message));
+    }
+
+    async function decide(kind) {
         var event = pendingEvent();
         if (!event || state.busy) { return; }
         var selections = collectSelections();
         var adjustments = collectAdjustments();
+        var reviews = collectReviews();
+        var uncheckedReview = pendingReviews().filter(function (review) { return !review.blocking && !reviews.some(function (selected) { return selected.key === review.key; }); })[0];
+        if (kind === 'accept' && pendingReviews().some(function (review) { return review.blocking; })) { return; }
+        if (kind === 'accept' && uncheckedReview) {
+            $('[data-sdp-decision-status]').textContent = 'Tinjau dan konfirmasi setiap perubahan isi atau struktur yang ditandai sebelum menerapkan keputusan.';
+            var unchecked = panel.querySelector('[data-role="review-continue"]:not(:checked)');
+            if (unchecked) { unchecked.focus(); }
+            return;
+        }
         var invalid = selections.filter(function (s) { return s.action === 'add' && !/^[a-z][a-z0-9_]{0,63}$/.test(s.name); })[0];
         var unmappedTarget = selections.filter(function (s) { return s.action === 'map' && !s.target; })[0];
         var targets = selections.filter(function (s) { return s.action === 'map'; }).map(function (s) { return s.target; });
@@ -765,7 +875,10 @@
             return;
         }
 
+        var skipped = kind === 'reject' ? pendingColumns() : pendingColumns().filter(function (column) { return selections.some(function (selection) { return selection.proposed_column === column.proposed_column && selection.action === 'skip'; }); });
         state.busy = true;
+        updateGate();
+        if (skipped.length && !await confirmDiscard(skipped.map(function (column) { return column.header; }))) { state.busy = false; updateGate(); return; }
         var accept = $('[data-sdp-accept]');
         var reject = $('[data-sdp-reject]');
         accept.disabled = true;
@@ -773,7 +886,10 @@
         $('[data-sdp-decision-status]').textContent = kind === 'accept' ? 'Menerapkan perubahan struktur ke tabel tujuan…' : 'Menyimpan keputusan…';
 
         var url = (kind === 'accept' ? panel.dataset.acceptUrl : panel.dataset.rejectUrl).replace('__ID__', encodeURIComponent(event.id));
-        request(url, kind === 'accept' ? { columns: selections, adjustments: adjustments } : {})
+        var body = kind === 'accept' ? { columns: selections, adjustments: adjustments, reviews: reviews } : {};
+        body.source_fingerprint = state.report.source_fingerprint;
+        body.source = panel.dataset.source;
+        request(url, body)
             .then(function (data) {
                 document.dispatchEvent(new CustomEvent('schema-drift:decided', { detail: data }));
                 state.busy = false;
@@ -786,7 +902,7 @@
                     window.setTimeout(function () { window.location.reload(); }, 1400);
                     return;
                 }
-                notify('success', kind === 'accept' ? 'Struktur diperbarui' : (monitorMode ? 'Ditandai sudah ditinjau' : 'Kolom baru ditolak'), data.message);
+                notify('success', kind === 'accept' ? 'Keputusan diterapkan' : 'Kolom dilewati sesuai keputusan', data.message);
                 analyze();
             })
             .catch(function (error) {
@@ -794,6 +910,7 @@
                 accept.disabled = false;
                 reject.disabled = false;
                 $('[data-sdp-decision-status]').textContent = error.message;
+                updateGate();
                 notify('error', 'Keputusan gagal', error.message);
             });
     }
@@ -805,39 +922,23 @@
         }
     }
 
-    // Import must not silently drop new columns: ask once when a decision is still open.
+    // A submit is never allowed to bypass a pending or failed source review.
     document.addEventListener('submit', function (e) {
         var form = e.target;
-        if (!form || form.id !== 'importForm' || state.confirmedWithoutDecision || !window.SchemaDriftPanel.hasPendingDecision()) { return; }
+        if (!form || form.id !== 'importForm' || window.SchemaDriftPanel.canImport()) { return; }
         e.preventDefault();
         e.stopImmediatePropagation();
-
-        var pending = monitorMode ? [] : pendingColumns().map(function (c) { return c.header; });
-        var widen = pendingAdjustments().map(function (a) { return a.column; });
-        var message = [
-            pending.length ? pending.length + ' kolom baru (' + pending.slice(0, 4).join(', ') + (pending.length > 4 ? ', …' : '') + ') belum diputuskan; jika dilanjutkan, kolom tersebut tidak ikut tersimpan.' : null,
-            widen.length ? widen.length + ' kolom (' + widen.slice(0, 3).join(', ') + ') belum diperlebar; jika dilanjutkan, nilai yang melebihi kapasitas akan terpotong/gagal tersimpan.' : null
-        ].filter(Boolean).join(' ') + ' Data lainnya tetap masuk.';
-        var proceed = function () { state.confirmedWithoutDecision = true; if (form.requestSubmit) { form.requestSubmit(); } else { form.submit(); } };
-        var review = function () { panel.scrollIntoView({ behavior: 'smooth', block: 'start' }); panel.classList.remove('sdp-flash'); void panel.offsetWidth; panel.classList.add('sdp-flash'); };
-        var swal = window.ImportSwal && typeof window.ImportSwal.fire === 'function' ? window.ImportSwal : window.Swal;
-        if (swal && typeof swal.fire === 'function') {
-            swal.fire({ icon: 'question', title: 'Struktur dokumen sumber berubah', text: message, showCancelButton: true, confirmButtonText: 'Tinjau dulu', cancelButtonText: 'Import tanpa perubahan', reverseButtons: true })
-                .then(function (result) {
-                    if (result.isConfirmed) { review(); }
-                    else if (result.dismiss === 'cancel') { proceed(); }
-                });
-        } else if (window.confirm(message + '\n\nOK = import tanpa perubahan, Batal = tinjau dulu.')) {
-            proceed();
-        } else {
-            review();
-        }
+        updateGate();
+        panel.focus({ preventScroll: true });
+        panel.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
     }, true);
 
     $('[data-sdp-rescan]').addEventListener('click', analyze);
     $('[data-sdp-accept]').addEventListener('click', function () { decide('accept'); });
     $('[data-sdp-reject]').addEventListener('click', function () { decide('reject'); });
     document.addEventListener('schema-drift:feed-decided', function () { analyze(); });
+    if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', updateGate, { once: true }); }
+    else { updateGate(); }
 
     analyze();
 }());

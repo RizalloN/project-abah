@@ -67,6 +67,9 @@ class ImportFileController extends Controller
 
     private function assertImportPeriodMapping(string $tableName, array $columnBlueprint, ?string $manualPeriode = null): void
     {
+        if (in_array(strtolower(trim($tableName)), [\App\Services\Import\EvaluasiKunjunganSourceService::TABLE, \App\Services\Import\PipelinePrewashBohSourceService::TABLE, \App\Services\Import\PipelinePrewashMbmSourceService::TABLE, \App\Services\Import\MonitoringKsbkSourceService::TABLE, \App\Services\Import\PipelinePrewashSourceService::TABLE], true)) {
+            throw new \RuntimeException('Report ini wajib diimport melalui alur Excel/CSV presisi report ini.');
+        }
         $columns = array_column($columnBlueprint, 'column');
         $policy = $this->periodGuardService()->policyFor($tableName);
         if ($manualPeriode !== null && $policy !== null) {

@@ -7,8 +7,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Kind | Count |
 | --- | ---: |
 | command | 4 |
-| file | 164 |
-| function | 391 |
+| file | 171 |
+| function | 405 |
 | method | 193 |
 | unresolved_symbol | 18 |
 | route | 2 |
@@ -103,21 +103,21 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Direction | Count |
 | --- | ---: |
 | database -> core (instantiates) | 79 |
-| database -> core (writes_table) | 62 |
+| database -> core (writes_table) | 74 |
 | database -> core (checks_table) | 62 |
 | database -> import (checks_table) | 47 |
 | database -> core (calls) | 36 |
 | database -> import (defines_table) | 28 |
-| database -> dashboard-pinjaman (checks_table) | 26 |
+| database -> dashboard-pinjaman (checks_table) | 27 |
+| database -> core (reads_table) | 25 |
 | database -> core (accepts) | 22 |
-| database -> core (reads_table) | 19 |
 | database -> dashboard-pinjaman (alters_table) | 17 |
 | database -> dashboard-simpanan (checks_table) | 15 |
 | database -> jobs-snapshots (checks_table) | 14 |
 | database -> access-control (protected_by) | 13 |
 | database -> jobs-snapshots (defines_table) | 12 |
+| database -> dashboard-pinjaman (defines_table) | 12 |
 | database -> import (uses_table) | 11 |
-| database -> dashboard-pinjaman (defines_table) | 11 |
 | database -> core (alters_table) | 10 |
 | database -> import (alters_table) | 10 |
 | database -> core (defines_table) | 9 |

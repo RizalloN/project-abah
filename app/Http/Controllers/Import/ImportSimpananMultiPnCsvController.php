@@ -974,6 +974,17 @@ class ImportSimpananMultiPnCsvController extends ImportExcelController
                     return;
                 }
 
+                // Eligibility may select a prepared CSV; review the original
+                // upload so columns removed by staging cannot escape review.
+                $reviewSourcePath = (string) ($params['file_path'] ?? '');
+                if ($reviewSourcePath === '') {
+                    throw new \RuntimeException('File sumber asli untuk pemeriksaan struktur tidak tersedia. Buka ulang preview.');
+                }
+                if (!is_file($reviewSourcePath)) {
+                    $reviewSourcePath = Storage::path($reviewSourcePath);
+                }
+                app(\App\Services\Import\SchemaDrift\SchemaDriftImportGuard::class)->assertReady('simpanan_multipn', $reviewSourcePath);
+
                 // Layer A runs after the per-job stream lock, so duplicate SSE
                 // connections for the same job only attach to progress polling.
                 $guard = app(ImportDuplicateGuardService::class);

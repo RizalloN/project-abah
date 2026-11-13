@@ -40,7 +40,7 @@ class DailyLoanImportStrategy implements ImportStrategyInterface
 
     public function transformHeaders(array $headers): array
     {
-        return $headers;
+        return \App\Support\Import\ImportHeaderAliases::dailyLoanSourceHeaders($headers);
     }
 
     public function importMode(array $context = []): string

@@ -9,7 +9,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | file | 29 |
 | method | 79 |
 | unresolved_symbol | 33 |
-| middleware | 9 |
+| middleware | 10 |
 | route | 18 |
 | class | 19 |
 | table | 5 |
@@ -19,10 +19,11 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Node | Kind | Degree | Source |
 | --- | --- | ---: | --- |
-| `current` | method | 65 | `app/Support/UserBranchScope.php:116` |
+| `current` | method | 67 | `app/Support/UserBranchScope.php:116` |
 | `User` | class | 27 | `app/Models/User.php:10` |
 | `update` | method | 23 | `app/Http/Controllers/Admin/UserManagementController.php:188` |
 | `LoginRequest` | class | 20 | `app/Http/Requests/Auth/LoginRequest.php:15` |
+| `branchScopes` | method | 18 | `app/Support/UserBranchScope.php:146` |
 | `UserBranchScope` | class | 15 | `app/Support/UserBranchScope.php:7` |
 | `store` | method | 15 | `app/Http/Controllers/Admin/UserManagementController.php:113` |
 | `SecurityHeadersMiddleware` | class | 13 | `app/Http/Middleware/SecurityHeadersMiddleware.php:9` |
@@ -45,15 +46,14 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `auth.confirm-password` | view | 9 | `resources/views/auth/confirm-password.blade.php:1` |
 | `authenticate` | method | 9 | `app/Http/Requests/Auth/LoginRequest.php:48` |
 | `destroy` | method | 9 | `app/Http/Controllers/Admin/UserManagementController.php:295` |
+| `matches` | method | 9 | `app/Support/UserBranchScope.php:185` |
 | `startFreshAuthenticatedSession` | method | 9 | `app/Http/Controllers/Auth/AuthenticatedSessionController.php:52` |
 | `store` | method | 9 | `app/Support/AuthenticatedSessionContext.php:24` |
-| `throttleKey` | method | 9 | `app/Http/Requests/Auth/LoginRequest.php:123` |
-| `throwRateLimitedValidationException` | method | 9 | `app/Http/Requests/Auth/LoginRequest.php:106` |
 
 ## Route Nodes
 
-- `generated::4e4aCalWuqOPhnk6` - `confirm-password`
-- `generated::lFlSsxvETuEHeQtY` - `login`
+- `generated::Cux7jEvVLJRuBncu` - `confirm-password`
+- `generated::VXjthWVSuC5qzWjX` - `login`
 - `login` - `login`
 - `logout` - `logout`
 - `password.confirm` - `confirm-password`
@@ -116,30 +116,30 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 | Direction | Count |
 | --- | ---: |
-| import -> access-control (protected_by) | 1065 |
-| dashboard-simpanan -> access-control (protected_by) | 234 |
-| dashboard-pinjaman -> access-control (protected_by) | 228 |
+| import -> access-control (protected_by) | 1076 |
+| dashboard-simpanan -> access-control (protected_by) | 240 |
+| dashboard-pinjaman -> access-control (protected_by) | 234 |
 | bank-pipeline -> access-control (protected_by) | 136 |
 | core -> access-control (protected_by) | 75 |
 | access-control -> core (calls) | 66 |
 | dashboard-harian -> access-control (protected_by) | 60 |
 | input-management -> access-control (protected_by) | 42 |
+| dashboard-simpanan -> access-control (calls) | 30 |
 | almafacts -> access-control (protected_by) | 30 |
 | access-control -> core (accepts) | 29 |
-| dashboard-simpanan -> access-control (calls) | 29 |
+| core -> access-control (calls) | 28 |
 | dashboard-pinjaman -> access-control (calls) | 23 |
 | jobs-snapshots -> access-control (protected_by) | 20 |
 | database -> access-control (protected_by) | 13 |
 | access-control -> core (uses_component) | 13 |
 | prognosa -> access-control (protected_by) | 12 |
 | access-control -> core (extends) | 11 |
-| core -> access-control (calls) | 10 |
 | bank-pipeline -> access-control (calls) | 8 |
 | marketshare -> access-control (protected_by) | 8 |
 | dashboard-harian -> access-control (calls) | 6 |
+| import -> access-control (calls) | 6 |
 | database -> access-control (defines_table) | 5 |
 | access-control -> dashboard-simpanan (references_route) | 5 |
-| import -> access-control (calls) | 5 |
 | database -> access-control (checks_table) | 4 |
 | access-control -> presentation (calls) | 4 |
 | access-control -> platform (uses_component) | 4 |
