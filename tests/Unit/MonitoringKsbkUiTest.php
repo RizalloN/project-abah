@@ -37,6 +37,7 @@ class MonitoringKsbkUiTest extends TestCase
         $this->assertSame('893', $this->metric($xpath, 'tfoot', 'ksbk_amount'));
         $this->assertSame('1.203', $this->metric($xpath, 'tfoot', 'realized_amount'));
         $this->assertSame('50,0%', $this->metric($xpath, 'tfoot', 'unrealized_share'));
+        $this->assertStringContainsString('Periode November 2026', $xpath->evaluate('string(//section[contains(@class,"micro-ksbk")])'));
         $this->assertStringContainsString('10 November 2026', $xpath->evaluate('string(//section[contains(@class,"micro-ksbk")])'));
         $this->assertStringContainsString('Daily Loan Dinamis', $xpath->evaluate('string(//section[contains(@class,"micro-ksbk")])'));
 
@@ -113,8 +114,13 @@ class MonitoringKsbkUiTest extends TestCase
     private function payload(): array
     {
         return [
-            'available' => true, 'loan_source' => 'daily_loan_dinamis', 'loan_period' => '2026-11-10',
-            'groups' => [$this->row()], 'summary' => $this->row(),
+            'available' => true,
+            'period' => '2026-11-01',
+            'period_label' => 'November 2026',
+            'loan_source' => 'daily_loan_dinamis',
+            'loan_period' => '2026-11-10',
+            'groups' => [$this->row()],
+            'summary' => $this->row(),
         ];
     }
 

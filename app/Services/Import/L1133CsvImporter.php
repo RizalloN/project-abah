@@ -174,7 +174,7 @@ class L1133CsvImporter
      * @param array<int, string> $warnings
      * @return array{metadata: array<string, mixed>}
      */
-    private function streamNormalizedRows(string $path, callable $onRow, array &$warnings): array
+    public function streamNormalizedRows(string $path, callable $onRow, array &$warnings, bool $inspectStructure = false): array
     {
         if (!is_file($path)) {
             throw new \InvalidArgumentException("File L1133 tidak ditemukan: {$path}");
@@ -195,6 +195,9 @@ class L1133CsvImporter
         $lineNumber = 0;
         $headerFound = false;
         $headerMap = [];
+        $extraHeaders = [];
+        $sourceHeaders = [];
+        $mappedIndexes = [];
         $delimiter = ',';
 
         try {
@@ -220,11 +223,24 @@ class L1133CsvImporter
                 if (!$headerFound && $this->looksLikeHeader($row)) {
                     $headerFound = true;
                     $headerMap = $this->buildHeaderMap($row);
+                    if ($inspectStructure) {
+                        $sourceHeaders = $row;
+                        $mappedIndexes = array_fill_keys(array_values($headerMap), true);
+                        $extraHeaders = array_fill_keys(array_filter(array_diff_key($row, $mappedIndexes), static fn ($label): bool => $label !== null && $label !== ''), true);
+                    }
                     continue;
                 }
 
                 if (!$headerFound) {
                     continue;
+                }
+
+                if ($inspectStructure) {
+                    foreach (array_diff_key($row, $mappedIndexes) as $index => $value) {
+                        if ($value !== null && ($sourceHeaders[$index] ?? '') === '') {
+                            $extraHeaders['Kolom '.($index + 1).' tanpa header'] = true;
+                        }
+                    }
                 }
 
                 $kodeBr = $this->splitCodeName($row[$headerMap['kode_br']] ?? null);
@@ -273,7 +289,7 @@ class L1133CsvImporter
             }
         }
 
-        return ['metadata' => $metadata];
+        return ['metadata' => $metadata, 'extra_headers' => array_keys($extraHeaders)];
     }
 
     private function ensureCsvSource(string $path, ?string &$cleanupPath): string
@@ -373,18 +389,20 @@ class L1133CsvImporter
             $lookup[strtolower(trim((string) $header))] = $index;
         }
 
-        return [
-            'kode_br' => $lookup['kode_br'],
-            'mbdesc' => $lookup['mbdesc'],
-            'jenis' => $lookup['jenis'],
-            'jumlah_debitur' => $lookup['textbox3'],
-            'jumlah_rekening' => $lookup['textbox11'],
-            'outstanding' => $lookup['textbox16'],
-            'jumlah_debitur_npl' => $lookup['deb_npl'],
-            'npl' => $lookup['textbox23'],
-            'jumlah_debitur_dpk' => $lookup['deb_dpk'],
-            'dpk' => $lookup['textbox25'],
+        $columns = [
+            'kode_br' => 'kode_br', 'mbdesc' => 'mbdesc', 'jenis' => 'jenis',
+            'jumlah_debitur' => 'textbox3', 'jumlah_rekening' => 'textbox11', 'outstanding' => 'textbox16',
+            'jumlah_debitur_npl' => 'deb_npl', 'npl' => 'textbox23', 'jumlah_debitur_dpk' => 'deb_dpk', 'dpk' => 'textbox25',
         ];
+        $occurrences = array_count_values(array_map(static fn ($header): string => strtolower(trim((string) $header)), $row));
+
+        return array_map(static function (string $header) use ($lookup, $occurrences): int {
+            if (($occurrences[$header] ?? 0) !== 1) {
+                throw new \RuntimeException("Header L1133 {$header} harus muncul tepat satu kali.");
+            }
+
+            return $lookup[$header];
+        }, $columns);
     }
 
     /**

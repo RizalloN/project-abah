@@ -190,6 +190,59 @@ it('resolves a pending decision once the column exists by other means', function
         ->and(app(SchemaDriftRegistry::class)->notifications()['pending'])->toBe(0);
 });
 
+it('keeps column decisions for uploads with identical headers bound to their own contents', function () {
+    $analyzer = app(SchemaDriftAnalyzer::class);
+    $registry = app(SchemaDriftRegistry::class);
+    $headers = ['POSISI', 'NO_REKENING', 'FLAG_BARU'];
+    $first = $analyzer->analyze('demo_evolve', ($this->write)($headers, 1));
+    $secondPath = ($this->write)($headers, 2);
+    $second = $analyzer->analyze('demo_evolve', $secondPath);
+
+    expect($second['event']['id'])->not->toBe($first['event']['id'])
+        ->and($registry->find($first['event']['id'])->payload['source_fingerprint'])->toBe($first['source_fingerprint'])
+        ->and($analyzer->analyze('demo_evolve', $secondPath)['event']['id'])->toBe($second['event']['id']);
+
+    $registry->accept($first['event']['id'], 'tester', [], [], [], $first['source_fingerprint']);
+    expect(Schema::hasColumn('demo_evolve', 'flag_baru'))->toBeTrue()
+        ->and($analyzer->analyze('demo_evolve', $secondPath)['has_pending_decision'])->toBeFalse()
+        ->and($registry->find($second['event']['id'])->status)->toBe(SchemaDriftRegistry::STATUS_RESOLVED);
+});
+
+it('does not close a widening when an unrelated file contains shorter values', function () {
+    DB::statement('ALTER TABLE demo_evolve ADD COLUMN catatan_lama VARCHAR(100)');
+    $analyzer = app(SchemaDriftAnalyzer::class);
+    $headers = ['POSISI', 'NO_REKENING', 'CATATAN_LAMA'];
+    $wide = ($this->write)($headers, 1, fn (int $i, string $header) => match ($header) {
+        'POSISI' => '18/10/2026',
+        'NO_REKENING' => '0012345678',
+        default => str_repeat('A', 150),
+    });
+    $report = $analyzer->analyze('demo_evolve', $wide);
+    expect($report['adjustments'][0]['column'])->toBe('catatan_lama');
+
+    ($this->analyze)($headers);
+
+    expect(app(SchemaDriftRegistry::class)->find($report['event']['id'])->status)->toBe(SchemaDriftRegistry::STATUS_PENDING);
+});
+
+it('validates one migration plan before applying additions and widenings', function () {
+    $evolution = app(SchemaEvolutionService::class);
+    DB::statement('ALTER TABLE demo_evolve ADD COLUMN catatan_lama VARCHAR(100)');
+    DB::table('demo_evolve')->insert(['uniqueid_namareport' => 'old', 'catatan_lama' => 'Catatan Lama']);
+    $add = [['name' => 'catatan_baru', 'type' => 'VARCHAR(100)']];
+
+    expect(fn () => $evolution->applyChanges('demo_evolve', $add, [['name' => 'catatan_lama', 'type' => 'VARCHAR(50)']]))
+        ->toThrow(RuntimeException::class, 'bukan pelebaran')
+        ->and(Schema::hasColumn('demo_evolve', 'catatan_baru'))->toBeFalse();
+
+    $result = $evolution->applyChanges('demo_evolve', $add, [['name' => 'catatan_lama', 'type' => 'VARCHAR(255)']]);
+    $row = DB::table('demo_evolve')->first();
+    expect($result['added'][0]['name'])->toBe('catatan_baru')
+        ->and($result['widened'][0]['type'])->toBe('VARCHAR(255)')
+        ->and($row->catatan_lama)->toBe('Catatan Lama')
+        ->and($row->catatan_baru)->toBeNull();
+});
+
 function sourceReviewReport(string $source = 'source-one', bool $blocking = false, bool $newColumn = false): array
 {
     $report = app(SchemaDriftDetector::class)->detect('demo_evolve', ['POSISI', 'NO_REKENING', 'SALDO'], [
@@ -327,6 +380,28 @@ it('applies a preview decision when its token and current source still match', f
 
     expect(Schema::hasColumn('demo_evolve', 'catatan_baru'))->toBeTrue()
         ->and($registry->approvedReviewKeys('demo_evolve', $report['source_fingerprint']))->toBe(['source:row-shape']);
+});
+
+it('rejects only the current preview and refuses rejection from a changed source', function () {
+    $path = ($this->write)(['POSISI', 'NO_REKENING', 'CATATAN_BARU']);
+    $registry = app(SchemaDriftRegistry::class);
+    $report = app(SchemaDriftAnalyzer::class)->analyze('demo_evolve', $path);
+    $admin = \App\Models\User::factory()->make(['id' => 1, 'role' => 'admin']);
+    $body = [
+        'source' => \App\Services\Import\SchemaDrift\SchemaDriftSourceToken::issue('demo_evolve', $path),
+        'source_fingerprint' => $report['source_fingerprint'],
+    ];
+    $url = route('import.schema-drift.reject', ['event' => $report['event']['id']]);
+    $before = file_get_contents($path);
+    file_put_contents($path, "\nchanged", FILE_APPEND);
+
+    $this->actingAs($admin)->postJson($url, $body)->assertUnprocessable();
+    expect($registry->rejectedColumns('demo_evolve'))->toBe([]);
+    file_put_contents($path, $before);
+
+    $this->actingAs($admin)->postJson($url, $body)->assertOk()->assertJsonPath('event.status', 'rejected');
+    expect($registry->rejectedColumns('demo_evolve'))->toContain('catatan_baru')
+        ->and(Schema::hasColumn('demo_evolve', 'catatan_baru'))->toBeFalse();
 });
 
 it('keeps source reviews open after the user skips new columns', function () {

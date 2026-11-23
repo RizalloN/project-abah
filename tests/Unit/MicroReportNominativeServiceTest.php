@@ -205,6 +205,15 @@ class MicroReportNominativeServiceTest extends TestCase
         $this->page($this->filters('prewash', ['metric' => 'ksbk']));
     }
 
+    public function test_period_is_forwarded_to_boh_mbm_and_ksbk_sources(): void
+    {
+        foreach (['boh', 'mbm', 'ksbk'] as $report) {
+            $source = $this->source($report, []);
+            $this->page($this->filters($report, ['periode' => '2027-02-15']));
+            $this->assertSame(['2027-02-15'], $source->periods);
+        }
+    }
+
     private function page(array $filters, ?array $scope = null): array
     {
         return app(MicroReportNominativeService::class)->page($filters, $scope);
@@ -231,16 +240,19 @@ class MicroReportNominativeServiceTest extends TestCase
         {
             public array $scopes = [];
 
+            public array $periods = [];
+
             public function __construct(private array $rows) {}
 
-            public function payload(?array $scope): array
+            public function payload(?array $scope, ?string $period = null): array
             {
                 $this->scopes[] = $scope;
+                $this->periods[] = $period;
 
                 return ['available' => true, 'records' => $this->rows, 'year' => 2026, 'loan_period' => '2026-11-10', 'visit_period' => '2026-11-12'];
             }
 
-            public function records(?array $scope): array
+            public function records(?array $scope, ?string $period = null): array
             {
                 return $this->rows;
             }

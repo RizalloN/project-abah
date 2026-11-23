@@ -5,6 +5,7 @@
 @section('content')
 <div class="row">
     <div class="col-12">
+        @include('import.partials.schema-drift-panel', ['schemaDriftFormId' => 'inputRekananImportForm'])
         <form id="inputRekananImportForm" method="POST" action="{{ route('input.store') }}">
             @csrf
             <input type="hidden" name="rows_payload" id="rowsPayload">

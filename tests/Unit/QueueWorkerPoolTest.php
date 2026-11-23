@@ -4,7 +4,10 @@ namespace Tests\Unit;
 
 use App\Console\Commands\EnsureQueueWorkerRunning;
 use App\Providers\AppServiceProvider;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use ReflectionMethod;
 use Tests\TestCase;
 
@@ -25,6 +28,54 @@ class QueueWorkerPoolTest extends TestCase
             [4, 0, 0, 10, 0],
         ] as [$capacity, $active, $ready, $reserved, $expected]) {
             $this->assertSame($expected, $method->invoke($command, $capacity, $active, $ready, $reserved));
+        }
+    }
+
+    public function test_pool_demand_reads_ready_and_reserved_counts_in_one_query(): void
+    {
+        config([
+            'database.default' => 'sqlite',
+            'database.connections.sqlite.database' => ':memory:',
+            'queue.default' => 'database',
+            'queue.connections.database.retry_after' => 120,
+        ]);
+        DB::purge('sqlite');
+        Schema::create('jobs', function (Blueprint $table): void {
+            $table->string('queue');
+            $table->integer('available_at');
+            $table->integer('reserved_at')->nullable();
+        });
+
+        $now = 1000;
+        DB::table('jobs')->insert([
+            ['queue' => 'main', 'available_at' => $now, 'reserved_at' => null],
+            ['queue' => 'main', 'available_at' => $now + 1, 'reserved_at' => null],
+            ['queue' => 'main', 'available_at' => $now, 'reserved_at' => $now - 120],
+            ['queue' => 'main', 'available_at' => $now + 1, 'reserved_at' => $now - 121],
+            ['queue' => 'fallback', 'available_at' => $now - 1, 'reserved_at' => $now - 119],
+            ['queue' => 'unrelated', 'available_at' => $now, 'reserved_at' => null],
+        ]);
+
+        $command = new EnsureQueueWorkerRunning();
+        $method = new ReflectionMethod($command, 'poolDemand');
+
+        DB::enableQueryLog();
+        try {
+            $demand = $method->invoke($command, ['main', 'fallback'], $now);
+            $this->assertCount(1, DB::getQueryLog());
+            $this->assertSame([
+                'pending_jobs' => 2,
+                'stale_reserved_jobs' => 2,
+                'fresh_reserved_jobs' => 1,
+            ], (array) $demand);
+
+            $this->assertSame([
+                'pending_jobs' => 0,
+                'stale_reserved_jobs' => 0,
+                'fresh_reserved_jobs' => 0,
+            ], (array) $method->invoke($command, ['empty'], $now));
+        } finally {
+            DB::disableQueryLog();
         }
     }
 

@@ -2262,17 +2262,18 @@ class DashboardSimpananController extends Controller
         $this->appendLandingSection($microPerformance, 'pipeline', fn (): array =>
             app(LandingMicroPipelineService::class)->payload($branchScope)
         );
+        $landingPeriod = trim((string) $request->query('periode')) ?: data_get($microPerformance, 'meta.period');
         $this->appendLandingSection($microPerformance, 'pipeline_prewash_boh', fn (): array =>
-            app(\App\Support\LandingMicroPrewashBohService::class)->payload($branchScope)
+            app(\App\Support\LandingMicroPrewashBohService::class)->payload($branchScope, $landingPeriod)
         );
         $this->appendLandingSection($microPerformance, 'monitoring_tl_pipeline_mbm', fn (): array =>
-            app(\App\Support\LandingMicroPrewashMbmService::class)->payload($branchScope)
+            app(\App\Support\LandingMicroPrewashMbmService::class)->payload($branchScope, $landingPeriod)
         );
         $this->appendLandingSection($microPerformance, 'monitoring_realisasi_ksbk', fn (): array =>
-            app(\App\Support\LandingMicroKsbkService::class)->payload($branchScope)
+            app(\App\Support\LandingMicroKsbkService::class)->payload($branchScope, $landingPeriod)
         );
         $this->appendLandingSection($microPerformance, 'pipeline_prewash', fn (): array =>
-            app(\App\Support\PipelinePrewashService::class)->payload($request->query('periode'), $branchScope, $request->boolean('refresh'))
+            app(\App\Support\PipelinePrewashService::class)->payload($landingPeriod, $branchScope, $request->boolean('refresh'))
         );
         $this->appendLandingSection($microPerformance, 'hot_prospects_rm_kur', fn (): array =>
             app(LandingMicroPipelineService::class)->hotProspectsPayload($branchScope, $request->boolean('refresh'))
@@ -2281,7 +2282,7 @@ class DashboardSimpananController extends Controller
         $microPerformance['meta']['branch_key'] = $branchKey;
         foreach (['pipeline_prewash' => 'prewash', 'pipeline_prewash_boh' => 'boh', 'monitoring_tl_pipeline_mbm' => 'mbm', 'monitoring_realisasi_ksbk' => 'ksbk'] as $section => $sourceKey) {
             $microPerformance[$section]['source_key'] = $sourceKey;
-            $microPerformance[$section]['view_context'] = ['branch_key' => $branchKey, 'periode' => $request->query('periode', data_get($microPerformance, 'meta.period'))];
+            $microPerformance[$section]['view_context'] = ['branch_key' => $branchKey, 'periode' => $landingPeriod ?? $request->query('periode')];
         }
 
         return view('dashboard.partials.micro-performance', compact('microPerformance'));

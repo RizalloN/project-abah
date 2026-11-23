@@ -98,6 +98,7 @@ class AlmafactsDashboardController extends Controller
     ];
     private const KPI_DEFAULT_PERIOD = '2026-07';
     private const KPI_PERIOD_OPTIONS = [
+        '2026-10' => 'Oktober 2026',
         '2026-09' => 'September 2026',
         '2026-07' => 'Juli 2026',
         '2026-06' => 'Juni 2026',
@@ -541,9 +542,14 @@ class AlmafactsDashboardController extends Controller
             return ['2026-09' => self::KPI_PERIOD_OPTIONS['2026-09']];
         }
 
-        return app(KpiWorkbookSnapshotService::class)->available($sheetKey, '2026-09')
-            ? self::KPI_PERIOD_OPTIONS
-            : array_diff_key(self::KPI_PERIOD_OPTIONS, ['2026-09' => true]);
+        $snapshots = app(KpiWorkbookSnapshotService::class);
+
+        return array_filter(
+            self::KPI_PERIOD_OPTIONS,
+            static fn (string $period): bool => in_array($period, ['2026-07', '2026-06'], true)
+                || $snapshots->available($sheetKey, $period),
+            ARRAY_FILTER_USE_KEY
+        );
     }
 
     private function resolveKpiPeriod(mixed $value, ?string $sheetKey = null): string
@@ -588,7 +594,7 @@ class AlmafactsDashboardController extends Controller
             'summary' => [
                 'row_count' => count($snapshot['rows']), 'column_count' => count($meta['header']),
                 'sheet_name' => $snapshot['source']['sheet'],
-                'sheet_title' => $snapshot['source']['sheet'].' — 30 September 2026',
+                'sheet_title' => $snapshot['source']['sheet'].' — '.Carbon::parse($snapshot['as_of'])->locale('id')->translatedFormat('d F Y'),
                 'period' => $period, 'source_file' => $snapshot['source']['file'],
                 'source_sha256' => $snapshot['source']['sha256'],
             ],
@@ -1441,9 +1447,10 @@ class AlmafactsDashboardController extends Controller
     {
         $base = self::KPI_SHEETS[$sheetKey] ?? self::KPI_SHEETS[array_key_first(self::KPI_SHEETS)];
         if (app(KpiWorkbookSnapshotService::class)->available($sheetKey, $period)) {
-            $source = app(KpiWorkbookSnapshotService::class)->read($sheetKey, $period)['source'];
+            $snapshot = app(KpiWorkbookSnapshotService::class)->read($sheetKey, $period);
+            $source = $snapshot['source'];
 
-            return array_replace($base, ['source_type' => 'workbook', 'sheet' => $source['sheet'], 'source_file' => $source['file']]);
+            return array_replace($base, ['source_type' => 'workbook', 'sheet' => $source['sheet'], 'source_file' => $source['file'], 'source_as_of' => $snapshot['as_of']]);
         }
 
         if ($period === '2026-06' && isset(self::KPI_JUNE_SOURCES[$sheetKey])) {

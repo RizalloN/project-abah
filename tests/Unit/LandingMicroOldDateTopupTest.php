@@ -4,6 +4,7 @@ namespace Tests\Unit;
 
 use App\Support\LandingMicroPerformanceService;
 use App\Support\MantriSourceInputStore;
+use App\Support\MicroSameAccountTopupDetector;
 use App\Support\ReportCacheVersion;
 use App\Support\UserBranchScope;
 use Carbon\Carbon;
@@ -59,6 +60,43 @@ class LandingMicroOldDateTopupTest extends TestCase
     public static function periods(): array
     {
         return ['December' => ['2026-12-07'], 'Following year' => ['2027-02-04']];
+    }
+
+    public function test_native_periods_prefer_committed_rows_and_keep_lw_fallbacks(): void
+    {
+        Schema::create('lw321pn', function (Blueprint $table): void {
+            $table->date('periode');
+        });
+        DB::table('lw321pn')->insert([
+            ['periode' => '2026-11-01'],
+            ['periode' => '2026-11-02'],
+        ]);
+        DB::table('daily_loan_dinamis')->insert([
+            ['periode' => '2026-10-31', 'uniqueid_namareport' => 'NATIVE:baseline'],
+            ['periode' => '2026-11-01', 'uniqueid_namareport' => 'LW321PN:one'],
+            ['periode' => '2026-11-02', 'uniqueid_namareport' => 'LW321PN:two'],
+            ['periode' => '2026-11-02', 'uniqueid_namareport' => 'NATIVE:two'],
+            ['periode' => '2026-11-03', 'uniqueid_namareport' => 'LW321PN:three'],
+        ]);
+        DB::table('daily_loan_dinamis')->update(['cabang1' => 'KC MADIUN', 'segmen_kinerja' => 'MICRO']);
+
+        $detector = app(MicroSameAccountTopupDetector::class);
+        $sources = $this->invoke($detector, 'sources', '2026-10-31', '2026-11-03');
+        ksort($sources);
+        $this->assertSame([
+            '2026-10-31' => 'daily_loan_dinamis',
+            '2026-11-01' => 'lw321pn',
+            '2026-11-02' => 'daily_loan_dinamis',
+            '2026-11-03' => 'daily_loan_dinamis',
+        ], $sources);
+        $this->assertSame(
+            ['NATIVE:two'],
+            $this->invoke($detector, 'query', 'daily_loan_dinamis', ['2026-11-02'])->pluck('uniqueid_namareport')->all()
+        );
+        $this->assertSame(
+            ['LW321PN:three'],
+            $this->invoke($detector, 'query', 'daily_loan_dinamis', ['2026-11-03'])->pluck('uniqueid_namareport')->all()
+        );
     }
 
     #[DataProvider('periods')]

@@ -42,6 +42,12 @@ class PruneReportDailyHistoryCommand extends Command
         'gi405_recovery',
     ];
 
+    private const MONTHLY_EXCLUDED_TABLES = [
+        'brilink_web_laporan_summary_transaksi_brilink_web',
+        'ibbisniz_corp',
+        'usak_ibbiz_uker',
+    ];
+
     private const ACTIVE_IMPORT_STATUSES = ['queued', 'staging', 'processing'];
 
     protected $signature = 'reports:prune-daily-history
@@ -97,6 +103,7 @@ class PruneReportDailyHistoryCommand extends Command
             'started_at' => now()->toIso8601String(),
             'finished_at' => null,
             'protected_months' => $protectedMonths,
+            'excluded_monthly_tables' => self::MONTHLY_EXCLUDED_TABLES,
             'chunk_size' => $chunkSize,
             'sleep_ms' => $sleepMilliseconds,
             'lock_retries' => $lockRetries,
@@ -224,7 +231,8 @@ class PruneReportDailyHistoryCommand extends Command
             $monthly = [];
             $normalizedRows = [];
             foreach ($periodRows as $row) {
-                $date = CarbonImmutable::parse((string) $row->{$periodColumn})->format('Y-m-d');
+                $position = CarbonImmutable::parse((string) $row->{$periodColumn});
+                $date = $position->format('Y-m-d');
                 $month = substr($date, 0, 7);
                 $rowCount = (int) $row->row_count;
 
@@ -232,6 +240,7 @@ class PruneReportDailyHistoryCommand extends Command
                     'date' => $date,
                     'month' => $month,
                     'rows' => $rowCount,
+                    'is_month_end' => $position->day === $position->daysInMonth,
                 ];
                 $monthly[$month] ??= [
                     'latest' => $date,
@@ -252,6 +261,7 @@ class PruneReportDailyHistoryCommand extends Command
             $deletePeriods = array_values(array_filter(
                 $normalizedRows,
                 static fn (array $period): bool => ! in_array($period['month'], $protectedMonths, true)
+                    && ! $period['is_month_end']
                     && $period['date'] !== $monthly[$period['month']]['latest']
             ));
             $totalRows = array_sum(array_column($normalizedRows, 'rows'));
@@ -411,10 +421,13 @@ class PruneReportDailyHistoryCommand extends Command
 
     private function assertTargetSchemaIsSafe(): void
     {
-        $overlap = array_values(array_intersect(array_keys(self::TARGETS), self::TIMESERIES_EXCLUDED_TABLES));
+        $overlap = array_values(array_intersect(
+            array_keys(self::TARGETS),
+            [...self::TIMESERIES_EXCLUDED_TABLES, ...self::MONTHLY_EXCLUDED_TABLES]
+        ));
         if ($overlap !== []) {
             throw new RuntimeException(
-                'Target retensi tidak boleh memuat sumber timeseries: '.implode(', ', $overlap).'.'
+                'Target retensi harian memuat laporan yang dikecualikan: '.implode(', ', $overlap).'.'
             );
         }
 
@@ -493,8 +506,9 @@ class PruneReportDailyHistoryCommand extends Command
     {
         $this->info('RENCANA RETENSI DATA HARIAN');
         $this->line('Bulan lengkap: '.implode(', ', $protectedMonths));
-        $this->line('Bulan lainnya: hanya posisi terakhir yang tersedia pada masing-masing bulan.');
+        $this->line('Bulan lainnya: simpan tanggal akhir bulan, atau posisi terakhir jika tanggal tersebut belum tersedia.');
         $this->line('Dikecualikan (timeseries): '.implode(', ', self::TIMESERIES_EXCLUDED_TABLES).'.');
+        $this->line('Dikecualikan (laporan bulanan): '.implode(', ', self::MONTHLY_EXCLUDED_TABLES).'.');
         $this->newLine();
 
         $rows = [];

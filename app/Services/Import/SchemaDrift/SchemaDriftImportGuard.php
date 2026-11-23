@@ -2,6 +2,7 @@
 
 namespace App\Services\Import\SchemaDrift;
 
+use Illuminate\Validation\ValidationException;
 use RuntimeException;
 
 /** Enforces the same source review at preview, enqueue and database execution. */
@@ -37,5 +38,19 @@ class SchemaDriftImportGuard
     public function lastReport(): ?array
     {
         return $this->report;
+    }
+
+    public function assertWebReady(string $table, string $path, array $options): void
+    {
+        try {
+            $this->assertReady($table, $path, $options);
+        } catch (RuntimeException $exception) {
+            throw ValidationException::withMessages(['file_path' => $exception->getMessage()]);
+        }
+    }
+
+    public static function delimitedOptions(string $mapping, ?string $delimiter): array
+    {
+        return ['mapping' => $mapping, 'delimiter' => $delimiter, 'header_index' => 'first_non_blank'];
     }
 }

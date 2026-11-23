@@ -15,6 +15,8 @@ final class MicroSameAccountTopupDetector
 
     private array $nativePeriods = [];
 
+    private array $sourceColumns = [];
+
     public function bookings(string $period): array
     {
         $period = Carbon::parse($period)->toDateString();
@@ -45,29 +47,27 @@ final class MicroSameAccountTopupDetector
             $sources[$period] = $captureSource;
         }
         $baseline = [];
-        $knownAccounts = [];
         if (isset($sources[$previous])) {
             $table = $sources[$previous];
             $accountColumn = $table === 'lw321pn' ? 'no_rekening' : 'nomor_rekening1';
             $limitColumn = $this->limitColumn($table);
-            foreach ($this->query($table, [$previous])->select([$accountColumn, 'cifno', $limitColumn])->cursor() as $row) {
-                $account = $this->account($row->{$accountColumn});
-                $knownAccounts[$account] = true;
-                $key = $this->identity($account, $row->cifno);
+            $baselineQuery = $this->query($table, [$previous])->select([$accountColumn, 'cifno', $limitColumn]);
+            foreach ($this->positionRows($baselineQuery) as $row) {
+                $key = $this->identity($row->{$accountColumn}, $row->cifno);
                 if ($key !== null && $row->{$limitColumn} !== null && is_numeric($row->{$limitColumn})) {
                     $baseline[$key] = max($baseline[$key] ?? 0, (float) $row->{$limitColumn});
                 }
             }
-        }
-        $input = isset($sources[$previous]) ? null : $store->read($previous);
-        foreach ($store->baselineAccounts(! isset($sources[$previous]) && ! empty($input['complete_presence']) ? $input : null) as $row) {
-            $account = $this->account($row['nomor_rekening1'] ?? null);
-            $key = $this->identity($account, $row['cifno'] ?? null);
-            if (! isset($knownAccounts[$account]) && $key !== null && isset($row['plafon']) && is_numeric($row['plafon'])) {
-                $baseline[$key] = max($baseline[$key] ?? 0, (float) $row['plafon']);
+        } else {
+            $input = $store->read($previous);
+            foreach ($store->baselineAccounts(! empty($input['complete_presence']) ? $input : null) as $row) {
+                $key = $this->identity($row['nomor_rekening1'] ?? null, $row['cifno'] ?? null);
+                if ($key !== null && isset($row['plafon']) && is_numeric($row['plafon'])) {
+                    $baseline[$key] = max($baseline[$key] ?? 0, (float) $row['plafon']);
+                }
             }
+            unset($input);
         }
-        unset($input, $knownAccounts);
         if ($baseline === []) {
             return [];
         }
@@ -88,7 +88,7 @@ final class MicroSameAccountTopupDetector
                 $query = $this->query($table, [$date])->where('tgl_realisasi', '<', $start)
                     ->where('tgl_realisasi', '>', '0001-01-01')->where($limitColumn, '>', 0);
                 $observations = (clone $query)->select([$accountColumn, 'cifno', $limitColumn]);
-                foreach ($observations->cursor() as $row) {
+                foreach ($this->positionRows($observations) as $row) {
                     $key = $this->identity($row->{$accountColumn}, $row->cifno);
                     $limit = (float) $row->{$limitColumn};
                     if ($key === null || ! array_key_exists($key, $baseline) || $limit <= $baseline[$key]) {
@@ -190,22 +190,33 @@ final class MicroSameAccountTopupDetector
     {
         $sources = [];
         $this->nativePeriods = [];
+        $this->sourceColumns = [];
         if (Schema::hasTable('lw321pn')) {
             foreach (DB::table('lw321pn')->whereBetween('periode', [$previous, $period])->distinct()->pluck('periode') as $date) {
                 $sources[(string) $date] = 'lw321pn';
             }
         }
         if (Schema::hasTable('daily_loan_dinamis')) {
-            foreach (DB::table('daily_loan_dinamis')->whereBetween('periode', [$previous, $period])->distinct()->pluck('periode') as $date) {
-                $sources[(string) $date] ??= 'daily_loan_dinamis';
+            $periods = DB::table('daily_loan_dinamis')->whereBetween('periode', [$previous, $period])->select('periode')->distinct();
+            $hasSourceId = $this->hasSourceColumn('daily_loan_dinamis', 'uniqueid_namareport');
+            $positions = DB::query()->fromSub($periods, 'daily_positions')->select('daily_positions.periode');
+            if ($hasSourceId) {
+                // Stop at the first native row for each indexed position.
+                $native = DB::table('daily_loan_dinamis')
+                    ->selectRaw('1')
+                    ->whereColumn('daily_loan_dinamis.periode', 'daily_positions.periode')
+                    ->where(fn (Builder $q) => $q->whereNull('uniqueid_namareport')->orWhere('uniqueid_namareport', 'not like', 'LW321PN:%'))
+                    ->limit(1);
+                $positions->selectSub($native, 'has_native');
             }
-            $native = DB::table('daily_loan_dinamis')->whereBetween('periode', [$previous, $period]);
-            if (Schema::hasColumn('daily_loan_dinamis', 'uniqueid_namareport')) {
-                $native->where(fn (Builder $q) => $q->whereNull('uniqueid_namareport')->orWhere('uniqueid_namareport', 'not like', 'LW321PN:%'));
-            }
-            foreach ($native->distinct()->pluck('periode') as $date) {
-                $sources[(string) $date] = 'daily_loan_dinamis';
-                $this->nativePeriods[(string) $date] = true;
+            foreach ($positions->get() as $position) {
+                $date = (string) $position->periode;
+                if (! $hasSourceId || $position->has_native !== null) {
+                    $sources[$date] = 'daily_loan_dinamis';
+                    $this->nativePeriods[$date] = true;
+                } else {
+                    $sources[$date] ??= 'daily_loan_dinamis';
+                }
             }
         }
 
@@ -222,7 +233,7 @@ final class MicroSameAccountTopupDetector
                 ->whereRaw("UPPER(COALESCE(description, '')) NOT LIKE '%BRIGUNA%'")
                 ->whereRaw("UPPER(REPLACE(REPLACE(description, ' ', ''), '-', '')) <> 'KREDITMIKROGBT'");
         }
-        if (Schema::hasColumn($table, 'uniqueid_namareport')) {
+        if ($this->hasSourceColumn($table, 'uniqueid_namareport')) {
             // Where a native position exists, materialized fallback rows are
             // not a second financial source for that position.
             $nativeDates = array_values(array_intersect($dates, array_keys($this->nativePeriods)));
@@ -231,18 +242,18 @@ final class MicroSameAccountTopupDetector
                     ->orWhereNull('uniqueid_namareport')->orWhere('uniqueid_namareport', 'not like', 'LW321PN:%'));
             }
         }
-        $branch = Schema::hasColumn($table, 'cabang_normalized')
+        $branch = $this->hasSourceColumn($table, 'cabang_normalized')
             ? "UPPER(COALESCE(NULLIF(TRIM(cabang1), ''), TRIM(cabang_normalized)))" : 'UPPER(TRIM(cabang1))';
         $query->whereIn(DB::raw($branch), self::BRANCHES);
-        if (Schema::hasColumn($table, 'segmen_kinerja')) {
+        if ($this->hasSourceColumn($table, 'segmen_kinerja')) {
             $query->whereRaw("UPPER(TRIM(segmen_kinerja)) = 'MICRO'");
         } else {
             $query->whereRaw(Lw321DailyLoanMapper::segmentSql('description')." = 'MICRO'");
         }
-        if (Schema::hasColumn($table, 'produk_kinerja')) {
+        if ($this->hasSourceColumn($table, 'produk_kinerja')) {
             $query->where(fn (Builder $q) => $q->whereNull('produk_kinerja')->orWhereRaw("UPPER(produk_kinerja) NOT LIKE '%BRIGUNA%'"));
         }
-        if (Schema::hasColumn($table, 'description')) {
+        if ($this->hasSourceColumn($table, 'description')) {
             $query->whereRaw("UPPER(COALESCE(description, '')) NOT LIKE '%BRIGUNA%'")
                 ->whereRaw("UPPER(REPLACE(REPLACE(COALESCE(description, ''), ' ', ''), '-', '')) <> 'KREDITMIKROGBT'");
         }
@@ -271,7 +282,21 @@ final class MicroSameAccountTopupDetector
 
     private function limitColumn(string $table): string
     {
-        return $table === 'lw321pn' && Schema::hasColumn($table, 'plafon_dalam_idr') ? 'plafon_dalam_idr' : 'plafon';
+        return $table === 'lw321pn' && $this->hasSourceColumn($table, 'plafon_dalam_idr') ? 'plafon_dalam_idr' : 'plafon';
+    }
+
+    private function hasSourceColumn(string $table, string $column): bool
+    {
+        $columns = $this->sourceColumns[$table] ??= array_map('strtolower', Schema::getColumnListing($table));
+
+        return in_array($column, $columns, true);
+    }
+
+    /** @return iterable<int, \stdClass> */
+    private function positionRows(Builder $query): iterable
+    {
+        // The detector only consumes raw scalars and has no after-query callbacks.
+        return $query->getConnection()->cursor($query->toSql(), $query->getBindings());
     }
 
     private function identity(mixed $account, mixed $cif): ?string

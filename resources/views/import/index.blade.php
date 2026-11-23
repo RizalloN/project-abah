@@ -787,29 +787,54 @@
                 const start = index * chunkSize;
                 const end = Math.min(file.size, start + chunkSize);
                 const chunk = file.slice(start, end);
-                const chunkForm = new FormData();
-                chunkForm.append('_token', csrfToken);
-                chunkForm.append('upload_id', initPayload.upload_id);
-                chunkForm.append('chunk_index', String(index));
-                chunkForm.append('total_chunks', String(totalChunks));
-                chunkForm.append('file', chunk, `${file.name}.part${index}`);
 
-                const chunkResponse = await fetch(chunkUrl, {
-                    method: 'POST',
-                    headers: {
-                        'Accept': 'application/json',
-                        'X-Requested-With': 'XMLHttpRequest',
-                    },
-                    body: chunkForm,
-                });
+                let chunkUploaded = false;
+                let lastChunkError = null;
+                for (let attempt = 1; attempt <= 3; attempt++) {
+                    try {
+                        const chunkForm = new FormData();
+                        chunkForm.append('_token', csrfToken);
+                        chunkForm.append('upload_id', initPayload.upload_id);
+                        chunkForm.append('chunk_index', String(index));
+                        chunkForm.append('total_chunks', String(totalChunks));
+                        chunkForm.append('file', chunk, `${file.name}.part${index}`);
 
-                const chunkPayload = await chunkResponse.json().catch(() => ({}));
-                if (!chunkResponse.ok || chunkPayload.status !== 'success') {
-                    if (isDuplicateImportMessage(chunkPayload.message || chunkPayload.text || chunkPayload.title)) {
-                        await showDuplicateImportPopup(chunkPayload.text || chunkPayload.message || chunkPayload.title || 'Data duplikat terdeteksi.', chunkPayload.title || 'Data Duplikat');
-                        return;
+                        const chunkResponse = await fetch(chunkUrl, {
+                            method: 'POST',
+                            headers: {
+                                'Accept': 'application/json',
+                                'X-Requested-With': 'XMLHttpRequest',
+                            },
+                            body: chunkForm,
+                        });
+
+                        const chunkPayload = await chunkResponse.json().catch(() => ({}));
+                        if (!chunkResponse.ok || chunkPayload.status !== 'success') {
+                            if (isDuplicateImportMessage(chunkPayload.message || chunkPayload.text || chunkPayload.title)) {
+                                await showDuplicateImportPopup(chunkPayload.text || chunkPayload.message || chunkPayload.title || 'Data duplikat terdeteksi.', chunkPayload.title || 'Data Duplikat');
+                                return;
+                            }
+                            const msg = chunkPayload.message || ('Gagal upload potongan file ke-' + (index + 1) + '.');
+                            if (chunkResponse.status >= 400 && chunkResponse.status < 500 && chunkResponse.status !== 408 && chunkResponse.status !== 429) {
+                                throw new Error(msg);
+                            }
+                            lastChunkError = new Error(msg);
+                            await new Promise((r) => setTimeout(r, 800 * attempt));
+                            continue;
+                        }
+
+                        chunkUploaded = true;
+                        break;
+                    } catch (err) {
+                        lastChunkError = err;
+                        if (attempt < 3) {
+                            await new Promise((r) => setTimeout(r, 800 * attempt));
+                        }
                     }
-                    throw new Error(chunkPayload.message || ('Gagal upload potongan file ke-' + (index + 1) + '.'));
+                }
+
+                if (!chunkUploaded) {
+                    throw lastChunkError || new Error('Gagal upload potongan file ke-' + (index + 1) + '.');
                 }
 
                 const uploadedBytes = end;
@@ -822,8 +847,12 @@
                 if (progressPercent) {
                     progressPercent.textContent = percent + '%';
                 }
+                const progressPhaseEl = document.getElementById('swal-progress-phase');
+                if (progressPhaseEl) {
+                    progressPhaseEl.textContent = `Mengunggah bagian ${index + 1}/${totalChunks}...`;
+                }
                 if (uploadProgressText) {
-                    uploadProgressText.innerText = `Mengunggah file ke server... ${percent}%`;
+                    uploadProgressText.innerText = `Mengunggah file ke server... ${percent}% (${index + 1}/${totalChunks})`;
                 }
             }
 
@@ -2142,11 +2171,15 @@
                 formCsv.style.display = 'block';
                 inputCsv.disabled = false;
                 inputCsv.required = true;
-                inputCsv.setAttribute('accept', '.csv,.txt,.xlsx,.xls');
+                inputCsv.setAttribute('accept', '.csv,.txt,.xlsx');
                 formImport.action = "{{ route('import.performancepis.upload') }}";
                 formImport.dataset.preparePreviewUrl = "{{ route('import.performancepis.prepare-preview') }}";
-                csvLabel.innerHTML = '<i class="fas fa-file-upload mr-1"></i> Upload File Performance PIS (.csv, .txt, .xlsx, .xls)';
-                csvHelp.textContent = 'File CSV dan Excel didukung. Tanggal periode wajib diisi manual di bawah.';
+                formImport.dataset.chunkedUpload = '1';
+                formImport.dataset.chunkInitUrl = "{{ route('import.performancepis.upload-chunk.init') }}";
+                formImport.dataset.chunkUploadUrl = "{{ route('import.performancepis.upload-chunk') }}";
+                formImport.dataset.chunkFinalizeUrl = "{{ route('import.performancepis.upload-chunk.finalize') }}";
+                csvLabel.innerHTML = '<i class="fas fa-file-upload mr-1"></i> Upload File Performance PIS (.csv, .txt, .xlsx)';
+                csvHelp.textContent = 'File CSV dan XLSX (termasuk ukuran besar via upload bertahap) didukung. Tanggal periode wajib diisi manual di bawah.';
                 applyButtonState('csv', '<i class="fas fa-file-upload"></i> Upload File');
                 configurePeriodeInput(buildManualPeriodeOptions({
                     visible: true,
@@ -2715,6 +2748,12 @@
                         updateProgressSurface(percent, 'Mengunggah file ke server...', null, null, null, '', 'upload');
                     });
 
+                    uploadRequest.upload.addEventListener('load', function() {
+                        if (uploadKind === 'rar') {
+                            updateProgressSurface(90, 'Upload selesai. Mengekstrak arsip RAR dan mendeteksi file otomatis...', null, null, null, '', 'upload');
+                        }
+                    });
+
                     uploadRequest.addEventListener('load', function() {
                         if (uploadRequest.status < 200 || uploadRequest.status >= 300) {
                             let serverMessage = '';
@@ -2855,7 +2894,9 @@
                                 progressPercent.textContent = '100%';
                             }
                             if (uploadProgressText) {
-                                uploadProgressText.innerText = 'Upload selesai. Membuka halaman preview...';
+                                uploadProgressText.innerText = String(data.redirect).includes('/import/select')
+                                    ? 'Upload selesai. Membuka halaman pilihan file...'
+                                    : 'Upload selesai. Membuka halaman preview...';
                             }
 
                             navigateToPreparedPreview(data.redirect, uploadProgressBar, uploadProgressText);

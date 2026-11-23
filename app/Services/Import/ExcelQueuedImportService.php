@@ -186,10 +186,17 @@ class ExcelQueuedImportService
                     }
                 );
                 $message = 'Seluruh baris terpilih berhasil disimpan dan diverifikasi.';
-                if ($tableName === MonitoringKsbkSourceService::TABLE) {
+                $manualPeriode = isset($params['manual_periode']) && trim((string) $params['manual_periode']) !== ''
+                    ? trim((string) $params['manual_periode'])
+                    : null;
+                if (in_array($tableName, [MonitoringKsbkSourceService::TABLE, PipelinePrewashBohSourceService::TABLE, PipelinePrewashMbmSourceService::TABLE], true)) {
                     \App\Support\ManagedReportManagementService::invalidateTableCache($tableName);
+                    \App\Support\ReportCacheVersion::bump('pinjaman');
+                }
+                if ($tableName === MonitoringKsbkSourceService::TABLE) {
+                    $ksbkPeriode = $this->firstCsvColumnValue($path, $normalizedHeaders, 'periode') ?? $manualPeriode;
                     try {
-                        $monitoring = app(\App\Support\LandingMicroKsbkService::class)->payload(null);
+                        $monitoring = app(\App\Support\LandingMicroKsbkService::class)->payload(null, $ksbkPeriode);
                         if (! empty($monitoring['message'])) {
                             $message .= ' '.$monitoring['message'];
                         }
@@ -200,8 +207,9 @@ class ExcelQueuedImportService
                 }
 
                 if ($tableName === PipelinePrewashMbmSourceService::TABLE && \Illuminate\Support\Facades\Schema::hasTable($tableName)) {
+                    $mbmYear = $this->firstCsvColumnValue($path, $normalizedHeaders, 'tahun') ?? $manualPeriode;
                     try {
-                        $monitoring = app(\App\Support\LandingMicroPrewashMbmService::class)->payload(null);
+                        $monitoring = app(\App\Support\LandingMicroPrewashMbmService::class)->payload(null, $mbmYear);
                         if (! empty($monitoring['message'])) {
                             $message .= ' '.$monitoring['message'];
                         }
@@ -921,6 +929,30 @@ class ExcelQueuedImportService
         }
 
         return $storagePath;
+    }
+
+    private function firstCsvColumnValue(string $path, array $headers, string $column): ?string
+    {
+        if (! is_file($path)) {
+            return null;
+        }
+        $targetIndex = array_search(strtolower($column), array_map(static fn ($h): string => strtolower(trim((string) $h)), $headers), true);
+        if ($targetIndex === false) {
+            return null;
+        }
+        $handle = @fopen($path, 'rb');
+        if ($handle === false) {
+            return null;
+        }
+        try {
+            fgetcsv($handle, 0, ',', '"', '');
+            $row = fgetcsv($handle, 0, ',', '"', '');
+            $value = is_array($row) ? trim((string) ($row[$targetIndex] ?? '')) : '';
+
+            return $value !== '' ? $value : null;
+        } finally {
+            fclose($handle);
+        }
     }
 
 }

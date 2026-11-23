@@ -202,12 +202,12 @@ final class ColumnValueProfiler
      * @param array<int, array<int, mixed>> $rows positional rows aligned with $headers
      * @return array<int, array<string, mixed>>
      */
-    public function profileColumns(array $headers, array $rows): array
+    public function profileColumns(array $headers, array $rows, array $profileValues = []): array
     {
         $profiles = [];
         foreach ($headers as $index => $header) {
             $profiles[$index] = $this->profile(
-                (function () use ($rows, $index) {
+                $profileValues[$index] ?? (function () use ($rows, $index) {
                     foreach ($rows as $row) {
                         yield $row[$index] ?? null;
                     }

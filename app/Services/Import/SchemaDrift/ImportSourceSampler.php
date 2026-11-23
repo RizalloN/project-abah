@@ -2,6 +2,11 @@
 
 namespace App\Services\Import\SchemaDrift;
 
+use App\Http\Controllers\Import\Concerns\SmartCsvImportSupport;
+use App\Http\Controllers\Import\ImportFileController;
+use App\Services\Import\MauBrimoImportPolicy;
+use App\Services\Import\MerchantQrisDetailCsv;
+
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Reader\IReadFilter;
 use RuntimeException;
@@ -16,6 +21,8 @@ use Illuminate\Support\Facades\Cache;
  */
 class ImportSourceSampler
 {
+    use SmartCsvImportSupport;
+
     private const HEADER_SCAN_ROWS = 40;
     private const DEFAULT_SAMPLE_ROWS = 600;
     private const DELIMITERS = [',', ';', "\t", '|'];
@@ -39,7 +46,12 @@ class ImportSourceSampler
         if (!is_string($sourceHash)) {
             throw new RuntimeException('Identitas file sumber tidak dapat dibaca.');
         }
-        $cacheKey = 'import-schema-sample:v4:'.hash('sha256', json_encode([$sourceHash, strtolower(pathinfo($path, PATHINFO_EXTENSION)), $sampleSize, $tableColumnsLower, $options['delimiter'] ?? null, $options['header_index'] ?? null]));
+        $qrisDetail = ($options['target_table'] ?? null) === MerchantQrisDetailCsv::TABLE;
+        $useSmartCsv = $qrisDetail || (($options['target_table'] ?? null) !== MauBrimoImportPolicy::TABLE
+            && in_array($options['mapping'] ?? null, ['csv', 'brimo', 'cognos-recovery'], true));
+        $brilinkSummary = ($options['target_table'] ?? null) === ImportFileController::BRILINK_SUMMARY_TABLE;
+        $sampleVersion = $brilinkSummary || $qrisDetail ? 'v7' : 'v6';
+        $cacheKey = 'import-schema-sample:'.$sampleVersion.':'.hash('sha256', json_encode([$sourceHash, strtolower(pathinfo($path, PATHINFO_EXTENSION)), $sampleSize, $tableColumnsLower, $options['delimiter'] ?? null, $options['header_index'] ?? null, $options['target_table'] ?? null, $useSmartCsv]));
         $cached = Cache::get($cacheKey);
         if (is_array($cached)) {
             $cached['canonical_headers'] = array_values($canonicalize($cached['headers']));
@@ -48,15 +60,18 @@ class ImportSourceSampler
         }
         $extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
         $records = in_array($extension, ['xlsx', 'xls', 'xlsm'], true)
-            ? $this->readSpreadsheet($path, self::HEADER_SCAN_ROWS + $sampleSize)
-            : $this->readDelimited($path, (string) ($options['delimiter'] ?? ''), self::HEADER_SCAN_ROWS + $sampleSize);
+            ? $this->readSpreadsheet($path, self::HEADER_SCAN_ROWS + $sampleSize, ($options['target_table'] ?? null) === 'performance_pis_per_produk')
+            : $this->readDelimited($path, (string) ($options['delimiter'] ?? ''), self::HEADER_SCAN_ROWS + $sampleSize, $useSmartCsv);
 
         $headerIndex = $this->locateHeader($records['rows'], $canonicalize, $tableColumnsLower, $options['header_index'] ?? null);
         if ($headerIndex === null) {
             throw new RuntimeException('Baris header tidak dapat dikenali dari isi file.');
         }
 
-        $headers = $this->trimTrailingEmpty(array_map(static fn ($value): string => trim((string) $value), $records['rows'][$headerIndex]));
+        $headers = array_map(static fn ($value): string => trim((string) $value), $records['rows'][$headerIndex]);
+        if ($records['format'] === 'spreadsheet') {
+            $headers = $this->trimTrailingEmpty($headers);
+        }
         $headers[0] = isset($headers[0]) ? (preg_replace('/^\x{FEFF}/u', '', $headers[0]) ?? $headers[0]) : '';
         $headerCount = count($headers);
 
@@ -70,7 +85,10 @@ class ImportSourceSampler
 
         // Header discovery is bounded; structural validation is not. In
         // particular, a populated field after the first 600 rows is still data.
-        $scan = $this->scanSource($path, $records, $headerIndex, $headerCount, $sampleSize, $sourceHash);
+        $qrisLayout = $qrisDetail && $records['format'] === 'delimited'
+            ? MerchantQrisDetailCsv::forHeaders($headers, $records['delimiter'])
+            : null;
+        $scan = $this->scanSource($path, $records, $headerIndex, $headerCount, $sampleSize, $sourceHash, $brilinkSummary, $qrisLayout);
 
         $sample = [
             'headers' => $headers,
@@ -89,7 +107,7 @@ class ImportSourceSampler
         return $sample;
     }
 
-    private function scanSource(string $path, array $records, int $headerIndex, int $width, int $sampleSize, string $sourceHash): array
+    private function scanSource(string $path, array $records, int $headerIndex, int $width, int $sampleSize, string $sourceHash, bool $brilinkSummary, ?MerchantQrisDetailCsv $qrisLayout): array
     {
         $rows = [];
         $witnesses = array_fill(0, $width, []);
@@ -97,13 +115,26 @@ class ImportSourceSampler
         $maxLength = array_fill(0, $width, 0);
         $total = 0;
         $misaligned = 0;
+        $numberedRows = 0;
+        $repairedRows = 0;
+        $repairExamples = [];
         $examples = [];
-        $consume = function (array $row, int $number, bool $spreadsheet = false) use (&$rows, &$witnesses, &$nonEmpty, &$maxLength, &$total, &$misaligned, &$examples, $width, $sampleSize): void {
+        $consume = function (array $row, int $number, bool $spreadsheet = false) use (&$rows, &$witnesses, &$nonEmpty, &$maxLength, &$total, &$misaligned, &$examples, &$numberedRows, &$repairedRows, &$repairExamples, $width, $sampleSize, $brilinkSummary, $qrisLayout): void {
             if ($this->isBlank($row)) {
                 return;
             }
             $total++;
             $actual = $spreadsheet ? max($width, count($this->trimTrailingEmpty($row))) : count($row);
+            if ($qrisLayout !== null && $actual === $width + 1) {
+                $row = $qrisLayout->repair($row);
+                $actual = count($row);
+                if ($actual === $width) {
+                    $repairedRows++;
+                    if (count($repairExamples) < 8) {
+                        $repairExamples[] = $number;
+                    }
+                }
+            }
             if ($actual !== $width) {
                 $misaligned++;
                 if (count($examples) < 8) {
@@ -111,6 +142,9 @@ class ImportSourceSampler
                 }
                 // Never truncate a malformed record into valid-looking data.
                 return;
+            }
+            if ($brilinkSummary && ImportFileController::hasManualNumberingColumn($row)) {
+                $numberedRows++;
             }
             $row = array_pad($row, $width, null);
             if (count($rows) < $sampleSize) {
@@ -137,10 +171,11 @@ class ImportSourceSampler
         };
 
         if ($records['format'] === 'delimited') {
-            $handle = $this->openDelimited($path);
+            $useSmartCsv = $records['smart_csv'];
+            $handle = $this->openDelimited($path, $useSmartCsv);
             try {
                 $number = 0;
-                while (($row = fgetcsv($handle, 0, $records['delimiter'], '"', '')) !== false) {
+                while (($row = $this->readDelimitedRecord($handle, $records['delimiter'], $useSmartCsv)) !== false) {
                     if ($number++ <= $headerIndex) {
                         continue;
                     }
@@ -202,7 +237,8 @@ class ImportSourceSampler
                 'complete' => true, 'total_rows' => $total, 'misaligned_rows' => $misaligned,
                 'examples' => $examples, 'column_non_empty' => $nonEmpty, 'column_max_length' => $maxLength,
                 'source_fingerprint' => $sourceHash,
-            ],
+            ] + ($brilinkSummary ? ['numbered_rows' => $numberedRows] : [])
+                + ($repairedRows > 0 ? ['merchant_name_pipe_repairs' => ['count' => $repairedRows, 'rows' => $repairExamples]] : []),
         ];
     }
 
@@ -225,11 +261,15 @@ class ImportSourceSampler
         return 'text';
     }
 
-    private function openDelimited(string $path)
+    private function openDelimited(string $path, bool $useSmartCsv)
     {
         $handle = fopen($path, 'rb');
         if ($handle === false) {
             throw new RuntimeException('File sumber tidak dapat dibuka.');
+        }
+
+        if ($useSmartCsv) {
+            return $handle;
         }
         $prefix = (string) fread($handle, 4);
         rewind($handle);
@@ -248,6 +288,15 @@ class ImportSourceSampler
 
     private function locateHeader(array $rows, callable $canonicalize, array $tableColumnsLower, mixed $hint): ?int
     {
+        if ($hint === 'first_non_blank') {
+            foreach ($rows as $index => $row) {
+                if (!$this->isBlank($row)) {
+                    return $index;
+                }
+            }
+
+            return null;
+        }
         $lookup = array_fill_keys($tableColumnsLower, true);
         $best = null;
         $bestScore = 0;
@@ -324,34 +373,17 @@ class ImportSourceSampler
         return null;
     }
 
-    private function readDelimited(string $path, string $delimiter, int $limit): array
+    private function readDelimited(string $path, string $delimiter, int $limit, bool $useSmartCsv): array
     {
-        $handle = fopen($path, 'rb');
-        if ($handle === false) {
-            throw new RuntimeException('File sumber tidak dapat dibuka.');
-        }
+        $handle = $this->openDelimited($path, $useSmartCsv);
 
         try {
-            // Decode the stream before CSV parsing: UTF-16 tabs/quotes contain
-            // NUL bytes and cannot be repaired by converting individual cells.
-            $prefix = (string) fread($handle, 4);
-            rewind($handle);
-            $encoding = match (true) {
-                str_starts_with($prefix, "\xFF\xFE") => 'UTF-16LE',
-                str_starts_with($prefix, "\xFE\xFF") => 'UTF-16BE',
-                strlen($prefix) >= 2 && $prefix[1] === "\0" => 'UTF-16LE',
-                strlen($prefix) >= 2 && $prefix[0] === "\0" => 'UTF-16BE',
-                default => null,
-            };
-            if ($encoding !== null && @stream_filter_append($handle, 'convert.iconv.'.$encoding.'/UTF-8', STREAM_FILTER_READ) === false) {
-                throw new RuntimeException('Konverter encoding '.$encoding.' untuk preview tidak tersedia.');
-            }
-            if ($delimiter === '' || !in_array($delimiter, self::DELIMITERS, true)) {
-                $delimiter = $this->detectDelimiter($handle);
+            if ($delimiter !== '.' && !in_array($delimiter, self::DELIMITERS, true)) {
+                $delimiter = $useSmartCsv ? $this->smartDetectCsvDelimiter($path, [...self::DELIMITERS, '.']) : $this->detectDelimiter($handle);
             }
 
             $rows = [];
-            while (count($rows) < $limit && ($row = fgetcsv($handle, 0, $delimiter, '"', '')) !== false) {
+            while (count($rows) < $limit && ($row = $this->readDelimitedRecord($handle, $delimiter, $useSmartCsv)) !== false) {
                 $row = array_map(fn ($value) => $this->toUtf8((string) $value), (array) $row);
                 if ($rows === [] && isset($row[0])) {
                     $row[0] = preg_replace('/^\x{FEFF}/u', '', $row[0]) ?? $row[0];
@@ -362,7 +394,18 @@ class ImportSourceSampler
             fclose($handle);
         }
 
-        return ['rows' => $rows, 'delimiter' => $delimiter, 'format' => 'delimited'];
+        return ['rows' => $rows, 'delimiter' => $delimiter, 'format' => 'delimited', 'smart_csv' => $useSmartCsv];
+    }
+
+    private function readDelimitedRecord($handle, string $delimiter, bool $useSmartCsv): array|false
+    {
+        if (!$useSmartCsv) {
+            return fgetcsv($handle, 0, $delimiter, '"', '');
+        }
+
+        $line = fgets($handle);
+
+        return $line === false ? false : $this->smartParseCsvLine($line, $delimiter);
     }
 
     private function detectDelimiter($handle): string
@@ -389,9 +432,9 @@ class ImportSourceSampler
         return $best;
     }
 
-    private function readSpreadsheet(string $path, int $limit): array
+    private function readSpreadsheet(string $path, int $limit, bool $firstSheet): array
     {
-        $streamed = $this->xlsxReader()->readSampleRows($path, $limit);
+        $streamed = $this->xlsxReader()->readSampleRows($path, $limit, $firstSheet);
         if ($streamed !== null) {
             return [
                 'rows' => $streamed['rows'],
@@ -418,9 +461,10 @@ class ImportSourceSampler
         });
 
         $spreadsheet = $reader->load($path);
-        $sheetName = $spreadsheet->getActiveSheet()->getTitle();
+        $sheet = $firstSheet ? $spreadsheet->getSheet(0) : $spreadsheet->getActiveSheet();
+        $sheetName = $sheet->getTitle();
         try {
-            $rows = $spreadsheet->getActiveSheet()->toArray(null, false, false, false);
+            $rows = $sheet->toArray(null, false, false, false);
         } finally {
             $spreadsheet->disconnectWorksheets();
         }

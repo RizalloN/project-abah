@@ -2,8 +2,8 @@
 
 | Methods | URI | Name | Domain | Handler |
 | --- | --- | --- | --- | --- |
-| POST | `confirm-password` | `generated::Cux7jEvVLJRuBncu` | access-control | `App\Http\Controllers\Auth\ConfirmablePasswordController::store` |
-| POST | `login` | `generated::VXjthWVSuC5qzWjX` | access-control | `App\Http\Controllers\Auth\AuthenticatedSessionController::store` |
+| POST | `login` | `generated::iaLgRtGlxMcRr7Xp` | access-control | `App\Http\Controllers\Auth\AuthenticatedSessionController::store` |
+| POST | `confirm-password` | `generated::p5ys1ofn077pAhOA` | access-control | `App\Http\Controllers\Auth\ConfirmablePasswordController::store` |
 | GET | `login` | `login` | access-control | `App\Http\Controllers\Auth\AuthenticatedSessionController::create` |
 | POST | `logout` | `logout` | access-control | `App\Http\Controllers\Auth\AuthenticatedSessionController::destroy` |
 | GET | `confirm-password` | `password.confirm` | access-control | `App\Http\Controllers\Auth\ConfirmablePasswordController::show` |
@@ -53,7 +53,7 @@
 | POST | `file-management/delete` | `file-management.destroy` | core | `App\Http\Controllers\Admin\FileManagementController::destroy` |
 | GET | `file-management/download` | `file-management.download` | core | `App\Http\Controllers\Admin\FileManagementDownloadController::__invoke` |
 | GET | `file-management` | `file-management.index` | core | `App\Http\Controllers\Admin\FileManagementController::index` |
-| GET | `up` | `generated::oChREIryeoNjIdoO` | core | Closure |
+| GET | `up` | `generated::lceXKSuQ279147bq` | core | Closure |
 | GET | `/` | `home` | core | Closure |
 | GET | `link-management` | `link-management.index` | core | `App\Http\Controllers\Admin\LinkManagementController::index` |
 | POST | `link-management` | `link-management.update` | core | `App\Http\Controllers\Admin\LinkManagementController::update` |
@@ -158,6 +158,7 @@
 | POST | `bod-boc/import-template` | `bod-boc.import-template` | import | `App\Http\Controllers\Input\BodBocController::importTemplate` |
 | POST | `import/backend/daily-loan/local-file` | `import.backend.daily-loan.local-file` | import | `App\Http\Controllers\Import\ImportDailyLoanBackendController::importLocalCsv` |
 | POST | `import/brimo/preview` | `import.brimo.preview` | import | `App\Http\Controllers\Import\ImportFileBrimoController::preview` |
+| GET | `import/brimo/preview/direct` | `import.brimo.preview.direct` | import | `App\Http\Controllers\Import\ImportFileBrimoController::preview` |
 | POST | `import/brimo/process` | `import.brimo.process` | import | `App\Http\Controllers\Import\ImportFileBrimoController::processImport` |
 | POST | `import/brimo/upload` | `import.brimo.upload` | import | `App\Http\Controllers\Import\ImportFileBrimoController::upload` |
 | GET | `import/casa-brilink/preview/filter-options` | `import.casabrilink.filter-options` | import | `App\Http\Controllers\Import\Concerns\ServesMappedCsvPreviewFilters::previewFilterOptions` |
@@ -234,6 +235,9 @@
 | POST | `import/performance-pis/process` | `import.performancepis.process` | import | `App\Http\Controllers\Import\ImportPerformancePisPerProdukController::processImport` |
 | GET | `import/performance-pis/stream` | `import.performancepis.stream` | import | `App\Http\Controllers\Import\ImportPerformancePisPerProdukController::processImportStream` |
 | POST | `import/performance-pis/upload` | `import.performancepis.upload` | import | `App\Http\Controllers\Import\ImportPerformancePisPerProdukController::upload` |
+| POST | `import/performance-pis/upload-chunk` | `import.performancepis.upload-chunk` | import | `App\Http\Controllers\Import\ImportPerformancePisPerProdukController::uploadChunk` |
+| POST | `import/performance-pis/upload-chunk/finalize` | `import.performancepis.upload-chunk.finalize` | import | `App\Http\Controllers\Import\ImportPerformancePisPerProdukController::finalizeChunkUpload` |
+| POST | `import/performance-pis/upload-chunk/init` | `import.performancepis.upload-chunk.init` | import | `App\Http\Controllers\Import\ImportPerformancePisPerProdukController::initChunkUpload` |
 | POST | `import/preview` | `import.preview` | import | `App\Http\Controllers\Import\ImportFileController::preview` |
 | GET | `import/preview/direct` | `import.preview.direct` | import | `App\Http\Controllers\Import\ImportFileController::preview` |
 | GET | `import/preview/dynamic-filter-options` | `import.preview.dynamic-filter-options` | import | `App\Http\Controllers\Import\ImportFileController::previewDynamicFilterOptions` |

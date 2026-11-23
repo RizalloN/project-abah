@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Report;
 use App\Http\Controllers\Controller;
 use App\Jobs\SyncImportedReportJob;
 use App\Support\ConsumerKanwilReference;
+use App\Support\ConsumerRmRealizationCalculator;
 use App\Support\LandingConsumerOperationalService;
 use App\Support\LoanQualityBucketMapper;
 use App\Support\ProductivitySourceQuality;
@@ -986,6 +987,7 @@ class KinerjaRmReportController extends Controller
         $segmen = $request->input('segmen');
         $selectedPeriod = $request->input('periode');
         abort_unless($this->rmVisibleToUserBranch((string) $rm, (string) $selectedPeriod), 404);
+        $this->releaseSessionLockIfNeeded();
         $selectedConsumerProduct = $this->resolveSelectedProduct(
             $request->input('produk'),
             'CONSUMER'
@@ -1314,6 +1316,12 @@ class KinerjaRmReportController extends Controller
             $latestByMonth[substr($period, 0, 7)] = $period;
         }
 
+        $rmUpper = strtoupper(trim($rm));
+        $snapshotProductsUpper = array_map(
+            static fn (string $product): string => strtoupper(trim($product)),
+            $snapshotProducts
+        );
+
         $details = collect();
         foreach (array_values($latestByMonth) as $period) {
             $previousPeriod = $this->resolvePreviousMonthSourcePeriod($period);
@@ -1337,9 +1345,88 @@ class KinerjaRmReportController extends Controller
                 ->orderBy('produk')
                 ->get();
 
+            $calcMetrics = $this->cachedConsumerRealizationMetrics($period, null);
+            $matchedMetrics = [];
+            foreach ($calcMetrics as $metric) {
+                $metricRm = strtoupper(trim((string) ($metric['rm'] ?? '')));
+                $metricProduct = strtoupper(trim((string) ($metric['produk'] ?? '')));
+                if ($metricRm !== $rmUpper || ! in_array($metricProduct, $snapshotProductsUpper, true)) {
+                    continue;
+                }
+
+                $exactKey = implode('|', [
+                    strtoupper(trim((string) ($metric['cabang'] ?? ''))),
+                    strtoupper(trim((string) ($metric['unit'] ?? ''))),
+                    strtoupper(trim((string) ($metric['branch_code'] ?? ''))),
+                    $metricProduct,
+                ]);
+                $matchedMetrics[] = [
+                    'exact_key' => $exactKey,
+                    'product' => $metricProduct,
+                    'baru_deb' => (int) ($metric['realisasi_baru_deb'] ?? 0),
+                    'baru_os' => (float) ($metric['realisasi_baru_os'] ?? 0.0),
+                    'suplesi_deb' => (int) ($metric['suplesi_deb'] ?? 0),
+                    'suplesi_os' => (float) ($metric['suplesi_os'] ?? 0.0),
+                    'consumed' => false,
+                ];
+            }
+
+            $monthEntries = [];
             foreach ($monthlySnapshots as $snapshot) {
+                $productUpper = strtoupper(trim((string) ($snapshot->produk ?? '')));
+                $exactKey = implode('|', [
+                    strtoupper(trim((string) ($snapshot->cabang ?? ''))),
+                    strtoupper(trim((string) ($snapshot->unit ?? ''))),
+                    strtoupper(trim((string) ($snapshot->branch_code ?? ''))),
+                    $productUpper,
+                ]);
+                $entry = [
+                    'snapshot' => $snapshot,
+                    'product_upper' => $productUpper,
+                    'exact_key' => $exactKey,
+                    'baru_debitur' => 0,
+                    'baru_os' => 0.0,
+                    'suplesi_debitur' => 0,
+                    'suplesi_os' => 0.0,
+                ];
+
+                foreach ($matchedMetrics as &$metricItem) {
+                    if (! $metricItem['consumed'] && $metricItem['exact_key'] === $exactKey) {
+                        $entry['baru_debitur'] += $metricItem['baru_deb'];
+                        $entry['baru_os'] += $metricItem['baru_os'];
+                        $entry['suplesi_debitur'] += $metricItem['suplesi_deb'];
+                        $entry['suplesi_os'] += $metricItem['suplesi_os'];
+                        $metricItem['consumed'] = true;
+                    }
+                }
+                unset($metricItem);
+
+                $monthEntries[] = $entry;
+            }
+
+            foreach ($matchedMetrics as &$metricItem) {
+                if ($metricItem['consumed']) {
+                    continue;
+                }
+
+                foreach ($monthEntries as &$entry) {
+                    if ($entry['product_upper'] === $metricItem['product']) {
+                        $entry['baru_debitur'] += $metricItem['baru_deb'];
+                        $entry['baru_os'] += $metricItem['baru_os'];
+                        $entry['suplesi_debitur'] += $metricItem['suplesi_deb'];
+                        $entry['suplesi_os'] += $metricItem['suplesi_os'];
+                        $metricItem['consumed'] = true;
+                        break;
+                    }
+                }
+                unset($entry);
+            }
+            unset($metricItem);
+
+            foreach ($monthEntries as $entry) {
+                $snapshot = $entry['snapshot'];
                 $product = $this->consumerProductLabel((string) ($snapshot->produk ?? ''));
-                $previous = $previousByProduct->get(strtoupper(trim((string) ($snapshot->produk ?? ''))));
+                $previous = $previousByProduct->get($entry['product_upper']);
 
                 $details->push([
                     'periode' => Carbon::parse($period)->translatedFormat('d M Y'),
@@ -1351,6 +1438,10 @@ class KinerjaRmReportController extends Controller
                     'movement' => 'Rekap Bulanan',
                     'is_summary' => true,
                     'debitur' => (int) ($snapshot->realisasi_deb ?? 0),
+                    'baru_debitur' => $entry['baru_debitur'],
+                    'baru_os' => $entry['baru_os'],
+                    'suplesi_debitur' => $entry['suplesi_debitur'],
+                    'suplesi_os' => $entry['suplesi_os'],
                     'current_debitur' => (int) ($snapshot->total_deb ?? 0),
                     'previous_debitur' => (int) ($previous->total_deb ?? 0),
                     'cabang' => trim((string) ($snapshot->cabang ?? '')),
@@ -1373,6 +1464,30 @@ class KinerjaRmReportController extends Controller
             ['is_summary', 'desc'],
             ['surplus_plafon', 'desc'],
         ])->values();
+    }
+
+    /**
+     * @return array<string, array<string, mixed>>
+     */
+    private function cachedConsumerRealizationMetrics(string $period, ?string $kprAssignmentPeriod = null): array
+    {
+        if (! Schema::hasTable(self::SOURCE_TABLE)) {
+            return [];
+        }
+
+        $cacheKey = 'kinerja_rm_consumer_realization_breakdown:'
+            .ConsumerRmRealizationCalculator::FORMULA_VERSION
+            .':'.$this->reportCacheVersion()
+            .':'.$period
+            .':'.($kprAssignmentPeriod ?? $period);
+
+        return Cache::remember($cacheKey, self::PAYLOAD_CACHE_SECONDS, function () use ($period, $kprAssignmentPeriod): array {
+            try {
+                return app(ConsumerRmRealizationCalculator::class)->calculate($period, $kprAssignmentPeriod);
+            } catch (Throwable) {
+                return [];
+            }
+        });
     }
 
     private function resolvePreviousMonthSourcePeriod(string $period): ?string
@@ -1804,7 +1919,7 @@ class KinerjaRmReportController extends Controller
         ?string $selectedRmCategory = null,
         bool $includeInactive = false
     ): array {
-        $cacheKey = 'kinerja_rm_retail_performance_v21-briguna-ro-ytd-target:'.$this->reportCacheVersion().':'.md5(json_encode([
+        $cacheKey = 'kinerja_rm_retail_performance_v22-consumer-baru-suplesi:'.$this->reportCacheVersion().':'.md5(json_encode([
             'segmen' => $segmen,
             'selected' => $selectedPeriod,
             'cabang' => $selectedCabang,
@@ -1906,6 +2021,10 @@ class KinerjaRmReportController extends Controller
             $emptyMetric = static fn (bool $hasData = false): array => [
                 'deb' => 0,
                 'rp' => 0.0,
+                'baru_deb' => 0,
+                'baru_rp' => 0.0,
+                'suplesi_deb' => 0,
+                'suplesi_rp' => 0.0,
                 'lar_loan_os' => 0.0,
                 'lar_value' => 0.0,
                 'lar_pct' => null,
@@ -1965,6 +2084,98 @@ class KinerjaRmReportController extends Controller
                 }
             }
 
+            if ($segmen === 'CONSUMER' && $monthlyPeriods->isNotEmpty()) {
+                $consumerBreakdownByRmPeriod = [];
+                $breakdownRows = collect();
+                foreach ($monthlyPeriods as $monthPeriod) {
+                    $periodKey = (string) $monthPeriod;
+                    foreach ($this->cachedConsumerRealizationMetrics($periodKey, (string) $latestPeriod) as $metric) {
+                        $metricProduct = strtoupper(trim((string) ($metric['produk'] ?? '')));
+                        if ($productValues !== [] && ! in_array($metricProduct, $productValues, true)) {
+                            continue;
+                        }
+
+                        $breakdownRows->push((object) [
+                            'periode' => $periodKey,
+                            'cabang' => (string) ($metric['cabang'] ?? ''),
+                            'unit' => (string) ($metric['unit'] ?? ''),
+                            'branch_code' => (string) ($metric['branch_code'] ?? ''),
+                            'segmen' => 'CONSUMER',
+                            'produk' => (string) ($metric['produk'] ?? ''),
+                            'rm' => (string) ($metric['rm'] ?? ''),
+                            'realisasi_deb' => (int) ($metric['realisasi_deb'] ?? 0),
+                            'realisasi_os' => (float) ($metric['realisasi_os'] ?? 0.0),
+                            'realisasi_baru_deb' => (int) ($metric['realisasi_baru_deb'] ?? 0),
+                            'realisasi_baru_os' => (float) ($metric['realisasi_baru_os'] ?? 0.0),
+                            'suplesi_deb' => (int) ($metric['suplesi_deb'] ?? 0),
+                            'suplesi_os' => (float) ($metric['suplesi_os'] ?? 0.0),
+                        ]);
+                    }
+                }
+
+                if ($breakdownRows->isNotEmpty()) {
+                    $mappedBreakdown = $consumerAssignments->applyBrihcPrimaryConsumerAssignments(
+                        $breakdownRows,
+                        (string) $latestPeriod
+                    );
+
+                    foreach ($mappedBreakdown as $row) {
+                        if (($row->roster_source ?? '') === 'brihc_primary_roster_only') {
+                            continue;
+                        }
+
+                        $rmName = trim($this->mapRmName((string) ($row->rm ?? '')));
+                        $periodKey = $this->normalizeDate((string) ($row->periode ?? ''));
+                        if ($rmName === '' || $periodKey === null) {
+                            continue;
+                        }
+
+                        $rmPeriodKey = strtoupper($rmName).'|'.$periodKey;
+                        $consumerBreakdownByRmPeriod[$rmPeriodKey] ??= [
+                            'baru_deb' => 0,
+                            'baru_rp' => 0.0,
+                            'suplesi_deb' => 0,
+                            'suplesi_rp' => 0.0,
+                        ];
+                        $consumerBreakdownByRmPeriod[$rmPeriodKey]['baru_deb'] += (int) ($row->realisasi_baru_deb ?? 0);
+                        $consumerBreakdownByRmPeriod[$rmPeriodKey]['baru_rp'] += (float) ($row->realisasi_baru_os ?? 0.0);
+                        $consumerBreakdownByRmPeriod[$rmPeriodKey]['suplesi_deb'] += (int) ($row->suplesi_deb ?? 0);
+                        $consumerBreakdownByRmPeriod[$rmPeriodKey]['suplesi_rp'] += (float) ($row->suplesi_os ?? 0.0);
+                    }
+                }
+
+                if ($consumerBreakdownByRmPeriod !== []) {
+                    foreach ($pivoted as &$data) {
+                        $rmUpperKey = strtoupper($data['rm']);
+                        foreach ($monthlyPeriods as $monthPeriod) {
+                            $periodKey = (string) $monthPeriod;
+                            $breakdown = $consumerBreakdownByRmPeriod[$rmUpperKey.'|'.$periodKey] ?? null;
+                            if ($breakdown === null) {
+                                continue;
+                            }
+
+                            if (! isset($data['periods'][$periodKey])) {
+                                $hasBreakdown = $breakdown['baru_deb'] !== 0
+                                    || abs($breakdown['baru_rp']) > 0.001
+                                    || $breakdown['suplesi_deb'] !== 0
+                                    || abs($breakdown['suplesi_rp']) > 0.001;
+                                if (! $hasBreakdown) {
+                                    continue;
+                                }
+
+                                $data['periods'][$periodKey] = $emptyMetric(true);
+                            }
+
+                            $data['periods'][$periodKey]['baru_deb'] = $breakdown['baru_deb'];
+                            $data['periods'][$periodKey]['baru_rp'] = $breakdown['baru_rp'];
+                            $data['periods'][$periodKey]['suplesi_deb'] = $breakdown['suplesi_deb'];
+                            $data['periods'][$periodKey]['suplesi_rp'] = $breakdown['suplesi_rp'];
+                        }
+                    }
+                    unset($data);
+                }
+            }
+
             $smallRealization = [
                 'covered_periods' => [],
                 'rows' => [],
@@ -2006,6 +2217,10 @@ class KinerjaRmReportController extends Controller
                 $monthMetrics = [];
                 $accumulatedDeb = 0;
                 $accumulatedRp = 0.0;
+                $accumulatedBaruDeb = 0;
+                $accumulatedBaruRp = 0.0;
+                $accumulatedSuplesiDeb = 0;
+                $accumulatedSuplesiRp = 0.0;
 
                 foreach ($months as $month) {
                     $metric = $month['period'] !== null
@@ -2016,6 +2231,10 @@ class KinerjaRmReportController extends Controller
                     if ($metric['has_data']) {
                         $accumulatedDeb += (int) $metric['deb'];
                         $accumulatedRp += (float) $metric['rp'];
+                        $accumulatedBaruDeb += (int) ($metric['baru_deb'] ?? 0);
+                        $accumulatedBaruRp += (float) ($metric['baru_rp'] ?? 0.0);
+                        $accumulatedSuplesiDeb += (int) ($metric['suplesi_deb'] ?? 0);
+                        $accumulatedSuplesiRp += (float) ($metric['suplesi_rp'] ?? 0.0);
                     }
                 }
 
@@ -2130,6 +2349,10 @@ class KinerjaRmReportController extends Controller
                     'accumulated' => [
                         'deb' => $accumulatedDeb,
                         'rp' => $accumulatedRp,
+                        'baru_deb' => $accumulatedBaruDeb,
+                        'baru_rp' => $accumulatedBaruRp,
+                        'suplesi_deb' => $accumulatedSuplesiDeb,
+                        'suplesi_rp' => $accumulatedSuplesiRp,
                         'ratas_rp' => $smallRatasRp,
                         'lar_pct' => $smallLarPct,
                         'previous_lar_pct' => $smallPreviousLarPct,
@@ -2164,6 +2387,10 @@ class KinerjaRmReportController extends Controller
                 'accumulated' => [
                     'deb' => 0,
                     'rp' => 0.0,
+                    'baru_deb' => 0,
+                    'baru_rp' => 0.0,
+                    'suplesi_deb' => 0,
+                    'suplesi_rp' => 0.0,
                     'ratas_rp' => null,
                     'lar_pct' => null,
                     'closed_month_count' => $closedMonthCount,
@@ -2175,10 +2402,18 @@ class KinerjaRmReportController extends Controller
                 $total['target']['rp'] += (float) $row['target']['rp'];
                 $total['accumulated']['deb'] += (int) $row['accumulated']['deb'];
                 $total['accumulated']['rp'] += (float) $row['accumulated']['rp'];
+                $total['accumulated']['baru_deb'] += (int) ($row['accumulated']['baru_deb'] ?? 0);
+                $total['accumulated']['baru_rp'] += (float) ($row['accumulated']['baru_rp'] ?? 0.0);
+                $total['accumulated']['suplesi_deb'] += (int) ($row['accumulated']['suplesi_deb'] ?? 0);
+                $total['accumulated']['suplesi_rp'] += (float) ($row['accumulated']['suplesi_rp'] ?? 0.0);
 
                 foreach ($months as $month) {
                     $total['months'][$month['key']]['deb'] += (int) $row['months'][$month['key']]['deb'];
                     $total['months'][$month['key']]['rp'] += (float) $row['months'][$month['key']]['rp'];
+                    $total['months'][$month['key']]['baru_deb'] += (int) ($row['months'][$month['key']]['baru_deb'] ?? 0);
+                    $total['months'][$month['key']]['baru_rp'] += (float) ($row['months'][$month['key']]['baru_rp'] ?? 0.0);
+                    $total['months'][$month['key']]['suplesi_deb'] += (int) ($row['months'][$month['key']]['suplesi_deb'] ?? 0);
+                    $total['months'][$month['key']]['suplesi_rp'] += (float) ($row['months'][$month['key']]['suplesi_rp'] ?? 0.0);
                     $total['months'][$month['key']]['lar_loan_os'] += (float) ($row['months'][$month['key']]['lar_loan_os'] ?? 0);
                     $total['months'][$month['key']]['lar_value'] += (float) ($row['months'][$month['key']]['lar_value'] ?? 0);
                 }

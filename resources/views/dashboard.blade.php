@@ -9845,62 +9845,83 @@ body.sme-vendor-modal-open { overflow: hidden; }
 }
 
 .landing-insights {
-  border: 1px solid #aac3df;
-  border-radius: 8px;
-  background: #edf5fd;
-  box-shadow: 0 16px 34px -30px rgba(3, 37, 78, .6);
+  border: 1px solid #d5e3f3;
+  border-radius: 18px;
+  background: #f4f8fd;
+  overflow: hidden;
+  box-shadow: 0 12px 32px -22px rgba(6, 52, 118, .25);
 }
 .landing-insights__head {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 1rem 1.15rem;
-  background: #063476;
+  padding: 1.05rem 1.35rem;
+  background: linear-gradient(120deg, #093e8c 0%, #0754bd 55%, #0284c7 100%);
   color: #fff;
+  overflow: hidden;
 }
-.landing-insights__heading { display: flex; align-items: center; gap: .8rem; min-width: 0; }
+.landing-insights__head::after {
+  content: "";
+  position: absolute;
+  right: -60px;
+  top: -80px;
+  width: 240px;
+  height: 240px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, .14) 0%, transparent 70%);
+  pointer-events: none;
+}
+.landing-insights__heading { position: relative; z-index: 1; display: flex; align-items: center; gap: .85rem; min-width: 0; }
 .landing-insights__mark {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 42px;
-  width: 42px;
-  height: 42px;
-  border: 1px solid rgba(255, 255, 255, .4);
-  border-radius: 7px;
-  background: #0d78d5;
-  font-size: 1.05rem;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  border: 1px solid rgba(255, 255, 255, .28);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, .16);
+  backdrop-filter: blur(8px);
+  font-size: 1.12rem;
+  color: #fff;
 }
-.landing-insights__eyebrow { display: block; color: #77d8ff; font-size: .64rem; font-weight: 900; text-transform: uppercase; }
-.landing-insights__heading h2 { margin: .12rem 0 0; color: #fff; font-size: 1.02rem; font-weight: 900; letter-spacing: 0; }
-.landing-insights__heading p { margin: .2rem 0 0; color: #d4e8ff; font-size: .7rem; line-height: 1.4; }
+.landing-insights__eyebrow { display: block; color: #bae6fd; font-size: .66rem; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
+.landing-insights__heading h2 { margin: .14rem 0 0; color: #fff; font-size: 1.14rem; font-weight: 850; letter-spacing: -.02em; }
+.landing-insights__heading p { margin: .2rem 0 0; color: #e0f2fe; font-size: .76rem; line-height: 1.45; }
 .landing-insights__status {
+  position: relative;
+  z-index: 1;
   display: inline-flex;
   align-items: center;
-  gap: .4rem;
+  gap: .45rem;
   flex: 0 0 auto;
   min-height: 36px;
-  padding: .45rem .7rem;
-  border: 1px solid rgba(255, 255, 255, .32);
-  border-radius: 6px;
-  background: rgba(255, 255, 255, .1);
+  padding: .42rem .9rem;
+  border: 1px solid rgba(255, 255, 255, .28);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .14);
+  backdrop-filter: blur(8px);
   color: #fff;
-  font-size: .68rem;
-  font-weight: 800;
+  font-size: .72rem;
+  font-weight: 750;
 }
+.landing-insights__status i { color: #6ee7b7; }
 .landing-insights__grid {
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
-  gap: .85rem;
-  padding: .85rem;
+  gap: 1rem;
+  padding: 1rem;
 }
 .landing-insight {
   min-width: 0;
   overflow: hidden;
-  border: 1px solid #c3d3e5;
-  border-radius: 8px;
+  border: 1px solid #d9e5f2;
+  border-radius: 16px;
   background: #fff;
+  box-shadow: 0 6px 20px -16px rgba(15, 23, 42, .18);
 }
 .landing-insight--decision { grid-column: 1 / -1; }
 .landing-insight--profit { grid-column: span 5; }
@@ -9908,177 +9929,303 @@ body.sme-vendor-modal-open { overflow: hidden; }
 .landing-insight__head {
   position: relative;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: .75rem;
-  min-height: 84px;
-  padding: .85rem 7.5rem .85rem .9rem;
-  border-bottom: 1px solid #d5e0ec;
-  background: #f5f9fd;
+  gap: .85rem;
+  padding: .9rem 1.15rem;
+  border-bottom: 1px solid #e6eff8;
+  background: #fafcff;
 }
-.landing-insight__title { display: flex; align-items: flex-start; gap: .65rem; min-width: 0; }
+.landing-insight__title { display: flex; align-items: center; gap: .75rem; min-width: 0; }
 .landing-insight__icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 38px;
-  width: 38px;
-  height: 38px;
-  border-radius: 7px;
-  background: #0754bd;
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  background: linear-gradient(135deg, #2563eb 0%, #0ea5e9 100%);
+  box-shadow: 0 6px 14px -6px rgba(37, 99, 235, .45);
   color: #fff;
+  font-size: 1rem;
+}
+.landing-insight__icon.is-profit {
+  background: linear-gradient(135deg, #059669 0%, #14b8a6 100%);
+  box-shadow: 0 6px 14px -6px rgba(5, 150, 105, .45);
+}
+.landing-insight__icon.is-realization {
+  background: linear-gradient(135deg, #4f46e5 0%, #0284c7 100%);
+  box-shadow: 0 6px 14px -6px rgba(79, 70, 229, .45);
 }
 .landing-insight__title > div { min-width: 0; }
-.landing-insight__title small { display: block; color: #0876c9; font-size: .6rem; font-weight: 900; }
-.landing-insight__title h3 { margin: .12rem 0 0; color: #10243f; font-size: .94rem; font-weight: 900; letter-spacing: 0; }
-.landing-insight__title p { margin: .18rem 0 0; max-width: 620px; color: #61758d; font-size: .68rem; line-height: 1.4; }
+.landing-insight__title small { display: block; color: #0284c7; font-size: .64rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.landing-insight__title h3 { margin: .1rem 0 0; color: #0f172a; font-size: 1.02rem; font-weight: 850; letter-spacing: -.015em; }
+.landing-insight__title p { margin: .15rem 0 0; max-width: 620px; color: #64748b; font-size: .74rem; line-height: 1.45; }
 .landing-insight__period {
   position: relative;
   z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
   flex: 0 0 auto;
-  padding: .3rem .5rem;
-  border: 1px solid #b9cde4;
-  border-radius: 5px;
+  padding: .35rem .75rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
   background: #fff;
-  color: #36536f;
-  font-size: .62rem;
-  font-weight: 800;
+  color: #334155;
+  font-size: .7rem;
+  font-weight: 750;
   white-space: nowrap;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, .04);
 }
-.landing-insight__illustration {
-  position: absolute;
-  right: .8rem;
-  bottom: 0;
-  display: flex;
-  align-items: flex-end;
-  gap: 5px;
-  width: 102px;
-  height: 58px;
-  padding: 0 .35rem;
-  color: #0b67c5;
-  opacity: .22;
-  pointer-events: none;
-}
-.landing-insight__illustration i { align-self: center; font-size: 2rem; }
-.landing-insight__illustration span { display: block; width: 10px; border-radius: 2px 2px 0 0; background: currentColor; }
-.landing-insight__illustration span:nth-of-type(1) { height: 20px; }
-.landing-insight__illustration span:nth-of-type(2) { height: 34px; }
-.landing-insight__illustration span:nth-of-type(3) { height: 48px; }
-.landing-insight__illustration--profit { color: #00a67a; }
-.landing-insight__illustration--decision { color: #0754bd; }
-.landing-insight__illustration--realization { color: #13a7e2; }
+.landing-insight__period i { color: #0284c7; }
 
 .landing-decision-overview {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  border-bottom: 1px solid #d5e0ec;
-  background: #063476;
+  gap: .75rem;
+  padding: .95rem 1.1rem .2rem;
+  background: transparent;
+  border-bottom: 0;
 }
-.landing-decision-overview > div { min-width: 0; padding: .7rem .9rem; border-right: 1px solid rgba(255,255,255,.18); }
-.landing-decision-overview > div:last-child { border-right: 0; }
+.landing-decision-overview > div {
+  min-width: 0;
+  padding: .8rem .95rem;
+  border: 1px solid #bfdbfe;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #f0f7ff 0%, #e6f0ff 100%);
+  transition: transform .18s ease, box-shadow .18s ease;
+}
+.landing-decision-overview > div:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px -12px rgba(15, 23, 42, .22);
+}
+.landing-decision-overview .ldo-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem;
+}
+.landing-decision-overview .ldo-ico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: .78rem;
+}
 .landing-decision-overview span,
 .landing-decision-overview strong,
 .landing-decision-overview small { display: block; overflow-wrap: anywhere; }
-.landing-decision-overview span { color: #8bdcff; font-size: .6rem; font-weight: 900; text-transform: uppercase; }
-.landing-decision-overview strong { margin-top: .18rem; color: #fff; font-size: 1rem; }
-.landing-decision-overview small { margin-top: .08rem; color: #d5e9ff; font-size: .68rem; font-weight: 700; }
-.landing-decision-overview .is-override { background: #7b2f25; }
-.landing-decision-overview .is-override span { color: #ffd19b; }
-.landing-authority-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .7rem; padding: .75rem; }
+.landing-decision-overview .ldo-top > span:first-child { color: #1d4ed8; font-size: .66rem; font-weight: 850; letter-spacing: .04em; text-transform: uppercase; }
+.landing-decision-overview strong { margin-top: .32rem; color: #0f172a; font-size: 1.24rem; font-weight: 850; letter-spacing: -.025em; font-variant-numeric: tabular-nums; line-height: 1.15; }
+.landing-decision-overview small { margin-top: .16rem; color: #475569; font-size: .74rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.landing-decision-overview .is-override {
+  border-color: #fed7aa;
+  background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%);
+}
+.landing-decision-overview .is-override .ldo-top > span:first-child { color: #c2410c; }
+.landing-decision-overview .is-override .ldo-ico { background: #ffedd5; color: #ea580c; border: 1px solid #fdba74; }
+.landing-decision-overview .is-override strong { color: #9a3412; }
+.landing-decision-overview .is-override small { color: #c2410c; }
+.landing-decision-overview .is-pdwk {
+  border-color: #a7f3d0;
+  background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+}
+.landing-decision-overview .is-pdwk .ldo-top > span:first-child { color: #047857; }
+.landing-decision-overview .is-pdwk .ldo-ico { background: #d1fae5; color: #059669; border: 1px solid #6ee7b7; }
+.landing-decision-overview .is-pdwk strong { color: #065f46; }
+.landing-decision-overview .is-pdwk small { color: #047857; }
+
+.landing-authority-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .9rem; padding: .85rem 1.1rem 1rem; }
 .landing-authority {
-  --authority: #0754bd;
+  --authority: #2563eb;
   min-width: 0;
   overflow: hidden;
-  border: 1px solid #c9d7e7;
-  border-left: 4px solid var(--authority);
-  border-radius: 6px;
+  border: 1px solid #dce6f2;
+  border-top: 3px solid var(--authority);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 4px 14px -10px rgba(15, 23, 42, .14);
+  transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease;
+}
+.landing-authority:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--authority) 45%, #cbd5e1);
+  box-shadow: 0 12px 24px -16px rgba(15, 23, 42, .22);
+}
+.landing-authority.tone-cyan { --authority: #0891b2; }
+.landing-authority.tone-amber { --authority: #d97706; }
+.landing-authority.tone-green { --authority: #059669; }
+.landing-authority > header {
+  display: flex;
+  align-items: center;
+  gap: .7rem;
+  padding: .75rem .9rem;
+  background: linear-gradient(180deg, #fafcff 0%, #fff 100%);
+  border-bottom: 1px solid #eef2f7;
+}
+.landing-authority__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: #eff6ff;
+  background: color-mix(in srgb, var(--authority) 13%, white);
+  color: var(--authority);
+  font-size: .95rem;
+}
+.landing-authority__title { flex: 1; min-width: 0; }
+.landing-authority h4 { margin: 0; color: #0f172a; font-size: .88rem; font-weight: 850; letter-spacing: -.01em; overflow-wrap: anywhere; }
+.landing-authority > header p { margin: .12rem 0 0; color: #64748b; font-size: .7rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+.landing-authority__pill {
+  flex: 0 0 auto;
+  padding: .24rem .6rem;
+  border-radius: 999px;
+  background: #eff6ff;
+  background: color-mix(in srgb, var(--authority) 10%, white);
+  color: var(--authority);
+  font-size: .68rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.landing-authority__rules {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .55rem;
+  padding: .65rem .85rem;
+  background: #f8fafc;
+  border-bottom: 1px solid #eef2f7;
+}
+.landing-authority__rules > div {
+  min-width: 0;
+  padding: .5rem .65rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
   background: #fff;
 }
-.landing-authority.tone-cyan { --authority: #0095c8; }
-.landing-authority.tone-amber { --authority: #d97706; }
-.landing-authority.tone-green { --authority: #008c68; }
-.landing-authority > header { display: flex; align-items: center; gap: .55rem; padding: .6rem .7rem; background: #f5f8fc; border-bottom: 1px solid #d9e3ee; }
-.landing-authority__icon { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 32px; width: 32px; height: 32px; border-radius: 6px; background: var(--authority); color: #fff; }
-.landing-authority > header div { min-width: 0; }
-.landing-authority h4 { margin: 0; color: #10243f; font-size: .78rem; font-weight: 900; letter-spacing: 0; overflow-wrap: anywhere; }
-.landing-authority > header p { margin: .12rem 0 0; color: #60748a; font-size: .65rem; font-weight: 700; }
-.landing-authority__rules { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-bottom: 1px solid #d9e3ee; }
-.landing-authority__rules > div { min-width: 0; padding: .55rem .65rem; border-right: 1px solid #d9e3ee; }
-.landing-authority__rules > div:last-child { border-right: 0; }
 .landing-authority__rules span,
 .landing-authority__rules strong,
 .landing-authority__rules small { display: block; overflow-wrap: anywhere; }
-.landing-authority__rules span { color: var(--authority); font-size: .58rem; font-weight: 900; text-transform: uppercase; letter-spacing: 0.03em; }
-.landing-authority__rules strong { margin-top: .14rem; color: #0f172a; font-size: .74rem; font-weight: 850; line-height: 1.3; }
-.landing-authority__rules small { margin-top: .18rem; color: #5d7087; font-size: .62rem; font-weight: 750; }
-.landing-authority__rules .is-override { background: #fff7ed; }
-.landing-authority__rules .is-override span { color: #b45309; }
-.landing-authority__branches { padding: .3rem .55rem .45rem; }
+.landing-authority__rules span {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  color: var(--authority);
+  font-size: .62rem;
+  font-weight: 850;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.landing-authority__rules strong { margin-top: .18rem; color: #0f172a; font-size: .82rem; font-weight: 850; line-height: 1.25; }
+.landing-authority__rules small { margin-top: .16rem; color: #475569; font-size: .68rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+.landing-authority__rules .is-override {
+  border-color: #fed7aa;
+  background: #fff8f1;
+}
+.landing-authority__rules .is-override span { color: #c2410c; }
+.landing-authority__rules .is-pdwk {
+  border-color: #e0f2fe;
+  background: #ffffff;
+}
+.landing-authority__branches { padding: .45rem .85rem .65rem; }
 .landing-authority__branch-head,
-.landing-authority__branch-row { display: grid; grid-template-columns: minmax(120px, 1.35fr) repeat(2, minmax(88px, 1fr)); gap: .45rem; align-items: center; }
-.landing-authority__branch-head { padding: .25rem .35rem; color: #718197; font-size: .55rem; font-weight: 900; text-transform: uppercase; }
-.landing-authority__branch-row { padding: .4rem .35rem; border-top: 1px solid #e4ebf3; }
+.landing-authority__branch-row { display: grid; grid-template-columns: minmax(120px, 1.35fr) repeat(2, minmax(88px, 1fr)); gap: .5rem; align-items: center; }
+.landing-authority__branch-head { padding: .32rem .4rem; color: #64748b; font-size: .62rem; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; }
+.landing-authority__branch-head span:not(:first-child) { text-align: right; }
+.landing-authority__branch-row { padding: .48rem .4rem; border-top: 1px solid #f1f5f9; border-radius: 6px; transition: background-color .15s ease; }
+.landing-authority__branch-row:hover { background-color: #f8fafc; }
 .landing-authority__branch-row > span { min-width: 0; }
+.landing-authority__branch-row > span:not(:first-child) { text-align: right; }
 .landing-authority__branch-row strong,
 .landing-authority__branch-row b,
-.landing-authority__branch-row small { display: block; overflow-wrap: anywhere; }
-.landing-authority__branch-row strong { color: #18314f; font-size: .65rem; }
-.landing-authority__branch-row b { color: var(--authority); font-size: .68rem; }
-.landing-authority__branch-row small { margin-top: .08rem; color: #687b91; font-size: .58rem; }
-.landing-authority__branch-row .is-override b { color: #b45309; }
+.landing-authority__branch-row small { display: block; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.landing-authority__branch-row strong { color: #0f172a; font-size: .74rem; font-weight: 750; }
+.landing-authority__branch-row b { color: var(--authority); font-size: .75rem; font-weight: 800; }
+.landing-authority__branch-row small { margin-top: .1rem; color: #64748b; font-size: .64rem; font-weight: 600; }
+.landing-authority__branch-row .is-override b { color: #c2410c; }
 
-.landing-profit-total { display: grid; grid-template-columns: 1.25fr .75fr; border-bottom: 1px solid #d7e2ed; background: #063476; }
-.landing-profit-total > div { min-width: 0; padding: .75rem .85rem; border-right: 1px solid rgba(255,255,255,.18); }
-.landing-profit-total > div:last-child { border-right: 0; }
+.landing-profit-total {
+  display: grid;
+  grid-template-columns: 1.2fr .8fr;
+  gap: .65rem;
+  padding: .85rem 1.1rem .25rem;
+  border-bottom: 0;
+  background: transparent;
+}
+.landing-profit-total > div {
+  min-width: 0;
+  padding: .75rem .9rem;
+  border: 1px solid #bfdbfe;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #f0f7ff 0%, #e6f0ff 100%);
+}
+.landing-profit-total > div:last-child {
+  border-color: #e2e8f0;
+  background: #f8fafc;
+}
 .landing-profit-total span,
 .landing-profit-total strong { display: block; overflow-wrap: anywhere; }
-.landing-profit-total span { color: #9bdcff; font-size: .6rem; font-weight: 850; }
-.landing-profit-total strong { margin-top: .16rem; color: #fff; font-size: 1rem; font-variant-numeric: tabular-nums; }
-.landing-profit-branches { display: grid; gap: .55rem; padding: .75rem; }
+.landing-profit-total span { color: #475569; font-size: .65rem; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }
+.landing-profit-total strong { margin-top: .22rem; color: #0f172a; font-size: 1.12rem; font-weight: 850; font-variant-numeric: tabular-nums; }
+.landing-profit-total > div.text-success strong { color: #059669; }
+.landing-profit-total > div.text-danger strong { color: #dc2626; }
+.landing-profit-branches { display: grid; gap: .65rem; padding: .8rem 1.1rem 1rem; }
 .landing-profit-branch { min-width: 0; }
 .landing-profit-branch > div:first-child { display: flex; justify-content: space-between; gap: .6rem; }
-.landing-profit-branch span { color: #354d69; font-size: .66rem; font-weight: 750; overflow-wrap: anywhere; }
-.landing-profit-branch strong { color: #10243f; font-size: .68rem; white-space: nowrap; }
-.landing-profit-track { height: 6px; margin-top: .28rem; overflow: hidden; border-radius: 3px; background: #dce7f2; }
-.landing-profit-track span { display: block; height: 100%; border-radius: inherit; background: #00a67a; }
-.landing-profit-branch small { display: block; margin-top: .16rem; color: #6c7e92; font-size: .58rem; }
+.landing-profit-branch span { color: #1e293b; font-size: .74rem; font-weight: 700; overflow-wrap: anywhere; }
+.landing-profit-branch strong { color: #0f172a; font-size: .75rem; font-weight: 800; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.landing-profit-track { height: 7px; margin-top: .32rem; overflow: hidden; border-radius: 999px; background: #e2e8f0; }
+.landing-profit-track span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #059669 0%, #14b8a6 100%); }
+.landing-profit-branch small { display: block; margin-top: .18rem; color: #64748b; font-size: .64rem; }
 
-.landing-realization-total { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: .55rem; padding: .65rem .8rem; border-bottom: 1px solid #d6e2ee; background: #eaf5ff; }
-.landing-realization-total span { color: #45607c; font-size: .62rem; font-weight: 900; text-transform: uppercase; }
-.landing-realization-total strong { color: #0754bd; font-size: 1rem; }
-.landing-realization-total small { color: #36536f; font-size: .66rem; font-weight: 800; }
-.landing-realization-list { display: grid; gap: .45rem; padding: .7rem; }
+.landing-realization-total { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: .65rem; padding: .8rem 1.1rem; border-bottom: 1px solid #dbeafe; background: linear-gradient(135deg, #f0f7ff 0%, #e6f0ff 100%); }
+.landing-realization-total span { color: #1d4ed8; font-size: .66rem; font-weight: 850; letter-spacing: .04em; text-transform: uppercase; }
+.landing-realization-total strong { color: #0f172a; font-size: 1.14rem; font-weight: 850; font-variant-numeric: tabular-nums; }
+.landing-realization-total small { color: #475569; font-size: .72rem; font-weight: 750; font-variant-numeric: tabular-nums; }
+.landing-realization-list { display: grid; gap: .55rem; padding: .85rem 1.1rem; }
 .landing-realization-row {
-  --segment: #0754bd;
+  --segment: #2563eb;
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) minmax(90px, auto);
+  grid-template-columns: 38px minmax(0, 1fr) minmax(96px, auto);
   align-items: center;
-  gap: .55rem;
+  gap: .65rem;
   min-width: 0;
-  padding: .5rem .55rem;
-  border: 1px solid #d3deea;
+  padding: .6rem .75rem;
+  border: 1px solid #e2e8f0;
   border-left: 3px solid var(--segment);
-  border-radius: 6px;
+  border-radius: 10px;
   background: #fff;
+  box-shadow: 0 2px 8px -6px rgba(15, 23, 42, .12);
+  transition: transform .15s ease, border-color .15s ease;
 }
-.landing-realization-row.tone-cyan { --segment: #0095c8; }
-.landing-realization-row.tone-green { --segment: #008c68; }
+.landing-realization-row:hover { border-color: color-mix(in srgb, var(--segment) 40%, #cbd5e1); background: #fafcff; }
+.landing-realization-row.tone-cyan { --segment: #0891b2; }
+.landing-realization-row.tone-green { --segment: #059669; }
 .landing-realization-row.tone-amber { --segment: #d97706; }
-.landing-realization-row.tone-slate { --segment: #52677f; }
-.landing-realization-row__icon { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 6px; background: #eaf2fb; background: color-mix(in srgb, var(--segment) 13%, white); color: var(--segment); }
+.landing-realization-row.tone-slate { --segment: #475569; }
+.landing-realization-row__icon { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 9px; background: #eaf2fb; background: color-mix(in srgb, var(--segment) 12%, white); color: var(--segment); font-size: .9rem; }
 .landing-realization-row__main { min-width: 0; }
 .landing-realization-row__main > div:first-child { display: flex; justify-content: space-between; gap: .55rem; }
-.landing-realization-row__main strong { color: #18314f; font-size: .68rem; overflow-wrap: anywhere; }
-.landing-realization-row__main span { color: #667a90; font-size: .6rem; font-weight: 750; }
-.landing-realization-track { height: 6px; margin-top: .3rem; overflow: hidden; border-radius: 3px; background: #e0e9f2; }
+.landing-realization-row__main strong { color: #0f172a; font-size: .75rem; font-weight: 750; overflow-wrap: anywhere; }
+.landing-realization-row__main span { color: #64748b; font-size: .66rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.landing-realization-track { height: 7px; margin-top: .34rem; overflow: hidden; border-radius: 999px; background: #e2e8f0; }
 .landing-realization-track span { display: block; height: 100%; border-radius: inherit; background: var(--segment); }
 .landing-realization-row__value { min-width: 0; text-align: right; }
 .landing-realization-row__value strong,
-.landing-realization-row__value span { display: block; overflow-wrap: anywhere; }
-.landing-realization-row__value strong { color: #10243f; font-size: .72rem; }
-.landing-realization-row__value span { margin-top: .1rem; color: var(--segment); font-size: .6rem; font-weight: 900; }
-.landing-insight__note { display: flex; align-items: flex-start; gap: .35rem; margin: 0; padding: .55rem .75rem; border-top: 1px solid #d9e3ee; background: #f5f8fc; color: #5c7189; font-size: .6rem; line-height: 1.4; }
-.landing-insight__note i { margin-top: .1rem; color: #0876c9; }
+.landing-realization-row__value span { display: block; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.landing-realization-row__value strong { color: #0f172a; font-size: .78rem; font-weight: 800; }
+.landing-realization-row__value span { margin-top: .12rem; color: var(--segment); font-size: .66rem; font-weight: 850; }
+.landing-insight__note { display: flex; align-items: flex-start; gap: .4rem; margin: 0; padding: .65rem 1.1rem; border-top: 1px solid #eef2f7; background: #f8fafc; color: #64748b; font-size: .68rem; line-height: 1.45; }
+.landing-insight__note i { margin-top: .15rem; color: #0284c7; }
 
 @media (max-width: 1199.98px) {
   .landing-insight--profit,
@@ -10086,38 +10233,31 @@ body.sme-vendor-modal-open { overflow: hidden; }
 }
 @media (max-width: 991.98px) {
   .landing-authority-grid { grid-template-columns: 1fr; }
-  .landing-insight__head { padding-right: 6.5rem; }
 }
 @media (max-width: 767.98px) {
   .landing-scope-stage { grid-template-columns: 1fr; }
   .db-shell .landing-scope-stage .area6-scope-toggle { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .landing-scope-visual { min-height: 66px; }
-  .landing-insights__head { align-items: flex-start; flex-direction: column; }
+  .landing-insights__head { align-items: flex-start; flex-direction: column; padding: .95rem 1rem; }
   .landing-insights__status { align-self: stretch; justify-content: center; }
-  .landing-decision-overview { grid-template-columns: 1fr; }
-  .landing-decision-overview > div { border-right: 0; border-bottom: 1px solid rgba(255,255,255,.18); }
-  .landing-decision-overview > div:last-child { border-bottom: 0; }
+  .landing-decision-overview { grid-template-columns: 1fr; padding: .85rem; }
 }
 @media (max-width: 575.98px) {
-  .landing-insights__grid { padding: .55rem; gap: .55rem; }
-  .landing-insights__head { padding: .85rem; }
+  .landing-insights__grid { padding: .65rem; gap: .65rem; }
+  .landing-authority-grid { padding: .65rem .85rem .85rem; gap: .75rem; }
   .landing-insights__heading { align-items: flex-start; }
-  .landing-insights__heading p { font-size: .66rem; }
-  .landing-insight__head { min-height: 0; padding: .75rem; flex-direction: column; }
+  .landing-insights__heading p { font-size: .7rem; }
+  .landing-insight__head { padding: .8rem .85rem; flex-direction: column; align-items: flex-start; }
   .landing-insight__period { align-self: flex-start; }
-  .landing-insight__illustration { display: none; }
   .landing-authority__rules { grid-template-columns: 1fr; }
-  .landing-authority__rules > div { border-right: 0; border-bottom: 1px solid #d9e3ee; }
-  .landing-authority__rules > div:last-child { border-bottom: 0; }
-  .landing-profit-total { grid-template-columns: 1fr; }
-  .landing-profit-total > div { border-right: 0; border-bottom: 1px solid rgba(255,255,255,.18); }
-  .landing-profit-total > div:last-child { border-bottom: 0; }
+  .landing-profit-total { grid-template-columns: 1fr; padding: .75rem .85rem .25rem; }
 }
 @media (max-width: 479.98px) {
   .landing-authority__branch-head { display: none; }
   .landing-authority__branch-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .landing-authority__branch-row > span:first-child { grid-column: 1 / -1; padding-bottom: .25rem; border-bottom: 1px dashed #cbd8e6; }
-  .landing-realization-row { grid-template-columns: 32px minmax(0, 1fr); }
+  .landing-authority__branch-row > span:not(:first-child) { text-align: left; }
+  .landing-realization-row { grid-template-columns: 34px minmax(0, 1fr); }
   .landing-realization-row__value { grid-column: 2; display: flex; justify-content: space-between; gap: .4rem; text-align: left; }
   .landing-realization-total { grid-template-columns: 1fr auto; }
   .landing-realization-total small { grid-column: 1 / -1; }
@@ -10633,7 +10773,9 @@ body.sme-vendor-modal-open { overflow: hidden; }
 }
 </style>
 
-<div class="db-shell pt-2 {{ $area6DefaultScope === 'sme' ? 'sme-operations-active' : '' }} {{ $area6DefaultScope === 'micro' ? 'micro-performance-active' : '' }} {{ $area6DefaultScope === 'consumer' ? 'consumer-active' : '' }}"
+@include('dashboard.partials.loan-overview-styles')
+
+<div class="db-shell landing-cards-unified pt-2 {{ !in_array($area6DefaultScope, ['sme', 'micro', 'consumer'], true) ? 'landing-overview-active' : '' }} {{ $area6DefaultScope === 'sme' ? 'sme-operations-active' : '' }} {{ $area6DefaultScope === 'micro' ? 'micro-performance-active' : '' }} {{ $area6DefaultScope === 'consumer' ? 'consumer-active' : '' }}"
      data-loan-analytics-url="{{ route('dashboard.loan-analytics', ['periode' => $selectedPeriod, 'cabang' => $selectedLandingBranch ?? 'area6']) }}"
      data-sme-vendor-nominatives-url="{{ route('dashboard.sme-vendor-nominatives', ['cabang' => $selectedLandingBranch ?? 'area6']) }}">
   {{-- HEADER --}}
@@ -10824,6 +10966,19 @@ body.sme-vendor-modal-open { overflow: hidden; }
       $scopeActiveWeek = (string) data_get($scopePrognosa, 'active_week', data_get($area6Portfolio, 'prognosa.week_label', 'W1'));
     @endphp
     <div class="area6-scope-content {{ $contentScopeKey === $area6DefaultScope ? '' : 'd-none' }}" data-area6-content-scope="{{ $contentScopeKey }}">
+    @if(!in_array($contentScopeKey, ['sme', 'micro', 'consumer'], true))
+    <header class="loan-overview-hero">
+      <div class="loan-overview-hero__copy">
+        <span class="loan-overview-hero__label"><i class="fas fa-layer-group" aria-hidden="true"></i> Seluruh segmen</span>
+        <h2>Portofolio {{ $landingBranchLabel ?? 'Area 6' }}</h2>
+        <p>Posisi kredit, kualitas portofolio, dan pencapaian target dalam satu pandangan.</p>
+      </div>
+      <div class="loan-overview-hero__context">
+        <span><i class="fas fa-map-marker-alt" aria-hidden="true"></i> {{ $landingBranchLabel ?? 'Area 6' }}</span>
+        <strong><i class="far fa-calendar-alt" aria-hidden="true"></i> {{ data_get($contentPortfolio, 'period_label', data_get($area6Portfolio, 'period_label', 'Menunggu data')) }}</strong>
+      </div>
+    </header>
+    @endif
     @if(!empty($scopePrognosa['available']) && !empty($scopePrognosaWeeks))
     <div class="ap-week-toolbar" data-prognosa-week-control="{{ $contentScopeKey }}">
       <div class="ap-week-toolbar__copy">
@@ -11001,6 +11156,7 @@ body.sme-vendor-modal-open { overflow: hidden; }
                 @endforeach
               </div>
             </div>
+            <span class="loan-overview-card-link">Lihat rincian <i class="fas fa-arrow-right" aria-hidden="true"></i></span>
             
           </button>
         @elseif(data_get($card, 'key') !== 'casa')
@@ -11017,21 +11173,27 @@ body.sme-vendor-modal-open { overflow: hidden; }
           </button>
         @endif
       @empty
-        @if(empty($area6Cards))
+        @if(empty($area6Cards) && $contentScopeKey === $area6DefaultScope)
         {{-- AJAX skeleton loader for area6 when cache is cold --}}
-        <div id="area6-loading-overlay">
-          <div class="a6-skel-title">⏳ Memuat Ringkasan {{ $landingBranchLabel ?? 'Area 6' }}...</div>
-          <div style="display:flex; align-items:center; gap:0.6rem; width:min(380px,90%)">
-            <div id="area6-progress-track" style="flex:1">
-              <div id="area6-progress-fill"></div>
+        <div id="area6-loading-overlay" class="loan-overview-loading" aria-busy="true">
+          <div class="loan-overview-loading__status" role="status" aria-live="polite">
+            <span class="loan-overview-loading__icon"><i class="fas fa-layer-group" aria-hidden="true"></i></span>
+            <div>
+              <h3>Menyiapkan ringkasan {{ $landingBranchLabel ?? 'Area 6' }}</h3>
+              <p id="area6-loading-status">Mengambil posisi dan memeriksa ketersediaan data…</p>
             </div>
-            <div id="area6-progress-pct">0%</div>
+            <button type="button" id="area6-loading-retry" hidden>Coba lagi <i class="fas fa-redo" aria-hidden="true"></i></button>
           </div>
-          <div id="area6-loading-status">Menghubungkan ke server...</div>
-          <div class="a6-skel-card-grid">
-            <div class="a6-skel-card"></div>
-            <div class="a6-skel-card"></div>
-            <div class="a6-skel-card"></div>
+          <div class="a6-skel-card-grid" aria-hidden="true">
+            @foreach(['Outstanding (OS)', 'Special Mention Loan (SML)', 'Non-performing Loan (NPL)', 'Recovery DH'] as $loadingMetric)
+            <div class="a6-skel-card">
+              <span class="a6-skel-card__label">{{ $loadingMetric }}</span>
+              <span class="a6-skel-line a6-skel-line--value"></span>
+              <span class="a6-skel-line a6-skel-line--caption"></span>
+              <div class="a6-skel-card__metrics"><span class="a6-skel-line"></span><span class="a6-skel-line"></span></div>
+              <div class="a6-skel-card__deltas"><span class="a6-skel-line"></span><span class="a6-skel-line"></span><span class="a6-skel-line"></span><span class="a6-skel-line"></span></div>
+            </div>
+            @endforeach
           </div>
         </div>
         @else
@@ -11983,34 +12145,44 @@ body.sme-vendor-modal-open { overflow: hidden; }
             <span class="landing-insight__icon"><i class="fas fa-stamp" aria-hidden="true"></i></span>
             <div><small>AUTHORITY MONITOR</small><h3>Putusan BOH &amp; PDWK</h3><p>Kewenangan aktual pemutus dibanding plafon setiap rekening.</p></div>
           </div>
-          <span class="landing-insight__period">{{ data_get($landingDecision, 'period_label', 'Belum ada data') }}</span>
-          <div class="landing-insight__illustration landing-insight__illustration--decision" aria-hidden="true">
-            <i class="fas fa-gavel"></i><span></span><span></span><span></span>
-          </div>
+          <span class="landing-insight__period"><i class="far fa-calendar-alt" aria-hidden="true"></i> {{ data_get($landingDecision, 'period_label', 'Belum ada data') }}</span>
         </header>
         @if(data_get($landingDecision, 'available'))
           <div class="landing-decision-overview">
-            <div><span>Total Putusan</span><strong>{{ data_get($landingDecision, 'total_deb_fmt', '0 deb') }}</strong><small>{{ data_get($landingDecision, 'total_nominal_fmt', 'Rp0') }}</small></div>
-            <div class="is-override"><span>Override</span><strong>{{ data_get($landingDecision, 'override_deb_fmt', '0 deb') }}</strong><small>{{ data_get($landingDecision, 'override_nominal_fmt', 'Rp0') }}</small></div>
-            <div><span>Sesuai PDWK</span><strong>{{ data_get($landingDecision, 'pdwk_deb_fmt', '0 deb') }}</strong><small>{{ data_get($landingDecision, 'pdwk_nominal_fmt', 'Rp0') }}</small></div>
+            <div class="is-total">
+              <div class="ldo-top"><span>Total Putusan</span><span class="ldo-ico"><i class="fas fa-layer-group" aria-hidden="true"></i></span></div>
+              <strong>{{ data_get($landingDecision, 'total_deb_fmt', '0 deb') }}</strong>
+              <small>{{ data_get($landingDecision, 'total_nominal_fmt', 'Rp0') }}</small>
+            </div>
+            <div class="is-override">
+              <div class="ldo-top"><span>Override</span><span class="ldo-ico"><i class="fas fa-sliders-h" aria-hidden="true"></i></span></div>
+              <strong>{{ data_get($landingDecision, 'override_deb_fmt', '0 deb') }}</strong>
+              <small>{{ data_get($landingDecision, 'override_nominal_fmt', 'Rp0') }}</small>
+            </div>
+            <div class="is-pdwk">
+              <div class="ldo-top"><span>Sesuai PDWK</span><span class="ldo-ico"><i class="fas fa-check-circle" aria-hidden="true"></i></span></div>
+              <strong>{{ data_get($landingDecision, 'pdwk_deb_fmt', '0 deb') }}</strong>
+              <small>{{ data_get($landingDecision, 'pdwk_nominal_fmt', 'Rp0') }}</small>
+            </div>
           </div>
           <div class="landing-authority-grid">
             @foreach(data_get($landingDecision, 'items', []) as $item)
               <section class="landing-authority tone-{{ data_get($item, 'tone', 'navy') }}">
                 <header>
                   <span class="landing-authority__icon"><i class="{{ data_get($item, 'icon', 'fas fa-user-check') }}" aria-hidden="true"></i></span>
-                  <div><h4>{{ data_get($item, 'label', '-') }}</h4><p>{{ data_get($item, 'deb_fmt', '0 deb') }} &middot; {{ data_get($item, 'nominal_fmt', 'Rp0') }}</p></div>
+                  <div class="landing-authority__title"><h4>{{ data_get($item, 'label', '-') }}</h4><p>{{ data_get($item, 'deb_fmt', '0 deb') }} &middot; {{ data_get($item, 'nominal_fmt', 'Rp0') }}</p></div>
+                  <span class="landing-authority__pill">{{ data_get($item, 'deb_fmt', '0 deb') }}</span>
                 </header>
                 <div class="landing-authority__rules">
                   <div class="is-override">
-                    <span>Override</span>
+                    <span><i class="fas fa-exclamation-circle" aria-hidden="true"></i> Override</span>
                     @if(filled(data_get($item, 'override_rule')) && data_get($item, 'override_rule') !== '-')
                       <strong>{{ data_get($item, 'override_rule') }}</strong>
                     @endif
                     <small>{{ data_get($item, 'override_deb_fmt', '0 deb') }} &middot; {{ data_get($item, 'override_nominal_fmt', 'Rp0') }}</small>
                   </div>
-                  <div>
-                    <span>PDWK</span>
+                  <div class="is-pdwk">
+                    <span><i class="fas fa-shield-alt" aria-hidden="true"></i> PDWK</span>
                     @if(filled(data_get($item, 'pdwk_rule')) && data_get($item, 'pdwk_rule') !== '-')
                       <strong>{{ data_get($item, 'pdwk_rule') }}</strong>
                     @endif
@@ -12039,11 +12211,10 @@ body.sme-vendor-modal-open { overflow: hidden; }
       <article class="landing-insight landing-insight--profit">
         <header class="landing-insight__head">
           <div class="landing-insight__title">
-            <span class="landing-insight__icon"><i class="fas fa-balance-scale" aria-hidden="true"></i></span>
+            <span class="landing-insight__icon is-profit"><i class="fas fa-chart-line" aria-hidden="true"></i></span>
             <div><small>FINANCIAL OUTCOME</small><h3>Laba Setelah Pajak</h3><p>Kontribusi laba pada wilayah aktif.</p></div>
           </div>
-          <span class="landing-insight__period">{{ data_get($landingProfit, 'period_label', 'Belum ada data') }}</span>
-          <div class="landing-insight__illustration landing-insight__illustration--profit" aria-hidden="true"><i class="fas fa-chart-line"></i><span></span><span></span><span></span></div>
+          <span class="landing-insight__period"><i class="far fa-calendar-alt" aria-hidden="true"></i> {{ data_get($landingProfit, 'period_label', 'Belum ada data') }}</span>
         </header>
         @if(data_get($landingProfit, 'available'))
           <div class="landing-profit-total">
@@ -12072,11 +12243,10 @@ body.sme-vendor-modal-open { overflow: hidden; }
         @endphp
         <header class="landing-insight__head">
           <div class="landing-insight__title">
-            <span class="landing-insight__icon"><i class="fas fa-rocket" aria-hidden="true"></i></span>
+            <span class="landing-insight__icon is-realization"><i class="fas fa-rocket" aria-hidden="true"></i></span>
             <div><small>MONTH TO DATE</small><h3>Realisasi Seluruh Segmen</h3><p>Plafon transaksi bulan berjalan, satu rekening dihitung satu kali.</p></div>
           </div>
-          <span class="landing-insight__period">{{ data_get($landingRealization, 'period_label', 'Belum ada data') }}</span>
-          <div class="landing-insight__illustration landing-insight__illustration--realization" aria-hidden="true"><i class="fas fa-chart-bar"></i><span></span><span></span><span></span></div>
+          <span class="landing-insight__period"><i class="far fa-calendar-alt" aria-hidden="true"></i> {{ data_get($landingRealization, 'period_label', 'Belum ada data') }}</span>
         </header>
         @if(!empty($realizationScopes))
           <div class="landing-realization-total"><span>Total MTD</span><strong>{{ data_get($landingRealization, 'total_nominal_fmt', 'Rp0') }}</strong><small>{{ data_get($landingRealization, 'total_deb_fmt', '0 deb') }}</small></div>
@@ -13936,6 +14106,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const isMicro = scope === 'micro';
     const isConsumer = scope === 'consumer';
     const activeScopeButton = document.querySelector(`.area6-scope-btn[data-area6-scope="${scope}"]`);
+    dashboardShell?.classList.toggle('landing-overview-active', !isSme && !isMicro && !isConsumer);
     dashboardShell?.classList.toggle('sme-operations-active', isSme);
     dashboardShell?.classList.toggle('micro-performance-active', isMicro);
     dashboardShell?.classList.toggle('consumer-active', isConsumer);
@@ -16263,134 +16434,59 @@ document.addEventListener('DOMContentLoaded', function() {
   // --- Area 6 AJAX Skeleton Loader ---
   (function() {
     const overlay = document.getElementById('area6-loading-overlay');
-    if (!overlay) return; // data sudah tersedia, tidak perlu fetch
+    if (!overlay) return;
 
-    const fillEl   = document.getElementById('area6-progress-fill');
-    const pctEl    = document.getElementById('area6-progress-pct');
     const statusEl = document.getElementById('area6-loading-status');
-
-    let progress = 0;
-    let ttfbDone = false;
-    let active   = true;
-
-    // Phase 1: asymptotic crawl to ~74% while server processes (TTFB)
-    const startTs = performance.now();
-    const crawl = (now) => {
-      if (!active || ttfbDone) return;
-      progress = Math.min(74, 74 * (1 - Math.exp(-(now - startTs) / 1800)));
-      if (fillEl)  fillEl.style.width  = progress + '%';
-      if (pctEl)   pctEl.textContent   = Math.round(progress) + '%';
-      requestAnimationFrame(crawl);
-    };
-    requestAnimationFrame(crawl);
-
-    // Status text cycling during wait
-    const phases = [
-      { ms:    0, text: 'Menghubungkan ke server...' },
-      { ms:  800, text: 'Mengambil data portofolio kredit...' },
-      { ms: 2000, text: 'Menghitung rasio SML & NPL...' },
-      { ms: 3800, text: 'Menyusun ranking cabang & segmen...' },
-      { ms: 5500, text: 'Menyelesaikan paket data {{ $landingBranchLabel ?? 'Area 6' }}...' },
-    ];
-    const timers = phases.map(p =>
-      setTimeout(() => {
-        if (active && !ttfbDone && statusEl) statusEl.textContent = p.text;
-      }, p.ms)
-    );
-
-    // Build endpoint URL
-    const periodeSel = document.getElementById('periode-selector');
-    const periode    = periodeSel ? periodeSel.value : '';
-    const area6Url   = new URL("{{ route('dashboard.area6-data') }}", window.location.origin);
+    const retryButton = document.getElementById('area6-loading-retry');
+    const periode = document.getElementById('periode-selector')?.value || '';
+    const area6Url = new URL("{{ route('dashboard.area6-data') }}", window.location.origin);
     if (periode) area6Url.searchParams.set('periode', periode);
     if (branchSelector?.value) area6Url.searchParams.set('cabang', branchSelector.value);
 
-    fetch(area6Url.toString(), {
-      headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-      cache: 'no-store'
-    }).then(function(response) {
-      if (!response.ok) throw new Error('HTTP ' + response.status);
-
-      // Phase 2: track real download progress
-      ttfbDone = true;
-      timers.forEach(clearTimeout);
-      if (statusEl) statusEl.textContent = 'Mengunduh data ringkasan...';
-
-      const reader = response.body.getReader();
-      const contentLength = +response.headers.get('Content-Length');
-      let received = 0, chunks = [];
-
-      function read() {
-        return reader.read().then(function(result) {
-          if (result.done) return;
-          chunks.push(result.value);
-          received += result.value.length;
-          if (contentLength > 0) {
-            const frac = received / contentLength;
-            const p = progress + (98 - progress) * frac;
-            if (fillEl) fillEl.style.width = p + '%';
-            if (pctEl) pctEl.textContent = Math.round(p) + '%';
-          } else {
-            progress = Math.min(97, progress + (100 - progress) * 0.12);
-            if (fillEl) fillEl.style.width = progress + '%';
-            if (pctEl) pctEl.textContent = Math.round(progress) + '%';
-          }
-          return read();
-        });
-      }
-
-      return read();
-
-    }).then(function() {
-      // Concatenate chunks to get the JSON string
-      let position = 0;
-      let joined = new Uint8Array(received);
-      for(let chunk of chunks) {
-        joined.set(chunk, position);
-        position += chunk.length;
-      }
-      
-      let parsedData = {};
+    const loadArea6Overview = async () => {
+      let navigating = false;
+      overlay.setAttribute('aria-busy', 'true');
+      overlay.classList.remove('is-settled');
+      if (retryButton) retryButton.disabled = true;
+      if (statusEl) statusEl.textContent = 'Mengambil posisi dan memeriksa ketersediaan data…';
       try {
-        parsedData = JSON.parse(new TextDecoder("utf-8").decode(joined));
-      } catch(e) {
-        console.error('[Area6 Loader] JSON parse failed', e);
-      }
+        const response = await fetch(area6Url.toString(), {
+          headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+          cache: 'no-store'
+        });
+        if (!response.ok || response.redirected) throw new Error('HTTP ' + response.status);
+        const parsedData = await response.json();
+        const cards = parsedData?.area6_portfolio?.cards;
+        if (!Array.isArray(cards) || cards.length === 0) {
+          if (statusEl) statusEl.textContent = 'Ringkasan belum tersedia untuk pilihan ini. Coba lagi atau pilih periode lain.';
+          return;
+        }
 
-      active = false;
-      if (fillEl)  fillEl.style.width  = '100%';
-      if (pctEl)   pctEl.textContent   = '100%';
-
-      const portfolio = parsedData.area6_portfolio || {};
-      const cards = portfolio.cards || [];
-
-      if (cards.length > 0) {
-        if (statusEl) statusEl.textContent = 'Selesai! Memperbarui tampilan...';
-        setTimeout(function() {
-          const url = new URL(window.location.href);
-          if (periode) url.searchParams.set('periode', periode);
-          url.searchParams.delete('_area6');
-          url.searchParams.set('_area6', Date.now());
-          window.location.href = url.toString();
-        }, 500);
-      } else {
-        if (statusEl) statusEl.textContent = 'Ringkasan data kosong atau belum siap.';
-        setTimeout(function() {
-          if (overlay) {
-            overlay.style.transition = 'opacity 0.4s ease';
-            overlay.style.opacity = '0';
-            setTimeout(() => overlay.remove(), 400);
+        if (statusEl) statusEl.textContent = 'Data siap. Menampilkan ringkasan…';
+        const url = new URL(window.location.href);
+        if (periode) url.searchParams.set('periode', periode);
+        const activeScope = document.querySelector('.area6-scope-btn.active')?.dataset.area6Scope;
+        if (activeScope) url.searchParams.set('landing_scope', activeScope);
+        url.searchParams.set('_area6', Date.now());
+        navigating = true;
+        window.location.replace(url.toString());
+      } catch (error) {
+        console.error('[Area6 Loader]', error);
+        if (statusEl) statusEl.textContent = 'Ringkasan belum berhasil dimuat. Periksa koneksi lalu coba lagi.';
+      } finally {
+        if (!navigating) {
+          overlay.setAttribute('aria-busy', 'false');
+          overlay.classList.add('is-settled');
+          if (retryButton) {
+            retryButton.hidden = false;
+            retryButton.disabled = false;
           }
-        }, 1500);
+        }
       }
+    };
 
-    }).catch(function(err) {
-      active = false;
-      timers.forEach(clearTimeout);
-      console.error('[Area6 Loader]', err);
-      if (statusEl) statusEl.textContent = 'Gagal memuat data. Coba segarkan halaman.';
-      if (fillEl) fillEl.style.background = '#ef4444';
-    });
+    retryButton?.addEventListener('click', loadArea6Overview);
+    loadArea6Overview();
   })();
 
 });

@@ -94,15 +94,17 @@ class PrognosaWeeklySpreadsheetTest extends TestCase
         $this->assertSame('23 Agu 26', $data['headerColumns'][17]['detail']);
 
         $html = $view->render();
+        $this->assertSame(1, preg_match('/<details\b[^>]*\bid="prognosa-filters"[^>]*>/', $html, $filters));
+        $this->assertDoesNotMatchRegularExpression('/\bopen(?:\s|=|>)/', $filters[0]);
+        $this->assertStringContainsString('<summary', $html);
+        $this->assertStringNotContainsString('Perbarui data', $html);
         $this->assertStringContainsString('<thead>', $html);
         $this->assertStringContainsString('data-group="identity"', $html);
         $this->assertStringContainsString('class="prognosa-summary"', $html);
         $this->assertStringContainsString('class="prognosa-table-wrap"', $html);
         $this->assertStringContainsString('scope="colgroup"', $html);
-        $this->assertStringContainsString('data-column-mode="all"', $html);
-        $this->assertStringContainsString('data-column-mode="rka"', $html);
-        $this->assertStringContainsString('data-column-mode="runoff"', $html);
-        $this->assertStringContainsString('data-report-section="pinjaman"', $html);
+        $this->assertStringNotContainsString('data-column-mode="all"', $html);
+        $this->assertStringNotContainsString('data-report-section="pinjaman"', $html);
         $this->assertStringContainsString('data-group="position"', $html);
         $this->assertStringContainsString('Posisi - target', $html);
         $this->assertStringNotContainsString('12.00 WIB', $html);
@@ -247,10 +249,12 @@ class PrognosaWeeklySpreadsheetTest extends TestCase
         $this->assertSame('344', data_get($view->getData(), 'rows.0.cells.9.value'));
     }
 
-    public function test_weekly_position_is_refreshed_while_forecast_target_stays_cached(): void
+    public function test_weekly_position_and_forecast_target_refresh_from_their_sources_without_a_manual_refresh(): void
     {
         Http::fake([
-            'docs.google.com/*' => Http::response($this->weeklyPrognosaCsvFixture(125), 200),
+            'docs.google.com/*' => Http::sequence()
+                ->push($this->weeklyPrognosaCsvFixture(125), 200)
+                ->push($this->weeklyPrognosaCsvFixture(250), 200),
         ]);
         $this->actingAs(new User(['pn' => 'test-prognosa-cache', 'branch_scope' => 'madiun']));
 
@@ -273,9 +277,11 @@ class PrognosaWeeklySpreadsheetTest extends TestCase
 
         $this->assertSame('3.000', data_get($first->getData(), 'rows.0.cells.8.value'));
         $this->assertSame('3.100', data_get($second->getData(), 'rows.0.cells.8.value'));
+        $this->assertSame('344', data_get($first->getData(), 'rows.0.cells.9.value'));
+        $this->assertSame('688', data_get($second->getData(), 'rows.0.cells.9.value'));
         $this->assertSame('19.118', data_get($first->getData(), 'rows.0.cells.17.value'));
         $this->assertSame('19.118', data_get($second->getData(), 'rows.0.cells.17.value'));
-        Http::assertSentCount(1);
+        Http::assertSentCount(2);
     }
 
     public function test_weekly_prognosa_uses_scoped_workbook_fallback_with_real_report_coordinates(): void
@@ -336,8 +342,8 @@ class PrognosaWeeklySpreadsheetTest extends TestCase
         $this->assertStringContainsString('.prognosa-col-indicator', $source);
         $this->assertStringContainsString('.prognosa-group-identity', $source);
         $this->assertStringContainsString('z-index: 45', $source);
-        $this->assertStringContainsString('data-column-mode="{{ $key }}"', $source);
-        $this->assertStringContainsString('data-report-section="{{ $key }}"', $source);
+        $this->assertStringNotContainsString('data-column-mode="{{ $key }}"', $source);
+        $this->assertStringNotContainsString('data-report-section="{{ $key }}"', $source);
         $this->assertStringContainsString('window.requestAnimationFrame', $source);
         $this->assertStringContainsString('@media (max-width: 1199.98px)', $source);
         $this->assertStringContainsString('@media (max-width: 991.98px)', $source);
@@ -635,6 +641,82 @@ class PrognosaWeeklySpreadsheetTest extends TestCase
         $this->assertSame('recovery', $rows[8]['section']);
     }
 
+    public function test_numbered_indicator_labels_split_into_number_and_description_without_changing_source_mapping(): void
+    {
+        $controller = app(PrognosaWeeklyController::class);
+        $method = new \ReflectionMethod($controller, 'buildDashboardAlignedRows');
+        $source = [
+            ['', '1. Simpanan', '125'],
+            ['-', '2. OS Total', '250'],
+            ['3', '3. Consumer', '375'],
+            ['', 'B.1 KC Madiun', '500'],
+        ];
+        $rows = $method->invoke($controller, $source, [], 2, []);
+
+        $this->assertSame(['1', '2', '3', '3.B.1'], array_map(fn ($row) => $row['cells'][0]['value'], $rows));
+        $this->assertSame(['Simpanan', 'OS Total', 'Consumer', 'KC Madiun'], array_map(fn ($row) => $row['cells'][1]['value'], $rows));
+        $this->assertSame(array_column($source, 1), array_column($rows, 'label'));
+        $this->assertSame(['125', '250', '375', '500'], array_map(fn ($row) => $row['cells'][9]['value'], $rows));
+        $this->assertSame(['r0', 'r1', 'r2', 'r3'], array_column($rows, 'key'));
+    }
+
+    public function test_lettered_subcategories_inherit_parent_number_into_no_column(): void
+    {
+        $controller = app(PrognosaWeeklyController::class);
+        $method = new \ReflectionMethod($controller, 'buildDashboardAlignedRows');
+        $source = [
+            ['', '1. Simpanan', '100'],
+            ['', 'A. Ritel', '60'],
+            ['', 'A.1 KC Ponorogo', '45'],
+            ['', 'Giro', '20'],
+            ['', 'A.2 KCP Sudirman Ponorogo', '15'],
+            ['', 'B. Mikro', '40'],
+            ['', '2. OS Total', '200'],
+            ['', 'A.Commercial', '50'],
+            ['', 'B. SME', '80'],
+            ['', 'B.1 KC Ponorogo', '30'],
+            ['', '2.b.2. KCP Balong', '25'],
+        ];
+        $rows = $method->invoke($controller, $source, [], 2, []);
+
+        $this->assertSame(
+            ['1', '1.A.', '1.A.1', '', '1.A.2', '1.B.', '2', '2.A.', '2.B.', '2.B.1', '2.B.2'],
+            array_map(fn ($row) => $row['cells'][0]['value'], $rows)
+        );
+        $this->assertSame(
+            ['Simpanan', 'Ritel', 'KC Ponorogo', 'Giro', 'KCP Sudirman Ponorogo', 'Mikro', 'OS Total', 'Commercial', 'SME', 'KC Ponorogo', 'KCP Balong'],
+            array_map(fn ($row) => $row['cells'][1]['value'], $rows)
+        );
+        $this->assertSame(
+            ['section', 'category', 'subcategory', 'detail', 'subcategory', 'category', 'section', 'category', 'category', 'subcategory', 'subcategory'],
+            array_column($rows, 'type')
+        );
+        $this->assertSame(array_column($source, 1), array_column($rows, 'label'));
+    }
+
+    public function test_weekly_prognosa_header_renders_danantara_and_bri_logos_with_centered_area_title(): void
+    {
+        Http::fake(['docs.google.com/*' => Http::response($this->weeklyPrognosaCsvFixture(1_000), 200)]);
+        $this->actingAs(new User(['pn' => 'test-prognosa-header', 'name' => 'Prognosa Header']));
+
+        $html = $this->weeklyController(
+            '2026-08-19',
+            $this->weeklyDailyPayload('2026-08-19'),
+            ['KC Madiun', 'KC Magetan', 'KC Ngawi', 'KC Ponorogo']
+        )->index(Request::create('/prognosa/weekly', 'GET', ['sheet' => 'area']))->render();
+
+        $this->assertStringContainsString('danantara-logo-template.png', $html);
+        $this->assertStringContainsString('bri-logo-template.png', $html);
+        $this->assertStringContainsString('<h1>Weekly Prognosa - Area 6</h1>', $html);
+        $this->assertStringNotContainsString('class="prognosa-position"', $html);
+        $this->assertStringNotContainsString('<span>Posisi Data</span>', $html);
+        $this->assertStringContainsString('data-pw-select="prognosa-sheet"', $html);
+        $this->assertStringContainsString('prognosa-button--excel', $html);
+        $this->assertStringContainsString('prognosa-button--a4', $html);
+        $this->assertStringContainsString('prognosa-button--sheet', $html);
+        $this->assertStringContainsString('class="prognosa-forecast-head"', $html);
+    }
+
     public function test_dashboard_source_maps_total_commercial_kkb_and_kpp_to_exact_snapshot_metrics(): void
     {
         $controller = app(PrognosaWeeklyController::class);
@@ -678,13 +760,26 @@ class PrognosaWeeklySpreadsheetTest extends TestCase
 
         $this->assertStringContainsString('weekly-prognosa_20260819_w3_area-6.xlsx', (string) $response->headers->get('content-disposition'));
         $this->assertSame('Posisi data: 19 Agu 26   |   Week 3', $sheet->getCell('A2')->getValue());
-        $this->assertContains('YOY', $labels);
+        $this->assertContains('31 Agu 25', $labels);
         $this->assertNotContains('YTD', $labels);
         $this->assertNotContains('M-2', $labels);
-        $this->assertContains('MTM', $labels);
+        $this->assertNotContains('YOY', $labels);
+        $this->assertNotContains('MTM', $labels);
         $this->assertNotSame('A. Ritel', (string) $sheet->getCell('B7')->getValue());
         $this->assertIsFloat($sheet->getCell('C6')->getValue() + 0.0);
         $this->assertSame('Indikator', $sheet->getCell('A4')->getValue());
+        $this->assertSame('31 Agu 25', $sheet->getCell('C5')->getValue());
+        $this->assertSame('12385F', $sheet->getStyle('A4')->getFill()->getStartColor()->getRGB());
+        $this->assertSame('12385F', $sheet->getStyle('C5')->getFill()->getStartColor()->getRGB());
+        $this->assertSame('17578C', $sheet->getStyle('J4')->getFill()->getStartColor()->getRGB());
+        $this->assertSame('334E7E', $sheet->getStyle('M4')->getFill()->getStartColor()->getRGB());
+        $this->assertSame('E7F5EC', $sheet->getStyle('I6')->getFill()->getStartColor()->getRGB());
+        $this->assertSame('FDECEF', $sheet->getStyle('K6')->getFill()->getStartColor()->getRGB());
+        $this->assertStringNotContainsString('[Red]', $sheet->getStyle('K6')->getNumberFormat()->getFormatCode());
+        $this->assertStringContainsString('(', $sheet->getStyle('K6')->getNumberFormat()->getFormatCode());
+        $this->assertStringNotContainsString('[Red]', $sheet->getStyle('L6')->getNumberFormat()->getFormatCode());
+        $this->assertSame('C6', $sheet->getFreezePane());
+        $this->assertFalse($sheet->getShowGridlines());
     }
 
     public function test_weekly_prognosa_applies_chosen_position_and_column_dates(): void

@@ -730,10 +730,12 @@
     every('snapshot', 30000, loadSnapshots);
     every('database', 30000, function () { loadDatabase(false); });
 
-    var initial = new URL(window.location.href).searchParams.get('tab');
-    if (!initial) { try { initial = localStorage.getItem('cc-tab'); } catch (e) { initial = null; } }
-    activate(initial || 'overview');
-    // The overall dot on the tab bar is useful even when another tab is open.
-    if (initial && initial !== 'overview') { loaded.overview = true; loadOverview(false); }
+    document.addEventListener('DOMContentLoaded', function () {
+        var initial = new URL(window.location.href).searchParams.get('tab');
+        if (!initial) { try { initial = localStorage.getItem('cc-tab'); } catch (e) { initial = null; } }
+        activate(initial || 'overview');
+        // The overall dot on the tab bar is useful even when another tab is open.
+        if (initial && initial !== 'overview') { loaded.overview = true; loadOverview(false); }
+    });
 }());
 </script>

@@ -88,8 +88,17 @@
     <div class="micro-ops-section__head">
         <div>
             <h3 id="micro-ksbk-title">Monitoring Realisasi KSBK</h3>
-            @if(data_get($ksbk, 'loan_period'))
-                <p class="micro-ksbk__meta">Posisi pinjaman {{ \Carbon\Carbon::parse($ksbk['loan_period'])->translatedFormat('d F Y') }} · {{ data_get($ksbk, 'loan_source') === 'daily_loan_dinamis' ? 'Daily Loan Dinamis' : 'LW321PN' }}</p>
+            @php
+                $ksbkMetaParts = [];
+                if (data_get($ksbk, 'period_label')) {
+                    $ksbkMetaParts[] = 'Periode ' . data_get($ksbk, 'period_label');
+                }
+                if (data_get($ksbk, 'loan_period')) {
+                    $ksbkMetaParts[] = 'Posisi pinjaman ' . \Carbon\Carbon::parse($ksbk['loan_period'])->translatedFormat('d F Y') . ' · ' . (data_get($ksbk, 'loan_source') === 'daily_loan_dinamis' ? 'Daily Loan Dinamis' : 'LW321PN');
+                }
+            @endphp
+            @if($ksbkMetaParts !== [])
+                <p class="micro-ksbk__meta">{{ implode(' · ', $ksbkMetaParts) }}</p>
             @endif
         </div>
     </div>

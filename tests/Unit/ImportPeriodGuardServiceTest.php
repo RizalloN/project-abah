@@ -52,6 +52,10 @@ class ImportPeriodGuardServiceTest extends TestCase
             'casa brilink edc' => ['casa_brilink_edc', 'periode', 'date'],
             'ibbisniz corp' => ['ibbisniz_corp', 'periode', 'date'],
             'usak ibbiz uker' => ['usak_ibbiz_uker', 'periode', 'date'],
+            'pipeline prewash' => ['pipeline_prewash', 'tahun', 'year'],
+            'pipeline prewash boh' => ['pipeline_prewash_boh', 'tahun', 'year'],
+            'monitoring tl pipeline mbm' => ['monitoring_tl_pipeline_mbm', 'tahun', 'year'],
+            'monitoring ksbk' => ['monitoring_realisasi_ksbk', 'periode', 'date'],
             'rka' => ['rka', 'tahun', 'year'],
         ];
     }

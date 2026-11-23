@@ -1193,7 +1193,13 @@ class ImportCognosRecoveryController extends Controller
 
     private function sourceValueByAliases(array $data, array $context, array $aliases, int $occurrence = 0): ?string
     {
-        $sourceHeaderMap = $context['source_header_map'] ?? [];
+        $index = $this->sourceIndexByAliases($context['source_header_map'] ?? [], $aliases, $occurrence);
+
+        return $index !== null ? (string) ($data[$index] ?? '') : null;
+    }
+
+    private function sourceIndexByAliases(array $sourceHeaderMap, array $aliases, int $occurrence): ?int
+    {
         foreach ($aliases as $alias) {
             $key = $this->normalizeSourceHeaderName($alias);
             if (!isset($sourceHeaderMap[$key])) {
@@ -1203,11 +1209,25 @@ class ImportCognosRecoveryController extends Controller
             $indexes = (array) $sourceHeaderMap[$key];
             $index = $indexes[$occurrence] ?? $indexes[0] ?? null;
             if ($index !== null) {
-                return (string) ($data[$index] ?? '');
+                return $index;
             }
         }
 
         return null;
+    }
+
+    public function schemaDriftSourceTargets(array $headers): array
+    {
+        $map = $this->buildSourceHeaderMap($headers);
+        $targets = [];
+        foreach (self::SOURCE_HEADER_ALIASES as $column => $aliases) {
+            $index = $this->sourceIndexByAliases($map, $aliases, $column === 'segmen_repeat' ? 1 : 0);
+            if ($index !== null) {
+                $targets[$index] ??= $column;
+            }
+        }
+
+        return $targets;
     }
 
     private function buildSourceHeaderMap(array $headers): array
@@ -1380,7 +1400,7 @@ class ImportCognosRecoveryController extends Controller
         return trim($value) ?: null;
     }
 
-    private function normalizePeriodeValue(?string $value): ?string
+    public function normalizePeriodeValue(?string $value): ?string
     {
         $value = trim((string) $value);
         if ($value === '') {

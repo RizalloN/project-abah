@@ -21,13 +21,21 @@ final class SchemaEvolutionPolicy
      */
     private const FIXED_LAYOUT_TABLES = [
         'monitoring_realisasi_ksbk',
+        'evaluasi_aktivitas_kunjungan_pemasar',
+        'pipeline_prewash',
+        'pipeline_prewash_boh',
+        'monitoring_tl_pipeline_mbm',
         'cognos_ph',
         'cognos_recovery',
-        'performance_pis_per_produk',
+        'mau_brimo_r_all',
+        'input_rekanan',
+        'bod_boc',
+        'brilink_web_laporan_summary_transaksi_brilink_web',
         'cras',
         'casa_brilink_web',
         'casa_brilink_edc',
         'simpanan_multipn',
+        'gi405_recovery',
         'gi405_rec_dh',
         'gi405_singlerow',
         'hourly_dpk',
@@ -45,5 +53,20 @@ final class SchemaEvolutionPolicy
     public function canEvolve(string $table): bool
     {
         return $this->modeFor($table) === self::MODE_EVOLVE;
+    }
+
+    public function canStoreNewColumnType(string $table, string $type): bool
+    {
+        if ($table === 'performance_pis_per_produk') {
+            return $type === 'TEXT';
+        }
+
+        // Both dedicated date parsers retain the date only. PH also normalizes
+        // decimals to two places before the value reaches the database.
+        if (in_array($table, ['daily_loan_dinamis', 'lw325_ph'], true) && $type === 'DATETIME') {
+            return false;
+        }
+
+        return $table !== 'lw325_ph' || preg_match('/^DECIMAL\(\d+,([3-9]|\d{2,})\)$/', $type) !== 1;
     }
 }

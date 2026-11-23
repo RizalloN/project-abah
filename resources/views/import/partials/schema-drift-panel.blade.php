@@ -9,6 +9,7 @@
     data-accept-url="{{ route('import.schema-drift.accept', ['event' => '__ID__']) }}"
     data-reject-url="{{ route('import.schema-drift.reject', ['event' => '__ID__']) }}"
     data-source="{{ $schemaDriftSource }}"
+    data-form-id="{{ $schemaDriftFormId ?? 'importForm' }}"
     data-mode="{{ ($schemaDriftMode ?? 'evolve') === 'monitor' ? 'monitor' : 'evolve' }}"
     data-reload-on-accept="{{ !empty($schemaDriftReloadOnAccept) ? '1' : '0' }}"
     data-csrf="{{ csrf_token() }}">
@@ -35,6 +36,7 @@
     <div class="sdp__body" data-sdp-body hidden>
         <dl class="sdp__stats" data-sdp-stats></dl>
         <p class="sdp__source" data-sdp-source></p>
+        <p class="sdp__source" data-sdp-row-repairs role="status" hidden></p>
 
         <div class="sdp__block sdp__block--new" data-sdp-new hidden>
             <div class="sdp__block-head">
@@ -346,7 +348,7 @@
     }
     function updateGate() {
         var reason = blockedReason();
-        var form = document.getElementById('importForm');
+        var form = document.getElementById(panel.dataset.formId || 'importForm');
         var gate = $('[data-sdp-gate]');
         gate.textContent = reason || 'Pemeriksaan selesai. Keputusan struktur sudah diterapkan; import dapat dijalankan.';
         if (form) {
@@ -367,7 +369,7 @@
     };
 
     var STATUS = {
-        match: { pill: 'Identik', icon: 'fa-check-circle' },
+        match: { pill: 'Kolom sumber cocok', icon: 'fa-check-circle' },
         adapted: { pill: 'Disesuaikan otomatis', icon: 'fa-magic' },
         attention: { pill: 'Perlu perhatian', icon: 'fa-exclamation-triangle' },
         drift: { pill: 'Perlu keputusan', icon: 'fa-code-branch' },
@@ -436,6 +438,7 @@
 
     function render(report) {
         state.report = report;
+        panel.dataset.eventId = report.event ? String(report.event.id) : '';
         $('[data-sdp-skeleton]').hidden = true;
         $('[data-sdp-body]').hidden = false;
         setState(report.status, report.headline);
@@ -462,8 +465,9 @@
             { label: 'Ganti nama', value: stats.renamed, hot: stats.renamed > 0, optional: true },
             { label: 'Perlu diperlebar', value: stats.adjustments, hot: stats.adjustments > 0, optional: true },
             { label: 'Hilang dari sumber', value: stats.dropped, hot: stats.dropped > 0, optional: true },
-            { label: 'Format disesuaikan', value: stats.adaptations, hot: stats.adaptations > 0 && report.status !== 'drift' },
-            { label: 'Tidak ada di sumber', value: stats.missing }
+            { label: 'Kolom dengan catatan format', value: stats.format_columns, optional: true },
+            { label: 'Kolom perlu diperiksa', value: stats.review_columns, hot: stats.review_columns > 0, optional: true },
+            { label: 'Kolom tabel tanpa header sumber', value: stats.missing }
         ].filter(function (item) { return !item.optional || item.value > 0; }).forEach(function (item) {
             var wrap = el('div', 'sdp__stat' + (item.hot ? ' sdp__stat--hot' : ''));
             wrap.appendChild(el('dt', null, item.label));
@@ -480,15 +484,23 @@
         var delimiter = { ',': 'koma', ';': 'titik koma', '\t': 'tab', '|': 'pipe' }[source.delimiter] || (source.format === 'spreadsheet' ? 'Excel' : '-');
         var parts = [
             source.name,
-            'header di baris ' + source.header_row,
+            source.header_row ? 'header di baris ' + source.header_row : 'header mengikuti layout report',
             (report.stats.sample_rows || 0).toLocaleString('id-ID') + ' baris sampel',
             scan.complete ? 'struktur ' + Number(scan.total_rows || scan.scanned_rows || 0).toLocaleString('id-ID') + ' baris diperiksa' : null,
-            'pemisah ' + delimiter,
+            delimiter !== '-' ? 'pemisah ' + delimiter : null,
             'dipindai ' + report.analyzed_in_ms + ' ms'
         ];
         var periodMeta = (source.metadata || []).filter(function (line) { return /periode|tanggal|posisi/i.test(line); })[0];
         if (periodMeta) { parts.push(periodMeta.replace(/\s+/g, ' ')); }
         $('[data-sdp-source]').textContent = parts.filter(Boolean).join(' · ');
+
+        var repairs = scan.merchant_name_pipe_repairs || {};
+        var repairNote = $('[data-sdp-row-repairs]');
+        var repairedRows = (repairs.rows || []).map(function (row) { return '#' + Number(row).toLocaleString('id-ID'); });
+        repairNote.hidden = !repairs.count;
+        repairNote.textContent = repairs.count
+            ? Number(repairs.count).toLocaleString('id-ID') + ' baris dipulihkan pada NAMA_MERCHANT (' + repairedRows.join(', ') + '). Tanda | tetap menjadi bagian dari nama.'
+            : '';
     }
 
     function renderNewColumns(report) {
@@ -677,12 +689,14 @@
         if (wrap.hidden) { return; }
 
         // A fixed-layout report can still widen columns; new columns are review-only.
-        $('[data-sdp-accept]').hidden = monitorMode && adjustments.length === 0 && reviews.length === 0;
-        $('[data-sdp-reject]').hidden = columns.length === 0;
-        $('[data-sdp-reject-label]').textContent = 'Lewati ' + columns.length + ' kolom, nilai tidak disimpan';
+        $('[data-sdp-accept]').hidden = (monitorMode || columns.length === 0) && adjustments.length === 0 && !reviews.some(function (review) { return !review.blocking; });
+        $('[data-sdp-reject]').hidden = columns.length === 0 && adjustments.length === 0;
+        $('[data-sdp-reject-label]').textContent = 'Tolak usulan kolom';
         $('[data-sdp-accept]').disabled = !event || reviews.some(function (review) { return review.blocking; });
         $('[data-sdp-reject]').disabled = !event;
-        $('[data-sdp-decision-status]').textContent = event ? (reviews.some(function (review) { return review.blocking; }) ? 'Perbaiki masalah sumber yang memblokir import, lalu pindai ulang.' : '') : 'Keputusan belum dapat disimpan. Pindai ulang atau muat ulang preview.';
+        $('[data-sdp-decision-status]').textContent = event
+            ? (reviews.some(function (review) { return review.blocking; }) ? 'Perbaiki masalah sumber yang memblokir import, lalu pindai ulang.' : (event.error || ''))
+            : 'Keputusan belum dapat disimpan. Pindai ulang atau muat ulang preview.';
         updateAcceptLabel();
     }
 
@@ -841,11 +855,36 @@
         });
     }
 
-    function confirmDiscard(headers) {
-        var message = headers.length + ' kolom akan dilewati: ' + headers.join(', ') + '. Seluruh nilai kolom tersebut tidak disimpan untuk import ini. Keputusan lewati akan dicatat.';
+    function confirmDecision(kind, selections, adjustments, skipped) {
+        var changes = [];
+        if (kind === 'accept') {
+            selections.forEach(function (selection) {
+                if (selection.action === 'add') {
+                    changes.push('Tambah ' + selection.name + ' (' + selection.type + ', boleh kosong).');
+                } else if (selection.action === 'map') {
+                    changes.push('Petakan ' + selection.proposed_column + ' ke ' + selection.target + '.');
+                }
+            });
+        }
+        var widen = pendingAdjustments().filter(function (adjustment) {
+            return kind === 'accept' && adjustments.some(function (selected) { return selected.column === adjustment.column && selected.include; });
+        });
+        widen.forEach(function (adjustment) {
+            changes.push('Perlebar ' + adjustment.column + ' menjadi ' + adjustment.to_type + '.');
+        });
+        var declined = pendingAdjustments().filter(function (adjustment) { return !widen.includes(adjustment); });
+        if (declined.length) {
+            changes.push('Tolak pelebaran ' + declined.map(function (adjustment) { return adjustment.column; }).join(', ') + '. Import tetap tertahan jika nilai sumber melebihi kapasitas kolom.');
+        }
+        if (skipped.length) {
+            changes.push('Lewati ' + skipped.map(function (column) { return column.header; }).join(', ') + '. Nilai dari kolom ini tidak disimpan. Pilihan ini berlaku untuk file sumber ini.');
+        }
+        if (!changes.length) { return Promise.resolve(true); }
+        var context = 'Tabel ' + state.report.table + ' · ' + state.report.source.name + '.';
+        var message = [context].concat(changes).join('\n');
         var swal = window.ImportSwal && typeof window.ImportSwal.fire === 'function' ? window.ImportSwal : window.Swal;
         if (swal && typeof swal.fire === 'function') {
-            return swal.fire({ icon: 'warning', title: 'Konfirmasi nilai yang tidak disimpan', text: message, showCancelButton: true, confirmButtonText: 'Ya, lewati kolom tersebut', cancelButtonText: 'Kembali meninjau', focusCancel: true }).then(function (result) { return result.isConfirmed; });
+            return swal.fire({ icon: 'warning', title: 'Konfirmasi keputusan kolom', text: message, showCancelButton: true, confirmButtonText: kind === 'accept' ? 'Terapkan keputusan' : 'Tolak usulan', cancelButtonText: 'Kembali meninjau', focusCancel: true }).then(function (result) { return result.isConfirmed; });
         }
         return Promise.resolve(window.confirm(message));
     }
@@ -878,7 +917,7 @@
         var skipped = kind === 'reject' ? pendingColumns() : pendingColumns().filter(function (column) { return selections.some(function (selection) { return selection.proposed_column === column.proposed_column && selection.action === 'skip'; }); });
         state.busy = true;
         updateGate();
-        if (skipped.length && !await confirmDiscard(skipped.map(function (column) { return column.header; }))) { state.busy = false; updateGate(); return; }
+        if (!await confirmDecision(kind, selections, adjustments, skipped)) { state.busy = false; updateGate(); return; }
         var accept = $('[data-sdp-accept]');
         var reject = $('[data-sdp-reject]');
         accept.disabled = true;
@@ -893,11 +932,13 @@
             .then(function (data) {
                 document.dispatchEvent(new CustomEvent('schema-drift:decided', { detail: data }));
                 state.busy = false;
-                var appliedCount = ((data.event && data.event.applied_columns) || []).length;
-                if (kind === 'accept' && reloadOnAccept && appliedCount > 0) {
+                var mappingChanged = ((data.event && data.event.applied_columns) || []).some(function (column) {
+                    return column.action === 'add' || column.action === 'map' || column.action === 'widen';
+                });
+                if (kind === 'accept' && reloadOnAccept && mappingChanged) {
                     // The column list of this preview is rendered server side;
                     // reload so the new column is part of this very import.
-                    $('[data-sdp-decision-status]').textContent = 'Kolom ditambahkan. Memuat ulang preview agar kolom baru ikut diimport…';
+                    $('[data-sdp-decision-status]').textContent = 'Memuat ulang preview dengan pemetaan kolom terbaru…';
                     notify('success', 'Struktur diperbarui', data.message + ' Preview dimuat ulang…');
                     window.setTimeout(function () { window.location.reload(); }, 1400);
                     return;
@@ -925,7 +966,7 @@
     // A submit is never allowed to bypass a pending or failed source review.
     document.addEventListener('submit', function (e) {
         var form = e.target;
-        if (!form || form.id !== 'importForm' || window.SchemaDriftPanel.canImport()) { return; }
+        if (!form || form.id !== (panel.dataset.formId || 'importForm') || window.SchemaDriftPanel.canImport()) { return; }
         e.preventDefault();
         e.stopImmediatePropagation();
         updateGate();
@@ -936,7 +977,6 @@
     $('[data-sdp-rescan]').addEventListener('click', analyze);
     $('[data-sdp-accept]').addEventListener('click', function () { decide('accept'); });
     $('[data-sdp-reject]').addEventListener('click', function () { decide('reject'); });
-    document.addEventListener('schema-drift:feed-decided', function () { analyze(); });
     if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', updateGate, { once: true }); }
     else { updateGate(); }
 

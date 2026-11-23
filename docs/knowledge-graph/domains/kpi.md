@@ -40,7 +40,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `nullableCell` | method | 4 | `app/Services/Reports/KpiPersonnelReferenceSyncService.php:485` |
 | `number` | method | 4 | `app/Services/Reports/KpiRmSmeDashboardService.php:339` |
 | `period` | method | 4 | `app/Services/Reports/KpiRmSmeDashboardService.php:374` |
-| `read` | method | 4 | `app/Services/Reports/KpiWorkbookSnapshotService.php:17` |
+| `read` | method | 4 | `app/Services/Reports/KpiWorkbookSnapshotService.php:20` |
 | `rowIsInScope` | method | 4 | `app/Services/Reports/KpiRmSmeDashboardService.php:283` |
 | `sameRole` | method | 4 | `app/Services/Reports/KpiPersonnelReferenceSyncService.php:441` |
 | `stats` | method | 4 | `app/Services/Reports/KpiRmSmeDashboardService.php:528` |

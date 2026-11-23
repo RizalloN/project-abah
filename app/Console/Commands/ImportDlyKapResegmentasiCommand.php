@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Services\Import\DlyKapResegmentasiCsvImporter;
+use App\Services\Import\SchemaDrift\SchemaDriftImportGuard;
 use Illuminate\Console\Command;
 
 class ImportDlyKapResegmentasiCommand extends Command
@@ -62,6 +63,14 @@ class ImportDlyKapResegmentasiCommand extends Command
             $this->components->info('Simulasi selesai. Tambahkan --commit untuk menyimpan ke database.');
 
             return self::SUCCESS;
+        }
+
+        try {
+            app(SchemaDriftImportGuard::class)->assertReady(DlyKapResegmentasiCsvImporter::TABLE, $path);
+        } catch (\RuntimeException $exception) {
+            $this->components->error($exception->getMessage());
+
+            return self::FAILURE;
         }
 
         $summary = $importer->import($rows, ! $this->option('no-replace'));

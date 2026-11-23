@@ -236,11 +236,6 @@ final class ImportHeaderAliases
 
         $candidates[] = self::importColumnName($header);
 
-        $rawWithoutNumericSuffix = trim((string) preg_replace('/(?:_)?\d+$/', '', $raw), '_');
-        if ($rawWithoutNumericSuffix !== '' && $rawWithoutNumericSuffix !== $raw) {
-            $candidates[] = $rawWithoutNumericSuffix;
-        }
-
         if (isset(self::CANDIDATE[$raw])) {
             $candidates[] = self::CANDIDATE[$raw];
         }

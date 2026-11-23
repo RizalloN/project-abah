@@ -120,6 +120,7 @@ class ManagedReportDeleteTest extends TestCase
         $this->assertSame(5, $payload['pagination']['total_periods']);
         $this->assertSame(3, $payload['pagination']['total_pages']);
         $this->assertSame(2, $payload['pagination']['current_page']);
+        $this->assertTrue($payload['pagination']['has_next']);
         $this->assertSame(['2026-04-08', '2026-04-07'], array_column($payload['periods'], 'period'));
         $this->assertSame(4, $payload['total_groups']);
         $this->assertSame(
@@ -140,6 +141,42 @@ class ManagedReportDeleteTest extends TestCase
 
         $this->assertCount(1, $periodWindowQueries);
         $this->assertCount(0, $countDistinctQueries);
+    }
+
+    public function test_brilink_months_are_sorted_before_pagination(): void
+    {
+        $tableName = 'brilink_web_laporan_summary_transaksi_brilink_web';
+        Schema::create($tableName, function (Blueprint $table): void {
+            $table->id();
+            $table->string('periode');
+            $table->string('cabang');
+        });
+        DB::table('nama_report')->insert([
+            'id_report' => 7,
+            'nama_report' => 'BRILink Web Summary',
+            'table_name' => $tableName,
+            'active' => true,
+        ]);
+        DB::table($tableName)->insert(array_map(
+            static fn (string $period): array => ['periode' => $period, 'cabang' => 'KC Madiun'],
+            ['November 2026', 'December 2025', 'August 2026', '2026-08', 'September 2026', 'October 2026']
+        ));
+
+        $controller = app(ImportIndexController::class);
+        $load = static fn (array $options): array => $controller->reportManagementData(
+            Request::create('/import/report-management/data', 'POST', $options + ['id_report' => 7, 'per_page' => 4])
+        )->getData(true);
+
+        $first = $load(['page' => 1]);
+        $this->assertSame(['2026-11', '2026-10', '2026-09', '2026-08'], array_column($first['periods'], 'period'));
+        $this->assertSame([1, 1, 1, 2], array_column($first['periods'], 'total_rows'));
+        $this->assertSame(5, $first['pagination']['total_periods']);
+        $this->assertTrue($first['pagination']['has_next']);
+
+        $last = $load(['page_target' => 'last']);
+        $this->assertSame(['2025-12'], array_column($last['periods'], 'period'));
+        $this->assertSame(2, $last['pagination']['current_page']);
+        $this->assertFalse($last['pagination']['has_next']);
     }
 
     public function test_report_management_data_can_jump_to_last_period_page(): void
@@ -2343,5 +2380,72 @@ class ManagedReportDeleteTest extends TestCase
         $this->assertSame(0, DB::table('daily_loan_dinamis')->where('periode', '2026-04-04')->where('cabang1', '')->count());
         $this->assertSame(1, DB::table('daily_loan_dinamis')->where('periode', '2026-04-05')->whereNull('cabang1')->count());
         $this->assertSame(1, DB::table('daily_loan_dinamis')->where('periode', '2026-04-04')->where('cabang1', 'KC Madiun')->count());
+    }
+
+    public function test_delete_scope_query_matches_cognos_ph_by_branch_label_with_unit_fallback(): void
+    {
+        Schema::create('cognos_ph', function (Blueprint $table) {
+            $table->string('uniqueid_namareport')->primary();
+            $table->date('periode')->nullable();
+            $table->string('kanca')->nullable();
+            $table->string('unit_kerja')->nullable();
+        });
+
+        DB::table('cognos_ph')->insert([
+            ['uniqueid_namareport' => 'CPH-1', 'periode' => '2026-02-28', 'kanca' => '6109', 'unit_kerja' => '00007 -- KC Banyuwangi (Konsolidasi-MB)'],
+            ['uniqueid_namareport' => 'CPH-2', 'periode' => '2026-02-28', 'kanca' => '6118', 'unit_kerja' => '00007 -- KC Banyuwangi (Konsolidasi-MB)'],
+            ['uniqueid_namareport' => 'CPH-3', 'periode' => '2026-01-31', 'kanca' => '00007 -- KC Banyuwangi (Konsolidasi-MB)', 'unit_kerja' => '00007 -- KC Banyuwangi'],
+            ['uniqueid_namareport' => 'CPH-4', 'periode' => '2026-02-28', 'kanca' => '6499', 'unit_kerja' => '00070 -- KC Ponorogo (Konsolidasi-MB)'],
+        ]);
+
+        $controller = app(ImportIndexController::class);
+        $method = new \ReflectionMethod($controller, 'buildDeleteScopeQueryFromScopes');
+        $method->setAccessible(true);
+
+        [$query, $hasWhere] = $method->invoke($controller, 'cognos_ph', 'periode', 'kanca', [
+            [
+                'period_filter' => '2026-02-28',
+                'kanca_filter' => '00007 -- KC Banyuwangi (Konsolidasi-MB)',
+                'period_is_null' => false,
+                'kanca_is_null' => false,
+            ]
+        ]);
+
+        $this->assertTrue($hasWhere);
+        $this->assertSame(2, $query->count());
+        $this->assertSame(['CPH-1', 'CPH-2'], $query->orderBy('uniqueid_namareport')->pluck('uniqueid_namareport')->all());
+    }
+
+    public function test_delete_scope_query_matches_cognos_recovery_blank_scope(): void
+    {
+        Schema::create('cognos_recovery', function (Blueprint $table) {
+            $table->string('uniqueid_namareport')->primary();
+            $table->date('periode')->nullable();
+            $table->string('cabang')->nullable();
+            $table->string('unit_kerja')->nullable();
+        });
+
+        DB::table('cognos_recovery')->insert([
+            ['uniqueid_namareport' => 'CGR-1', 'periode' => '2025-09-30', 'cabang' => 'NULL', 'unit_kerja' => 'NULL'],
+            ['uniqueid_namareport' => 'CGR-2', 'periode' => '2025-09-30', 'cabang' => null, 'unit_kerja' => ''],
+            ['uniqueid_namareport' => 'CGR-3', 'periode' => '2025-09-30', 'cabang' => 'KC Banyuwangi', 'unit_kerja' => 'UNIT GLAGAH'],
+        ]);
+
+        $controller = app(ImportIndexController::class);
+        $method = new \ReflectionMethod($controller, 'buildDeleteScopeQueryFromScopes');
+        $method->setAccessible(true);
+
+        [$query, $hasWhere] = $method->invoke($controller, 'cognos_recovery', 'periode', 'cabang', [
+            [
+                'period_filter' => '2025-09-30',
+                'kanca_filter' => '',
+                'period_is_null' => false,
+                'kanca_is_null' => true,
+            ]
+        ]);
+
+        $this->assertTrue($hasWhere);
+        $this->assertSame(2, $query->count());
+        $this->assertSame(['CGR-1', 'CGR-2'], $query->orderBy('uniqueid_namareport')->pluck('uniqueid_namareport')->all());
     }
 }

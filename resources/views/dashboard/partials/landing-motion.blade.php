@@ -133,7 +133,8 @@
         }
 
         var SECTION_SELECTORS = [
-            '.db-shell > *',
+            // Primary content must paint immediately, including the cold-data skeleton.
+            '.db-shell > :not(.db-header):not(.kpi-strip):not(.area6-panel)',
             '.landing-insights__head',
             '.landing-insights__grid > *',
             '.cabang-performance-grid > *',

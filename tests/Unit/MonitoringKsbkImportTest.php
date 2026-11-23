@@ -47,25 +47,37 @@ class MonitoringKsbkImportTest extends TestCase
         $this->cell($source, 'P2', '<c r="P2" t="e"><v>#N/A</v></c>');
         $service = new MonitoringKsbkSourceService;
         $canonical = $this->path();
-        $metadata = $service->stage($source, $canonical);
+        $metadata = $service->stage($source, $canonical, '2026-11');
         $preview = $service->preview($canonical);
 
         $this->assertSame(1, $metadata['rows']);
+        $this->assertSame('2026-11-01', $metadata['periode']);
         $this->assertSame(MonitoringKsbkSourceService::IMPORT_COLUMNS, $preview['headers']);
-        $this->assertCount(13, $preview['preview'][0]);
+        $this->assertCount(14, $preview['preview'][0]);
         $this->assertSame('003641', $preview['preview'][0][0]);
         $this->assertSame('123456789012345678901234567890', $preview['preview'][0][2]);
         $this->assertSame('9007199254740993.01', $preview['preview'][0][5]);
         $this->assertSame('2026-09-22 00:00:00', $preview['preview'][0][6]);
+        $this->assertSame('2026-11-01', $preview['preview'][0][13]);
         $this->assertNotContains('plafond', $preview['headers']);
         $this->assertNotContains('FORGED', $preview['preview'][0]);
 
         $bulk = $this->path();
         $result = $service->prepareBulk($canonical, $bulk, $preview['headers']);
         $this->assertSame(1, $result['rows']);
-        $this->assertStringContainsString('"ksbk_1"', file_get_contents($bulk));
+        $this->assertSame('2026-11-01', $result['periode']);
+        $this->assertStringContainsString('"ksbk_202611_1"', file_get_contents($bulk));
         $this->assertStringNotContainsString('999999999999', file_get_contents($bulk));
         $this->assertStringNotContainsString('FORGED', file_get_contents($bulk));
+    }
+
+    public function test_stage_requires_a_valid_month_and_year_period(): void
+    {
+        $source = $this->workbook([$this->row()]);
+        $service = new MonitoringKsbkSourceService;
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('YYYY-MM');
+        $service->stage($source, $this->path(), 'invalid');
     }
 
     public function test_blank_amount_and_cif_remain_unknown_while_excel_dates_are_normalized(): void
@@ -76,11 +88,12 @@ class MonitoringKsbkImportTest extends TestCase
         $this->cell($source, 'G2', '<c r="G2"><v>46287</v></c>');
         $service = new MonitoringKsbkSourceService;
         $canonical = $this->path();
-        $service->stage($source, $canonical);
+        $service->stage($source, $canonical, '2026-11');
         $record = $service->validateCanonical($canonical)['preview'][0];
         $this->assertSame('', $record[3]);
         $this->assertSame('', $record[5]);
         $this->assertSame('2026-09-22 00:00:00', $record[6]);
+        $this->assertSame('2026-11-01', $record[13]);
         $bulk = $this->path();
         $service->prepareBulk($canonical, $bulk, MonitoringKsbkSourceService::IMPORT_COLUMNS);
         $this->assertStringContainsString('\\N,"Nama Nasabah",\\N', file_get_contents($bulk));
@@ -92,13 +105,13 @@ class MonitoringKsbkImportTest extends TestCase
         $row[9] = '57';
         $service = new MonitoringKsbkSourceService;
         $canonical = $this->path();
-        $service->stage($this->workbook([$this->row(), $row]), $canonical);
+        $service->stage($this->workbook([$this->row(), $row]), $canonical, '2026-11');
         $headers = array_reverse(MonitoringKsbkSourceService::IMPORT_COLUMNS);
         $bulk = $this->path();
         $result = $service->prepareBulk($canonical, $bulk, $headers, [array_search('bo', $headers, true) => ['57']]);
         $this->assertSame(2, $result['scanned']);
         $this->assertSame(1, $result['rows']);
-        $this->assertStringContainsString('"ksbk_2"', file_get_contents($bulk));
+        $this->assertStringContainsString('"ksbk_202611_2"', file_get_contents($bulk));
     }
 
     public function test_excel_1904_calendar_is_respected_without_leaking_global_calendar_state(): void
@@ -113,7 +126,7 @@ class MonitoringKsbkImportTest extends TestCase
         $calendar = Date::getExcelCalendar();
         $service = new MonitoringKsbkSourceService;
         $canonical = $this->path();
-        $service->stage($source, $canonical);
+        $service->stage($source, $canonical, '2026-11');
         $this->assertSame('2026-09-22 00:00:00', $service->preview($canonical)['preview'][0][6]);
         $this->assertSame($calendar, Date::getExcelCalendar());
     }
@@ -124,7 +137,7 @@ class MonitoringKsbkImportTest extends TestCase
         $this->cell($source, 'F3', '<c r="F3"><f>1+1</f><v>2</v></c>');
         $canonical = $this->path();
         try {
-            (new MonitoringKsbkSourceService)->stage($source, $canonical);
+            (new MonitoringKsbkSourceService)->stage($source, $canonical, '2026-11');
             $this->fail('Source formula must reject the entire staging.');
         } catch (RuntimeException $error) {
             $this->assertStringContainsString('plafond_pengajuan memiliki formula/error', $error->getMessage());
@@ -136,7 +149,7 @@ class MonitoringKsbkImportTest extends TestCase
     {
         $service = new MonitoringKsbkSourceService;
         $canonical = $this->path();
-        $service->stage($this->workbook([$this->row()]), $canonical);
+        $service->stage($this->workbook([$this->row()]), $canonical, '2026-11');
         $handle = fopen($canonical, 'ab');
         fputcsv($handle, ['BROKEN'], ',', '"', '');
         fclose($handle);
@@ -155,7 +168,7 @@ class MonitoringKsbkImportTest extends TestCase
         $headers = MonitoringKsbkSourceService::SOURCE_HEADERS;
         $headers[0] = 'unexpected';
         try {
-            (new MonitoringKsbkSourceService)->stage($this->workbook([$this->row()], $headers), $this->path());
+            (new MonitoringKsbkSourceService)->stage($this->workbook([$this->row()], $headers), $this->path(), '2026-11');
             $this->fail('Unknown headers must not be silently mapped.');
         } catch (RuntimeException $error) {
             $this->assertStringContainsString('17 kolom', $error->getMessage());
@@ -164,7 +177,7 @@ class MonitoringKsbkImportTest extends TestCase
         $row[6] = '2026-02-30';
         $this->expectException(RuntimeException::class);
         $this->expectExceptionMessage('Tanggal rencana_real_date');
-        (new MonitoringKsbkSourceService)->stage($this->workbook([$row]), $this->path());
+        (new MonitoringKsbkSourceService)->stage($this->workbook([$row]), $this->path(), '2026-11');
     }
 
     public function test_malformed_xml_cannot_publish_a_partial_workbook(): void
@@ -177,7 +190,7 @@ class MonitoringKsbkImportTest extends TestCase
         $zip->close();
         $canonical = $this->path();
         try {
-            (new MonitoringKsbkSourceService)->stage($source, $canonical);
+            (new MonitoringKsbkSourceService)->stage($source, $canonical, '2026-11');
             $this->fail('Malformed XML must invalidate all staged rows.');
         } catch (RuntimeException $error) {
             $this->assertStringContainsString('XML', $error->getMessage());
@@ -196,7 +209,7 @@ class MonitoringKsbkImportTest extends TestCase
         $zip->close();
         $canonical = $this->path();
         try {
-            (new MonitoringKsbkSourceService)->stage($source, $canonical);
+            (new MonitoringKsbkSourceService)->stage($source, $canonical, '2026-11');
             $this->fail('Data outside the declared workbook shape must not be discarded.');
         } catch (RuntimeException $error) {
             $this->assertStringContainsString('Jumlah/posisi kolom', $error->getMessage());
@@ -204,11 +217,11 @@ class MonitoringKsbkImportTest extends TestCase
         }
     }
 
-    public function test_migration_registers_seventeen_business_columns_without_a_manual_period(): void
+    public function test_migration_registers_monthly_period_column_and_backfills_november_2026(): void
     {
         Schema::create('nama_report', function (Blueprint $table): void {
             $table->integer('id_report')->primary();
-            foreach (['nama_report', 'table_name', 'import_controller'] as $column) {
+            foreach (['nama_report', 'table_name', 'import_controller', 'manual_periode_type', 'manual_periode_label', 'manual_periode_help'] as $column) {
                 $table->string($column)->nullable();
             }
             $table->integer('active');
@@ -217,29 +230,68 @@ class MonitoringKsbkImportTest extends TestCase
         });
         $migration = require database_path('migrations/2026_11_12_000005_create_monitoring_realisasi_ksbk_report.php');
         $migration->up();
-        $migration->up();
+        DB::table(MonitoringKsbkSourceService::TABLE)->insert([
+            'uniqueid_namareport' => 'ksbk_legacy_1',
+            'cifno' => 'CIF001',
+            'nama' => 'Debitur Existing',
+            'plafond_pengajuan' => '100000000.00',
+            'bo' => '45',
+            'ro' => 'R',
+        ]);
+        $periodMigration = require database_path('migrations/2026_11_13_000001_add_periode_to_monitoring_realisasi_ksbk_and_verify_prewash_periods.php');
+        $periodMigration->up();
+        $periodMigration->up();
+
         $columns = Schema::getColumnListing(MonitoringKsbkSourceService::TABLE);
-        $this->assertCount(20, $columns);
+        $this->assertCount(21, $columns);
+        $this->assertContains('periode', $columns);
         $this->assertTrue((new MonitoringKsbkImportStrategy)->validateSchema($columns)['ok']);
         $this->assertFalse((new MonitoringKsbkImportStrategy)->validateSchema(['cifno'])['ok']);
-        $this->assertDatabaseHas('nama_report', ['table_name' => MonitoringKsbkSourceService::TABLE, 'requires_manual_periode' => 0]);
+        $this->assertDatabaseHas(MonitoringKsbkSourceService::TABLE, [
+            'uniqueid_namareport' => 'ksbk_legacy_1',
+            'periode' => '2026-11-01',
+        ]);
+        $this->assertDatabaseHas('nama_report', [
+            'table_name' => MonitoringKsbkSourceService::TABLE,
+            'requires_manual_periode' => 1,
+            'manual_periode_type' => 'month',
+        ]);
         $this->assertSame(1, DB::table('nama_report')->count());
     }
 
-    public function test_existing_dataset_is_rejected_without_inserting_or_deleting_rows(): void
+    public function test_existing_period_dataset_is_rejected_without_inserting_or_deleting_rows(): void
     {
         $pdo = Mockery::mock(PDO::class);
         $pdo->shouldReceive('getAttribute')->with(PDO::ATTR_DRIVER_NAME)->andReturn('mysql');
         $pdo->shouldReceive('quote')->andReturn("'source.csv'");
         $pdo->shouldReceive('beginTransaction')->once();
-        $pdo->shouldReceive('query')->with('SELECT COUNT(*) FROM `monitoring_realisasi_ksbk`')->once()->andReturn($this->scalar(1));
+        $pdo->shouldReceive('prepare')->with('SELECT COUNT(*) FROM `monitoring_realisasi_ksbk` WHERE `periode` = ?')
+            ->once()->andReturn($this->preparedScalar(['2026-11-01'], 1));
         $pdo->shouldReceive('inTransaction')->andReturn(true);
         $pdo->shouldReceive('rollBack')->once();
         $pdo->shouldNotReceive('exec');
         $this->loader();
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('hapus dataset melalui Kelola Report');
-        (new MonitoringKsbkSourceService)->loadBulk($this->path(), 1, $pdo);
+        $this->expectExceptionMessage('hapus periode terkait melalui Kelola Report');
+        (new MonitoringKsbkSourceService)->loadBulk($this->path(), 1, '2026-11', $pdo);
+    }
+
+    public function test_different_period_dataset_loads_cleanly_even_when_other_months_exist(): void
+    {
+        $pdo = Mockery::mock(PDO::class);
+        $pdo->shouldReceive('getAttribute')->with(PDO::ATTR_DRIVER_NAME)->andReturn('mysql');
+        $pdo->shouldReceive('quote')->andReturn("'source.csv'");
+        $pdo->shouldReceive('beginTransaction')->once();
+        $pdo->shouldReceive('prepare')->with('SELECT COUNT(*) FROM `monitoring_realisasi_ksbk` WHERE `periode` = ?')
+            ->twice()->andReturn(
+                $this->preparedScalar(['2026-12-01'], 0),
+                $this->preparedScalar(['2026-12-01'], 1)
+            );
+        $pdo->shouldReceive('exec')->once()->with(Mockery::on(fn (string $sql): bool => str_starts_with($sql, 'LOAD DATA LOCAL INFILE')))->andReturn(1);
+        $pdo->shouldReceive('query')->with('SHOW COUNT(*) WARNINGS')->once()->andReturn($this->scalar(0));
+        $pdo->shouldReceive('commit')->once();
+        $this->loader();
+        $this->assertSame(1, (new MonitoringKsbkSourceService)->loadBulk($this->path(), 1, '2026-12', $pdo));
     }
 
     public function test_mysql_warning_rolls_back_instead_of_reporting_success(): void
@@ -248,7 +300,8 @@ class MonitoringKsbkImportTest extends TestCase
         $pdo->shouldReceive('getAttribute')->with(PDO::ATTR_DRIVER_NAME)->andReturn('mysql');
         $pdo->shouldReceive('quote')->andReturn("'source.csv'");
         $pdo->shouldReceive('beginTransaction')->once();
-        $pdo->shouldReceive('query')->with('SELECT COUNT(*) FROM `monitoring_realisasi_ksbk`')->once()->andReturn($this->scalar(0));
+        $pdo->shouldReceive('prepare')->with('SELECT COUNT(*) FROM `monitoring_realisasi_ksbk` WHERE `periode` = ?')
+            ->once()->andReturn($this->preparedScalar(['2026-11-01'], 0));
         $pdo->shouldReceive('exec')->once()->with(Mockery::on(fn (string $sql): bool => str_starts_with($sql, 'LOAD DATA LOCAL INFILE')))->andReturn(1);
         $pdo->shouldReceive('query')->with('SHOW COUNT(*) WARNINGS')->once()->andReturn($this->scalar(1));
         $pdo->shouldReceive('inTransaction')->andReturn(true);
@@ -257,7 +310,7 @@ class MonitoringKsbkImportTest extends TestCase
         $this->loader();
         $this->expectException(RuntimeException::class);
         $this->expectExceptionMessage('warning MySQL');
-        (new MonitoringKsbkSourceService)->loadBulk($this->path(), 1, $pdo);
+        (new MonitoringKsbkSourceService)->loadBulk($this->path(), 1, '2026-11', $pdo);
     }
 
     private function loader(): void
@@ -271,6 +324,15 @@ class MonitoringKsbkImportTest extends TestCase
     private function scalar(int $value): PDOStatement
     {
         $statement = Mockery::mock(PDOStatement::class);
+        $statement->shouldReceive('fetchColumn')->once()->andReturn($value);
+
+        return $statement;
+    }
+
+    private function preparedScalar(array $params, int $value): PDOStatement
+    {
+        $statement = Mockery::mock(PDOStatement::class);
+        $statement->shouldReceive('execute')->once()->with($params)->andReturn(true);
         $statement->shouldReceive('fetchColumn')->once()->andReturn($value);
 
         return $statement;

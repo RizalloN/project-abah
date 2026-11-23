@@ -20,7 +20,7 @@ class XlsxStreamReader
      *
      * @return array{rows: array<int, array<int, string>>, sheet_name: string}|null
      */
-    public function readSampleRows(string $path, int $limit): ?array
+    public function readSampleRows(string $path, int $limit, bool $firstSheet = false): ?array
     {
         $rows = [];
         $sheetName = $this->streamSheet(
@@ -34,7 +34,8 @@ class XlsxStreamReader
                 $rows[$rowNumber - 1] = $this->densify($cells, $maxCol);
 
                 return $rowNumber < $limit;
-            }
+            },
+            $firstSheet,
         );
 
         if ($sheetName === null) {
@@ -74,7 +75,7 @@ class XlsxStreamReader
     /**
      * @param callable(int, array<int, string>, int): bool $onRow return false to stop early
      */
-    private function streamSheet(string $path, ?string $sheetName, ?int $maxRow, callable $onRow): ?string
+    private function streamSheet(string $path, ?string $sheetName, ?int $maxRow, callable $onRow, bool $firstSheet = false): ?string
     {
         $zip = new ZipArchive;
         if ($zip->open($path) !== true) {
@@ -83,7 +84,7 @@ class XlsxStreamReader
 
         try {
             $entries = $this->indexEntries($zip);
-            $target = $this->resolveSheetEntry($zip, $entries, $sheetName);
+            $target = $this->resolveSheetEntry($zip, $entries, $sheetName, $firstSheet);
             if ($target === null) {
                 return null;
             }
@@ -123,7 +124,21 @@ class XlsxStreamReader
      * @param array<string, string> $entries
      * @return array{name: string, entry: string}|null
      */
-    private function resolveSheetEntry(ZipArchive $zip, array $entries, ?string $preferredName): ?array
+    public function firstWorksheetEntry(ZipArchive $zip): ?string
+    {
+        $entries = $this->indexEntries($zip);
+        $entry = $this->resolveSheetEntry($zip, $entries, null, true)['entry'] ?? null;
+        if ($entry !== null) {
+            return $entry;
+        }
+
+        $worksheets = preg_grep('#^xl/worksheets/sheet\d+\.xml$#i', array_values($entries));
+        natcasesort($worksheets);
+
+        return reset($worksheets) ?: null;
+    }
+
+    private function resolveSheetEntry(ZipArchive $zip, array $entries, ?string $preferredName, bool $firstSheet): ?array
     {
         $wbEntry = $entries['xl/workbook.xml'] ?? null;
         $relsEntry = $entries['xl/_rels/workbook.xml.rels'] ?? null;
@@ -172,7 +187,7 @@ class XlsxStreamReader
                 }
             }
         }
-        $selected ??= $sheets[$activeTab] ?? $sheets[0];
+        $selected ??= $sheets[$firstSheet ? 0 : $activeTab] ?? $sheets[0];
 
         $target = null;
         foreach ($rels->Relationship as $rel) {

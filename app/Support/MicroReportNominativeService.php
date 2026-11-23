@@ -35,7 +35,7 @@ class MicroReportNominativeService
         $context = [
             'report' => $report, 'level' => $level, 'branch' => $scope['label'] ?? 'Area 6',
             'unit' => $filters['unit'] ?? null, 'metric' => $metric, 'period' => $filters['periode'],
-            ...Arr::only($meta, ['year', 'loan_period', 'loan_source', 'visit_period']),
+            ...Arr::only($meta, ['year', 'loan_period', 'loan_source', 'visit_period', 'period_label']),
         ];
         if (empty($meta['available'])) {
             return ['available' => false, 'data' => [], 'total' => 0, 'page' => 1, 'per_page' => $perPage, 'last_page' => 1, 'context' => $context, 'message' => $meta['message'] ?? 'Sumber laporan belum tersedia.'];
@@ -118,11 +118,11 @@ class MicroReportNominativeService
         }
         if ($report === 'ksbk') {
             $service = app(LandingMicroKsbkService::class);
-            $meta = $service->payload($scope);
+            $meta = $service->payload($scope, $period);
 
-            return [$meta, empty($meta['available']) ? [] : $service->records($scope)];
+            return [$meta, empty($meta['available']) ? [] : $service->records($scope, $period)];
         }
-        $meta = app($report === 'boh' ? LandingMicroPrewashBohService::class : LandingMicroPrewashMbmService::class)->payload($scope);
+        $meta = app($report === 'boh' ? LandingMicroPrewashBohService::class : LandingMicroPrewashMbmService::class)->payload($scope, $period);
 
         return [$meta, $meta['records'] ?? []];
     }

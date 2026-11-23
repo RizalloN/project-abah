@@ -11,6 +11,12 @@ use Tests\TestCase;
 
 class PruneReportDailyHistoryCommandTest extends TestCase
 {
+    private const MONTHLY_TABLES = [
+        'brilink_web_laporan_summary_transaksi_brilink_web',
+        'ibbisniz_corp',
+        'usak_ibbiz_uker',
+    ];
+
     private array $auditFilesBefore = [];
 
     protected function setUp(): void
@@ -29,6 +35,7 @@ class PruneReportDailyHistoryCommandTest extends TestCase
             'ssa_simpanan',
             'ssa_pinjaman',
             'gi405_recovery',
+            ...self::MONTHLY_TABLES,
             'import_jobs',
         ] as $table) {
             Schema::dropIfExists($table);
@@ -117,6 +124,7 @@ class PruneReportDailyHistoryCommandTest extends TestCase
             'ssa_simpanan',
             'ssa_pinjaman',
             'gi405_recovery',
+            ...self::MONTHLY_TABLES,
             'import_jobs',
         ] as $table) {
             Schema::dropIfExists($table);
@@ -146,6 +154,23 @@ class PruneReportDailyHistoryCommandTest extends TestCase
 
     public function test_execute_keeps_month_end_and_preserves_protected_months(): void
     {
+        foreach (self::MONTHLY_TABLES as $tableName) {
+            Schema::create($tableName, function (Blueprint $table): void {
+                $table->string('periode');
+            });
+            DB::table($tableName)->insert([
+                ['periode' => '2026-04-01'],
+                ['periode' => '2026-04-30'],
+            ]);
+        }
+        DB::table('lw325_ph')->insert([
+            ['periode' => '2024-02-28'],
+            ['periode' => '2024-02-29'],
+            ['periode' => '2026-10-01'],
+            ['periode' => '2026-10-30'],
+            ['periode' => '2026-10-31'],
+        ]);
+
         $archive = new class {
             /** @var list<string> */
             public array $capturedPeriods = [];
@@ -171,11 +196,12 @@ class PruneReportDailyHistoryCommandTest extends TestCase
             '--chunk' => 1_000,
             '--sleep-ms' => 0,
         ])
+            ->expectsOutputToContain('Dikecualikan (laporan bulanan): '.implode(', ', self::MONTHLY_TABLES))
             ->expectsOutputToContain('Pembersihan selesai dan validasi retensi lulus.')
             ->assertExitCode(0);
 
         $this->assertRetainedPeriods('daily_loan_dinamis', 'periode');
-        $this->assertRetainedPeriods('lw325_ph', 'periode');
+        $this->assertRetainedPeriods('lw325_ph', 'periode', ['2024-02-29', '2026-10-31']);
         $this->assertRetainedPeriods('lw321pn', 'periode');
         $this->assertRetainedPeriods('simpanan_multipn', 'posisi');
         $this->assertRetainedPeriods('hourly_dpk', 'posisi');
@@ -185,6 +211,9 @@ class PruneReportDailyHistoryCommandTest extends TestCase
         $this->assertSame(8, DB::table('ssa_simpanan')->count());
         $this->assertSame(8, DB::table('ssa_pinjaman')->count());
         $this->assertSame(8, DB::table('gi405_recovery')->count());
+        foreach (self::MONTHLY_TABLES as $tableName) {
+            $this->assertSame(['2026-04-01', '2026-04-30'], DB::table($tableName)->orderBy('periode')->pluck('periode')->all());
+        }
         $this->assertSame(['2026-04-01', '2026-05-01'], $archive->capturedPeriods);
     }
 
@@ -257,17 +286,20 @@ class PruneReportDailyHistoryCommandTest extends TestCase
         ));
     }
 
-    private function assertRetainedPeriods(string $table, string $periodColumn): void
+    private function assertRetainedPeriods(string $table, string $periodColumn, array $extraPeriods = []): void
     {
         $periods = DB::table($table)->orderBy($periodColumn)->pluck($periodColumn)->all();
 
-        $this->assertSame([
+        $expected = [
             '2026-04-30',
             '2026-05-31',
             '2026-06-01',
             '2026-06-30',
             '2026-07-01',
             '2026-07-31',
-        ], $periods);
+            ...$extraPeriods,
+        ];
+        sort($expected);
+        $this->assertSame($expected, $periods);
     }
 }

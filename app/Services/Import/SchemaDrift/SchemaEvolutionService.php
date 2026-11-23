@@ -4,6 +4,7 @@ namespace App\Services\Import\SchemaDrift;
 
 use App\Services\Import\SchemaIntrospectionService;
 use App\Support\SchemaMetadataCache;
+use Illuminate\Database\QueryException;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -47,38 +48,57 @@ class SchemaEvolutionService
      */
     public function addColumns(string $table, array $columns): array
     {
-        $table = strtolower(trim($table));
-        $prepared = $this->validateAdditions($table, $columns);
+        return $this->applyChanges($table, $columns, [])['added'];
+    }
 
-        if ($prepared === []) {
-            return [];
+    /**
+     * Apply one reviewed migration per table. All definitions are validated
+     * under the same lock before the target table changes.
+     */
+    public function applyChanges(string $table, array $additions, array $widenings): array
+    {
+        if ($additions === [] && $widenings === []) {
+            return ['added' => [], 'widened' => []];
         }
 
-        return $this->withTableLock($table, function () use ($table, $prepared): array {
-            $existing = $this->freshColumns($table);
-            foreach ($prepared as $column) {
-                // A chosen name that already exists would silently map the new
-                // header onto unrelated data; that must be an explicit "map".
-                if (isset($existing[$column['name']])) {
-                    throw new RuntimeException("Kolom \"{$column['name']}\" sudah ada di tabel {$table}. Pilih nama lain, atau gunakan aksi \"Petakan ke kolom yang ada\".");
-                }
+        $table = strtolower(trim($table));
+        $this->assertEvolvableTable($table);
+
+        return $this->withTableLock($table, function () use ($table, $additions, $widenings): array {
+            $added = $this->validateAdditions($table, $additions);
+            $plans = $this->prepareWidenings($table, $widenings);
+
+            if ($added === [] && $plans === []) {
+                return ['added' => [], 'widened' => []];
             }
 
-            // One ALTER keeps an accepted group of new columns together and
-            // avoids repeatedly changing metadata on a large report table.
-            $clauses = array_map(static fn (array $column): string => sprintf('ADD COLUMN `%s` %s NULL', $column['name'], $column['type']), $prepared);
+            $clauses = array_map(static fn (array $column): string => sprintf('ADD COLUMN `%s` %s NULL', $column['name'], $column['type']), $added);
+            foreach ($plans as $plan) {
+                $clauses[] = sprintf('MODIFY COLUMN `%s` %s', $plan['name'], $this->columnDefinitionTail($plan['type'], $plan['current']));
+            }
+
             $algorithm = $this->runAlter(
                 $table,
                 sprintf('ALTER TABLE `%s` %s', $table, implode(', ', $clauses)),
-                function (Blueprint $blueprint) use ($prepared): void {
-                    foreach ($prepared as $column) {
+                function (Blueprint $blueprint) use ($added, $plans): void {
+                    foreach ($plans as $plan) {
+                        $this->blueprintColumn($blueprint, $plan['name'], $plan['type'])
+                            ->nullable((bool) $plan['current']['nullable'])
+                            ->change();
+                    }
+                    foreach ($added as $column) {
                         $this->blueprintColumn($blueprint, $column['name'], $column['type'])->nullable();
                     }
                 },
-                'menambah ' . count($prepared) . ' kolom sumber'
+                'menerapkan perubahan kolom sumber'
             );
 
-            return array_map(static fn (array $column): array => $column + ['algorithm' => $algorithm], $prepared);
+            return [
+                'added' => array_map(static fn (array $column): array => $column + ['algorithm' => $algorithm], $added),
+                'widened' => array_map(static fn (array $plan): array => [
+                    'name' => $plan['name'], 'type' => $plan['type'], 'from_type' => $plan['from_type'], 'algorithm' => $algorithm,
+                ], $plans),
+            ];
         });
     }
 
@@ -91,6 +111,10 @@ class SchemaEvolutionService
 
         $table = strtolower(trim($table));
         $this->assertEvolvableTable($table);
+        $policy = app(SchemaEvolutionPolicy::class);
+        if (!$policy->canEvolve($table)) {
+            throw new RuntimeException("Layout import tabel {$table} belum membawa kolom baru ke database.");
+        }
         $existing = $this->freshColumns($table);
         $prepared = [];
         $seen = [];
@@ -100,8 +124,14 @@ class SchemaEvolutionService
             if (!SchemaDriftDetector::isSafeColumnName($name)) {
                 throw new RuntimeException("Nama kolom \"{$name}\" tidak valid. Gunakan huruf kecil, angka, dan garis bawah (maks. 64 karakter).");
             }
+            if (in_array($name, self::MANAGED_COLUMNS, true) || str_starts_with($name, 'uniqueid')) {
+                throw new RuntimeException("Nama kolom \"{$name}\" dikelola sistem.");
+            }
             if (!SchemaDriftDetector::isAllowedType($type)) {
                 throw new RuntimeException("Tipe kolom \"{$type}\" tidak diizinkan.");
+            }
+            if (!$policy->canStoreNewColumnType($table, $type)) {
+                throw new RuntimeException("Import {$table} belum dapat menyimpan data secara utuh ke tipe {$type}. Pilih tipe teks yang sesuai.");
             }
             if (isset($seen[$name])) {
                 throw new RuntimeException("Nama kolom \"{$name}\" dipakai lebih dari satu kali.");
@@ -122,51 +152,42 @@ class SchemaEvolutionService
      */
     public function widenColumns(string $table, array $columns): array
     {
-        $table = strtolower(trim($table));
-        $this->assertEvolvableTable($table);
+        return $this->applyChanges($table, [], $columns)['widened'];
+    }
 
-        return $this->withTableLock($table, function () use ($table, $columns): array {
-            $existing = $this->freshColumns($table);
-            $plans = [];
-            foreach ($columns as $column) {
-                $name = strtolower(trim((string) ($column['name'] ?? '')));
-                $type = $this->normalizeType((string) ($column['type'] ?? ''));
-                $current = $existing[$name] ?? null;
-                if ($current === null) {
-                    throw new RuntimeException("Kolom \"{$name}\" tidak ditemukan di tabel {$table}.");
-                }
-                if (in_array($name, self::MANAGED_COLUMNS, true) || str_starts_with($name, 'uniqueid')) {
-                    throw new RuntimeException("Kolom \"{$name}\" dikelola sistem dan tidak boleh diubah.");
-                }
-                if (!SchemaDriftDetector::isAllowedType($type)) {
-                    throw new RuntimeException("Tipe kolom \"{$type}\" tidak diizinkan.");
-                }
+    private function prepareWidenings(string $table, array $columns): array
+    {
+        if ($columns === []) {
+            return [];
+        }
 
-                $fromType = strtoupper((string) $current['type']);
-                if ($this->sameType($fromType, $type)) {
-                    continue;
-                }
-                if (!$this->isWidening($fromType, $type)) {
-                    throw new RuntimeException("Perubahan {$name} dari {$fromType} ke {$type} bukan pelebaran yang aman; hanya pelebaran yang diizinkan agar data lama tidak berubah.");
-                }
-                $plans[] = ['name' => $name, 'type' => $type, 'from_type' => $fromType, 'current' => $current];
+        $existing = $this->freshColumns($table);
+        $plans = [];
+        foreach ($columns as $column) {
+            $name = strtolower(trim((string) ($column['name'] ?? '')));
+            $type = $this->normalizeType((string) ($column['type'] ?? ''));
+            $current = $existing[$name] ?? null;
+            if ($current === null) {
+                throw new RuntimeException("Kolom \"{$name}\" tidak ditemukan di tabel {$table}.");
+            }
+            if (in_array($name, self::MANAGED_COLUMNS, true) || str_starts_with($name, 'uniqueid')) {
+                throw new RuntimeException("Kolom \"{$name}\" dikelola sistem dan tidak boleh diubah.");
+            }
+            if (!SchemaDriftDetector::isAllowedType($type)) {
+                throw new RuntimeException("Tipe kolom \"{$type}\" tidak diizinkan.");
             }
 
-            $applied = [];
-            foreach ($plans as $plan) {
-                $algorithm = $this->runAlter(
-                    $table,
-                    sprintf('ALTER TABLE `%s` MODIFY COLUMN `%s` %s', $table, $plan['name'], $this->columnDefinitionTail($plan['type'], $plan['current'])),
-                    fn (Blueprint $blueprint) => $this->blueprintColumn($blueprint, $plan['name'], $plan['type'])
-                        ->nullable((bool) ($plan['current']['nullable'] ?? true))
-                        ->change(),
-                    "melebarkan kolom {$plan['name']}"
-                );
-                $applied[] = ['name' => $plan['name'], 'type' => $plan['type'], 'from_type' => $plan['from_type'], 'algorithm' => $algorithm];
+            $fromType = strtoupper((string) $current['type']);
+            if ($this->sameType($fromType, $type)) {
+                continue;
             }
+            if (!$this->isWidening($fromType, $type)) {
+                throw new RuntimeException("Perubahan {$name} dari {$fromType} ke {$type} bukan pelebaran yang aman; hanya pelebaran yang diizinkan agar data lama tidak berubah.");
+            }
+            $plans[] = ['name' => $name, 'type' => $type, 'from_type' => $fromType, 'current' => $current];
+        }
 
-            return $applied;
-        });
+        return $plans;
     }
 
     /**
@@ -399,10 +420,10 @@ class SchemaEvolutionService
                     ->orWhere('j.updated_at', '>=', now()->subSeconds(self::STALE_IMPORT_SECONDS));
             })
             ->whereRaw('LOWER(TRIM(r.table_name)) = ?', [$table])
-            ->count();
+            ->exists();
 
-        if ($active > 0) {
-            throw new RuntimeException("Masih ada {$active} import aktif ke tabel {$table}. Tunggu hingga selesai sebelum mengubah struktur tabel.");
+        if ($active) {
+            throw new RuntimeException("Masih ada import aktif ke tabel {$table}. Tunggu hingga selesai sebelum mengubah struktur tabel.");
         }
     }
 
@@ -412,45 +433,60 @@ class SchemaEvolutionService
      */
     private function runAlter(string $table, string $statement, callable $schemaBuilderFallback, string $label): string
     {
-        $driver = DB::connection()->getDriverName();
+        $connection = DB::connection();
+        $driver = $connection->getDriverName();
 
         if (in_array($driver, ['mysql', 'mariadb'], true)) {
-            $lastError = null;
-            foreach ([', ALGORITHM=INSTANT' => 'instant', ', ALGORITHM=INPLACE, LOCK=NONE' => 'inplace'] as $clause => $algorithm) {
-                try {
-                    DB::statement($statement . $clause);
-
-                    return $algorithm;
-                } catch (Throwable $e) {
-                    $lastError = $e;
-                }
-            }
-
-            $rows = $this->estimatedRows($table);
-            if ($rows > self::COPY_ROW_LIMIT) {
-                throw new RuntimeException(sprintf(
-                    'Gagal %s tanpa mengunci tabel: tabel %s berisi ±%s baris sehingga penyalinan ulang tabel akan mengganggu dashboard. Lakukan di jam pemeliharaan. Detail: %s',
-                    $label,
-                    $table,
-                    number_format($rows, 0, ',', '.'),
-                    $lastError?->getMessage() ?? '-'
-                ));
-            }
-
+            $previous = (int) $connection->selectOne('SELECT @@SESSION.lock_wait_timeout AS seconds', [], false)->seconds;
+            $connection->statement('SET SESSION lock_wait_timeout = 5');
             try {
-                DB::statement($statement);
+                return $this->runMySqlAlter($table, $statement, $label);
+            } catch (QueryException $e) {
+                if (in_array((int) ($e->errorInfo[1] ?? 0), [1205, 1213], true)) {
+                    throw new RuntimeException("Tabel {$table} sedang dipakai. Coba terapkan keputusan kembali setelah proses aktif selesai.", 0, $e);
+                }
 
-                return 'copy';
-            } catch (Throwable $e) {
-                throw new RuntimeException("Gagal {$label}: " . $e->getMessage(), 0, $e);
+                throw $e;
+            } finally {
+                $connection->statement('SET SESSION lock_wait_timeout = ' . $previous);
             }
         }
 
-        Schema::table($table, function (Blueprint $blueprint) use ($schemaBuilderFallback): void {
-            $schemaBuilderFallback($blueprint);
-        });
+        $connection->transaction(fn () => Schema::table($table, $schemaBuilderFallback));
 
         return 'schema_builder';
+    }
+
+    private function runMySqlAlter(string $table, string $statement, string $label): string
+    {
+        $lastError = null;
+        foreach ([', ALGORITHM=INSTANT' => 'instant', ', ALGORITHM=INPLACE, LOCK=NONE' => 'inplace'] as $clause => $algorithm) {
+            try {
+                DB::statement($statement . $clause);
+
+                return $algorithm;
+            } catch (QueryException $e) {
+                // Only retry when MariaDB/MySQL rejects the requested DDL algorithm or lock.
+                if (!in_array((int) ($e->errorInfo[1] ?? 0), [1845, 1846, 1847, 1848], true)) {
+                    throw $e;
+                }
+                $lastError = $e;
+            }
+        }
+
+        $rows = $this->estimatedRows($table);
+        if ($rows > self::COPY_ROW_LIMIT) {
+            throw new RuntimeException(sprintf(
+                'Gagal %s tanpa mengunci tabel: tabel %s berisi ±%s baris sehingga penyalinan ulang tabel akan mengganggu dashboard. Detail: %s',
+                $label,
+                $table,
+                number_format($rows, 0, ',', '.'),
+                $lastError?->getMessage() ?? '-'
+            ));
+        }
+        DB::statement($statement);
+
+        return 'copy';
     }
 
     private function estimatedRows(string $table): int

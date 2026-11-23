@@ -5,6 +5,7 @@ namespace App\Support;
 use App\Services\Import\MonitoringKsbkSourceService as Source;
 use App\Services\Import\MySqlBulkLoadService;
 use App\Services\Import\PipelinePrewashDecimal as Money;
+use Carbon\Carbon;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -12,23 +13,46 @@ use Throwable;
 
 final class LandingMicroKsbkService
 {
-    public function payload(?array $branchScope): array
+    public function payload(?array $branchScope = null, ?string $requestedPeriod = null): array
     {
         if (! Schema::hasTable(Source::TABLE) || ! DB::table(Source::TABLE)->exists()) {
             return $this->empty('Monitoring Realisasi KSBK belum diimport. Impor laporan untuk menampilkan pipeline dan realisasi.', $branchScope);
         }
 
         return app(MySqlBulkLoadService::class)->withTableWriteLock(Source::TABLE,
-            fn (): array => $this->buildPayload($branchScope)
+            fn (): array => $this->buildPayload($branchScope, $requestedPeriod)
         );
     }
 
-    private function buildPayload(?array $scope): array
+    private function buildPayload(?array $scope, ?string $requestedPeriod = null): array
     {
-        $prepared = $this->prepareRecords($scope, true);
+        $prepared = $this->prepareRecords($scope, true, $requestedPeriod);
+        $resolution = $prepared['resolution'];
+        $activePeriod = $resolution['active_period'];
+        if ($activePeriod === null) {
+            $requestedMonth = $resolution['requested_month'];
+            $requestedLabel = $this->formatPeriodLabel($requestedMonth);
+            $availableLabels = array_map(fn (string $period): string => $this->formatPeriodLabel($period), $resolution['available_periods']);
+            $message = 'Monitoring Realisasi KSBK periode '.$requestedLabel.' belum diimport.';
+            if ($availableLabels !== []) {
+                $message .= ' Periode tersedia: '.implode(', ', $availableLabels).'.';
+            }
+
+            return $this->empty($message, $scope) + [
+                'period' => $requestedMonth,
+                'period_label' => $requestedLabel,
+                'available_periods' => $resolution['available_periods'],
+                'empty_reason' => 'period_not_imported',
+            ];
+        }
+        $periodLabel = $this->formatPeriodLabel($activePeriod);
         $rows = $prepared['rows'];
         if ($rows === []) {
-            return $this->empty('Belum ada Monitoring Realisasi KSBK untuk cabang yang dipilih.', $scope);
+            return $this->empty('Belum ada Monitoring Realisasi KSBK untuk periode '.$periodLabel.' dan cabang yang dipilih.', $scope) + [
+                'period' => $activePeriod,
+                'period_label' => $periodLabel,
+                'available_periods' => $resolution['available_periods'],
+            ];
         }
         $groups = $units = [];
         foreach ($rows as $row) {
@@ -50,7 +74,13 @@ final class LandingMicroKsbkService
         $targetGroups = ($scope !== null && ($scope['key'] ?? '') !== 'area6') ? $unitGroups : $result;
 
         return [
-            'available' => true, 'loan_source' => $table, 'loan_period' => $prepared['loan_period'], 'scope_key' => $scope['key'] ?? 'area6',
+            'available' => true,
+            'period' => $activePeriod,
+            'period_label' => $periodLabel,
+            'available_periods' => $resolution['available_periods'],
+            'loan_source' => $table,
+            'loan_period' => $prepared['loan_period'],
+            'scope_key' => $scope['key'] ?? 'area6',
             'message' => $table === null ? 'Laporan pinjaman belum tersedia; realisasi belum dapat diverifikasi.'
                 : ($quality['unverified_realization'] > 0 ? $quality['unverified_realization'].' usulan belum dapat diverifikasi karena CIF kosong, beberapa rekening, atau nilai pinjaman tidak lengkap.'
                     : ($quality['unclassified_product'] > 0 ? 'Ada produk SBK yang belum dapat dikelompokkan; periksa sumber.' : null)),
@@ -58,29 +88,36 @@ final class LandingMicroKsbkService
         ];
     }
 
-    public function records(?array $branchScope): array
+    public function records(?array $branchScope = null, ?string $requestedPeriod = null): array
     {
         if (! Schema::hasTable(Source::TABLE)) {
             return [];
         }
 
-        return $this->prepareRecords($branchScope, false)['rows'];
+        return $this->prepareRecords($branchScope, false, $requestedPeriod)['rows'];
     }
 
-    private function prepareRecords(?array $scope, bool $persist): array
+    private function prepareRecords(?array $scope, bool $persist, ?string $requestedPeriod = null): array
     {
+        $resolution = $this->resolvePeriod($requestedPeriod);
+        $activePeriod = $resolution['active_period'];
+        if ($activePeriod === null) {
+            return ['rows' => [], 'quality' => [], 'loan_source' => null, 'loan_period' => null, 'resolution' => $resolution];
+        }
+
         $scopes = $scope ? [$scope] : UserBranchScope::branchScopes();
         $branches = [];
         foreach ($scopes as $branch) {
             $branches[$this->code($branch['code4'])] = $branch;
         }
-        $query = DB::table(Source::TABLE);
+        $query = DB::table(Source::TABLE)->where('periode', $activePeriod);
         $this->scopeCodes($query, 'bo', $scopes);
         $rows = $query->orderBy('uniqueid_namareport')->get()->map(fn (object $row): array => (array) $row)->all();
         if ($rows === []) {
-            return ['rows' => [], 'quality' => [], 'loan_source' => null, 'loan_period' => null];
+            return ['rows' => [], 'quality' => [], 'loan_source' => null, 'loan_period' => null, 'resolution' => $resolution];
         }
-        [$table, $period] = $this->loanSource();
+        $cutoffDate = $this->loanCutoffDate($activePeriod, $requestedPeriod);
+        [$table, $period] = $this->loanSource($cutoffDate);
         $cifs = array_values(array_unique(array_filter(array_map(fn (array $row): string => trim((string) $row['cifno']), $rows), fn (string $cif): bool => $cif !== '')));
         $loans = $table ? $this->loans($table, $period, $cifs, $scopes) : [];
         $units = $this->unitReferences($scopes);
@@ -111,16 +148,64 @@ final class LandingMicroKsbkService
         }
         unset($row);
         if ($persist && $updates !== []) {
-            DB::transaction(function () use ($updates): void {
+            DB::transaction(function () use ($updates, $activePeriod): void {
                 foreach ($updates as $update) {
                     $id = $update['uniqueid_namareport'];
                     unset($update['uniqueid_namareport']);
-                    DB::table(Source::TABLE)->where('uniqueid_namareport', $id)->update($update);
+                    DB::table(Source::TABLE)
+                        ->where('uniqueid_namareport', $id)
+                        ->where('periode', $activePeriod)
+                        ->update($update);
                 }
             });
         }
 
-        return ['rows' => $rows, 'quality' => $quality, 'loan_source' => $table, 'loan_period' => $period];
+        return ['rows' => $rows, 'quality' => $quality, 'loan_source' => $table, 'loan_period' => $period, 'resolution' => $resolution];
+    }
+
+    private function resolvePeriod(?string $requestedPeriod): array
+    {
+        $availablePeriods = DB::table(Source::TABLE)
+            ->select('periode')
+            ->distinct()
+            ->orderByDesc('periode')
+            ->pluck('periode')
+            ->map(static fn ($period): string => (string) $period)
+            ->values()
+            ->all();
+
+        $trimmed = trim((string) $requestedPeriod);
+        $requestedMonth = null;
+        if ($trimmed !== '' && preg_match('/^(\d{4}-\d{2})(?:-\d{2})?$/D', $trimmed, $match) === 1) {
+            $requestedMonth = $match[1].'-01';
+            $activePeriod = in_array($requestedMonth, $availablePeriods, true) ? $requestedMonth : null;
+
+            return ['requested_month' => $requestedMonth, 'active_period' => $activePeriod, 'available_periods' => $availablePeriods];
+        }
+
+        $activePeriod = $availablePeriods[0] ?? null;
+
+        return ['requested_month' => $activePeriod, 'active_period' => $activePeriod, 'available_periods' => $availablePeriods];
+    }
+
+    private function formatPeriodLabel(?string $period): string
+    {
+        if ($period === null || trim($period) === '') {
+            return '-';
+        }
+
+        return Carbon::parse($period)->locale('id')->translatedFormat('F Y');
+    }
+
+    private function loanCutoffDate(string $activePeriod, ?string $requestedPeriod): string
+    {
+        $monthEnd = Carbon::parse($activePeriod)->endOfMonth()->toDateString();
+        $trimmed = trim((string) $requestedPeriod);
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/D', $trimmed) === 1 && substr($trimmed, 0, 7) === substr($activePeriod, 0, 7)) {
+            return min($trimmed, $monthEnd);
+        }
+
+        return $monthEnd;
     }
 
     private function unitReferences(array $scopes): array
@@ -141,19 +226,27 @@ final class LandingMicroKsbkService
         return $units;
     }
 
-    private function loanSource(): array
+    private function loanSource(?string $cutoffDate = null): array
     {
         $daily = null;
         if (Schema::hasTable('daily_loan_dinamis')) {
             // LW321PN mirrors are not evidence of a native Daily Loan report.
-            foreach (DB::table('daily_loan_dinamis')->select('periode')->distinct()->orderByDesc('periode')->pluck('periode') as $period) {
+            $periodQuery = DB::table('daily_loan_dinamis')->select('periode')->distinct()->orderByDesc('periode');
+            if ($cutoffDate !== null) {
+                $periodQuery->where('periode', '<=', $cutoffDate);
+            }
+            foreach ($periodQuery->pluck('periode') as $period) {
                 if ($this->nativeDaily(DB::table('daily_loan_dinamis')->where('periode', $period))->exists()) {
                     $daily = (string) $period;
                     break;
                 }
             }
         }
-        $lw = Schema::hasTable('lw321pn') ? DB::table('lw321pn')->max('periode') : null;
+        $lwQuery = Schema::hasTable('lw321pn') ? DB::table('lw321pn') : null;
+        if ($lwQuery !== null && $cutoffDate !== null) {
+            $lwQuery->where('periode', '<=', $cutoffDate);
+        }
+        $lw = $lwQuery?->max('periode');
 
         return $daily && (! $lw || $daily >= $lw) ? ['daily_loan_dinamis', $daily] : ($lw ? ['lw321pn', (string) $lw] : [null, null]);
     }

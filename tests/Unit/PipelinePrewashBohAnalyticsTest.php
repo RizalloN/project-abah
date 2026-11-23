@@ -258,9 +258,42 @@ class PipelinePrewashBohAnalyticsTest extends TestCase
         $this->assertNotEmpty($payload['message']);
     }
 
-    private function payload(?array $scope = null): array
+    public function test_year_period_isolates_2026_from_2027_and_reports_unimported_target_year(): void
     {
-        return app(LandingMicroPrewashBohService::class)->payload($scope);
+        $this->pipeline('CIF26', ['tahun' => 2026, 'uniqueid_namareport' => 'boh_2026_CIF26']);
+        $this->visit('CIF26', '2026-11-10', 'DONE', ['periode' => '2026-11-12']);
+        $this->loan('daily_loan_dinamis', 'CIF26', 'ACC26', '120.00', ['periode' => '2026-11-12']);
+
+        $unimported2027 = $this->payload(null, '2027-01-15');
+        $this->assertFalse($unimported2027['available']);
+        $this->assertSame('not_imported', $unimported2027['empty_reason']);
+        $this->assertSame(2027, $unimported2027['year']);
+        $this->assertStringContainsString('2027', $unimported2027['message']);
+
+        $this->pipeline('CIF27', ['tahun' => 2027, 'uniqueid_namareport' => 'boh_2027_CIF27']);
+        $this->visit('CIF27', '2027-01-20', 'DONE', ['periode' => '2027-01-31']);
+        $this->loan('daily_loan_dinamis', 'CIF27', 'ACC27', '300.00', ['periode' => '2027-01-31', 'tgl_realisasi' => '2027-01-25']);
+
+        $payload2026 = $this->payload(null, '2026-12-31');
+        $this->assertTrue($payload2026['available']);
+        $this->assertSame(2026, $payload2026['year']);
+        $this->assertSame('2026-11-12', $payload2026['visit_period']);
+        $this->assertSame('2026-11-12', $payload2026['loan_period']);
+        $this->assertSame(1, $payload2026['summary']['total_count']);
+        $this->assertSame('120.00', $payload2026['summary']['realized_amount']);
+
+        $payload2027 = $this->payload(null, '2027-01-31');
+        $this->assertTrue($payload2027['available']);
+        $this->assertSame(2027, $payload2027['year']);
+        $this->assertSame('2027-01-31', $payload2027['visit_period']);
+        $this->assertSame('2027-01-31', $payload2027['loan_period']);
+        $this->assertSame(1, $payload2027['summary']['total_count']);
+        $this->assertSame('300.00', $payload2027['summary']['realized_amount']);
+    }
+
+    private function payload(?array $scope = null, ?string $period = null): array
+    {
+        return app(LandingMicroPrewashBohService::class)->payload($scope, $period);
     }
 
     private function record(array $payload, string $cif): array

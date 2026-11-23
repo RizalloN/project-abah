@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Input;
 
 use App\Http\Controllers\Controller;
 use App\Models\BodBoc;
+use App\Services\Import\SchemaDrift\ReportTemplateSource;
+use App\Services\Import\SchemaDrift\SchemaDriftImportGuard;
 use App\Support\SargableDateFilter;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -48,35 +50,16 @@ class BodBocController extends Controller
             ->values()
             ->all();
 
-        $expectedHeaders = [
-            'instansi',
-            'bod/boc',
-            'nama_nasabah',
-            'ket_nasabah',
-            'cif',
-            'fasilitas_1',
-            'fasilitas_2',
-            'fasilitas_3',
-        ];
-
-        if ($headers !== $expectedHeaders) {
-            return redirect()
-                ->route('import.index')
-                ->with('error', 'Format kolom Nasabah Prioritas BOD BOC tidak sesuai template.');
-        }
+        $sourceIndexes = array_flip(ReportTemplateSource::sourceTargets('bod_boc', $headers));
 
         $previewRows = collect($rows)
-            ->map(function ($row) {
-                return [
-                    'instansi' => trim((string) ($row[0] ?? '')),
-                    'bod_boc' => trim((string) ($row[1] ?? '')),
-                    'nama_nasabah' => trim((string) ($row[2] ?? '')),
-                    'ket_nasabah' => trim((string) ($row[3] ?? '')),
-                    'cif' => trim((string) ($row[4] ?? '')),
-                    'fasilitas_1' => trim((string) ($row[5] ?? '')),
-                    'fasilitas_2' => trim((string) ($row[6] ?? '')),
-                    'fasilitas_3' => trim((string) ($row[7] ?? '')),
-                ];
+            ->map(function ($row) use ($sourceIndexes) {
+                $mapped = [];
+                foreach (ReportTemplateSource::columns('bod_boc') as $header) {
+                    $mapped[$header] = isset($sourceIndexes[$header]) ? trim((string) ($row[$sourceIndexes[$header]] ?? '')) : '';
+                }
+
+                return $mapped;
             })
             ->filter(function ($row) {
                 return collect($row)->contains(fn ($value) => $value !== '');
@@ -90,6 +73,7 @@ class BodBocController extends Controller
                 ->with('error', 'Tidak ada data yang bisa dipreview dari file Nasabah Prioritas BOD BOC.');
         }
 
+        app(ReportTemplateSource::class)->store('bod_boc', $file);
         session([
             'bod_boc_preview_rows' => $previewRows,
             'bod_boc_preview_source_name' => $file->getClientOriginalName(),
@@ -131,6 +115,12 @@ class BodBocController extends Controller
 
         $rows = json_decode($validated['rows_payload'], true);
         $periode = $validated['periode'];
+        $source = app(ReportTemplateSource::class);
+        try {
+            app(SchemaDriftImportGuard::class)->assertReady('bod_boc', $source->authorizedPath('bod_boc'), ['header_index' => 0]);
+        } catch (\RuntimeException $exception) {
+            return back()->with('error', $exception->getMessage());
+        }
 
         if (!is_array($rows) || empty($rows)) {
             return back()
@@ -237,6 +227,7 @@ class BodBocController extends Controller
             ]);
         }, $payload));
 
+        $source->release('bod_boc');
         session()->forget(['bod_boc_preview_rows', 'bod_boc_preview_source_name', 'bod_boc_preview_periode']);
 
         return redirect()

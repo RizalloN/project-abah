@@ -9,6 +9,7 @@
     ];
     $performanceMeta = $performanceMeta ?? [];
     $isSmallPerformance = strtoupper((string) ($selectedSegmen ?? '')) === 'SMALL';
+    $isConsumerPerformance = strtoupper((string) ($selectedSegmen ?? '')) === 'CONSUMER';
     $formatPlainAmount = $formatPlainAmount ?? fn ($value) => is_null($value) ? '-' : (string) (int) round((float) $value / 1000000);
     $formatPlainCount = $formatPlainCount ?? fn ($value) => is_null($value) ? '-' : (string) (int) round((float) $value);
     $formatPlainPercent = fn ($value) => is_null($value) ? '-' : number_format((float) $value, 2, ',', '.') . '%';
@@ -19,7 +20,8 @@
     };
     $quadrantLabel = $quadrantLabel ?? fn ($quadrant) => in_array((int) $quadrant, [1, 2, 3, 4], true) ? 'Kuadran ' . (int) $quadrant : '-';
     $quadrantClass = $quadrantClass ?? fn ($quadrant) => in_array((int) $quadrant, [1, 2, 3, 4], true) ? 'q' . (int) $quadrant : '';
-    $tableMinWidth = ($isSmallPerformance ? 660 : 960) + ($performanceMonths->count() * ($isSmallPerformance ? 112 : 104));
+    $monthColMinWidth = $isSmallPerformance ? 112 : ($isConsumerPerformance ? 136 : 104);
+    $tableMinWidth = ($isSmallPerformance ? 660 : 960) + ($performanceMonths->count() * $monthColMinWidth);
     $emptyColspan = $isSmallPerformance
         ? 3 + $performanceMonths->count() + 2 + 1
         : 3 + 2 + $performanceMonths->count() + 4 + 2 + 1;
@@ -34,10 +36,23 @@
                 {{ $isSmallPerformance ? 'Realisasi & LAR per RM' : 'Realisasi per RM' }}
             </h2>
         </div>
+        @if($isConsumerPerformance)
+            <div class="perf-legend" aria-label="Keterangan breakdown realisasi bulanan">
+                <span class="perf-legend__item">
+                    <span class="perf-split-tag perf-split-tag--baru">Baru</span> Deb / Rp Jt
+                </span>
+                <span class="perf-legend__item">
+                    <span class="perf-split-tag perf-split-tag--suplesi">Sup</span> Deb / Rp Jt
+                </span>
+                <span class="perf-legend__hint">
+                    <i class="fas fa-mouse-pointer" aria-hidden="true"></i> Klik 2x nama RM untuk rincian bulanan
+                </span>
+            </div>
+        @endif
     </div>
 
     <div class="kinerja-table-container kinerja-performance-table-container shadow-sm">
-        <table class="kinerja-rm-performance-table" style="min-width: {{ $tableMinWidth }}px">
+        <table class="kinerja-rm-performance-table {{ $isConsumerPerformance ? 'is-consumer-performance' : '' }}" style="min-width: {{ $tableMinWidth }}px">
             <thead>
                 <tr>
                     <th rowspan="2" class="performance-sticky performance-sticky-no">No</th>
@@ -64,9 +79,12 @@
                         <th class="performance-month-head {{ $loop->last ? 'is-current' : '' }} {{ $isSmallPerformance && !($month['is_closed'] ?? false) && !empty($month['period']) ? 'is-open' : '' }}" title="Data posisi {{ $month['period_label'] }}">
                             {{ $month['short_label'] }}
                             <small>
-                                {{ $isSmallPerformance ? 'Rp / % LAR' : 'Deb / Rp / Q' }}
-                                @if($isSmallPerformance && !($month['is_closed'] ?? false) && !empty($month['period']))
-                                    - berjalan
+                                @if($isSmallPerformance)
+                                    Rp / % LAR{{ !($month['is_closed'] ?? false) && !empty($month['period']) ? ' - berjalan' : '' }}
+                                @elseif($isConsumerPerformance)
+                                    Deb · Rp · Baru · Sup
+                                @else
+                                    Deb / Rp / Q
                                 @endif
                             </small>
                         </th>
@@ -107,18 +125,56 @@
                             <td>{{ $formatPlainAmount($row['target']['rp']) }}</td>
                         @endif
                         @foreach($performanceMonths as $month)
-                            @php $metric = $row['months'][$month['key']] ?? ['deb' => 0, 'rp' => 0, 'lar_pct' => null, 'has_data' => false]; @endphp
+                            @php
+                                $metric = $row['months'][$month['key']] ?? [
+                                    'deb' => 0,
+                                    'rp' => 0,
+                                    'baru_deb' => 0,
+                                    'baru_rp' => 0,
+                                    'suplesi_deb' => 0,
+                                    'suplesi_rp' => 0,
+                                    'lar_pct' => null,
+                                    'has_data' => false,
+                                ];
+                                $baruDeb = (int) ($metric['baru_deb'] ?? 0);
+                                $baruRp = (float) ($metric['baru_rp'] ?? 0);
+                                $suplesiDeb = (int) ($metric['suplesi_deb'] ?? 0);
+                                $suplesiRp = (float) ($metric['suplesi_rp'] ?? 0);
+                            @endphp
                             <td class="performance-month-cell {{ $loop->last ? 'is-current' : '' }}">
                                 @if($metric['has_data'])
-                                    @if(!$isSmallPerformance)
-                                        <span><b>D</b> {{ $formatPlainCount($metric['deb']) }}</span>
-                                    @endif
-                                    <span><b>Rp</b> {{ $formatPlainAmount($metric['rp']) }}</span>
-                                    @if(!$isSmallPerformance && !empty($metric['quadrant']))
-                                        <span class="performance-month-quadrant q{{ $metric['quadrant'] }}" title="Kuadran {{ $metric['quadrant'] }}">Q{{ $metric['quadrant'] }}</span>
-                                    @endif
-                                    @if($isSmallPerformance)
-                                        <span><b>LAR</b> {{ $formatPlainPercent($metric['lar_pct'] ?? null) }}</span>
+                                    @if($isConsumerPerformance)
+                                        <div class="perf-cell-head">
+                                            <span><b>D</b> {{ $formatPlainCount($metric['deb']) }}</span>
+                                            @if(!empty($metric['quadrant']))
+                                                <span class="performance-month-quadrant q{{ $metric['quadrant'] }}" title="Kuadran {{ $metric['quadrant'] }}">Q{{ $metric['quadrant'] }}</span>
+                                            @endif
+                                        </div>
+                                        <div class="perf-cell-rp">
+                                            <b>Rp</b>
+                                            <strong>{{ $formatPlainAmount($metric['rp']) }}</strong>
+                                        </div>
+                                        <div class="perf-cell-split">
+                                            <div class="perf-split-row is-baru" title="Realisasi Baru: {{ $formatPlainCount($baruDeb) }} deb / Rp {{ $formatPlainAmount($baruRp) }} jt">
+                                                <span class="perf-split-tag">Baru</span>
+                                                <span class="perf-split-val">{{ $formatPlainCount($baruDeb) }} / {{ $formatPlainAmount($baruRp) }}</span>
+                                            </div>
+                                            <div class="perf-split-row is-suplesi" title="Suplesi: {{ $formatPlainCount($suplesiDeb) }} deb / Rp {{ $formatPlainAmount($suplesiRp) }} jt">
+                                                <span class="perf-split-tag">Sup</span>
+                                                <span class="perf-split-val">{{ $formatPlainCount($suplesiDeb) }} / {{ $formatPlainAmount($suplesiRp) }}</span>
+                                            </div>
+                                        </div>
+                                    @else
+                                        @if(!$isSmallPerformance)
+                                            <span><b>D</b> {{ $formatPlainCount($metric['deb']) }}</span>
+                                        @endif
+                                        <span><b>Rp</b> {{ $formatPlainAmount($metric['rp']) }}</span>
+                                        @if(!$isSmallPerformance && !empty($metric['quadrant']))
+                                            <span class="performance-month-quadrant q{{ $metric['quadrant'] }}" title="Kuadran {{ $metric['quadrant'] }}">Q{{ $metric['quadrant'] }}</span>
+                                        @endif
+                                        @if($isSmallPerformance)
+                                            <span><b>LAR</b> {{ $formatPlainPercent($metric['lar_pct'] ?? null) }}</span>
+                                        @endif
                                     @endif
                                 @else
                                     <span class="performance-empty-value">-</span>
@@ -133,8 +189,8 @@
                                 @php $deltaValue = $row['delta'][$deltaKey] ?? null; @endphp
                                 <td class="performance-delta-cell {{ $deltaClass($deltaValue) }}">{{ $formatPlainDelta($deltaValue) }}</td>
                             @endforeach
-                            <td class="performance-cell-center">{{ $formatPlainCount($row['accumulated']['deb']) }}</td>
-                            <td>{{ $formatPlainAmount($row['accumulated']['rp']) }}</td>
+                            <td class="performance-cell-center" @if($isConsumerPerformance) title="Baru: {{ $formatPlainCount($row['accumulated']['baru_deb'] ?? 0) }} deb · Suplesi: {{ $formatPlainCount($row['accumulated']['suplesi_deb'] ?? 0) }} deb" @endif>{{ $formatPlainCount($row['accumulated']['deb']) }}</td>
+                            <td @if($isConsumerPerformance) title="Baru: Rp {{ $formatPlainAmount($row['accumulated']['baru_rp'] ?? 0) }} jt · Suplesi: Rp {{ $formatPlainAmount($row['accumulated']['suplesi_rp'] ?? 0) }} jt" @endif>{{ $formatPlainAmount($row['accumulated']['rp']) }}</td>
                         @endif
                         <td class="performance-cell-center cell-quadrant {{ $quadrantClass($row['quadrant']) }}">
                             {{ $quadrantLabel($row['quadrant']) }}
@@ -158,15 +214,50 @@
                             <td>{{ $formatPlainAmount($performanceTotal['target']['rp']) }}</td>
                         @endif
                         @foreach($performanceMonths as $month)
-                            @php $metric = $performanceTotal['months'][$month['key']] ?? ['deb' => 0, 'rp' => 0, 'lar_pct' => null, 'has_data' => false]; @endphp
+                            @php
+                                $metric = $performanceTotal['months'][$month['key']] ?? [
+                                    'deb' => 0,
+                                    'rp' => 0,
+                                    'baru_deb' => 0,
+                                    'baru_rp' => 0,
+                                    'suplesi_deb' => 0,
+                                    'suplesi_rp' => 0,
+                                    'lar_pct' => null,
+                                    'has_data' => false,
+                                ];
+                                $baruDeb = (int) ($metric['baru_deb'] ?? 0);
+                                $baruRp = (float) ($metric['baru_rp'] ?? 0);
+                                $suplesiDeb = (int) ($metric['suplesi_deb'] ?? 0);
+                                $suplesiRp = (float) ($metric['suplesi_rp'] ?? 0);
+                            @endphp
                             <td class="performance-month-cell {{ $loop->last ? 'is-current' : '' }}">
                                 @if($metric['has_data'])
-                                    @if(!$isSmallPerformance)
-                                        <span><b>D</b> {{ $formatPlainCount($metric['deb']) }}</span>
-                                    @endif
-                                    <span><b>Rp</b> {{ $formatPlainAmount($metric['rp']) }}</span>
-                                    @if($isSmallPerformance)
-                                        <span><b>LAR</b> {{ $formatPlainPercent($metric['lar_pct'] ?? null) }}</span>
+                                    @if($isConsumerPerformance)
+                                        <div class="perf-cell-head">
+                                            <span><b>D</b> {{ $formatPlainCount($metric['deb']) }}</span>
+                                        </div>
+                                        <div class="perf-cell-rp">
+                                            <b>Rp</b>
+                                            <strong>{{ $formatPlainAmount($metric['rp']) }}</strong>
+                                        </div>
+                                        <div class="perf-cell-split">
+                                            <div class="perf-split-row is-baru" title="Total Realisasi Baru: {{ $formatPlainCount($baruDeb) }} deb / Rp {{ $formatPlainAmount($baruRp) }} jt">
+                                                <span class="perf-split-tag">Baru</span>
+                                                <span class="perf-split-val">{{ $formatPlainCount($baruDeb) }} / {{ $formatPlainAmount($baruRp) }}</span>
+                                            </div>
+                                            <div class="perf-split-row is-suplesi" title="Total Suplesi: {{ $formatPlainCount($suplesiDeb) }} deb / Rp {{ $formatPlainAmount($suplesiRp) }} jt">
+                                                <span class="perf-split-tag">Sup</span>
+                                                <span class="perf-split-val">{{ $formatPlainCount($suplesiDeb) }} / {{ $formatPlainAmount($suplesiRp) }}</span>
+                                            </div>
+                                        </div>
+                                    @else
+                                        @if(!$isSmallPerformance)
+                                            <span><b>D</b> {{ $formatPlainCount($metric['deb']) }}</span>
+                                        @endif
+                                        <span><b>Rp</b> {{ $formatPlainAmount($metric['rp']) }}</span>
+                                        @if($isSmallPerformance)
+                                            <span><b>LAR</b> {{ $formatPlainPercent($metric['lar_pct'] ?? null) }}</span>
+                                        @endif
                                     @endif
                                 @else
                                     <span class="performance-empty-value">-</span>
@@ -181,8 +272,8 @@
                                 @php $deltaValue = $performanceTotal['delta'][$deltaKey] ?? null; @endphp
                                 <td class="performance-delta-cell {{ $deltaClass($deltaValue) }}">{{ $formatPlainDelta($deltaValue) }}</td>
                             @endforeach
-                            <td class="performance-cell-center">{{ $formatPlainCount($performanceTotal['accumulated']['deb']) }}</td>
-                            <td>{{ $formatPlainAmount($performanceTotal['accumulated']['rp']) }}</td>
+                            <td class="performance-cell-center" @if($isConsumerPerformance) title="Baru: {{ $formatPlainCount($performanceTotal['accumulated']['baru_deb'] ?? 0) }} deb · Suplesi: {{ $formatPlainCount($performanceTotal['accumulated']['suplesi_deb'] ?? 0) }} deb" @endif>{{ $formatPlainCount($performanceTotal['accumulated']['deb']) }}</td>
+                            <td @if($isConsumerPerformance) title="Baru: Rp {{ $formatPlainAmount($performanceTotal['accumulated']['baru_rp'] ?? 0) }} jt · Suplesi: Rp {{ $formatPlainAmount($performanceTotal['accumulated']['suplesi_rp'] ?? 0) }} jt" @endif>{{ $formatPlainAmount($performanceTotal['accumulated']['rp']) }}</td>
                         @endif
                         <td class="performance-cell-center">-</td>
                     </tr>

@@ -6,6 +6,7 @@ use App\Console\Commands\BackfillShadowColumnsCommand;
 use App\Jobs\ProcessShadowBackfillJob;
 use App\Support\DailyLoanManualSegmentRule;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
@@ -86,6 +87,29 @@ class BackfillShadowColumnsCommandTest extends TestCase
         $this->assertFalse(collect($queries)->contains(
             fn (string $sql): bool => str_contains($sql, 'daily_loan_dinamis') && str_contains($sql, 'count(')
         ));
+        $this->assertCount(1, array_filter($queries,
+            fn (string $sql): bool => str_contains($sql, 'daily_loan_dinamis') && str_contains($sql, 'pragma_table_xinfo')
+        ));
+    }
+
+    public function test_artisan_backfill_keeps_each_job_completion_independent(): void
+    {
+        DB::table('daily_loan_dinamis')->insert([
+            'uniqueid_namareport' => 'unprocessed',
+            'periode' => '2026-07-21',
+            'updated_at' => '2026-07-21 10:00:00',
+        ]);
+
+        $this->assertSame(1, Artisan::call('shadow:backfill', [
+            '--periods' => '2026-07-21',
+            '--retry-count' => 0,
+            '--skip-snapshot' => true,
+        ]));
+        $this->assertSame(0, Artisan::call('shadow:backfill', [
+            '--periods' => '2026-07-22',
+            '--skip-snapshot' => true,
+        ]));
+        $this->assertStringNotContainsString('2026-07-21', Artisan::output());
     }
 
     public function test_backfill_reclassifies_completed_shadow_rows_when_description_rule_changes(): void

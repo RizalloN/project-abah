@@ -7,6 +7,7 @@ use App\Http\Controllers\Import\Concerns\AllocatesGapIds;
 use App\Http\Controllers\Import\Concerns\AuthorizesSessionImportStorageFiles;
 use App\Services\Import\ExcelStagingService;
 use App\Services\Import\MySqlBulkLoadService;
+use App\Services\Import\Strategies\PerformancePisImportStrategy;
 use App\Support\ReportDataSyncService;
 use App\Support\SargableDateFilter;
 use App\Support\StrictDateParser;
@@ -14,6 +15,7 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -30,6 +32,9 @@ class ImportPerformancePisPerProdukController extends Controller
     private const STREAM_PROGRESS_EVERY = 500;
     private const INSERT_BATCH_SIZE = 1000;
     private const BULK_LOAD_TEMP_DIR = 'app/import_bulk';
+    private const CHUNK_SIZE_BYTES = 8 * 1024 * 1024;
+    private const UPLOAD_DIRECTORY = 'performance_pis_imports';
+    private const CHUNK_DIRECTORY = 'app/chunk_uploads_performance_pis';
     private const SAMPLE_SCAN_ROWS = 20;
     private const PREVIEW_ROW_LIMIT = 200;
     private const PREVIEW_SCAN_LIMIT = 200;
@@ -187,29 +192,31 @@ class ImportPerformancePisPerProdukController extends Controller
         return $normalized;
     }
 
-    private function previewFilterOptionsCacheKey(string $workingPath, int $columnIndex, array $activeFilters): string
+    private function previewFilterOptionsCacheKey(string $workingPath, int $columnIndex, array $activeFilters, array $headers): string
     {
         return 'performance_pis_preview_filter_options:v1:' . md5(implode('|', [
             (string) realpath($workingPath),
             (string) @filesize($workingPath),
             (string) @filemtime($workingPath),
             (string) $columnIndex,
+            $this->previewColumnSignature($headers),
             md5((string) json_encode($activeFilters)),
         ]));
     }
 
-    private function previewUniqueValuesCacheKey(string $workingPath): string
+    private function previewUniqueValuesCacheKey(string $workingPath, array $headers): string
     {
         return 'performance_pis_preview_unique_values:v1:' . md5(implode('|', [
             (string) realpath($workingPath),
             (string) @filesize($workingPath),
             (string) @filemtime($workingPath),
+            $this->previewColumnSignature($headers),
         ]));
     }
 
     private function collectCachedPreviewUniqueValues(string $workingPath, array $context): array
     {
-        $cacheKey = $this->previewUniqueValuesCacheKey($workingPath);
+        $cacheKey = $this->previewUniqueValuesCacheKey($workingPath, $context['headers']);
         $cached = Cache::get($cacheKey);
         if (is_array($cached)) {
             return $cached;
@@ -231,30 +238,7 @@ class ImportPerformancePisPerProdukController extends Controller
         return in_array(strtolower(pathinfo($path, PATHINFO_EXTENSION)), ['csv', 'txt'], true);
     }
 
-    private const TARGET_COLUMNS = [
-        'posisi',
-        'kode_kanwil',
-        'kanwil',
-        'kode_kanca',
-        'kanca',
-        'kode_uker',
-        'uker',
-        'corporate_code',
-        'nama_perusahaan',
-        'jenis_mitra',
-        'jenis_perusahaan',
-        'tipe_produk',
-        'nomor_rekening',
-        'nama_rekening',
-        'saldo_britama_kerjasama',
-        'tanggal_pembuatan_rekening',
-        'pn_rm_dana_brinets',
-        'pn_rm_dana_pis2',
-        'nomor_hp',
-        'email',
-        'flag_briguna',
-        'flag_cc',
-    ];
+    private const TARGET_COLUMNS = PerformancePisImportStrategy::TARGET_COLUMNS;
 
     public function upload(Request $request)
     {
@@ -297,6 +281,247 @@ class ImportPerformancePisPerProdukController extends Controller
 
             return redirect()->route('import.index')->with('error', 'Upload Performance PIS gagal: ' . $e->getMessage());
         }
+    }
+
+    public function initChunkUpload(Request $request)
+    {
+        $request->validate([
+            'id_report' => 'required',
+            'periode' => 'required|date_format:Y-m-d',
+            'original_name' => 'required|string|max:255',
+            'total_size' => 'required|integer|min:1|max:' . $this->chunkUploadMaxBytes(),
+            'total_chunks' => 'required|integer|min:1|max:' . $this->chunkUploadMaxChunks(),
+        ]);
+
+        $originalName = (string) $request->input('original_name');
+        $extension = strtolower((string) pathinfo($originalName, PATHINFO_EXTENSION));
+        if (!in_array($extension, ['xlsx', 'csv', 'txt'], true)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Format file Performance PIS harus .xlsx, .csv, atau .txt.',
+            ], 422);
+        }
+
+        $totalSize = (int) $request->input('total_size');
+        $totalChunks = (int) $request->input('total_chunks');
+        $expectedChunks = max(1, (int) ceil($totalSize / self::CHUNK_SIZE_BYTES));
+        if ($totalChunks !== $expectedChunks) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Jumlah potongan upload tidak sesuai.',
+            ], 422);
+        }
+
+        $uploadId = 'pis_' . Str::uuid();
+        $directory = $this->chunkDirectory($uploadId);
+        File::ensureDirectoryExists($directory, 0750, true);
+
+        $written = File::put($directory . DIRECTORY_SEPARATOR . 'meta.json', json_encode([
+            'original_name' => $originalName,
+            'total_size' => $totalSize,
+            'total_chunks' => $totalChunks,
+            'user_id' => auth()->id(),
+            'report_id' => (string) $request->input('id_report'),
+            'periode' => (string) $request->input('periode'),
+            'created_at' => now()->toIso8601String(),
+        ], JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT));
+
+        if ($written === false) {
+            File::deleteDirectory($directory);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Metadata upload Performance PIS gagal dibuat.',
+            ], 500);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'upload_id' => $uploadId,
+        ]);
+    }
+
+    public function uploadChunk(Request $request)
+    {
+        $request->validate([
+            'upload_id' => ['required', 'string', 'regex:/^pis_[0-9a-f-]{36}$/'],
+            'chunk_index' => 'required|integer|min:0',
+            'total_chunks' => 'required|integer|min:1|max:' . $this->chunkUploadMaxChunks(),
+            'file' => 'required|file|max:' . (int) (self::CHUNK_SIZE_BYTES / 1024),
+        ]);
+
+        $uploadId = (string) $request->input('upload_id');
+        $directory = $this->chunkDirectory($uploadId);
+        $meta = $this->readChunkMeta($directory);
+        if (!$meta || !$this->ownsChunkUpload($meta)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Sesi upload Performance PIS tidak valid.',
+            ], 404);
+        }
+
+        $chunkIndex = (int) $request->input('chunk_index');
+        $totalChunks = (int) $request->input('total_chunks');
+        if ($totalChunks !== (int) ($meta['total_chunks'] ?? 0) || $chunkIndex >= $totalChunks) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Urutan potongan file Performance PIS tidak valid.',
+            ], 422);
+        }
+
+        $chunk = $request->file('file');
+        if (
+            !$chunk
+            || !$chunk->isValid()
+            || (int) $chunk->getSize() < 1
+            || (int) $chunk->getSize() > self::CHUNK_SIZE_BYTES
+        ) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Potongan file Performance PIS tidak valid.',
+            ], 422);
+        }
+
+        $name = sprintf('part_%06d.bin', $chunkIndex);
+        $target = $directory . DIRECTORY_SEPARATOR . $name;
+        if (is_file($target)) {
+            File::delete($target);
+        }
+        $chunk->move($directory, $name);
+
+        return response()->json([
+            'status' => 'success',
+            'chunk_index' => $chunkIndex,
+        ]);
+    }
+
+    public function finalizeChunkUpload(Request $request)
+    {
+        set_time_limit(0);
+
+        $request->validate([
+            'upload_id' => ['required', 'string', 'regex:/^pis_[0-9a-f-]{36}$/'],
+            'total_chunks' => 'required|integer|min:1|max:' . $this->chunkUploadMaxChunks(),
+            'original_name' => 'required|string|max:255',
+            'id_report' => 'required',
+            'periode' => 'required|date_format:Y-m-d',
+        ]);
+
+        $uploadId = (string) $request->input('upload_id');
+        $directory = $this->chunkDirectory($uploadId);
+        $meta = $this->readChunkMeta($directory);
+        if (!$meta || !$this->ownsChunkUpload($meta)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Sesi upload Performance PIS tidak valid.',
+            ], 404);
+        }
+
+        $totalChunks = (int) $request->input('total_chunks');
+        $originalName = (string) ($meta['original_name'] ?? '');
+        if (
+            $totalChunks !== (int) ($meta['total_chunks'] ?? 0)
+            || $originalName !== (string) $request->input('original_name')
+        ) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Metadata upload Performance PIS tidak sesuai.',
+            ], 422);
+        }
+
+        $extension = strtolower((string) pathinfo($originalName, PATHINFO_EXTENSION));
+        Storage::makeDirectory(self::UPLOAD_DIRECTORY);
+        $relativePath = self::UPLOAD_DIRECTORY . '/' . date('Ymd_His') . '_' . Str::random(16) . '.' . $extension;
+        $absolutePath = Storage::path($relativePath);
+        File::ensureDirectoryExists(dirname($absolutePath), 0750, true);
+
+        $output = fopen($absolutePath, 'wb');
+        if ($output === false) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'File final Performance PIS tidak dapat dibuat.',
+            ], 500);
+        }
+
+        try {
+            for ($index = 0; $index < $totalChunks; $index++) {
+                $partPath = $directory . DIRECTORY_SEPARATOR . sprintf('part_%06d.bin', $index);
+                $input = is_file($partPath) ? fopen($partPath, 'rb') : false;
+                if ($input === false) {
+                    throw new \RuntimeException('Potongan file ke-' . ($index + 1) . ' belum lengkap.');
+                }
+                stream_copy_to_stream($input, $output);
+                fclose($input);
+            }
+        } catch (\Throwable $exception) {
+            fclose($output);
+            File::delete($absolutePath);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => $exception->getMessage(),
+            ], 422);
+        }
+        fclose($output);
+
+        if ((int) @filesize($absolutePath) !== (int) ($meta['total_size'] ?? 0)) {
+            File::delete($absolutePath);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Ukuran file hasil gabungan tidak sesuai dengan file sumber.',
+            ], 422);
+        }
+
+        File::deleteDirectory($directory);
+
+        session([
+            'active_id_report' => $request->input('id_report', $meta['report_id'] ?? null),
+            'import_type' => 'performance_pis',
+            'performance_pis_file' => $relativePath,
+            'performance_pis_periode' => (string) $request->input('periode', $meta['periode'] ?? ''),
+        ]);
+
+        return response()->json([
+            'status' => 'success',
+            'redirect' => route('import.performancepis.prepare-preview'),
+        ]);
+    }
+
+    private function chunkUploadMaxBytes(): int
+    {
+        return max(1, (int) config('import.security.upload_max_bytes', 4 * 1024 * 1024 * 1024));
+    }
+
+    private function chunkUploadMaxChunks(): int
+    {
+        return max(1, (int) ceil($this->chunkUploadMaxBytes() / self::CHUNK_SIZE_BYTES));
+    }
+
+    private function chunkDirectory(string $uploadId): string
+    {
+        if (!preg_match('/^pis_[0-9a-f-]{36}$/', $uploadId)) {
+            throw new \InvalidArgumentException('ID upload Performance PIS tidak valid.');
+        }
+
+        return storage_path(self::CHUNK_DIRECTORY . DIRECTORY_SEPARATOR . $uploadId);
+    }
+
+    private function readChunkMeta(string $directory): ?array
+    {
+        $path = $directory . DIRECTORY_SEPARATOR . 'meta.json';
+        if (!is_file($path)) {
+            return null;
+        }
+
+        $decoded = json_decode((string) File::get($path), true);
+
+        return is_array($decoded) ? $decoded : null;
+    }
+
+    private function ownsChunkUpload(array $meta): bool
+    {
+        return (string) ($meta['user_id'] ?? '') === (string) auth()->id();
     }
 
     public function preparePreviewStream(Request $request)
@@ -452,6 +677,7 @@ class ImportPerformancePisPerProdukController extends Controller
 
         return view('import.preview', [
             'headers' => $context['headers'],
+            'previewStateKey' => $this->previewColumnSignature($context['headers']),
             'previewData' => $previewData,
             'filePath' => $relativePath,
             'formattedUniqueValues' => $formattedUniqueValues,
@@ -495,7 +721,7 @@ class ImportPerformancePisPerProdukController extends Controller
                 $columnIndex
             );
 
-            $cacheKey = $this->previewFilterOptionsCacheKey($workingPath, $columnIndex, $activeFilters);
+            $cacheKey = $this->previewFilterOptionsCacheKey($workingPath, $columnIndex, $activeFilters, $context['headers']);
             $cached = Cache::get($cacheKey);
             if (is_array($cached)) {
                 return response()->json([
@@ -629,6 +855,7 @@ class ImportPerformancePisPerProdukController extends Controller
             $workingPath = $this->resolveWorkingImportPath($relativePath);
             $stageState = $this->getStagedExcelState($relativePath);
             $context = $this->buildImportContext($workingPath, $request->input('periode'), $stageState);
+            $this->assertPreviewColumnsCurrent($context['headers'], (string) $request->input('preview_state_key', ''));
         } catch (\Throwable $e) {
             return response()->json([
                 'status' => 'error',
@@ -759,6 +986,7 @@ class ImportPerformancePisPerProdukController extends Controller
             $workingPath = $this->resolveWorkingImportPath($relativePath);
             $stageState = $this->getStagedExcelState($relativePath);
             $context = $this->buildImportContext($workingPath, $request->input('periode'), $stageState);
+            $this->assertPreviewColumnsCurrent($context['headers'], (string) $request->input('preview_state_key', ''));
             $totalRows = $this->estimateImportRowCount($context);
         } catch (\Throwable $e) {
             return response()->json([
@@ -818,6 +1046,7 @@ class ImportPerformancePisPerProdukController extends Controller
             'job_id' => $jobId,
             'file_path' => $relativePath,
             'selected_columns' => $selectedColumns,
+            'preview_state_key' => (string) $request->input('preview_state_key', ''),
             'active_filters' => $activeFilters,
             'periode' => $request->input('periode'),
             'total_rows' => $totalRows,
@@ -924,6 +1153,7 @@ class ImportPerformancePisPerProdukController extends Controller
 
                 $workingPath = $this->resolveWorkingImportPath($relativePath);
                 $context = $this->buildImportContext($workingPath, $periode, $stageState);
+                $this->assertPreviewColumnsCurrent($context['headers'], (string) ($params['preview_state_key'] ?? ''));
                 if ($totalRows <= 0) {
                     $totalRows = $this->estimateImportRowCount($context);
                 }
@@ -956,6 +1186,7 @@ class ImportPerformancePisPerProdukController extends Controller
 
                     $workingPath = $stageResult['staged_csv_path'];
                     $context = $this->buildCsvContext($workingPath, $periode, (int) ($stageResult['total_rows'] ?? 0));
+                    $this->assertPreviewColumnsCurrent($context['headers'], (string) ($params['preview_state_key'] ?? ''));
                     $totalRows = (int) ($stageResult['total_rows'] ?? $totalRows);
                 }
 
@@ -1111,12 +1342,9 @@ class ImportPerformancePisPerProdukController extends Controller
 
         $posisiRaw = $structure['posisi_raw'] ?? $this->findPosisiValue($sampleRows, $structure['header_row']['row_number']);
 
-        return [
+        return $this->buildColumnContext($structure['header_row']['cells']) + [
             'delimiter' => self::COLUMN_DELIMITER,
             'header_line' => $structure['header_row']['row_number'],
-            'source_headers' => $structure['header_row']['cells'],
-            'source_indexes' => $this->buildSourceIndexes($structure['header_row']['cells']),
-            'headers' => self::TARGET_COLUMNS,
             'posisi' => $this->normalizeDateValue($posisiRaw) ?? $this->normalizeDateValue($manualPosisi),
             'worksheet_name' => $worksheetMeta['worksheet_name'],
             'worksheet_entry' => $worksheetMeta['worksheet_entry'],
@@ -1195,17 +1423,14 @@ class ImportPerformancePisPerProdukController extends Controller
             fclose($handle);
         }
 
-        $sourceHeaders = array_values(array_filter($sourceHeaders, fn ($value) => $value !== ''));
+        $sourceHeaders = $this->trimTrailingEmptyCells($sourceHeaders);
         if ($headerLine === null || empty($sourceHeaders)) {
             throw new \RuntimeException('Header CSV Performance PIS tidak ditemukan.');
         }
 
-        return [
+        return $this->buildColumnContext($sourceHeaders) + [
             'delimiter' => $delimiter,
             'header_line' => $headerLine,
-            'source_headers' => $sourceHeaders,
-            'source_indexes' => $this->buildSourceIndexes($sourceHeaders),
-            'headers' => self::TARGET_COLUMNS,
             'posisi' => $this->normalizeDateValue($manualPosisi),
             'source_format' => 'csv',
             'total_rows' => $dataRowsTotal > 0 ? ($dataRowsTotal + $headerLine) : 0,
@@ -1345,15 +1570,7 @@ class ImportPerformancePisPerProdukController extends Controller
             throw new \RuntimeException('File Excel tidak dapat dibuka sebagai arsip ZIP.');
         }
 
-        $worksheetEntries = [];
-        for ($index = 0; $index < $zip->numFiles; $index++) {
-            $entryName = $zip->getNameIndex($index);
-            if (preg_match('#^xl/worksheets/sheet\d+\.xml$#i', (string) $entryName) === 1) {
-                $worksheetEntries[] = (string) $entryName;
-            }
-        }
-        natcasesort($worksheetEntries);
-        $worksheetEntry = array_values($worksheetEntries)[0] ?? '';
+        $worksheetEntry = app(\App\Services\Import\SchemaDrift\XlsxStreamReader::class)->firstWorksheetEntry($zip) ?? '';
         $zip->close();
 
         if ($worksheetEntry === '') {
@@ -1408,6 +1625,11 @@ class ImportPerformancePisPerProdukController extends Controller
                     if ($rowNumber > $totalRows) {
                         $totalRows = $rowNumber;
                     }
+                    if ($rowNumber > 25) {
+                        // Hindari full-scan XML raksasa saat <dimension> tidak tersedia; total baris dihitung saat staging.
+                        $totalRows = 0;
+                        break;
+                    }
                 }
             }
         } finally {
@@ -1423,6 +1645,8 @@ class ImportPerformancePisPerProdukController extends Controller
         if (!$reader->open($this->makeZipUri($path, $worksheetEntry))) {
             throw new \RuntimeException('Worksheet XML tidak dapat dibuka untuk dibaca.');
         }
+
+        $sharedStringsCache = null;
 
         try {
             while ($reader->read()) {
@@ -1442,6 +1666,9 @@ class ImportPerformancePisPerProdukController extends Controller
                 }
 
                 $cells = [];
+                $neededStringIndexes = [];
+                $sharedStringCells = [];
+
                 foreach ($rowElement->c as $cell) {
                     $reference = (string) $cell['r'];
                     if ($reference === '') {
@@ -1449,7 +1676,28 @@ class ImportPerformancePisPerProdukController extends Controller
                     }
 
                     $columnIndex = $this->columnIndexFromReference($reference);
-                    $cells[$columnIndex] = $this->resolveCellValue($cell);
+                    $type = (string) ($cell['t'] ?? '');
+                    if ($type === 's' && isset($cell->v)) {
+                        $strIndex = (int) $cell->v;
+                        $sharedStringCells[$columnIndex] = $strIndex;
+                        if ($sharedStringsCache === null || !array_key_exists($strIndex, $sharedStringsCache)) {
+                            $neededStringIndexes[$strIndex] = true;
+                        }
+                    } else {
+                        $cells[$columnIndex] = $this->resolveCellValue($cell);
+                    }
+                }
+
+                if (!empty($neededStringIndexes)) {
+                    $sharedStringsCache ??= [];
+                    $resolved = $this->readSharedStringsForIndexes($path, array_keys($neededStringIndexes));
+                    foreach ($resolved as $idx => $val) {
+                        $sharedStringsCache[$idx] = $val;
+                    }
+                }
+
+                foreach ($sharedStringCells as $columnIndex => $strIndex) {
+                    $cells[$columnIndex] = $sharedStringsCache[$strIndex] ?? '';
                 }
 
                 if (!empty($cells)) {
@@ -1470,6 +1718,67 @@ class ImportPerformancePisPerProdukController extends Controller
         } finally {
             $reader->close();
         }
+    }
+
+    /**
+     * Baca nilai dari xl/sharedStrings.xml secara streaming hanya untuk index yang dibutuhkan.
+     *
+     * @param  array<int, int>  $targetIndexes
+     * @return array<int, string>
+     */
+    private function readSharedStringsForIndexes(string $path, array $targetIndexes): array
+    {
+        if (empty($targetIndexes)) {
+            return [];
+        }
+
+        $wanted = array_fill_keys(array_map('intval', $targetIndexes), true);
+        $maxWanted = max(array_keys($wanted));
+        $results = [];
+
+        $reader = new XMLReader();
+        if (!@$reader->open($this->makeZipUri($path, 'xl/sharedStrings.xml'), null, LIBXML_NONET | LIBXML_COMPACT)) {
+            return [];
+        }
+
+        $currentIndex = -1;
+        $inTargetSi = false;
+        $buffer = '';
+
+        try {
+            while ($reader->read()) {
+                if ($reader->nodeType === XMLReader::ELEMENT && $reader->localName === 'si') {
+                    $currentIndex++;
+                    if ($currentIndex > $maxWanted) {
+                        break;
+                    }
+                    $inTargetSi = isset($wanted[$currentIndex]);
+                    $buffer = '';
+                    continue;
+                }
+
+                if (!$inTargetSi) {
+                    continue;
+                }
+
+                if ($reader->nodeType === XMLReader::ELEMENT && $reader->localName === 't') {
+                    $buffer .= $reader->readString();
+                    continue;
+                }
+
+                if ($reader->nodeType === XMLReader::END_ELEMENT && $reader->localName === 'si') {
+                    $results[$currentIndex] = $buffer;
+                    $inTargetSi = false;
+                    if (count($results) >= count($wanted)) {
+                        break;
+                    }
+                }
+            }
+        } finally {
+            $reader->close();
+        }
+
+        return $results;
     }
 
     private function makeZipUri(string $path, string $entry): string
@@ -1682,20 +1991,46 @@ class ImportPerformancePisPerProdukController extends Controller
         return $score;
     }
 
-    private function buildSourceIndexes(array $headers): array
+    private function buildSourceIndexes(array $headers, array $writable, array $aliases): array
     {
         $indexes = [];
 
-        foreach ($headers as $index => $header) {
-            $normalized = $this->normalizeHeader($header);
-            if ($normalized === '' || $normalized === 'no' || array_key_exists($normalized, $indexes)) {
-                continue;
-            }
-
-            $indexes[$normalized] = $index;
+        foreach (PerformancePisImportStrategy::sourceTargets($headers, $writable, $aliases) as $index => $target) {
+            $indexes[$target] ??= $index;
         }
 
         return $indexes;
+    }
+
+    private function buildColumnContext(array $sourceHeaders): array
+    {
+        $registry = app(\App\Services\Import\SchemaDrift\SchemaDriftRegistry::class);
+        $aliases = $registry->columnAliases(self::TABLE_NAME);
+        $coreColumns = self::TARGET_COLUMNS;
+        $evolved = array_values(array_unique(array_merge($registry->evolvedColumns(self::TABLE_NAME), array_values($aliases))));
+        $writable = array_merge($coreColumns, $evolved);
+        $sourceIndexes = $this->buildSourceIndexes($sourceHeaders, $writable, $aliases);
+
+        return [
+            'source_headers' => $sourceHeaders,
+            'source_indexes' => $sourceIndexes,
+            'headers' => array_values(array_unique(array_merge($coreColumns, array_intersect($evolved, array_keys($sourceIndexes))))),
+        ];
+    }
+
+    private function previewColumnSignature(array $headers): string
+    {
+        return hash('sha256', implode('|', $headers));
+    }
+
+    private function assertPreviewColumnsCurrent(array $headers, string $signature): void
+    {
+        if (($signature === '' && $headers === self::TARGET_COLUMNS)
+            || hash_equals($this->previewColumnSignature($headers), $signature)) {
+            return;
+        }
+
+        throw new \RuntimeException('Daftar kolom Performance PIS berubah. Muat ulang preview untuk memeriksa kolom sebelum import.');
     }
 
     private function findPosisiValue(array $sampleRows, int $headerRowNumber): ?string
@@ -1849,20 +2184,7 @@ class ImportPerformancePisPerProdukController extends Controller
 
     private function normalizeHeader(?string $header): string
     {
-        $header = trim((string) $header);
-        $header = preg_replace('/^\xEF\xBB\xBF/', '', $header);
-        $header = strtolower($header);
-        $header = preg_replace('/[^a-z0-9]+/', '_', $header);
-        $header = trim($header, '_');
-
-        $aliases = [
-            'product_type' => 'tipe_produk',
-            'alamat_email' => 'email',
-            'relasi_briguna_yes_no' => 'flag_briguna',
-            'relasi_kartu_kredit_yes_no' => 'flag_cc',
-        ];
-
-        return $aliases[$header] ?? $header;
+        return PerformancePisImportStrategy::normalizeHeader($header);
     }
 
     private function normalizeCellValue(string $column, $value)
@@ -2121,10 +2443,12 @@ class ImportPerformancePisPerProdukController extends Controller
                 $stagedRow = [];
                 foreach ($loadColumns as $column) {
                     $value = $insertRow[$column] ?? null;
-                    $stagedRow[] = $value === null ? '\N' : (string) $value;
+                    $stagedRow[] = $value === null ? '\N' : str_replace('\\', '\\\\', (string) $value);
                 }
 
-                fputcsv($outputHandle, $stagedRow);
+                // MariaDB reads backslashes as escape characters. Keep the
+                // backslashes separate from RFC CSV quoting and the NULL token.
+                fputcsv($outputHandle, $stagedRow, self::COLUMN_DELIMITER, '"', '');
                 $rowsDone++;
 
                 return true;
@@ -2164,7 +2488,7 @@ class ImportPerformancePisPerProdukController extends Controller
         $lastError = '';
 
         try {
-            while (($data = fgetcsv($handle, 0, self::COLUMN_DELIMITER)) !== false) {
+            while (($data = fgetcsv($handle, 0, self::COLUMN_DELIMITER, '"', '')) !== false) {
                 if (empty($data)) {
                     continue;
                 }
@@ -2172,7 +2496,7 @@ class ImportPerformancePisPerProdukController extends Controller
                 $row = [];
                 foreach ($columns as $index => $column) {
                     $value = $data[$index] ?? null;
-                    $row[$column] = $value === '\N' ? null : $value;
+                    $row[$column] = $value === null || $value === '\N' ? null : str_replace('\\\\', '\\', $value);
                 }
 
                 $rows[] = $row;
@@ -2213,7 +2537,7 @@ class ImportPerformancePisPerProdukController extends Controller
         $startTime = microtime(true);
 
         try {
-            while (($data = fgetcsv($handle, 0, self::COLUMN_DELIMITER)) !== false) {
+            while (($data = fgetcsv($handle, 0, self::COLUMN_DELIMITER, '"', '')) !== false) {
                 if (empty($data)) {
                     continue;
                 }
@@ -2221,7 +2545,7 @@ class ImportPerformancePisPerProdukController extends Controller
                 $row = [];
                 foreach ($columns as $index => $column) {
                     $value = $data[$index] ?? null;
-                    $row[$column] = $value === '\N' ? null : $value;
+                    $row[$column] = $value === null || $value === '\N' ? null : str_replace('\\\\', '\\', $value);
                 }
 
                 $rows[] = $row;

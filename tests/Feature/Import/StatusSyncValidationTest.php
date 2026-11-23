@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Import;
 
+use App\Jobs\RunImportJob;
 use App\Models\ImportJob;
 use App\Services\Import\ImportProgressService;
 use App\Services\Import\ImportExecutionService;
@@ -11,6 +12,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class StatusSyncValidationTest extends TestCase
@@ -324,7 +326,8 @@ class StatusSyncValidationTest extends TestCase
         Bus::assertNotDispatched(\App\Jobs\RunImportJob::class);
     }
 
-    public function test_orphaned_lw321pn_reserved_job_is_requeued_without_waiting_for_phase_timeout(): void
+    #[DataProvider('orphanedReservationCases')]
+    public function test_orphaned_lw321pn_reserved_job_is_requeued_without_waiting_for_phase_timeout(string $ownerState, bool $renewReservation): void
     {
         Bus::fake();
         $jobId = 13;
@@ -362,37 +365,78 @@ class StatusSyncValidationTest extends TestCase
         $cacheStore = trim((string) config('import.cache_store', 'file'));
         $cache = $cacheStore !== '' ? Cache::store($cacheStore) : Cache::getFacadeRoot();
         $cache->put('import_job_progress_heartbeat:' . $jobId, now()->subMinutes(3)->timestamp, now()->addHour());
-        $cache->put('import_excel_runtime_owner_' . $jobId, [
-            'pid' => 999999,
-            'touched_at' => now()->subMinutes(3)->timestamp,
-        ], now()->addHour());
+        if ($ownerState !== 'missing') {
+            $cache->put('import_excel_runtime_owner_' . $jobId, [
+                'pid' => 999999,
+                'touched_at' => now()->subMinutes(3)->timestamp,
+            ], now()->addHour());
+        }
         $tableLock = $cache->lock('import:table-execution:lw321pn', 3600);
         $this->assertTrue($tableLock->get());
 
-        DB::table('jobs')->insert([
+        $reservedAt = now()->subMinutes(3)->timestamp;
+        $oldQueueId = DB::table('jobs')->insertGetId([
             'queue' => 'imports-high',
-            'reserved_at' => now()->subMinutes(3)->timestamp,
+            'reserved_at' => $reservedAt,
             'available_at' => now()->subMinutes(3)->timestamp,
             'created_at' => now()->subMinutes(3)->timestamp,
-            'payload' => 'O:21:"App\\Jobs\\RunImportJob":1:{s:5:"jobId";i:13;}',
+            'payload' => json_encode(['data' => ['command' => serialize(new RunImportJob($jobId))]]),
+        ]);
+        $otherQueueId = DB::table('jobs')->insertGetId([
+            'queue' => 'imports-high',
+            'reserved_at' => null,
+            'available_at' => $reservedAt,
+            'created_at' => $reservedAt,
+            'payload' => json_encode(['data' => ['command' => serialize((new RunImportJob(113))->delay($jobId))]]),
         ]);
 
-        $executionService = new class($this->progressService) extends ImportExecutionService {
+        $executionService = new class($this->progressService, $oldQueueId, $renewReservation) extends ImportExecutionService {
+            public function __construct(ImportProgressService $progress, private readonly int $queueRowId, private readonly bool $renewReservation)
+            {
+                parent::__construct($progress);
+            }
+
             protected function probeRuntimeProcess(int $pid, string $executionSource): string
             {
+                if ($this->renewReservation) {
+                    DB::table('jobs')->where('id', $this->queueRowId)->update(['reserved_at' => now()->timestamp]);
+                }
+
                 return 'dead';
             }
         };
         $recovered = $executionService->recoverOrphanedZeroProgressJobs(60);
 
+        $this->assertDatabaseHas('jobs', ['id' => $otherQueueId]);
+        if ($renewReservation || $ownerState === 'missing') {
+            $this->assertSame([], $recovered);
+            $this->assertDatabaseHas('jobs', ['id' => $oldQueueId]);
+            $this->assertSame('processing', DB::table('import_jobs')->where('id', $jobId)->value('status'));
+            Bus::assertNotDispatched(RunImportJob::class);
+            $tableLock->release();
+
+            return;
+        }
         $this->assertSame([$jobId], $recovered);
         $this->assertSame('queued', DB::table('import_jobs')->where('id', $jobId)->value('status'));
-        $this->assertSame(0, DB::table('jobs')->count());
-        Bus::assertDispatched(\App\Jobs\RunImportJob::class, fn ($job): bool => $job->jobId === $jobId);
+        $this->assertDatabaseMissing('jobs', ['id' => $oldQueueId]);
+        $this->assertSame(1, DB::table('jobs')->count());
+        Bus::assertDispatched(RunImportJob::class, fn ($job): bool => $job->jobId === $jobId);
+        $this->assertSame([], $executionService->recoverOrphanedZeroProgressJobs(60));
+        Bus::assertDispatchedTimes(RunImportJob::class, 1);
 
         $tableLockProbe = $cache->lock('import:table-execution:lw321pn', 60);
         $this->assertTrue($tableLockProbe->get());
         $tableLockProbe->release();
+    }
+
+    public static function orphanedReservationCases(): array
+    {
+        return [
+            'dead owner and unchanged reservation' => ['dead', false],
+            'reserved again by another worker' => ['dead', true],
+            'worker ownership cannot be established' => ['missing', false],
+        ];
     }
 
     public function test_orphaned_lw321pn_with_consumed_queue_row_and_dead_runtime_owner_is_requeued(): void

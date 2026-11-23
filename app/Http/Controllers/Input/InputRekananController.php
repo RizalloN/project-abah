@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Input;
 
 use App\Http\Controllers\Controller;
 use App\Models\InputRekanan;
+use App\Services\Import\SchemaDrift\ReportTemplateSource;
+use App\Services\Import\SchemaDrift\SchemaDriftImportGuard;
 use App\Support\SargableDateFilter;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -53,29 +55,14 @@ class InputRekananController extends Controller
             ->values()
             ->all();
 
-        $expectedHeaders = [
-            'perusahaan_anak',
-            'rekanan_level_1',
-            'rekanan_level_2',
-            'status_nasabah',
-            'cif',
-            'produk_1',
-            'produk_2',
-            'produk_3',
-        ];
-
-        if ($headers !== $expectedHeaders) {
-            return redirect()
-                ->route('import.index')
-                ->with('error', 'Format kolom Input Rekanan tidak sesuai template.');
-        }
+        $sourceIndexes = array_flip(ReportTemplateSource::sourceTargets('input_rekanan', $headers));
 
         $previewRows = collect($rows)
-            ->map(function ($row) use ($expectedHeaders) {
+            ->map(function ($row) use ($sourceIndexes) {
                 $mapped = [];
 
-                foreach ($expectedHeaders as $index => $header) {
-                    $mapped[$header] = trim((string) ($row[$index] ?? ''));
+                foreach (ReportTemplateSource::columns('input_rekanan') as $header) {
+                    $mapped[$header] = isset($sourceIndexes[$header]) ? trim((string) ($row[$sourceIndexes[$header]] ?? '')) : '';
                 }
 
                 return $mapped;
@@ -92,6 +79,7 @@ class InputRekananController extends Controller
                 ->with('error', 'Tidak ada data yang bisa dipreview dari file Input Rekanan.');
         }
 
+        app(ReportTemplateSource::class)->store('input_rekanan', $file);
         session([
             'input_rekanan_preview_rows' => $previewRows,
             'input_rekanan_preview_source_name' => $file->getClientOriginalName(),
@@ -133,6 +121,12 @@ class InputRekananController extends Controller
 
         $rows = json_decode($validated['rows_payload'], true);
         $periode = $validated['periode'];
+        $source = app(ReportTemplateSource::class);
+        try {
+            app(SchemaDriftImportGuard::class)->assertReady('input_rekanan', $source->authorizedPath('input_rekanan'), ['header_index' => 0]);
+        } catch (\RuntimeException $exception) {
+            return back()->with('error', $exception->getMessage());
+        }
 
         if (!is_array($rows) || empty($rows)) {
             return back()
@@ -239,6 +233,7 @@ class InputRekananController extends Controller
             ]);
         }, $payload));
 
+        $source->release('input_rekanan');
         session()->forget(['input_rekanan_preview_rows', 'input_rekanan_preview_source_name', 'input_rekanan_preview_periode']);
 
         return redirect()

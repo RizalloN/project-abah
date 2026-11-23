@@ -912,15 +912,10 @@ final class LandingConsumerOperationalService
             'branches' => [],
         ];
 
-        if (! Schema::hasTable('performance_rm_snapshots')) {
-            return $empty;
-        }
-
         $requiredColumns = ['periode', 'cabang', 'segmen', 'produk', 'rm', 'realisasi_os'];
-        foreach ($requiredColumns as $column) {
-            if (! Schema::hasColumn('performance_rm_snapshots', $column)) {
-                return $empty;
-            }
+        $tableColumns = array_map('strtolower', Schema::getColumnListing('performance_rm_snapshots'));
+        if (array_diff($requiredColumns, $tableColumns) !== []) {
+            return $empty;
         }
 
         $scopeKey = (string) ($branchScope['key'] ?? '');
@@ -960,14 +955,7 @@ final class LandingConsumerOperationalService
         }
 
         $snapshotColumns = ['periode', 'cabang', 'produk', 'rm', 'realisasi_os'];
-        if (Schema::hasColumn('performance_rm_snapshots', 'realisasi_deb')) {
-            $snapshotColumns[] = 'realisasi_deb';
-        }
-        foreach (['unit', 'branch_code'] as $scopeColumn) {
-            if (Schema::hasColumn('performance_rm_snapshots', $scopeColumn)) {
-                $snapshotColumns[] = $scopeColumn;
-            }
-        }
+        $snapshotColumns = array_merge($snapshotColumns, array_intersect(['realisasi_deb', 'unit', 'branch_code'], $tableColumns));
 
         $snapshotRows = DB::table('performance_rm_snapshots')
             ->whereIn('periode', $availablePeriods->all())
@@ -1418,27 +1406,23 @@ final class LandingConsumerOperationalService
      */
     private function consumerBrihcRoster(Collection $snapshotRows): Collection
     {
-        if (! Schema::hasTable('brihc_pemasar')) {
-            return collect();
-        }
-
         $requiredColumns = ['pernr', 'completename', 'positiondesc', 'psadesc'];
-        if (collect($requiredColumns)->contains(
-            static fn (string $column): bool => ! Schema::hasColumn('brihc_pemasar', $column)
-        )) {
+        if (! Schema::hasColumns('brihc_pemasar', $requiredColumns)) {
             return collect();
         }
 
-        $candidatePns = $snapshotRows
-            ->flatMap(fn (object $row): array => $this->consumerRmIdentityKeys((string) ($row->rm ?? '')))
+        $identities = $snapshotRows->pluck('rm')
+            ->uniqueStrict()
+            ->flatMap(fn ($rm): array => $this->consumerRmIdentityKeys((string) $rm))
+            ->uniqueStrict();
+        $candidatePns = $identities
             ->filter(static fn (string $key): bool => str_starts_with($key, 'PN:'))
             ->map(static fn (string $key): string => substr($key, 3))
             ->flatMap(static fn (string $pn): array => [$pn, str_pad($pn, 8, '0', STR_PAD_LEFT)])
             ->unique()
             ->values()
             ->all();
-        $candidateNames = $snapshotRows
-            ->flatMap(fn (object $row): array => $this->consumerRmIdentityKeys((string) ($row->rm ?? '')))
+        $candidateNames = $identities
             ->filter(static fn (string $key): bool => str_starts_with($key, 'NAME:'))
             ->map(static fn (string $key): string => substr($key, 5))
             ->values()
@@ -1537,19 +1521,15 @@ final class LandingConsumerOperationalService
                 ])->all(),
             'kpr' => [],
         ];
-        if (! Schema::hasTable('performance_targets')) {
+        $targetColumns = ['category', 'rm_name', 'target_os'];
+        $tableColumns = array_map('strtolower', Schema::getColumnListing('performance_targets'));
+        if (array_diff($targetColumns, $tableColumns) !== []) {
             return $profiles;
-        }
-        foreach (['category', 'rm_name', 'target_os'] as $column) {
-            if (! Schema::hasColumn('performance_targets', $column)) {
-                return $profiles;
-            }
         }
 
         $categoryToProduct = collect(self::PRODUCTS)
             ->mapWithKeys(fn (array $definition, string $key): array => [$definition['target'] => $key]);
-        $targetColumns = ['category', 'rm_name', 'target_os'];
-        if (Schema::hasColumn('performance_targets', 'target_deb')) {
+        if (in_array('target_deb', $tableColumns, true)) {
             $targetColumns[] = 'target_deb';
         }
         DB::table('performance_targets')
@@ -1626,13 +1606,12 @@ final class LandingConsumerOperationalService
     /** @return array<string, string> */
     private function consumerRmJobGrades(): array
     {
-        if (! Schema::hasTable('brihc_pemasar') || ! Schema::hasColumn('brihc_pemasar', 'completename')) {
+        $tableColumns = array_map('strtolower', Schema::getColumnListing('brihc_pemasar'));
+        if (! in_array('completename', $tableColumns, true)) {
             return [];
         }
 
-        $gradeColumns = collect(['jg', 'jobgrade'])
-            ->filter(fn (string $column): bool => Schema::hasColumn('brihc_pemasar', $column))
-            ->values();
+        $gradeColumns = collect(array_values(array_intersect(['jg', 'jobgrade'], $tableColumns)));
         if ($gradeColumns->isEmpty()) {
             return [];
         }

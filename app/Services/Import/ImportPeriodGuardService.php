@@ -11,6 +11,7 @@ class ImportPeriodGuardService
         'pipeline_prewash_boh' => ['column' => 'tahun', 'type' => 'year'],
         'monitoring_tl_pipeline_mbm' => ['column' => 'tahun', 'type' => 'year'],
         'pipeline_prewash' => ['column' => 'tahun', 'type' => 'year'],
+        'monitoring_realisasi_ksbk' => ['column' => 'periode', 'type' => 'date'],
         'evaluasi_aktivitas_kunjungan_pemasar' => ['column' => 'periode', 'type' => 'date'],
         'suspect_reaktivasi_pinjaman' => ['column' => 'periode', 'type' => 'date'],
         'daily_loan_dinamis' => ['column' => 'periode', 'type' => 'date'],

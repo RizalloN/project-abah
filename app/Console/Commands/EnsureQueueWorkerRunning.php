@@ -297,42 +297,24 @@ class EnsureQueueWorkerRunning extends Command
         }
 
         try {
-            $queueNames = $this->queueNames($queues);
             $now = time();
-            $retryAfter = $this->queueRetryAfterSeconds();
-            $staleReservedCutoff = $now - $retryAfter;
 
             // DatabaseQueue owns reservation recovery through retry_after. A short
             // heartbeat/probe outage is not proof that a long import is dead.
             $releasedOrphanJobs = 0;
 
-            $pendingJobs = DB::table('jobs')
-                ->whereIn('queue', $queueNames)
-                ->where('available_at', '<=', $now)
-                ->where(function ($query) use ($staleReservedCutoff): void {
-                    $query->whereNull('reserved_at')
-                        ->orWhere('reserved_at', '<=', $staleReservedCutoff);
-                })
-                ->count();
+            $demand = $this->poolDemand($this->queueNames($queues), $now);
+            $pendingJobs = (int) $demand->pending_jobs;
             if ($pendingJobs === 0) {
-                // Idle pools need neither OS probes nor additional queue scans.
+                // Idle pools need no OS process probes.
                 return;
             }
 
             $heartbeatWorkers = $this->freshWorkerHeartbeatCount($poolName, $now);
             $registeredWorkers = $this->registeredWorkerProcessCount($poolName, $now);
             $detectedWorkers = 0;
-            $staleReservedJobs = DB::table('jobs')
-                ->whereIn('queue', $queueNames)
-                ->whereNotNull('reserved_at')
-                ->where('reserved_at', '<=', $staleReservedCutoff)
-                ->count();
-
-            $freshReservedWorkers = DB::table('jobs')
-                ->whereIn('queue', $queueNames)
-                ->whereNotNull('reserved_at')
-                ->where('reserved_at', '>', $staleReservedCutoff)
-                ->count();
+            $staleReservedJobs = (int) $demand->stale_reserved_jobs;
+            $freshReservedWorkers = (int) $demand->fresh_reserved_jobs;
             // The lease describes workers launched moments ago, regardless of
             // how old the waiting job is. Tying it to pending age caused a fast
             // demand signal to launch the same pool twice before first heartbeat.
@@ -412,6 +394,18 @@ class EnsureQueueWorkerRunning extends Command
         } finally {
             $poolLock->release();
         }
+    }
+
+    private function poolDemand(array $queues, int $now): object
+    {
+        $staleCutoff = $now - $this->queueRetryAfterSeconds();
+
+        return DB::table('jobs')
+            ->whereIn('queue', $queues)
+            ->selectRaw('COUNT(CASE WHEN available_at <= ? AND (reserved_at IS NULL OR reserved_at <= ?) THEN 1 END) as pending_jobs', [$now, $staleCutoff])
+            ->selectRaw('COUNT(CASE WHEN reserved_at <= ? THEN 1 END) as stale_reserved_jobs', [$staleCutoff])
+            ->selectRaw('COUNT(CASE WHEN reserved_at > ? THEN 1 END) as fresh_reserved_jobs', [$staleCutoff])
+            ->first();
     }
 
     /**

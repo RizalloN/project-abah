@@ -24,8 +24,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `input.store` | route | 10 | - |
 | `report.kolaborasi.bodboc` | route | 10 | - |
 | `report.kolaborasi.business-cluster` | route | 10 | - |
-| `store` | method | 10 | `app/Http/Controllers/Input/BodBocController.php:121` |
-| `store` | method | 10 | `app/Http/Controllers/Input/InputRekananController.php:123` |
+| `store` | method | 10 | `app/Http/Controllers/Input/BodBocController.php:105` |
+| `store` | method | 10 | `app/Http/Controllers/Input/InputRekananController.php:111` |
 | `bod-boc.store` | route | 9 | - |
 | `business-cluster.store` | route | 9 | - |
 | `report.kolaborasi.sppg` | route | 9 | - |
@@ -33,12 +33,12 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `input.index` | route | 8 | - |
 | `BodBoc` | class | 7 | `app/Models/BodBoc.php:10` |
 | `InputRekanan` | class | 7 | `app/Models/InputRekanan.php:10` |
-| `InputRekananController` | class | 7 | `app/Http/Controllers/Input/InputRekananController.php:13` |
+| `InputRekananController` | class | 7 | `app/Http/Controllers/Input/InputRekananController.php:15` |
 | `bod_boc` | table | 7 | - |
 | `businessCluster` | method | 7 | `app/Http/Controllers/Report/KolaborasiReportController.php:45` |
 | `fetchSpreadsheet` | method | 7 | `app/Services/Reports/BusinessClusterReportService.php:215` |
 | `input_rekanan` | table | 7 | - |
-| `BodBocController` | class | 6 | `app/Http/Controllers/Input/BodBocController.php:13` |
+| `BodBocController` | class | 6 | `app/Http/Controllers/Input/BodBocController.php:15` |
 | `aggregateKategoriRows` | method | 6 | `app/Services/Reports/BusinessClusterReportService.php:126` |
 | `detailKey` | method | 6 | `app/Services/Reports/BusinessClusterReportService.php:413` |
 | `report.business-cluster` | view | 6 | `resources/views/report/business-cluster.blade.php:1` |

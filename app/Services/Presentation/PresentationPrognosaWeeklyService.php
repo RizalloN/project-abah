@@ -21,9 +21,9 @@ class PresentationPrognosaWeeklyService
 {
     public const SPREADSHEET_ID = '1DQSxk8-9U2pXwOQGiLQK4PW2Ao3ROhCYtvTy7yo12DM';
 
-    private const CACHE_KEY = 'presentation:prognosa_weekly:v6:'.self::SPREADSHEET_ID;
+    private const CACHE_KEY = 'presentation:prognosa_weekly:v7:'.self::SPREADSHEET_ID;
 
-    private const STABLE_CACHE_KEY = 'presentation:prognosa_weekly:stable:v6:'.self::SPREADSHEET_ID;
+    private const STABLE_CACHE_KEY = 'presentation:prognosa_weekly:stable:v7:'.self::SPREADSHEET_ID;
 
     /** @var array<string, array<int, string>> */
     private const SHEETS = [

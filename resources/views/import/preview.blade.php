@@ -56,7 +56,7 @@
     $previewReportTitle = $previewBannerTitle ?? $pageTitle ?? ('Preview Data Import (' . $resolvedReportName . ')');
     $previewModeLabel = $filtersDisabled ? 'Import Full' : 'Preview dengan filter';
 
-    $delim = $currentDelimiter ?? 'auto';
+    $delim = $schemaDriftDelimiter ?? $currentDelimiter ?? 'auto';
     $delimLabels = [
         ',' => 'Koma ( , )',
         ';' => 'Titik Koma ( ; )',
@@ -65,7 +65,9 @@
         "\t" => 'Tab',
         'auto' => 'Otomatis'
     ];
-    $currentDelimiterLabel = $fixedDelimiterLabel ?? $delimLabels[$delim] ?? $delim;
+    $currentDelimiterLabel = !empty($lockDelimiterSelector) && isset($fixedDelimiterLabel)
+        ? $fixedDelimiterLabel
+        : ($delimLabels[$delim] ?? $delim);
 @endphp
 <div class="row">
     <div class="col-12">

@@ -114,26 +114,35 @@ class PipelinePrewashService
     public function refresh(int $year, bool $force = false): array
     {
         if (! Schema::hasTable(Source::TABLE) || ! DB::table(Source::TABLE)->where('tahun', $year)->exists()) {
-            return ['available' => false, 'message' => 'Pipeline Prewash tahun '.$year.' belum diimport.'];
+            return [
+                'available' => false,
+                'year' => $year,
+                'empty_reason' => 'not_imported',
+                'empty_title' => 'Pipeline Prewash tahun '.$year.' belum diimport',
+                'import_report' => 'Pipeline Prewash',
+                'message' => 'Pipeline Prewash tahun '.$year.' belum diimport.',
+            ];
         }
         $loan = $this->resolveLoanSource($year);
         if ($loan === null) {
-            return ['available' => false, 'message' => 'Sumber realisasi pinjaman tahun '.$year.' belum tersedia.'];
+            return ['available' => false, 'year' => $year, 'message' => 'Sumber realisasi pinjaman tahun '.$year.' belum tersedia.'];
         }
         $visitTable = 'evaluasi_aktivitas_kunjungan_pemasar';
-        if (! Schema::hasTable($visitTable) || ! DB::table($visitTable)->exists()) {
-            return ['available' => false, 'message' => 'Report Evaluasi Aktivitas Kunjungan Pemasar belum diimport.'];
+        if (! Schema::hasTable($visitTable) || ! DB::table($visitTable)->where('periode', '<=', $year.'-12-31')->exists()) {
+            return ['available' => false, 'year' => $year, 'message' => 'Report Evaluasi Aktivitas Kunjungan Pemasar belum diimport.'];
         }
-        $visit = DB::table($visitTable)->where('tgl_kunjungan', '>=', $year.'-01-01')->where('tgl_kunjungan', '<', ($year + 1).'-01-01')
+        $visit = DB::table($visitTable)
+            ->where('periode', '<=', $year.'-12-31')
+            ->where('tgl_kunjungan', '>=', $year.'-01-01')->where('tgl_kunjungan', '<', ($year + 1).'-01-01')
             ->selectRaw('COUNT(*) AS rows_count, MAX(periode) AS latest_period');
         if (in_array('updated_at', $this->columns($visitTable), true)) {
             $visit->selectRaw('MAX(updated_at) AS latest_update');
         }
         $visit = (array) $visit->first();
         if ((int) $visit['rows_count'] === 0) {
-            $printedPeriod = DB::table($visitTable)->max('periode');
+            $printedPeriod = DB::table($visitTable)->where('periode', '<=', $year.'-12-31')->max('periode');
             if (! $printedPeriod || $printedPeriod < $year.'-01-01') {
-                return ['available' => false, 'message' => 'Report kunjungan untuk tahun '.$year.' belum tersedia.'];
+                return ['available' => false, 'year' => $year, 'message' => 'Report kunjungan untuk tahun '.$year.' belum tersedia.'];
             }
             $visit['latest_period'] = $printedPeriod;
         }
@@ -227,6 +236,7 @@ class PipelinePrewashService
     {
         $wanted = array_fill_keys($this->cifs($year)->pluck('lookup_cif')->all(), true);
         $query = DB::table('evaluasi_aktivitas_kunjungan_pemasar AS visits')
+            ->where('visits.periode', '<=', $year.'-12-31')
             ->where('visits.tgl_kunjungan', '>=', $year.'-01-01')->where('visits.tgl_kunjungan', '<', ($year + 1).'-01-01')
             ->selectRaw('UPPER(TRIM(visits.cifno)) AS lookup_cif')->groupByRaw('UPPER(TRIM(visits.cifno))');
         foreach (Source::MONTH_COLUMNS as $index => $column) {

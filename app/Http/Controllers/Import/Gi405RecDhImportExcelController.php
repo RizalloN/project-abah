@@ -186,7 +186,7 @@ class Gi405RecDhImportExcelController extends ImportExcelController
     {
         $fingerprint = md5($path . '|' . ((string) (@filemtime($path) ?: '0')) . '|' . ((string) (@filesize($path) ?: '0')));
         $directory = 'excel_imports/gi405_recovery';
-        $relativeCsvPath = $directory . '/gi405_recovery_' . $fingerprint . '.csv';
+        $relativeCsvPath = $directory . '/gi405_recovery_source_columns_' . $fingerprint . '.csv';
         $absoluteCsvPath = Storage::path($relativeCsvPath);
 
         if (file_exists($absoluteCsvPath) && filesize($absoluteCsvPath) > 0) {
@@ -202,7 +202,8 @@ class Gi405RecDhImportExcelController extends ImportExcelController
             $path,
             self::REQUIRED_HEADERS,
             $absoluteCsvPath,
-            $send
+            $send,
+            preserveSourceColumns: true,
         );
 
         if ($nativeStage !== null && file_exists($absoluteCsvPath) && filesize($absoluteCsvPath) > 0) {
@@ -226,19 +227,27 @@ class Gi405RecDhImportExcelController extends ImportExcelController
             }
 
             try {
-                fputcsv($output, self::REQUIRED_HEADERS);
-
                 $highestRow = (int) $sheet->getHighestRow();
                 $highestColumnIndex = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($sheet->getHighestColumn());
                 $headerMap = $this->buildGi405HeaderColumnMap($sheet, $headerRow, $highestColumnIndex);
+                $headers = [];
+                for ($column = 1; $column <= $highestColumnIndex; $column++) {
+                    $headers[] = $this->readGi405FormattedCell($sheet, $column, $headerRow);
+                }
+                foreach ($headerMap as $header => $column) {
+                    $headers[$column - 1] = $header;
+                }
+                while ($headers !== [] && trim((string) end($headers)) === '') {
+                    array_pop($headers);
+                }
+                fputcsv($output, $headers);
 
                 for ($rowIndex = $headerRow + 1; $rowIndex <= $highestRow; $rowIndex++) {
                     $row = [];
                     $hasData = false;
 
-                    foreach (self::REQUIRED_HEADERS as $header) {
-                        $columnIndex = $headerMap[$header] ?? null;
-                        $value = $columnIndex === null ? '' : $this->readGi405FormattedCell($sheet, $columnIndex, $rowIndex);
+                    for ($column = 1; $column <= $highestColumnIndex; $column++) {
+                        $value = $this->readGi405FormattedCell($sheet, $column, $rowIndex);
                         if (trim((string) $value) !== '') {
                             $hasData = true;
                         }
@@ -246,6 +255,9 @@ class Gi405RecDhImportExcelController extends ImportExcelController
                     }
 
                     if ($hasData) {
+                        while (count($row) > count($headers) && trim((string) end($row)) === '') {
+                            array_pop($row);
+                        }
                         fputcsv($output, $row);
                     }
                 }

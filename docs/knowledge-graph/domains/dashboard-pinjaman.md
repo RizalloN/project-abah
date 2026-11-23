@@ -7,12 +7,12 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | Kind | Count |
 | --- | ---: |
 | command | 4 |
-| file | 83 |
+| file | 84 |
 | method | 871 |
 | route | 39 |
 | class | 36 |
 | table | 15 |
-| view | 47 |
+| view | 48 |
 
 ## Main Hubs
 
@@ -20,16 +20,16 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | --- | --- | ---: | --- |
 | `DashboardPinjamanReportController` | class | 156 | `app/Http/Controllers/DashboardPinjamanReportController.php:29` |
 | `daily_loan_dinamis` | table | 107 | - |
-| `KinerjaRmReportController` | class | 105 | `app/Http/Controllers/Report/KinerjaRmReportController.php:25` |
+| `KinerjaRmReportController` | class | 106 | `app/Http/Controllers/Report/KinerjaRmReportController.php:26` |
 | `KinerjaRmMikroReportController` | class | 88 | `app/Http/Controllers/Report/KinerjaRmMikroReportController.php:21` |
 | `SyncBrihcReferenceCommand` | class | 53 | `app/Console/Commands/SyncBrihcReferenceCommand.php:18` |
 | `lw325_ph` | table | 51 | - |
 | `DashboardPinjamanKreditService` | class | 46 | `app/Support/DashboardPinjamanKreditService.php:11` |
-| `brihc_pemasar` | table | 39 | - |
+| `brihc_pemasar` | table | 37 | - |
 | `DashboardPinjamanChartPeriodikService` | class | 36 | `app/Support/DashboardPinjamanChartPeriodikService.php:14` |
 | `Lw321DailyLoanMapper` | class | 35 | `app/Support/Lw321DailyLoanMapper.php:7` |
 | `Lw321DailyLoanSyncService` | class | 34 | `app/Support/Lw321DailyLoanSyncService.php:9` |
-| `index` | method | 34 | `app/Http/Controllers/Report/KinerjaRmReportController.php:864` |
+| `index` | method | 34 | `app/Http/Controllers/Report/KinerjaRmReportController.php:865` |
 | `LandingLoanAnalyticsService` | class | 33 | `app/Support/LandingLoanAnalyticsService.php:14` |
 | `MantriIncentiveService` | class | 32 | `app/Services/Reports/MantriIncentiveService.php:29` |
 | `MantriSourceInputStore` | class | 32 | `app/Support/MantriSourceInputStore.php:13` |
@@ -39,9 +39,9 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | `handle` | method | 26 | `app/Console/Commands/SyncBrihcReferenceCommand.php:76` |
 | `reportCacheVersion` | method | 25 | `app/Http/Controllers/DashboardPinjamanReportController.php:4496` |
 | `RunOffReportService` | class | 24 | `app/Services/Reports/RunOffReportService.php:12` |
+| `fetchRetailRealizationPerformance` | method | 24 | `app/Http/Controllers/Report/KinerjaRmReportController.php:1914` |
 | `sync` | method | 24 | `app/Services/Reports/MicroPipelineSyncService.php:52` |
-| `fetchBranchRows` | method | 23 | `app/Http/Controllers/Report/KinerjaRmReportController.php:2340` |
-| `fetchRetailRealizationPerformance` | method | 23 | `app/Http/Controllers/Report/KinerjaRmReportController.php:1799` |
+| `fetchBranchRows` | method | 23 | `app/Http/Controllers/Report/KinerjaRmReportController.php:2575` |
 | `report.dashboard-pinjaman.kinerjarmmikro` | view | 22 | `resources/views/report/dashboard-pinjaman/kinerjarmmikro.blade.php:1` |
 | `captureLw321Period` | method | 21 | `app/Support/MantriSourceInputStore.php:342` |
 | `LandingLoanRiskCacheService` | class | 20 | `app/Support/LandingLoanRiskCacheService.php:11` |
@@ -139,6 +139,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 
 ## View Nodes
 
+- `dashboard.partials.loan-overview-styles` - `resources/views/dashboard/partials/loan-overview-styles.blade.php`
 - `dashboard.partials.loan-quality-timeseries` - `resources/views/dashboard/partials/loan-quality-timeseries.blade.php`
 - `report.dashboard-pinjaman` - `resources/views/report/dashboard-pinjaman.blade.php`
 - `report.dashboard-pinjaman._kinerjarmmikro_partials._nett_workbook` - `resources/views/report/dashboard-pinjaman/_kinerjarmmikro_partials/_nett_workbook.blade.php`
@@ -217,7 +218,7 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | database -> dashboard-pinjaman (checks_table) | 27 |
 | dashboard-pinjaman -> access-control (calls) | 23 |
 | dashboard-simpanan -> dashboard-pinjaman (reads_table) | 22 |
-| core -> dashboard-pinjaman (checks_table) | 21 |
+| core -> dashboard-pinjaman (checks_table) | 19 |
 | jobs-snapshots -> dashboard-pinjaman (reads_table) | 18 |
 | database -> dashboard-pinjaman (alters_table) | 17 |
 | dashboard-pinjaman -> jobs-snapshots (uses_trait) | 17 |
@@ -234,8 +235,8 @@ Focused generated context. Query a symbol for exact neighbors: `php artisan know
 | dashboard-pinjaman -> jobs-snapshots (uses_queue) | 8 |
 | dashboard-pinjaman -> jobs-snapshots (implements) | 8 |
 | dashboard-pinjaman -> core (uses_trait) | 7 |
+| dashboard-pinjaman -> core (includes_view) | 7 |
 | jobs-snapshots -> dashboard-pinjaman (calls) | 6 |
 | dashboard-pinjaman -> jobs-snapshots (instantiates) | 6 |
-| dashboard-pinjaman -> core (includes_view) | 6 |
 | database -> dashboard-pinjaman (uses_table) | 5 |
 | import -> dashboard-pinjaman (reads_table) | 5 |

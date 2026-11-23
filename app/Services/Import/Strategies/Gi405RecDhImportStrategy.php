@@ -4,6 +4,12 @@ namespace App\Services\Import\Strategies;
 
 class Gi405RecDhImportStrategy implements ImportStrategyInterface
 {
+    public const SOURCE_TARGETS = [
+        'periode' => 'periode',
+        'kode' => 'kode_uker',
+        'pendapatan koreksi ppap-dr angsuran ph' => 'pendapatan_koreksi_ppap_dr_angsuran_ph',
+    ];
+
     public function key(): string
     {
         return 'gi405_recovery';

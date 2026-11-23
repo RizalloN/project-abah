@@ -25,7 +25,7 @@ class KpiWorkbookSnapshotTest extends TestCase
         $this->actingAs(new User(['pn' => 'kpi-preview', 'name' => 'KPI Test', 'role' => 'admin']));
     }
 
-    public function test_all_four_sources_default_to_september_and_preserve_every_source_column(): void
+    public function test_all_four_september_sources_preserve_every_source_column_when_explicitly_requested(): void
     {
         $service = new KpiWorkbookSnapshotService;
         foreach (['mantri' => [464, 44], 'mantri-briguna' => [2, 35], 'ka-unit' => [101, 28], 'mbm' => [12, 24]] as $key => [$count, $columns]) {
@@ -134,6 +134,9 @@ class KpiWorkbookSnapshotTest extends TestCase
 
     private function monitorView(string $key, array $query = []): View
     {
+        if (in_array($key, ['mantri', 'mantri-briguna', 'ka-unit', 'mbm'], true)) {
+            $query = ['periode' => '2026-09', ...$query];
+        }
         return (new AlmafactsDashboardController)->kpi(Request::create('/report/dashboard-almafacts/kpi/'.$key, 'GET', $query), $key);
     }
 }

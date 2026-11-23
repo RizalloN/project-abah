@@ -45,13 +45,7 @@ class MauBrimoImportPolicy
     public function headerMap(array $headers): array
     {
         $map = [];
-        $known = array_combine(array_map(fn (string $column) => str_replace('_', '', $column), self::COLUMNS), self::COLUMNS);
-        foreach ($headers as $index => $header) {
-            $token = $this->headerToken($header);
-            $column = $known[$token] ?? null;
-            if ($column === null) {
-                continue;
-            }
+        foreach ($this->sourceTargets($headers) as $index => $column) {
             if (array_key_exists($column, $map)) {
                 throw ValidationException::withMessages(['file' => "Header MAU BRIMO memiliki kolom {$column} ganda."]);
             }
@@ -64,6 +58,13 @@ class MauBrimoImportPolicy
         }
 
         return $map;
+    }
+
+    public function sourceTargets(array $headers): array
+    {
+        $known = array_combine(array_map(fn (string $column) => str_replace('_', '', $column), self::COLUMNS), self::COLUMNS);
+
+        return array_filter(array_map(fn ($header) => $known[$this->headerToken($header)] ?? null, $headers));
     }
 
     public function branch(mixed $value): ?string

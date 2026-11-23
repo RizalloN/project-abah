@@ -4,13 +4,17 @@ namespace Tests\Unit;
 
 use App\Http\Controllers\Import\ImportCleanupController;
 use App\Http\Controllers\Import\ImportPerformancePisPerProdukController;
+use App\Models\User;
 use App\Services\Import\ImportCleanupService;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Storage;
 use Mockery;
 use ReflectionClass;
 use Tests\TestCase;
+use ZipArchive;
 
 class ImportPerformancePisPerProdukControllerTest extends TestCase
 {
@@ -466,6 +470,222 @@ class ImportPerformancePisPerProdukControllerTest extends TestCase
             @unlink($csvPath);
             session()->forget(['performance_pis_file', 'performance_pis_periode']);
         }
+    }
+
+    public function test_chunked_upload_init_chunk_and_finalize_stores_file_and_sets_session(): void
+    {
+        $user = new User();
+        $user->id = 999001;
+        $this->be($user);
+
+        $controller = new ImportPerformancePisPerProdukController();
+        $chunkSizeBytes = (new ReflectionClass(ImportPerformancePisPerProdukController::class))
+            ->getConstant('CHUNK_SIZE_BYTES');
+
+        $part1Content = str_repeat("A", $chunkSizeBytes);
+        $part2Content = "no,kode_kanwil,nomor_rekening\n1,001,123456\n";
+        $totalSize = strlen($part1Content) + strlen($part2Content);
+
+        $initRequest = Request::create('/import/performance-pis/upload-chunk/init', 'POST', [
+            'id_report' => '25',
+            'periode' => '2026-11-15',
+            'original_name' => '2_PERFORMANCE_PIS_PER_PRODUCT_DETAIL-145.xlsx',
+            'total_size' => $totalSize,
+            'total_chunks' => 2,
+        ]);
+
+        $initResponse = $controller->initChunkUpload($initRequest);
+        $initPayload = json_decode((string) $initResponse->getContent(), true);
+
+        $this->assertSame(200, $initResponse->getStatusCode());
+        $this->assertSame('success', $initPayload['status'] ?? null);
+        $uploadId = (string) ($initPayload['upload_id'] ?? '');
+        $this->assertMatchesRegularExpression('/^pis_[0-9a-f-]{36}$/', $uploadId);
+
+        $tmpPart1 = tempnam(sys_get_temp_dir(), 'pis_p1_');
+        $tmpPart2 = tempnam(sys_get_temp_dir(), 'pis_p2_');
+        file_put_contents($tmpPart1, $part1Content);
+        file_put_contents($tmpPart2, $part2Content);
+
+        $assembledRelativePath = null;
+
+        try {
+            $chunk1Resp = $controller->uploadChunk(Request::create(
+                '/import/performance-pis/upload-chunk',
+                'POST',
+                ['upload_id' => $uploadId, 'chunk_index' => 0, 'total_chunks' => 2],
+                [],
+                ['file' => new UploadedFile($tmpPart1, 'part0', 'application/octet-stream', null, true)]
+            ));
+            $this->assertSame(200, $chunk1Resp->getStatusCode());
+
+            $chunk2Resp = $controller->uploadChunk(Request::create(
+                '/import/performance-pis/upload-chunk',
+                'POST',
+                ['upload_id' => $uploadId, 'chunk_index' => 1, 'total_chunks' => 2],
+                [],
+                ['file' => new UploadedFile($tmpPart2, 'part1', 'application/octet-stream', null, true)]
+            ));
+            $this->assertSame(200, $chunk2Resp->getStatusCode());
+
+            $finalizeResp = $controller->finalizeChunkUpload(Request::create(
+                '/import/performance-pis/upload-chunk/finalize',
+                'POST',
+                [
+                    'upload_id' => $uploadId,
+                    'total_chunks' => 2,
+                    'original_name' => '2_PERFORMANCE_PIS_PER_PRODUCT_DETAIL-145.xlsx',
+                    'id_report' => '25',
+                    'periode' => '2026-11-15',
+                ]
+            ));
+            $finalizePayload = json_decode((string) $finalizeResp->getContent(), true);
+
+            $this->assertSame(200, $finalizeResp->getStatusCode());
+            $this->assertSame('success', $finalizePayload['status'] ?? null);
+            $this->assertSame(route('import.performancepis.prepare-preview'), $finalizePayload['redirect'] ?? null);
+
+            $assembledRelativePath = (string) session('performance_pis_file');
+            $this->assertStringStartsWith('performance_pis_imports/', $assembledRelativePath);
+            $this->assertStringEndsWith('.xlsx', $assembledRelativePath);
+            $this->assertSame('2026-11-15', session('performance_pis_periode'));
+            $this->assertSame('performance_pis', session('import_type'));
+
+            $assembledAbsPath = Storage::path($assembledRelativePath);
+            $this->assertFileExists($assembledAbsPath);
+            $this->assertSame($totalSize, filesize($assembledAbsPath));
+        } finally {
+            @unlink($tmpPart1);
+            @unlink($tmpPart2);
+            if ($assembledRelativePath) {
+                @unlink(Storage::path($assembledRelativePath));
+            }
+            $chunkDir = $this->invokeMethod($controller, 'chunkDirectory', [$uploadId]);
+            if (is_dir($chunkDir)) {
+                File::deleteDirectory($chunkDir);
+            }
+            session()->forget(['performance_pis_file', 'performance_pis_periode', 'active_id_report', 'import_type']);
+        }
+    }
+
+    public function test_build_excel_context_reads_shared_strings_headers_from_xlsx(): void
+    {
+        $controller = new ImportPerformancePisPerProdukController();
+        $xlsxPath = tempnam(sys_get_temp_dir(), 'pis_ss_') . '.xlsx';
+
+        $headers = ['NO', 'KODE_KANWIL', 'KANWIL', 'KODE_KANCA', 'KANCA', 'KODE_UKER', 'UKER', 'NOMOR_REKENING'];
+        $sharedXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            . '<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="' . count($headers) . '" uniqueCount="' . count($headers) . '">';
+        foreach ($headers as $h) {
+            $sharedXml .= '<si><t>' . htmlspecialchars($h, ENT_XML1) . '</t></si>';
+        }
+        $sharedXml .= '</sst>';
+
+        $sheetCells = '';
+        foreach ($headers as $idx => $h) {
+            $col = chr(65 + $idx);
+            $sheetCells .= "<c r=\"{$col}1\" t=\"s\"><v>{$idx}</v></c>";
+        }
+        // Notice: intentionally omit <dimension> tag to also verify bounded dimension fallback scan
+        $sheetXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            . '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+            . '<sheetData><row r="1">' . $sheetCells . '</row></sheetData></worksheet>';
+
+        $zip = new ZipArchive();
+        $this->assertTrue($zip->open($xlsxPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) === true);
+        $zip->addFromString('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"></Types>');
+        $zip->addFromString('xl/sharedStrings.xml', $sharedXml);
+        $zip->addFromString('xl/worksheets/sheet1.xml', $sheetXml);
+        $zip->close();
+
+        try {
+            $context = $this->invokeMethod($controller, 'buildExcelContext', [$xlsxPath, '2026-11-15']);
+            $this->assertSame(1, $context['header_line']);
+            $this->assertSame($headers, $context['source_headers']);
+            $this->assertSame('2026-11-15', $context['posisi']);
+        } finally {
+            @unlink($xlsxPath);
+        }
+    }
+
+    public function test_import_view_enables_chunked_upload_for_performance_pis(): void
+    {
+        $blade = file_get_contents(resource_path('views/import/index.blade.php'));
+        $this->assertStringContainsString("import.performancepis.upload-chunk.init", (string) $blade);
+        $this->assertStringContainsString("import.performancepis.upload-chunk'", (string) $blade);
+        $this->assertStringContainsString("import.performancepis.upload-chunk.finalize", (string) $blade);
+    }
+
+    public function test_excel_staging_column_cache_is_bounded_to_column_letters_and_reads_inline_str(): void
+    {
+        $service = new \App\Services\Import\ExcelStagingService();
+        $ref = new ReflectionClass($service);
+        $getColIdx = $ref->getMethod('getColumnReferenceIndex');
+        $getColIdx->setAccessible(true);
+
+        for ($row = 1; $row <= 5000; $row++) {
+            $this->assertSame(0, $getColIdx->invoke($service, "A{$row}"));
+            $this->assertSame(27, $getColIdx->invoke($service, "AB{$row}"));
+        }
+
+        $cacheProp = $ref->getProperty('columnRefIndexCache');
+        $cacheProp->setAccessible(true);
+        $cache = $cacheProp->getValue($service);
+
+        $this->assertCount(2, $cache);
+        $this->assertSame(['A' => 0, 'AB' => 27], $cache);
+
+        // Also test inlineStr rich-text concatenation via stageXlsxSheetWithHeadersToCsv
+        $xlsxPath = tempnam(sys_get_temp_dir(), 'pis_inline_') . '.xlsx';
+        $csvPath = tempnam(sys_get_temp_dir(), 'pis_inline_out_') . '.csv';
+        $sheetXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            . '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>'
+            . '<row r="1"><c r="A1" t="inlineStr"><is><t>No</t></is></c><c r="C1" t="inlineStr"><is><r><t>PN RM </t></r><r><t>Dana BRINETS</t></r></is></c></row>'
+            . '<row r="2"><c r="A2"><v>1</v></c><c r="C2" t="inlineStr"><is><t>00123456</t></is></c></row>'
+            . '</sheetData></worksheet>';
+
+        $zip = new ZipArchive();
+        $this->assertTrue($zip->open($xlsxPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) === true);
+        $zip->addFromString('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"></Types>');
+        $zip->addFromString('xl/workbook.xml', '<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>');
+        $zip->addFromString('xl/_rels/workbook.xml.rels', '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>');
+        $zip->addFromString('xl/worksheets/sheet1.xml', $sheetXml);
+        $zip->close();
+
+        try {
+            $result = $service->stageXlsxSheetWithHeadersToCsv($xlsxPath, ['No', 'PN RM Dana BRINETS'], $csvPath);
+            $this->assertIsArray($result);
+            $this->assertSame(1, $result['total_rows']);
+            $content = file_get_contents($csvPath);
+            $this->assertStringContainsString('00123456', (string) $content);
+        } finally {
+            @unlink($xlsxPath);
+            @unlink($csvPath);
+        }
+    }
+
+    public function test_performance_pis_strategy_and_drift_analyzer_resolve_header_aliases(): void
+    {
+        $strategy = new \App\Services\Import\Strategies\PerformancePisImportStrategy();
+        $sourceHeaders = [
+            'Product Type',
+            'Alamat Email',
+            "Relasi Briguna\n(Yes/No)",
+            "Relasi Kartu Kredit\n(Yes/No)",
+            'Nomor Rekening',
+        ];
+
+        $this->assertSame(
+            ['tipe_produk', 'email', 'flag_briguna', 'flag_cc', 'Nomor Rekening'],
+            $strategy->transformHeaders($sourceHeaders)
+        );
+
+        $canonicalizer = app(\App\Services\Import\SchemaDrift\SchemaDriftAnalyzer::class)
+            ->canonicalizer('performance_pis_per_produk');
+        $this->assertSame(
+            ['tipe_produk', 'email', 'flag_briguna', 'flag_cc', 'nomor_rekening'],
+            $canonicalizer($sourceHeaders)
+        );
     }
 
     private function performancePisHeaders(): array

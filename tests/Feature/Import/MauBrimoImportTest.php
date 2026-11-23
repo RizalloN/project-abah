@@ -452,6 +452,23 @@ class MauBrimoImportTest extends TestCase
         $this->assertSame(0, DB::table('import_jobs')->count());
     }
 
+    public function test_direct_brimo_preview_route_renders_mau_preview_with_area6_selections(): void
+    {
+        $path = $this->writeSource([
+            $this->row(['MBDESC' => 'KC Madiun']),
+            $this->row(['MAINBR' => '51', 'MBDESC' => 'KC Malang Kawi', 'BRANCH' => '5101']),
+            $this->row(['MAINBR' => '57', 'MBDESC' => 'KC Ngawi', 'BRANCH' => '5701']),
+        ]);
+
+        $response = $this->withSession($this->uploadSession($path))
+            ->get(route('import.brimo.preview.direct', ['file_path' => $path]));
+
+        $response->assertOk()->assertViewIs('import.preview');
+        $data = $response->original->getData();
+        $this->assertSame([6], array_keys($data['initialArea6Selections']));
+        $this->assertEqualsCanonicalizing(['KC Madiun', 'KC Ngawi'], $data['initialArea6Selections'][6]);
+    }
+
     private function migrateReport(): void
     {
         $migration = require database_path('migrations/2026_10_25_000001_add_mau_brimo_import_report.php');

@@ -1,8 +1,7 @@
 {{-- Notifikasi perubahan struktur dokumen sumber import (khusus admin). --}}
 <li class="nav-item d-flex align-items-center mr-2 sdb" id="schemaDriftBell"
     data-feed-url="{{ route('import.schema-drift.notifications') }}"
-    data-accept-url="{{ route('import.schema-drift.accept', ['event' => '__ID__']) }}"
-    data-reject-url="{{ route('import.schema-drift.reject', ['event' => '__ID__']) }}"
+    data-import-url="{{ route('import.index') }}"
     data-ack-url="{{ route('import.schema-drift.acknowledge', ['event' => '__ID__']) }}"
     data-csrf="{{ csrf_token() }}">
     <button type="button" class="sdb__trigger" aria-haspopup="true" aria-expanded="false" aria-controls="schemaDriftBellMenu" aria-label="Notifikasi perubahan struktur import" title="Perubahan struktur import">
@@ -27,7 +26,7 @@
         transition: border-color .18s ease, color .18s ease;
     }
     .sdb__trigger:hover { border-color: #b9cfee; color: #0857c3; }
-    .sdb__trigger:focus-visible, .sdb__menu button:focus-visible { outline: 3px solid var(--app-focus-ring, rgba(48, 127, 226, .34)); outline-offset: 2px; }
+    .sdb__trigger:focus-visible, .sdb__menu :is(button, a):focus-visible { outline: 3px solid var(--app-focus-ring, rgba(48, 127, 226, .34)); outline-offset: 2px; }
     .sdb__badge {
         position: absolute; top: -6px; right: -6px; min-width: 20px; height: 20px; padding: 0 5px;
         border-radius: 999px; background: #7c3aed; color: #fff; font-size: .7rem; font-weight: 800;
@@ -61,7 +60,7 @@
     .sdb__cols { display: flex; flex-wrap: wrap; gap: .3rem; margin: .45rem 0 0; }
     .sdb__col { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .72rem; padding: .1rem .4rem; border-radius: 6px; background: var(--app-surface-soft, #f7faff); border: 1px solid var(--app-line, #d8e5f7); }
     .sdb__actions { display: flex; gap: .4rem; flex-wrap: wrap; margin-top: .55rem; }
-    .sdb__btn { min-height: 32px; padding: 0 .7rem; border-radius: 8px; font-size: .78rem; font-weight: 800; cursor: pointer; border: 1px solid var(--app-line-strong, #b9cfee); background: transparent; color: var(--app-ink, #0b1f3a); }
+    .sdb__btn { min-height: 32px; padding: 0 .7rem; border-radius: 8px; font-size: .78rem; font-weight: 800; cursor: pointer; border: 1px solid var(--app-line-strong, #b9cfee); background: transparent; color: var(--app-ink, #0b1f3a); display: inline-flex; align-items: center; }
     .sdb__btn--primary { background: #7c3aed; border-color: #7c3aed; color: #fff; }
     .sdb__btn[disabled] { opacity: .6; cursor: progress; }
     .sdb__empty { padding: 1.2rem 1rem; text-align: center; color: var(--app-muted, #526987); font-size: .84rem; }
@@ -139,20 +138,23 @@
 
             var seen = item.occurrences > 1 ? ' · terdeteksi ' + item.occurrences + '×' : '';
             li.appendChild(el('div', 'sdb__meta', 'Tabel ' + item.table + seen));
+            if (item.source_file) { li.appendChild(el('div', 'sdb__summary', item.source_file)); }
 
             var actions = el('div', 'sdb__actions');
-            if (item.status === 'pending' && monitor) {
-                li.appendChild(el('div', 'sdb__meta', 'Layout import tetap — kolom baru dicatat, tidak ditambahkan ke tabel.'));
-                if (pendingAdjustments.length) {
-                    var skipAll = pendingColumns.map(function (c) { return { proposed_column: c.proposed_column, action: 'skip' }; });
-                    actions.appendChild(button('Perlebar kolom', 'sdb__btn sdb__btn--primary', function (b) { act(b, url('acceptUrl', item.id), 'Kolom diperlebar.', { columns: skipAll }); }));
+            if (item.status === 'pending' || item.status === 'failed') {
+                var preview = document.getElementById('schemaDriftPanel');
+                if (preview && preview.dataset.eventId === String(item.id)) {
+                    actions.appendChild(button('Tinjau di preview', 'sdb__btn sdb__btn--primary', function () {
+                        setOpen(false);
+                        preview.focus();
+                        preview.scrollIntoView({ block: 'start' });
+                    }));
+                } else {
+                    li.appendChild(el('div', 'sdb__meta', 'Buka preview file terkait untuk melihat dan memutuskan perubahan kolom.'));
+                    var link = el('a', 'sdb__btn', 'Buka Import Management');
+                    link.href = root.dataset.importUrl;
+                    actions.appendChild(link);
                 }
-                actions.appendChild(button('Tandai sudah ditinjau', 'sdb__btn', function (b) { act(b, url('rejectUrl', item.id), 'Ditandai sudah ditinjau.'); }));
-            } else if (item.status === 'pending') {
-                // The default of each column is its suggestion: a rename is mapped
-                // onto the existing column, anything else is added.
-                actions.appendChild(button('Terima semua', 'sdb__btn sdb__btn--primary', function (b) { act(b, url('acceptUrl', item.id), 'Struktur diperbarui.'); }));
-                actions.appendChild(button('Tolak', 'sdb__btn', function (b) { act(b, url('rejectUrl', item.id), 'Perubahan ditolak.'); }));
             } else {
                 actions.appendChild(button('Tandai dibaca', 'sdb__btn', function (b) { act(b, url('ackUrl', item.id)); }));
             }
@@ -172,7 +174,6 @@
         btn.disabled = true;
         post(target, body).then(function (data) {
             render(data.feed || {});
-            document.dispatchEvent(new CustomEvent('schema-drift:feed-decided', { detail: data }));
             if (successText && window.Swal) { window.Swal.fire({ icon: 'success', title: successText, text: data.message, timer: 2600, showConfirmButton: false }); }
         }).catch(function (error) {
             btn.disabled = false;

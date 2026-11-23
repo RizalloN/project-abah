@@ -2,6 +2,9 @@
 
 namespace App\Http\Controllers\Import;
 
+use App\Services\Import\SchemaDrift\SchemaDriftImportGuard;
+use App\Services\Import\SchemaDrift\SchemaDriftRegistry;
+
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Import\Concerns\AllocatesGapIds;
 use App\Http\Controllers\Import\Concerns\AuthorizesImportSourceFiles;
@@ -142,12 +145,14 @@ class ImportFileBrimoController extends Controller
         };
     }
 
-    private function normalizeBrimoHeader(string $header): string
+    public function schemaDriftSourceColumn(string $header, array $aliases): string
     {
         $header = preg_replace('/^\xEF\xBB\xBF/', '', $header);
         $header = preg_replace('/[^A-Za-z0-9]+/', '_', trim((string) $header));
 
-        return strtolower(trim((string) $header, '_'));
+        $normalized = strtolower(trim((string) $header, '_'));
+
+        return $aliases[$normalized] ?? $normalized;
     }
 
     private function normalizeBrimoDecimalValue($value): ?string
@@ -262,6 +267,33 @@ class ImportFileBrimoController extends Controller
             'active_id_report'  => $request->input('id_report'),
             'import_type'       => 'brimo',
         ]);
+
+        $requestedReport = null;
+        $requestedTableName = null;
+        if (count($files) > 1 && DB::getSchemaBuilder()->hasTable('nama_report')) {
+            $requestedReport = DB::table('nama_report')
+                ->where('id_report', (int) $request->input('id_report'))
+                ->first();
+            $requestedTableName = strtolower(trim((string) ($requestedReport->table_name ?? '')));
+        }
+
+        $autoDetectedFile = app(\App\Services\Import\ArchiveImportFileResolver::class)
+            ->resolve($files, $requestedReport, $requestedTableName);
+
+        if ($autoDetectedFile !== null) {
+            $redirectUrl = route('import.brimo.preview.direct', [
+                'file_path' => $autoDetectedFile['path'],
+            ]);
+
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'status' => 'success',
+                    'redirect' => $redirectUrl,
+                ]);
+            }
+
+            return redirect()->to($redirectUrl);
+        }
 
         $selectUrl = route('import.select');
         if ($request->expectsJson() || $request->ajax()) {
@@ -442,6 +474,7 @@ class ImportFileBrimoController extends Controller
             'currentDelimiter',
             'processRoute'
         ))->with([
+            'schemaDriftDelimiter' => $delimiter ?? $currentDelimiter,
             'area6ColumnHints' => $area6ColumnHints,
             'initialArea6Selections' => $initialArea6Selections,
             'previewRoute' => route('import.brimo.preview'),
@@ -522,6 +555,11 @@ class ImportFileBrimoController extends Controller
         }
 
         $dataToInsert = [];
+        $delimiter = $currentDelimiter === 'auto'
+            ? $this->smartDetectCsvDelimiter($filePath, [',', ';', "\t", '|', '.'])
+            : $currentDelimiter;
+        app(SchemaDriftImportGuard::class)->assertWebReady($tableName, $filePath, SchemaDriftImportGuard::delimitedOptions('brimo', $delimiter));
+        $driftAliases = app(SchemaDriftRegistry::class)->columnAliases($tableName);
         $csvHeaders = [];
         $posisiIndex = -1;
         $tahunIndex = -1;
@@ -529,10 +567,6 @@ class ImportFileBrimoController extends Controller
         $writableColumns = $this->writableColumnsForTable($tableName);
 
         if (($handle = fopen($filePath, "r")) !== FALSE) {
-            $delimiter = $currentDelimiter === 'auto'
-                ? $this->smartDetectCsvDelimiter($filePath, [',', ';', "\t", '|', '.'])
-                : $currentDelimiter;
-
             $rowCounter = 0;
             while (($data = $this->readCsvRecord($handle, $delimiter)) !== FALSE) {
                 if (empty($data) || implode('', $data) === '') continue;
@@ -610,7 +644,7 @@ class ImportFileBrimoController extends Controller
                 foreach ($selectedColumns as $index) {
                     if (!isset($csvHeaders[$index])) continue;
                     
-                    $colName = $this->normalizeBrimoHeader((string) $csvHeaders[$index]);
+                    $colName = $this->schemaDriftSourceColumn((string) $csvHeaders[$index], $driftAliases);
 
                     if ($colName === 'id' || $colName === 'uniqueid_namareport' || !isset($writableColumns[$colName])) {
                         continue;

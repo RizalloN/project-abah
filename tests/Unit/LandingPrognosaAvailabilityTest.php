@@ -15,6 +15,9 @@ class LandingPrognosaAvailabilityTest extends TestCase
     {
         Cache::put('landing:prognosa:v1', ['meta' => ['available' => false]], now()->addDays(7));
         Cache::put('landing:prognosa:v1:last-valid', ['meta' => ['available' => false]], now()->addDays(7));
+        $oldKey = 'landing:prognosa:v3:'.PresentationPrognosaWeeklyService::SPREADSHEET_ID;
+        Cache::put($oldKey, ['meta' => ['available' => false]], now()->addDays(7));
+        Cache::put($oldKey.':last-valid', ['meta' => ['available' => false]], now()->addDays(7));
         $source = Mockery::mock(PresentationPrognosaWeeklyService::class);
         $source->shouldReceive('payload')->once()->with(false)->andReturn($this->payload());
 
@@ -32,7 +35,7 @@ class LandingPrognosaAvailabilityTest extends TestCase
         $forecast = $this->forecast($service);
         $this->assertSame('125', $forecast['value']);
         $this->assertTrue($forecast['stale']);
-        $this->assertTrue(Cache::has('landing:prognosa:v2:1DQSxk8-9U2pXwOQGiLQK4PW2Ao3ROhCYtvTy7yo12DM:refresh-pending'));
+        $this->assertTrue(Cache::has('landing:prognosa:v4:1DQSxk8-9U2pXwOQGiLQK4PW2Ao3ROhCYtvTy7yo12DM:refresh-pending'));
         $this->assertSame('125', $this->forecast($service)['value']);
     }
 
@@ -49,8 +52,8 @@ class LandingPrognosaAvailabilityTest extends TestCase
 
         $this->assertSame('125', $this->forecast($service)['value']);
         $this->assertTrue($this->forecast($service)['stale']);
-        $this->assertFalse(data_get(Cache::get('landing:prognosa:v2:1DQSxk8-9U2pXwOQGiLQK4PW2Ao3ROhCYtvTy7yo12DM:last-valid'), 'meta.stale', false));
-        $this->assertFalse(Cache::has('landing:prognosa:v2:1DQSxk8-9U2pXwOQGiLQK4PW2Ao3ROhCYtvTy7yo12DM:refresh-pending'));
+        $this->assertFalse(data_get(Cache::get('landing:prognosa:v4:1DQSxk8-9U2pXwOQGiLQK4PW2Ao3ROhCYtvTy7yo12DM:last-valid'), 'meta.stale', false));
+        $this->assertFalse(Cache::has('landing:prognosa:v4:1DQSxk8-9U2pXwOQGiLQK4PW2Ao3ROhCYtvTy7yo12DM:refresh-pending'));
     }
 
     public function test_unavailable_cold_source_is_short_cached(): void
@@ -63,7 +66,7 @@ class LandingPrognosaAvailabilityTest extends TestCase
             $result = $service->decorateDashboard($dashboard, 'area6');
             $this->assertFalse(data_get($result, 'area6_portfolio.prognosa.available'));
         }
-        $this->assertFalse(Cache::has('landing:prognosa:v2:1DQSxk8-9U2pXwOQGiLQK4PW2Ao3ROhCYtvTy7yo12DM:last-valid'));
+        $this->assertFalse(Cache::has('landing:prognosa:v4:1DQSxk8-9U2pXwOQGiLQK4PW2Ao3ROhCYtvTy7yo12DM:last-valid'));
     }
 
     public function test_successful_background_refresh_replaces_the_previous_forecast(): void

@@ -69,7 +69,7 @@ class DlyKapResegmentasiCsvImporter
     /**
      * @return array{metadata: array<string, mixed>, rows: array<int, array<string, mixed>>, warnings: array<int, string>}
      */
-    public function parse(string $path): array
+    public function parse(string $path, bool $inspectStructure = false): array
     {
         if (!is_file($path)) {
             throw new \InvalidArgumentException("File DLY KAP tidak ditemukan: {$path}");
@@ -94,6 +94,9 @@ class DlyKapResegmentasiCsvImporter
         $sectionHeader = null;
         $segmenKategori = null;
         $skipNextFooterTotalRow = false;
+        $sourceLayout = [];
+        $extraHeaders = [];
+        $sectionSourceHeaders = [];
         $delimiter = ',';
 
         try {
@@ -134,6 +137,15 @@ class DlyKapResegmentasiCsvImporter
                 if (str_starts_with($firstCell, 'SEGMEN')) {
                     $sectionHeader = $firstCell;
                     $segmenKategori = $this->resolveSegmenKategori($row[1] ?? null);
+                    if ($inspectStructure) {
+                        $sectionSourceHeaders = $row;
+                        $sourceLayout[] = array_slice($row, 0, 16);
+                        foreach (array_slice($row, 16) as $header) {
+                            if ($header !== null && trim((string) $header) !== '') {
+                                $extraHeaders[(string) $header] = true;
+                            }
+                        }
+                    }
                     continue;
                 }
 
@@ -145,6 +157,14 @@ class DlyKapResegmentasiCsvImporter
                 if (count($row) < 16) {
                     $warnings[] = "Baris {$lineNumber} dilewati karena kolom kurang dari format minimum 16 kolom.";
                     continue;
+                }
+
+                if ($inspectStructure) {
+                    foreach (array_slice($row, 16, null, true) as $index => $value) {
+                        if (trim((string) $value) !== '' && trim((string) ($sectionSourceHeaders[$index] ?? '')) === '') {
+                            $extraHeaders[$sectionHeader.' kolom '.($index + 1).' tanpa header'] = true;
+                        }
+                    }
                 }
 
                 $rows[] = $this->makeMetricRecord(
@@ -175,6 +195,8 @@ class DlyKapResegmentasiCsvImporter
             'metadata' => $metadata,
             'rows' => $rows,
             'warnings' => $warnings,
+            'source_layout' => $sourceLayout,
+            'extra_headers' => array_keys($extraHeaders),
         ];
     }
 

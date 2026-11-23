@@ -1758,18 +1758,17 @@ final class LandingMicroPerformanceService
 
         // Scope cabang tidak diterapkan pada exposure pembanding agar rekening lintas
         // cabang dengan CIF sama tidak keliru dianggap sudah tutup.
-        $currentRows = $this->fetchCandidateLoanRows($period, $candidateCifs, $fallbackAccounts, null);
-        $previousRows = $this->fetchCandidateLoanRows($previousPeriod, $candidateCifs, $fallbackAccounts, null);
         $normalizeAccount = static function (object $row) use ($canonicalAccount): object {
-            $copy = clone $row;
-            $copy->nomor_rekening1 = $canonicalAccount((string) ($row->nomor_rekening1 ?? ''));
+            $row->nomor_rekening1 = $canonicalAccount((string) ($row->nomor_rekening1 ?? ''));
 
-            return $copy;
+            return $row;
         };
-        $currentAccounts = $this->deduplicateLoanAccounts($currentRows->map($normalizeAccount));
-        $previousAccounts = $this->deduplicateLoanAccounts($previousRows->map($normalizeAccount));
-        $currentByCif = $currentAccounts->groupBy(fn ($row): string => $this->loanCifKey($row));
-        $previousByCif = $previousAccounts->groupBy(fn ($row): string => $this->loanCifKey($row));
+        $currentByCif = $this->deduplicateLoanAccounts(
+            $this->fetchCandidateLoanRows($period, $candidateCifs, $fallbackAccounts, null)->map($normalizeAccount)
+        )->groupBy(fn ($row): string => $this->loanCifKey($row));
+        $previousByCif = $this->deduplicateLoanAccounts(
+            $this->fetchCandidateLoanRows($previousPeriod, $candidateCifs, $fallbackAccounts, null)->map($normalizeAccount)
+        )->groupBy(fn ($row): string => $this->loanCifKey($row));
 
         return $realizations
             ->groupBy('cif_key')
@@ -1840,17 +1839,12 @@ final class LandingMicroPerformanceService
         Collection $fallbackAccounts,
         ?array $branchScope
     ): Collection {
-        $columns = array_values(array_filter([
-            'uniqueid_namareport', 'cifno', 'nomor_rekening1', 'baki_debet1', 'plafon',
-            'cabang1', 'unit1', 'produk_dashboard', 'ln_type', 'freq_payment', 'pn_pemutus1',
-            $this->hasColumn(self::SOURCE_TABLE, 'tgl_realisasi') ? 'tgl_realisasi' : null,
-            $this->hasColumn(self::SOURCE_TABLE, 'kode_cabang1') ? 'kode_cabang1' : null,
-            $this->hasColumn(self::SOURCE_TABLE, 'pn_pengelola1') ? 'pn_pengelola1' : null,
-            $this->hasColumn(self::SOURCE_TABLE, 'cifno_clean') ? 'cifno_clean' : null,
-            $this->hasColumn(self::SOURCE_TABLE, 'pn_pemutus_normalized') ? 'pn_pemutus_normalized' : null,
-            $this->hasColumn(self::SOURCE_TABLE, 'cabang_normalized') ? 'cabang_normalized' : null,
-        ]));
-        $cifColumn = $this->hasColumn(self::SOURCE_TABLE, 'cifno_clean') ? 'cifno_clean' : 'cifno';
+        $columns = ['uniqueid_namareport', 'cifno', 'nomor_rekening1', 'baki_debet1', 'plafon'];
+        $cifColumn = 'cifno';
+        if ($this->hasColumn(self::SOURCE_TABLE, 'cifno_clean')) {
+            $cifColumn = 'cifno_clean';
+            $columns[] = $cifColumn;
+        }
 
         $rows = collect();
         foreach ($candidateCifs->chunk(800) as $chunk) {

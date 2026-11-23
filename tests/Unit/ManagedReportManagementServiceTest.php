@@ -111,4 +111,103 @@ class ManagedReportManagementServiceTest extends TestCase
 
         $this->assertSame('2026-04-30', $method->invoke($service, 'ssa_pinjaman', '2026-04-30', '2026-04', 'month_day_year_of_periode'));
     }
+
+    public function test_cognos_recovery_report_management_scope_uses_cabang_with_unit_kerja_fallback(): void
+    {
+        $service = new ManagedReportManagementService();
+
+        [$periodColumn, $kancaColumn] = $service->resolveManagementScopeColumns('cognos_recovery', [
+            'uniqueid_namareport',
+            'periode',
+            'cifno',
+            'cabang',
+            'unit_kerja',
+            'total_recovery',
+        ]);
+
+        $this->assertSame('periode', $periodColumn);
+        $this->assertSame('cabang', $kancaColumn);
+    }
+
+    public function test_cognos_ph_normalize_kanca_filter_uses_unit_kerja_when_kanca_is_numeric_code(): void
+    {
+        $service = new ManagedReportManagementService();
+        $reflection = new ReflectionClass($service);
+        $method = $reflection->getMethod('normalizeManagementKancaFilter');
+        $method->setAccessible(true);
+
+        $filter = $method->invoke($service, 'cognos_ph', '6499', '00070 -- KC Ponorogo (Konsolidasi-MB)');
+
+        $this->assertSame('00070 -- KC Ponorogo (Konsolidasi-MB)', $filter);
+    }
+
+    public function test_cognos_recovery_management_label_and_filter_normalizes_null_to_blank(): void
+    {
+        $service = new ManagedReportManagementService();
+        $reflection = new ReflectionClass($service);
+        $labelMethod = $reflection->getMethod('resolveManagementKancaLabel');
+        $labelMethod->setAccessible(true);
+        $filterMethod = $reflection->getMethod('normalizeManagementKancaFilter');
+        $filterMethod->setAccessible(true);
+
+        $this->assertSame('(Blank)', $labelMethod->invoke($service, 'cognos_recovery', 'NULL', 'NULL'));
+        $this->assertSame('', $filterMethod->invoke($service, 'cognos_recovery', 'NULL', 'NULL'));
+    }
+
+    public function test_cognos_ph_groups_and_aggregates_multiple_numeric_units_into_single_branch_segment(): void
+    {
+        $service = new ManagedReportManagementService();
+        $reflection = new ReflectionClass($service);
+        $method = $reflection->getMethod('normalizeManagementGroupRows');
+        $method->setAccessible(true);
+
+        $items = [
+            (object) [
+                'period_value' => '2026-02-28',
+                'kanca_value' => '6109',
+                'kanca_label_fallback_value' => '00007 -- KC Banyuwangi (Konsolidasi-MB)',
+                'row_count' => 6,
+            ],
+            (object) [
+                'period_value' => '2026-02-28',
+                'kanca_value' => '6118',
+                'kanca_label_fallback_value' => '00007 -- KC Banyuwangi (Konsolidasi-MB)',
+                'row_count' => 3,
+            ],
+            (object) [
+                'period_value' => '2026-02-28',
+                'kanca_value' => '6122',
+                'kanca_label_fallback_value' => '00007 -- KC Banyuwangi (Konsolidasi-MB)',
+                'row_count' => 2,
+            ],
+            (object) [
+                'period_value' => '2026-02-28',
+                'kanca_value' => '00009 -- KC Blitar (Konsolidasi-MB)',
+                'kanca_label_fallback_value' => '00009 -- KC Blitar',
+                'row_count' => 7,
+            ],
+        ];
+
+        $rows = $method->invoke(
+            $service,
+            'cognos_ph',
+            $items,
+            'periode',
+            'kanca',
+            'unit_kerja',
+            []
+        );
+
+        $this->assertCount(2, $rows);
+
+        $banyuwangi = collect($rows)->firstWhere('kanca', '00007 -- KC Banyuwangi (Konsolidasi-MB)');
+        $this->assertNotNull($banyuwangi);
+        $this->assertSame('00007 -- KC Banyuwangi (Konsolidasi-MB)', $banyuwangi['kanca_label']);
+        $this->assertSame(11, $banyuwangi['row_count']);
+
+        $blitar = collect($rows)->firstWhere('kanca', '00009 -- KC Blitar (Konsolidasi-MB)');
+        $this->assertNotNull($blitar);
+        $this->assertSame('00009 -- KC Blitar (Konsolidasi-MB)', $blitar['kanca_label']);
+        $this->assertSame(7, $blitar['row_count']);
+    }
 }

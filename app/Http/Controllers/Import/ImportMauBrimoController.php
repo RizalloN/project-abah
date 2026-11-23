@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Import;
 
+use App\Services\Import\SchemaDrift\SchemaDriftImportGuard;
+
 use App\Services\Import\ImportProgressService;
 use App\Services\Import\MauBrimoImportPolicy;
 use App\Support\ManagedReportManagementService;
@@ -159,6 +161,7 @@ class ImportMauBrimoController extends ImportFileBrimoController
         $delimiter = $this->delimiter($filePath, $request->input('delimiter') ?? 'auto');
         $filters = json_decode($request->input('active_filters_json') ?? '{}', true) ?? [];
         $policy = app(MauBrimoImportPolicy::class);
+        app(SchemaDriftImportGuard::class)->assertWebReady(MauBrimoImportPolicy::TABLE, $filePath, SchemaDriftImportGuard::delimitedOptions('brimo', $delimiter));
         $headers = $rows = [];
         $map = null;
         $sourceRows = 0;

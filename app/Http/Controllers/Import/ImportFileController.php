@@ -2,6 +2,9 @@
 
 namespace App\Http\Controllers\Import;
 
+use App\Services\Import\SchemaDrift\SchemaDriftImportGuard;
+use App\Services\Import\SchemaDrift\SchemaDriftRegistry;
+
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Import\Concerns\AllocatesGapIds;
 use App\Http\Controllers\Import\Concerns\AuthorizesImportSourceFiles;
@@ -11,6 +14,7 @@ use App\Jobs\PrepareCsvStagingJob;
 use App\Services\Import\ImportProgressService;
 use App\Services\Import\ImportDuplicateGuardService;
 use App\Services\Import\ImportPeriodGuardService;
+use App\Services\Import\MerchantQrisDetailCsv;
 use App\Services\Import\MySqlBulkLoadService;
 use App\Services\Import\SchemaIntrospectionService;
 use App\Services\Import\SmartContentHeaderGuardService;
@@ -213,7 +217,9 @@ class ImportFileController extends Controller
 
     private function previewFilterCacheKey(string $filePath, string $delimiter, int $columnIndex, string $tableName, string $contextSignature = ''): string
     {
-        return 'preview_filter_options:v4:' . md5($filePath . '|' . $delimiter . '|' . $columnIndex . '|' . $tableName . '|' . $contextSignature);
+        $version = $tableName === MerchantQrisDetailCsv::TABLE ? 'v5' : 'v4';
+
+        return 'preview_filter_options:'.$version.':' . md5($filePath . '|' . $delimiter . '|' . $columnIndex . '|' . $tableName . '|' . $contextSignature);
     }
 
     private function normalizeDisplayFilterMap(array $displayFilterMap, int $maxValidIndex = -1): array
@@ -229,11 +235,19 @@ class ImportFileController extends Controller
         return $normalized;
     }
 
+    public const BRILINK_SUMMARY_TABLE = 'brilink_web_laporan_summary_transaksi_brilink_web';
+
     private const BRILINK_SUMMARY_HEADERS = [
         'PERIODE', 'FLAG', 'KANWIL', 'KODE_KANCA', 'CABANG',
         'KODE_UKER', 'UKER', 'MERCHANT_NAME', 'MERCHANT_CODE',
         'OUTLET_NAME', 'OUTLET_CODE', 'TOTAL_TRANSAKSI',
         'TOTAL_NOMINAL', 'TOTAL_FEE', 'TOTAL_FEE_BRI',
+    ];
+
+    private const BRILINK_VENDOR_HEADERS = [
+        'TEXTBOX26', 'TEXTBOX7', 'TEXTBOX4', 'TEXTBOX16', 'TEXTBOX12',
+        'TEXTBOX19', 'TEXTBOX13', 'BRILINK_WEB_NAME', 'BRILINK_WEB_CODE',
+        'OUTLET_NAME', 'OUTLET_CODE', 'TOTAL_TRANSAKSI', 'TEXTBOX18', 'TEXTBOX20', 'TEXTBOX32',
     ];
 
     private const NUMERIC_COLUMNS = [
@@ -339,6 +353,22 @@ class ImportFileController extends Controller
         }
 
         return $row !== [] ? $row : false;
+    }
+
+    private function csvRecords($handle, string $delimiter, string $tableName): \Generator
+    {
+        $needsLayout = $tableName === MerchantQrisDetailCsv::TABLE && $delimiter === '|';
+        $layout = null;
+        while (($row = $this->readCsvRecord($handle, $delimiter)) !== false) {
+            if ($needsLayout && trim(implode('', $row)) !== '') {
+                $layout = MerchantQrisDetailCsv::forHeaders($row, $delimiter);
+                $needsLayout = false;
+                yield $row;
+                continue;
+            }
+
+            yield $layout?->repair($row) ?? $row;
+        }
     }
 
     private function normalizeDailyLoanHeader(string $header): string
@@ -504,6 +534,7 @@ class ImportFileController extends Controller
     private function buildColumnImportBlueprint(array $selectedColumns, array $csvHeaders, string $tableName = ''): array
     {
         $this->assertIbbizSourceLayout($tableName, $csvHeaders);
+        $aliases = app(SchemaDriftRegistry::class)->columnAliases($tableName);
 
         $blueprint = [];
 
@@ -513,7 +544,7 @@ class ImportFileController extends Controller
             }
 
             $colName = str_replace(' ', '_', $csvHeaders[$index]);
-            $normalizedColName = $this->resolveMappedImportColumnName($tableName, (int) $index, $colName);
+            $normalizedColName = $this->schemaDriftSourceColumn($tableName, (int) $index, $colName, $aliases);
 
             if ($normalizedColName === null) {
                 continue;
@@ -622,6 +653,9 @@ class ImportFileController extends Controller
 
         if ($tableName === 'daily_loan_dinamis') {
             $mapped = $this->normalizeDailyLoanHeader($header);
+            if (in_array($mapped, $this->getDailyLoanPreviewOrder(), true)) {
+                return $mapped;
+            }
             $aliasCandidate = $this->smartGuardService()->resolveAliasCandidate($header, $this->getDailyLoanPreviewOrder());
             if ($aliasCandidate !== null) {
                 return $aliasCandidate;
@@ -631,6 +665,57 @@ class ImportFileController extends Controller
         }
 
         return $this->normalizeDailyLoanHeader($header);
+    }
+
+    public function schemaDriftSourceColumn(string $table, int $index, string $header, array $aliases): ?string
+    {
+        $sourceKey = strtolower($this->normalizeImportHeaderName($header));
+        if ($this->isBrilinkSummaryTable($table)) {
+            $expected = strtolower(self::BRILINK_SUMMARY_HEADERS[$index] ?? '');
+
+            return $sourceKey === $expected ? $expected : null;
+        }
+
+        $target = $aliases[$sourceKey] ?? $this->resolveMappedImportColumnName($table, $index, str_replace(' ', '_', $header));
+
+        return $target !== null ? strtolower($this->normalizeImportHeaderName($target)) : null;
+    }
+
+    /**
+     * Match the raw file against the positional BRILink importer. Null targets
+     * are vendor metadata that the importer does not write to the table.
+     *
+     * @return array<int, string|null>|null
+     */
+    public function brilinkSummarySourceTargets(array $headers): ?array
+    {
+        $headers = array_map(fn ($header) => $this->normalizeImportHeaderName((string) $header), array_values($headers));
+        $numbered = count($headers) === count(self::BRILINK_SUMMARY_HEADERS) + 1;
+        if ($numbered) {
+            if (!in_array($headers[1], ['TEXTBOX1', 'NO', 'NO_URUT', 'NOMOR_URUT'], true)) {
+                return null;
+            }
+            array_splice($headers, 1, 1);
+        }
+        if ($headers !== self::BRILINK_VENDOR_HEADERS && $headers !== self::BRILINK_SUMMARY_HEADERS) {
+            return null;
+        }
+
+        $targets = array_map(static fn (string $header): ?string => in_array($header, ['FLAG', 'KODE_KANCA', 'KODE_UKER'], true)
+            ? null
+            : strtolower($header), self::BRILINK_SUMMARY_HEADERS);
+        if ($numbered) {
+            array_splice($targets, 1, 0, [null]);
+        }
+
+        return $targets;
+    }
+
+    public static function brilinkSummaryPeriod(?string $value): string
+    {
+        $parts = explode(':', (string) $value);
+
+        return trim($parts[1] ?? $parts[0]);
     }
 
     private function sortFilterValues(array &$values): void
@@ -1727,7 +1812,7 @@ class ImportFileController extends Controller
         };
 
         try {
-            while (($data = $this->readCsvRecord($handle, $resolvedDelimiter)) !== false) {
+            foreach ($this->csvRecords($handle, $resolvedDelimiter, $tableName) as $data) {
                 if (empty($data) || implode('', $data) === '') {
                     continue;
                 }
@@ -1863,6 +1948,7 @@ class ImportFileController extends Controller
         $selectedColumns = $params['selectedColumns'] ?? $params['selected_columns'] ?? [];
         $activeFilters = $params['normalized_filters'] ?? $params['activeFilters'] ?? $params['active_filters'] ?? [];
         $tableName = $params['tableName'] ?? $params['table_name'] ?? '';
+        app(SchemaDriftImportGuard::class)->assertReady($tableName, (string) $filePath, SchemaDriftImportGuard::delimitedOptions('csv', $resolvedDelimiter));
         $uniqueSuffix = $params['uniqueSuffix'] ?? $params['unique_suffix'] ?? '';
         $isBrilinkSummary = $params['isBrilinkSummary'] ?? $params['is_brilink_summary'] ?? false;
         $isBrilinkSummary = (bool) $isBrilinkSummary || $this->isBrilinkSummaryTable((string) $tableName);
@@ -1935,7 +2021,7 @@ class ImportFileController extends Controller
         };
 
         try {
-            while (($data = $this->readCsvRecord($handle, $resolvedDelimiter)) !== false) {
+            foreach ($this->csvRecords($handle, $resolvedDelimiter, $tableName) as $data) {
                 if (empty($data) || implode('', $data) === '') {
                     continue;
                 }
@@ -2077,7 +2163,7 @@ class ImportFileController extends Controller
 
     private function isBrilinkSummaryTable(string $tableName): bool
     {
-        return strtolower($tableName) === 'brilink_web_laporan_summary_transaksi_brilink_web';
+        return strtolower($tableName) === self::BRILINK_SUMMARY_TABLE;
     }
 
     private function extractJumlahMerchantDuplicateKey(array $rowData): ?array
@@ -2397,13 +2483,14 @@ class ImportFileController extends Controller
         string $delimiter,
         int $sourceColumnIndex,
         array $activeFilters,
+        string $tableName,
         bool $isBrilinkSummary = false
     ): array {
         $valuesMap = [];
         $headers = [];
         $rowCounter = 0;
 
-        while (($row = $this->readCsvRecord($handle, $delimiter)) !== false) {
+        foreach ($this->csvRecords($handle, $delimiter, $tableName) as $row) {
             if (empty($row) || implode('', $row) === '') {
                 continue;
             }
@@ -2520,12 +2607,9 @@ class ImportFileController extends Controller
                 return null;  // Insufficient columns
             }
 
-            $rawPeriode = $sourceData[0] ?? '';
-            $periode = strpos((string) $rawPeriode, ':') !== false
-                ? trim(explode(':', (string) $rawPeriode, 2)[1] ?? '')
-                : trim((string) $rawPeriode);
+            $periode = self::brilinkSummaryPeriod((string) ($sourceData[0] ?? ''));
 
-            $brilinkOffset = $this->hasManualNumberingColumn($sourceData) ? 1 : 0;
+            $brilinkOffset = self::hasManualNumberingColumn($sourceData) ? 1 : 0;
             $minRequiredLength = 15 + $brilinkOffset;  // Indices 0-14 needed (or 1-15 with offset)
             
             if (count($sourceData) < $minRequiredLength) {
@@ -2592,7 +2676,8 @@ class ImportFileController extends Controller
         array $activeFilters,
         string $currentDelimiter,
         bool $isBrilinkSummary,
-        bool $collectDuplicatePairs = false
+        bool $collectDuplicatePairs = false,
+        string $tableName = ''
     ): array {
         $headers = [];
         $posisiIndex = -1;
@@ -2615,7 +2700,7 @@ class ImportFileController extends Controller
             rewind($handle);
 
             $rowCounter = 0;
-            while (($data = $this->readCsvRecord($handle, $delimiter)) !== false) {
+            foreach ($this->csvRecords($handle, $delimiter, $tableName) as $data) {
                 if (empty($data) || implode('', $data) === '') {
                     continue;
                 }
@@ -2763,7 +2848,7 @@ class ImportFileController extends Controller
         }
 
         $isBrilinkSummary = $tableName === 'brilink_web_laporan_summary_transaksi_brilink_web';
-        $meta = $this->collectImportMeta($sourcePath, [], [], 'auto', $isBrilinkSummary, $this->isJumlahMerchantDetailTable($tableName));
+        $meta = $this->collectImportMeta($sourcePath, [], [], 'auto', $isBrilinkSummary, $this->isJumlahMerchantDetailTable($tableName), $tableName);
         $normalizedFilters = [];
         $selectedColumns = $this->inferImportSelectedColumns($tableName, $meta['headers'] ?? []);
 
@@ -2836,7 +2921,7 @@ class ImportFileController extends Controller
         return $selected !== [] ? $selected : range(0, max(0, count($headers) - 1));
     }
 
-    private function hasManualNumberingColumn(array $row): bool
+    public static function hasManualNumberingColumn(array $row): bool
     {
         $candidate = trim((string) ($row[1] ?? ''));
 
@@ -2845,12 +2930,9 @@ class ImportFileController extends Controller
 
     private function transformBrilinkSummaryRow(array $row): array
     {
-        $rawPeriode = $row[0] ?? '';
-        $periode = strpos($rawPeriode, ':') !== false
-            ? trim(explode(':', $rawPeriode, 2)[1])
-            : trim((string) $rawPeriode);
+        $periode = self::brilinkSummaryPeriod((string) ($row[0] ?? ''));
 
-        $offset = $this->hasManualNumberingColumn($row) ? 1 : 0;
+        $offset = self::hasManualNumberingColumn($row) ? 1 : 0;
         $baseIndex = 1 + $offset;
 
         return [
@@ -3110,9 +3192,12 @@ class ImportFileController extends Controller
             'generic_import_manual_periode' => $manualImportPeriode,
         ]);
 
-        if ($extension !== 'rar' && count($files) === 1) {
+        $autoDetectedFile = app(\App\Services\Import\ArchiveImportFileResolver::class)
+            ->resolve($files, $requestedReport, $requestedTableName);
+
+        if ($autoDetectedFile !== null) {
             $redirectUrl = route('import.preview.direct', [
-                'file_path' => $files[0]['path'],
+                'file_path' => $autoDetectedFile['path'],
             ]);
 
             if ($request->expectsJson() || $request->ajax()) {
@@ -3234,7 +3319,7 @@ class ImportFileController extends Controller
                 $tahunCache = [];
                 
                 // OPTIMIZATION 3: Process rows with minimal trim operations
-                while (($data = $this->readCsvRecord($handle, $delimiter)) !== FALSE) {
+                foreach ($this->csvRecords($handle, $delimiter, $tableName) as $data) {
                     // OPTIMIZATION 4: Skip empty rows BEFORE any processing
                     $hasContent = false;
                     foreach ($data as $val) {
@@ -3500,6 +3585,7 @@ class ImportFileController extends Controller
             'initRoute',
             'streamRoute'
         ))->with([
+            'schemaDriftDelimiter' => $delimiter ?? $currentDelimiter,
             'disableArea6AutoFilter' => $disableArea6AutoFilter,
             'forceAllFiltersCheckedOnLoad' => $isDailyLoan,
             'lockDelimiterSelector' => $isDailyLoan,
@@ -3759,6 +3845,7 @@ class ImportFileController extends Controller
                     $resolvedDelimiter,
                     $sourceColumnIndex,
                     $normalizedActiveFilters,
+                    $tableName,
                     $isBrilinkSummary
                 );
 
@@ -3772,7 +3859,7 @@ class ImportFileController extends Controller
             }
 
             $rowCounter = 0;
-            while (($data = $this->readCsvRecord($handle, $resolvedDelimiter)) !== false) {
+            foreach ($this->csvRecords($handle, $resolvedDelimiter, $tableName) as $data) {
                 if (empty($data) || implode('', $data) === '') {
                     continue;
                 }
@@ -3902,6 +3989,7 @@ class ImportFileController extends Controller
         $currentDelimiter = (string) $request->input('delimiter', 'auto');
         $columnIndex = (int) $request->input('column_index');
         $columnName = (string) $request->input('column_name', '');
+        $tableName = (string) ($this->getActiveReportData()?->table_name ?? '');
 
         $resolvedFilePath = $filePath;
         if (!file_exists($resolvedFilePath)) {
@@ -3927,7 +4015,7 @@ class ImportFileController extends Controller
             (string) @filemtime($resolvedFilePath),
             (string) $columnIndex,
             (string) $currentDelimiter,
-            'v3',
+            $tableName === MerchantQrisDetailCsv::TABLE ? 'v4-qris' : 'v3',
         ]);
         $cacheKey = "import_dynamic_filter:" . md5($fileSignature);
         $cached = Cache::get($cacheKey);
@@ -3962,7 +4050,7 @@ class ImportFileController extends Controller
             $delimiter = $this->resolveDelimiter($handle, $currentDelimiter);
             rewind($handle);
 
-            while (($row = $this->readCsvRecord($handle, $delimiter)) !== false) {
+            foreach ($this->csvRecords($handle, $delimiter, $tableName) as $row) {
                 // OPTIMIZATION 4: Skip empty rows early
                 if (empty($row)) {
                     continue;
@@ -4192,7 +4280,7 @@ class ImportFileController extends Controller
             (string) $tableName,
             md5((string) json_encode($displayFilterMap)),
             md5((string) json_encode($activeFilters)),
-            'v3',
+            $tableName === MerchantQrisDetailCsv::TABLE ? 'v4-qris' : 'v3',
         ]);
 
         $cacheKey = 'import_preview_filtered_rows:' . md5($fileSignature);
@@ -4221,7 +4309,7 @@ class ImportFileController extends Controller
             $matchedCount = 0;
             $truncated = false;
 
-            while (($data = $this->readCsvRecord($handle, $delimiter)) !== false) {
+            foreach ($this->csvRecords($handle, $delimiter, $tableName) as $data) {
                 if ($rowCounter === 0) {
                     $headers = $this->formatCsvHeaders($data, $isBrilinkSummary);
                     if (!$isBrilinkSummary) {
@@ -4305,7 +4393,7 @@ class ImportFileController extends Controller
             (string) @filemtime($resolvedFilePath),
             (string) $currentDelimiter,
             (string) $tableName,
-            'v3',
+            $tableName === MerchantQrisDetailCsv::TABLE ? 'v4-qris' : 'v3',
         ]);
 
         return $baseDir . DIRECTORY_SEPARATOR . md5($signature) . '.sqlite';
@@ -4354,7 +4442,7 @@ class ImportFileController extends Controller
             $batchSize = 1000;
             $insertCount = 0;
 
-            while (($data = $this->readCsvRecord($handle, $delimiter)) !== false) {
+            foreach ($this->csvRecords($handle, $delimiter, $tableName) as $data) {
                 if ($rowCounter === 0) {
                     $headers = $this->formatCsvHeaders($data, $isBrilinkSummary);
                     if (!$isBrilinkSummary) {
@@ -4831,8 +4919,10 @@ class ImportFileController extends Controller
                 $normalizedFilters,
                 $currentDelimiter,
                 $isBrilinkSummary,
-                $this->isJumlahMerchantDetailTable($tableName)
+                $this->isJumlahMerchantDetailTable($tableName),
+                $tableName
             );
+            app(SchemaDriftImportGuard::class)->assertReady($tableName, $filePath, SchemaDriftImportGuard::delimitedOptions('csv', $meta['delimiter'] ?? $currentDelimiter));
             $this->assertIbbizSourceLayout($tableName, $meta['headers'] ?? []);
         } catch (\Throwable $e) {
             return response()->json([
@@ -5116,6 +5206,7 @@ class ImportFileController extends Controller
                 }
 
                 try {
+                    $sourceReview = app(SchemaDriftImportGuard::class)->assertReady($tableName, $filePath, SchemaDriftImportGuard::delimitedOptions('csv', $delimiter));
                     $this->bulkLoadService()->assertTransactionalTable($tableName, 'import CSV');
                 } catch (\RuntimeException $e) {
                     $markJobFailed($e->getMessage());
@@ -5173,7 +5264,8 @@ class ImportFileController extends Controller
                 };
 
                 $stagingHandled = false;
-                $skipRawLoadDataFastPath = $this->shouldSkipRawLoadDataFastPath($tableName, $filePath, $resolvedDelimiter);
+                $skipRawLoadDataFastPath = !empty($sourceReview['source']['structural_scan']['merchant_name_pipe_repairs'])
+                    || $this->shouldSkipRawLoadDataFastPath($tableName, $filePath, $resolvedDelimiter);
                 if ($this->shouldUseDbStagingFastPath() && !$skipRawLoadDataFastPath) {
                     $stagingHandled = $this->processImportStreamViaStagingTable(
                         $sendWithCacheSync,
@@ -5364,7 +5456,7 @@ class ImportFileController extends Controller
                     'speed' => 0,
                 ]);
 
-                while (($data = $this->readCsvRecord($handle, $resolvedDelimiter)) !== false) {
+                foreach ($this->csvRecords($handle, $resolvedDelimiter, $tableName) as $data) {
                     if (empty($data) || implode('', $data) === '') {
                         continue;
                     }
@@ -5572,6 +5664,7 @@ class ImportFileController extends Controller
         }
 
         try {
+            app(SchemaDriftImportGuard::class)->assertReady($tableName, $filePath, SchemaDriftImportGuard::delimitedOptions('csv', $currentDelimiter));
             $this->bulkLoadService()->assertTransactionalTable($tableName, 'import CSV');
         } catch (\RuntimeException $e) {
             $response = [
@@ -5624,7 +5717,7 @@ class ImportFileController extends Controller
             }
 
             $rowCounter = 0;
-            while (($data = $this->readCsvRecord($handle, $delimiter)) !== FALSE) {
+            foreach ($this->csvRecords($handle, $delimiter, $tableName) as $data) {
                 if (empty($data) || implode('', $data) === '') continue;
 
                 // 🔥 2. SKIP HEADER DEFAULT (INI KRITIS)
@@ -5712,7 +5805,7 @@ class ImportFileController extends Controller
                         $periode = trim($rawPeriode);
                     }
 
-                    $brilinkOffset = $this->hasManualNumberingColumn($data) ? 1 : 0;
+                    $brilinkOffset = self::hasManualNumberingColumn($data) ? 1 : 0;
 
                     $rowData = [
                         'uniqueid_namareport' => uniqid() . '_BST',

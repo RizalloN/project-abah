@@ -25,9 +25,9 @@ If stale, rebuild with `php artisan knowledge:graph --build`.
 
 | Metric | Count |
 | --- | ---: |
-| Source files | 787 |
-| Graph nodes | 9,753 |
-| Graph edges | 39,011 |
+| Source files | 796 |
+| Graph nodes | 9,874 |
+| Graph edges | 39,485 |
 | Domains | 18 |
 
 ## Read The Right Artifact
@@ -47,22 +47,22 @@ If stale, rebuild with `php artisan knowledge:graph --build`.
 | --- | --- | --- | ---: |
 | `ImportExcelController` | class | import | 391 |
 | `DashboardSimpananController` | class | dashboard-simpanan | 350 |
-| `DashboardHarianSnapshotService` | class | dashboard-harian | 213 |
-| `nama_report` | table | core | 180 |
-| `ImportIndexController` | class | import | 161 |
+| `DashboardHarianSnapshotService` | class | dashboard-harian | 214 |
+| `nama_report` | table | core | 185 |
+| `ImportIndexController` | class | import | 162 |
 | `DashboardPinjamanReportController` | class | dashboard-pinjaman | 156 |
+| `ImportFileController` | class | import | 130 |
 | `ReportSnapshotBuilder` | class | jobs-snapshots | 129 |
-| `ImportFileController` | class | import | 126 |
 | `import_jobs` | table | import | 122 |
-| `ImportProgressService` | class | import | 108 |
+| `ImportProgressService` | class | import | 109 |
 | `daily_loan_dinamis` | table | dashboard-pinjaman | 107 |
 | `ImportReportPhController` | class | import | 106 |
-| `KinerjaRmReportController` | class | dashboard-pinjaman | 105 |
+| `KinerjaRmReportController` | class | dashboard-pinjaman | 106 |
+| `ImportPerformancePisPerProdukController` | class | import | 95 |
 | `AlmafactsDashboardController` | class | almafacts | 94 |
 | `KinerjaRmMikroReportController` | class | dashboard-pinjaman | 88 |
 | `normalize` | method | core | 87 |
 | `LandingMicroPerformanceService` | class | core | 86 |
-| `ImportPerformancePisPerProdukController` | class | import | 83 |
 | `DriveAsixFile` | class | bank-pipeline | 80 |
 | `PrognosaWeeklyController` | class | prognosa | 72 |
 

@@ -70,6 +70,27 @@ class ImportIndexController extends Controller
             'identity' => 'uniqueid_namareport',
             'chunk_size' => 25000,
         ],
+        'pipeline_prewash_boh' => [
+            'index' => 'idx_prewash_boh_year_branch_cif',
+            'period' => 'tahun',
+            'kanca' => 'nama_kanca',
+            'identity' => 'uniqueid_namareport',
+            'chunk_size' => 25000,
+        ],
+        'monitoring_tl_pipeline_mbm' => [
+            'index' => 'idx_pipeline_mbm_year_branch_cif',
+            'period' => 'tahun',
+            'kanca' => 'nama_kanca',
+            'identity' => 'uniqueid_namareport',
+            'chunk_size' => 25000,
+        ],
+        'monitoring_realisasi_ksbk' => [
+            'index' => 'idx_monitoring_ksbk_periode_bo',
+            'period' => 'periode',
+            'kanca' => 'bo',
+            'identity' => 'uniqueid_namareport',
+            'chunk_size' => 25000,
+        ],
         'evaluasi_aktivitas_kunjungan_pemasar' => [
             'index' => 'idx_kunjungan_period_branch',
             'period' => 'periode',
@@ -1690,7 +1711,13 @@ class ImportIndexController extends Controller
             ], 422)];
         }
 
-        if (in_array($tableName, [\App\Services\Import\EvaluasiKunjunganSourceService::TABLE, \App\Services\Import\PipelinePrewashSourceService::TABLE], true) && $this->hasActiveKunjunganImport($tableName)) {
+        if (in_array($tableName, [
+            \App\Services\Import\EvaluasiKunjunganSourceService::TABLE,
+            \App\Services\Import\PipelinePrewashSourceService::TABLE,
+            \App\Services\Import\PipelinePrewashBohSourceService::TABLE,
+            \App\Services\Import\PipelinePrewashMbmSourceService::TABLE,
+            \App\Services\Import\MonitoringKsbkSourceService::TABLE,
+        ], true) && $this->hasActiveKunjunganImport($tableName)) {
             return [null, response()->json([
                 'status' => 'error',
                 'message' => 'Masih ada import report ini yang berjalan. Tunggu import selesai sebelum menghapus data.',
@@ -1701,10 +1728,21 @@ class ImportIndexController extends Controller
         [$periodColumn, $kancaColumn] = $this->reportManagementService()->resolveManagementScopeColumns($tableName, $tableColumns);
 
         $scopes = $this->normalizeDeleteScopes($validated);
-        if ($tableName === \App\Services\Import\PipelinePrewashSourceService::TABLE) {
+        if (in_array($tableName, [
+            \App\Services\Import\PipelinePrewashSourceService::TABLE,
+            \App\Services\Import\PipelinePrewashBohSourceService::TABLE,
+            \App\Services\Import\PipelinePrewashMbmSourceService::TABLE,
+        ], true)) {
             foreach ($scopes as $scope) {
                 if (($scope['period_is_null'] ?? false) || preg_match('/^(19\d{2}|20\d{2}|21\d{2})$/D', (string) ($scope['period_filter'] ?? '')) !== 1) {
-                    return [null, response()->json(['status' => 'error', 'message' => 'Pilih tahun laporan Pipeline Prewash yang valid (YYYY).'], 422)];
+                    return [null, response()->json(['status' => 'error', 'message' => 'Pilih tahun laporan Prewash yang valid (YYYY).'], 422)];
+                }
+            }
+        }
+        if ($tableName === \App\Services\Import\MonitoringKsbkSourceService::TABLE) {
+            foreach ($scopes as $scope) {
+                if (($scope['period_is_null'] ?? false) || trim((string) ($scope['period_filter'] ?? '')) === '') {
+                    return [null, response()->json(['status' => 'error', 'message' => 'Pilih periode bulan Monitoring Realisasi KSBK yang valid sebelum menghapus data.'], 422)];
                 }
             }
         }
@@ -3941,7 +3979,8 @@ class ImportIndexController extends Controller
             $innerQuery
                 ->whereNull($column)
                 ->orWhere($column, '')
-                ->orWhereRaw("TRIM(`{$safeColumn}`) = ''");
+                ->orWhereRaw("TRIM(`{$safeColumn}`) = ''")
+                ->orWhereRaw("LOWER(TRIM(`{$safeColumn}`)) = 'null'");
         });
     }
 
@@ -3972,7 +4011,7 @@ class ImportIndexController extends Controller
                 $this->applyBlankValueConstraint($query, $kancaColumn);
                 $hasWhereClause = true;
             } elseif ($kancaFilter !== null && $kancaFilter !== '') {
-                $query->where($kancaColumn, $kancaFilter);
+                $this->applyManagedKancaFilterConstraint($query, $tableName, $kancaColumn, $kancaFilter);
                 $hasWhereClause = true;
             }
         }
@@ -4122,7 +4161,7 @@ class ImportIndexController extends Controller
                                 $this->applyBlankValueConstraint($innerQuery, $kancaColumn);
                                 $applied = true;
                             } elseif (($scope['kanca_filter'] ?? null) !== null && $scope['kanca_filter'] !== '') {
-                                $innerQuery->where($kancaColumn, (string) $scope['kanca_filter']);
+                                $this->applyManagedKancaFilterConstraint($innerQuery, $tableName, $kancaColumn, (string) $scope['kanca_filter']);
                                 $applied = true;
                             }
                         }
@@ -4192,6 +4231,33 @@ class ImportIndexController extends Controller
         }
 
         $query->where($periodColumn, $periodFilter);
+    }
+
+    private function applyManagedKancaFilterConstraint($query, string $tableName, string $kancaColumn, string $kancaFilter): void
+    {
+        if (in_array($tableName, ['cognos_ph', 'cognos_recovery'], true)) {
+            $fallbackColumn = 'unit_kerja';
+            if (Schema::hasColumn($tableName, $fallbackColumn)) {
+                $driver = $query->getConnection()->getDriverName();
+                $isMysql = in_array(strtolower((string) $driver), ['mysql', 'mariadb'], true);
+
+                $query->where(function ($sub) use ($kancaColumn, $fallbackColumn, $kancaFilter, $isMysql) {
+                    $sub->where($kancaColumn, $kancaFilter)
+                        ->orWhere(function ($fallbackSub) use ($kancaColumn, $fallbackColumn, $kancaFilter, $isMysql) {
+                            $fallbackSub->where($fallbackColumn, $kancaFilter);
+                            if ($isMysql) {
+                                $fallbackSub->whereRaw("`{$kancaColumn}` REGEXP '^[0-9]+$'");
+                            } else {
+                                $fallbackSub->whereRaw("CAST(\"{$kancaColumn}\" AS INTEGER) > 0");
+                            }
+                        });
+                });
+
+                return;
+            }
+        }
+
+        $query->where($kancaColumn, $kancaFilter);
     }
 
     /**

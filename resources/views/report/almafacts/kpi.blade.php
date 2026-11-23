@@ -879,7 +879,7 @@
         <div class="kpi-hero-copy">
             <div class="kpi-eyebrow"><i class="fas fa-chart-line"></i> Performance Management</div>
             <h1 id="kpi-page-title">Dashboard {{ $selectedSheet['title'] ?? 'KPI' }}</h1>
-            <p>Monitoring kinerja {{ $selectedPeriodLabel }} berdasarkan {{ ($selectedSheet['source_type'] ?? '') === 'workbook' ? 'workbook Excel posisi 30 September 2026' : 'data Google Spreadsheet' }} dengan cakupan akses wilayah yang berlaku.</p>
+            <p>Monitoring kinerja {{ $selectedPeriodLabel }} berdasarkan {{ ($selectedSheet['source_type'] ?? '') === 'workbook' ? 'workbook Excel posisi ' . \Carbon\Carbon::parse($selectedSheet['source_as_of'])->locale('id')->translatedFormat('d F Y') : 'data Google Spreadsheet' }} dengan cakupan akses wilayah yang berlaku.</p>
         </div>
         <div class="kpi-hero-facts">
             <div class="kpi-hero-fact"><span>Wilayah</span><strong title="{{ $activeBranchLabel }}">{{ $activeBranchLabel }}</strong></div>
@@ -906,7 +906,7 @@
             @if(($selectedSheet['source_type'] ?? '') === 'workbook')
             <span class="kpi-action" title="{{ $selectedSheet['source_file'] }}">
                 <i class="fas fa-file-excel" aria-hidden="true"></i>
-                Sumber Excel · 30 Sep 2026
+                Sumber Excel · {{ \Carbon\Carbon::parse($selectedSheet['source_as_of'])->locale('id')->translatedFormat('d M Y') }}
             </span>
             @else
             <a href="{{ $spreadsheetUrl }}" target="_blank" rel="noopener" class="kpi-action">
@@ -996,7 +996,7 @@
             </div>
             <span class="kpi-source-badge">
                 <i class="fas fa-circle" aria-hidden="true"></i>
-                {{ ($selectedSheet['source_type'] ?? '') === 'workbook' ? 'Excel · 30 Sep 2026' : 'Google Sheets live' }}
+                {{ ($selectedSheet['source_type'] ?? '') === 'workbook' ? 'Excel · ' . \Carbon\Carbon::parse($selectedSheet['source_as_of'])->locale('id')->translatedFormat('d M Y') : 'Google Sheets live' }}
             </span>
         </div>
 

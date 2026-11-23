@@ -82,8 +82,158 @@ class ImportFileBrimoControllerTest extends TestCase
         $this->assertSame(200, $response->getStatusCode());
         $this->assertSame([
             'status' => 'success',
-            'redirect' => route('import.select'),
+            'redirect' => route('import.brimo.preview.direct', [
+                'file_path' => __FILE__,
+            ]),
         ], $response->getData(true));
+    }
+
+    public function test_brimo_upload_auto_detects_matching_file_in_multi_file_rar_and_falls_back_when_ambiguous(): void
+    {
+        Schema::create('nama_report', function ($table): void {
+            $table->integer('id_report')->primary();
+            $table->string('nama_report');
+            $table->string('table_name');
+        });
+        DB::table('nama_report')->insert([
+            'id_report' => 6,
+            'nama_report' => 'User Brimo Fin',
+            'table_name' => 'user_brimo_fin',
+        ]);
+
+        $directory = storage_path('app/imports/brimo_rar_' . Str::random(8));
+        File::ensureDirectoryExists($directory, 0750, true);
+        $finCsv = $directory . DIRECTORY_SEPARATOR . '1794791763_USER_BRIMO_FIN_DETAIL_R_ALL.csv';
+        $rptCsv = $directory . DIRECTORY_SEPARATOR . '1794791755_USER_BRIMO_RPT_V2_DETAIL_R_ALL.csv';
+        File::put($finCsv, "POSISI|MBDESC|JUMLAH\n2026-11-16|KC Madiun|10\n");
+        File::put($rptCsv, "POSISI|MBDESC|JUMLAH\n2026-11-16|KC Madiun|20\n");
+
+        try {
+            $controller = new class([$finCsv, $rptCsv], $directory) extends ImportFileBrimoController {
+                public function __construct(private array $extractedPaths, private string $dir)
+                {
+                }
+
+                protected function createSecureImportDirectory(): string
+                {
+                    return $this->dir;
+                }
+
+                protected function storeImportUpload(UploadedFile $file, string $directory): array
+                {
+                    return [
+                        'name' => 'source.rar',
+                        'path' => $directory . DIRECTORY_SEPARATOR . 'source.rar',
+                        'extension' => 'rar',
+                    ];
+                }
+
+                protected function extractImportArchive(string $archivePath, string $directory): array
+                {
+                    return array_map(static fn (string $path): array => [
+                        'name' => basename($path),
+                        'path' => $path,
+                    ], $this->extractedPaths);
+                }
+            };
+
+            $request = Request::create('/import/brimo/upload', 'POST', [
+                'id_report' => 6,
+            ], [], [
+                'file' => UploadedFile::fake()->create('source.rar', 1, 'application/vnd.rar'),
+            ], [
+                'HTTP_ACCEPT' => 'application/json',
+                'HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest',
+            ]);
+
+            $response = $controller->upload($request);
+            $this->assertSame(200, $response->getStatusCode());
+            $this->assertSame([
+                'status' => 'success',
+                'redirect' => route('import.brimo.preview.direct', [
+                    'file_path' => $finCsv,
+                ]),
+            ], $response->getData(true));
+
+            $ambigA = $directory . DIRECTORY_SEPARATOR . 'part_a.csv';
+            $ambigB = $directory . DIRECTORY_SEPARATOR . 'part_b.csv';
+            File::put($ambigA, "POSISI|MBDESC|JUMLAH\n2026-11-16|KC Madiun|10\n");
+            File::put($ambigB, "POSISI|MBDESC|JUMLAH\n2026-11-16|KC Ngawi|20\n");
+
+            $ambigController = new class([$ambigA, $ambigB], $directory) extends ImportFileBrimoController {
+                public function __construct(private array $extractedPaths, private string $dir)
+                {
+                }
+
+                protected function createSecureImportDirectory(): string
+                {
+                    return $this->dir;
+                }
+
+                protected function storeImportUpload(UploadedFile $file, string $directory): array
+                {
+                    return [
+                        'name' => 'source.rar',
+                        'path' => $directory . DIRECTORY_SEPARATOR . 'source.rar',
+                        'extension' => 'rar',
+                    ];
+                }
+
+                protected function extractImportArchive(string $archivePath, string $directory): array
+                {
+                    return array_map(static fn (string $path): array => [
+                        'name' => basename($path),
+                        'path' => $path,
+                    ], $this->extractedPaths);
+                }
+            };
+
+            $ambigResponse = $ambigController->upload($request);
+            $this->assertSame(200, $ambigResponse->getStatusCode());
+            $this->assertSame([
+                'status' => 'success',
+                'redirect' => route('import.select'),
+            ], $ambigResponse->getData(true));
+        } finally {
+            File::deleteDirectory($directory);
+        }
+    }
+
+    public function test_brimo_direct_preview_route_renders_preview_via_get(): void
+    {
+        Schema::create('nama_report', function ($table): void {
+            $table->integer('id_report')->primary();
+            $table->string('nama_report');
+            $table->string('table_name');
+        });
+        Schema::create('user_brimo_rpt_v2', function ($table): void {
+            $table->string('uniqueid_namareport')->primary();
+        });
+        DB::table('nama_report')->insert([
+            'id_report' => 5,
+            'nama_report' => 'User Brimo RPT v2',
+            'table_name' => 'user_brimo_rpt_v2',
+        ]);
+
+        $directory = storage_path('app/imports/brimo_direct_' . Str::random(8));
+        File::ensureDirectoryExists($directory, 0750, true);
+        $path = $directory . DIRECTORY_SEPARATOR . 'brimo-direct.csv';
+        File::put($path, "TAHUN|PERIODE|POSISI|NAMA KCI|MBDESC|BRDESC|JUMLAH\n2026|2026-08|2026-08-17|KC MADIUN|KC MADIUN|UNIT TEST|1\n");
+
+        try {
+            $user = \App\Models\User::make(['id' => 1, 'name' => 'Admin', 'pn' => 'admin', 'role' => 'admin']);
+            $this->actingAs($user);
+
+            $response = $this->withSession([
+                'active_id_report' => 5,
+                'import_type' => 'brimo',
+                'import_files' => [['name' => basename($path), 'path' => $path]],
+            ])->get(route('import.brimo.preview.direct', ['file_path' => $path]));
+
+            $response->assertOk()->assertViewIs('import.preview');
+        } finally {
+            File::deleteDirectory($directory);
+        }
     }
 
     public function test_brimo_auto_filter_prioritizes_nama_kci_alias(): void

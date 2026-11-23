@@ -4,6 +4,7 @@ namespace App\Services\Import;
 
 use App\Jobs\RunImportJob;
 use Illuminate\Database\QueryException;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -690,6 +691,21 @@ class ImportProgressService
         $this->cleanupQueuedImportJobRows($jobId);
     }
 
+    public function importQueueRows(int $jobId): Builder
+    {
+        $class = 'O:' . strlen(RunImportJob::class) . ':"' . RunImportJob::class . '":';
+        $property = 's:5:"jobId";i:' . $jobId . ';';
+
+        return DB::table('jobs')
+            ->where(function (Builder $query) use ($class, $property): void {
+                // Laravel wraps the serialized job in JSON. Older records may
+                // still contain the serialized command directly.
+                $pattern = '%' . $class . '%' . $property . '%';
+                $query->whereRaw("payload LIKE ? ESCAPE '!'", [$pattern])
+                    ->orWhereRaw("payload LIKE ? ESCAPE '!'", [substr(json_encode($pattern, JSON_THROW_ON_ERROR), 1, -1)]);
+            });
+    }
+
     public function updateTotals(
         int $jobId,
         int $success,
@@ -975,13 +991,10 @@ class ImportProgressService
         while ($attempts < 3) {
             $attempts++;
             try {
-                DB::table('jobs')
+                $this->importQueueRows($jobId)
                     // The worker must acknowledge its own reserved wrapper. IDs
                     // are reused: deleting it early can erase a later job on ACK.
                     ->whereNull('reserved_at')
-                    ->where('payload', 'like', '%' . class_basename(RunImportJob::class) . '%')
-                    ->where('payload', 'like', '%jobId%')
-                    ->where('payload', 'like', '%i:' . $jobId . ';%')
                     ->delete();
                 break;
             } catch (\Throwable $e) {
@@ -1499,10 +1512,7 @@ class ImportProgressService
         }
 
         try {
-            return DB::table('jobs')
-                ->where('payload', 'like', '%' . class_basename(RunImportJob::class) . '%')
-                ->where('payload', 'like', '%jobId%')
-                ->where('payload', 'like', '%i:' . $jobId . ';%')
+            return $this->importQueueRows($jobId)
                 ->orderByDesc('id')
                 ->first(['id', 'queue', 'reserved_at', 'available_at', 'created_at']);
         } catch (\Throwable) {

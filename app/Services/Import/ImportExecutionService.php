@@ -799,11 +799,8 @@ class ImportExecutionService
         }
 
         try {
-            return DB::table('jobs')
+            return $this->progressService->importQueueRows($jobId)
                 ->whereIn('queue', [$this->dailyLoanImportQueue(), $this->importQueue()])
-                ->where('payload', 'like', '%' . str_replace('\\', '\\\\', RunImportJob::class) . '%')
-                ->where('payload', 'like', '%jobId%')
-                ->where('payload', 'like', '%i:' . $jobId . ';%')
                 ->exists();
         } catch (\Throwable) {
             return false;
@@ -917,13 +914,34 @@ class ImportExecutionService
             ->where('updated_at', '<=', $cutoff)
             ->orderBy('updated_at')
             ->limit(20)
-            ->get();
+            ->pluck('id');
 
         $recovered = [];
-        foreach ($candidates as $job) {
-            $jobId = (int) ($job->id ?? 0);
+        foreach ($candidates as $candidate) {
+            $jobId = (int) $candidate;
             if ($jobId <= 0) {
                 continue;
+            }
+
+            if ($this->recoverOrphanedZeroProgressJob($jobId, $minimumAgeSeconds)) {
+                $recovered[] = $jobId;
+            }
+        }
+
+        return $recovered;
+    }
+
+    private function recoverOrphanedZeroProgressJob(int $jobId, int $minimumAgeSeconds): bool
+    {
+        $lock = $this->importCache()->lock('import_excel_recover_job_' . $jobId, 60);
+        if (!$lock->get()) {
+            return false;
+        }
+
+        try {
+            $job = $this->progressService->findJob($jobId);
+            if (!$job || !$this->isZeroProgressProcessingJob($jobId, $job)) {
+                return false;
             }
 
             $progress = $this->progressService->getCachedProgress($jobId);
@@ -931,44 +949,49 @@ class ImportExecutionService
             $hasExecutionLock = $this->hasActiveExecutionLock($jobId);
             $runtimeOwnerState = $this->runtimeOwnerState($jobId);
             if ($this->runtimeOwnerProtectsExecution($runtimeOwnerState)) {
-                continue;
+                return false;
             }
 
             $confirmedOrphan = $this->isConfirmedOrphanedQueueExecution(
-                $job,
-                $queueRow,
-                $progress,
-                $minimumAgeSeconds,
-                $hasExecutionLock,
-                $runtimeOwnerState
+                $job, $queueRow, $progress, $minimumAgeSeconds, $hasExecutionLock, $runtimeOwnerState
             );
-            if ($hasExecutionLock && !$confirmedOrphan) {
-                continue;
+            if (!$confirmedOrphan && ($hasExecutionLock || $queueRow !== null)) {
+                return false;
             }
-            if ($queueRow !== null && !$confirmedOrphan) {
-                continue;
+            if ($queueRow !== null && ($runtimeOwnerState !== 'dead' || !$this->removeOrphanedQueueReservation($queueRow))) {
+                return false;
             }
-
-            if (!$confirmedOrphan && !$this->isRecoverableZeroProgressProcessingJob($jobId, $job, $progress)) {
-                continue;
-            }
-
             if ($confirmedOrphan) {
                 $this->forceReleaseOrphanedTableExecutionLock($jobId, $job);
             }
 
             $job = $this->recoverZeroProgressProcessingJob($jobId, $job, $confirmedOrphan, $progress);
-            if (!$job || strtolower((string) ($job->status ?? '')) !== 'queued') {
-                continue;
-            }
 
-            $this->releaseDispatchMarker($jobId);
-            if ($this->dispatch($jobId, 'Job orphan terdeteksi dan otomatis dimasukkan kembali ke antrean import.')) {
-                $recovered[] = $jobId;
-            }
+            return $job && strtolower((string) ($job->status ?? '')) === 'queued'
+                && $this->dispatch($jobId, 'Job orphan terdeteksi dan otomatis dimasukkan kembali ke antrean import.');
+        } finally {
+            $lock->release();
         }
+    }
 
-        return $recovered;
+    private function removeOrphanedQueueReservation(object $queueRow): bool
+    {
+        try {
+            // Another worker may have taken the reservation since we read it.
+            // IDs are reusable, so match the reservation and its payload too.
+            return DB::table('jobs')->where('id', $queueRow->id)
+                ->where('reserved_at', $queueRow->reserved_at)
+                ->where('created_at', $queueRow->created_at)
+                ->where('payload', $queueRow->payload)
+                ->delete() === 1;
+        } catch (\Illuminate\Database\QueryException $exception) {
+            Log::warning('Could not remove orphaned import queue reservation.', [
+                'queue_row_id' => $queueRow->id,
+                'sqlstate' => $exception->getCode(),
+            ]);
+
+            return false;
+        }
     }
 
     private function recoverZeroProgressProcessingJob(
@@ -1089,12 +1112,9 @@ class ImportExecutionService
     private function findActiveQueueRow(int $jobId): ?object
     {
         try {
-            return DB::table('jobs')
-                ->where('payload', 'like', '%' . class_basename(RunImportJob::class) . '%')
-                ->where('payload', 'like', '%jobId%')
-                ->where('payload', 'like', '%i:' . $jobId . ';%')
+            return $this->progressService->importQueueRows($jobId)
                 ->orderByDesc('id')
-                ->first(['id', 'reserved_at']);
+                ->first(['id', 'reserved_at', 'created_at', 'payload']);
         } catch (\Throwable) {
             return null;
         }

@@ -13,18 +13,19 @@ final class SchemaDriftSourceToken
 {
     private const TTL_SECONDS = 6 * 3600;
 
-    public static function issue(string $table, string $absolutePath, ?string $sourceName = null): string
+    public static function issue(string $table, string $absolutePath, ?string $sourceName = null, array $options = []): string
     {
         return Crypt::encryptString(json_encode([
             'table' => strtolower(trim($table)),
             'path' => $absolutePath,
             'name' => $sourceName ?? basename($absolutePath),
+            'options' => $options,
             'exp' => time() + self::TTL_SECONDS,
         ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
     }
 
     /**
-     * @return array{table: string, path: string, name: string}|null
+     * @return array{table: string, path: string, name: string, options: array}|null
      */
     public static function read(?string $token): ?array
     {
@@ -47,6 +48,7 @@ final class SchemaDriftSourceToken
             'table' => $payload['table'],
             'path' => $payload['path'],
             'name' => (string) ($payload['name'] ?? basename($payload['path'])),
+            'options' => (array) ($payload['options'] ?? []),
         ];
     }
 }

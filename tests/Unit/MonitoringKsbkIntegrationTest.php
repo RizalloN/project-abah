@@ -38,7 +38,7 @@ class MonitoringKsbkIntegrationTest extends TestCase
         Cache::flush();
         Schema::create('nama_report', function (Blueprint $table): void {
             $table->integer('id_report')->primary();
-            foreach (['nama_report', 'table_name', 'import_controller'] as $column) {
+            foreach (['nama_report', 'table_name', 'import_controller', 'manual_periode_type', 'manual_periode_label', 'manual_periode_help'] as $column) {
                 $table->string($column)->nullable();
             }
             $table->boolean('active');
@@ -46,6 +46,7 @@ class MonitoringKsbkIntegrationTest extends TestCase
             $table->timestamps();
         });
         (require database_path('migrations/2026_11_12_000005_create_monitoring_realisasi_ksbk_report.php'))->up();
+        (require database_path('migrations/2026_11_13_000001_add_periode_to_monitoring_realisasi_ksbk_and_verify_prewash_periods.php'))->up();
         session(['active_id_report' => DB::table('nama_report')->where('table_name', Source::TABLE)->value('id_report')]);
     }
 
@@ -60,31 +61,50 @@ class MonitoringKsbkIntegrationTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_registered_report_resolves_precise_strategy_without_an_invented_manual_period(): void
+    public function test_registered_report_resolves_precise_strategy_with_monthly_manual_period(): void
     {
-        $this->assertDatabaseHas('nama_report', ['table_name' => Source::TABLE, 'import_controller' => 'ImportExcelController', 'requires_manual_periode' => 0]);
+        $this->assertDatabaseHas('nama_report', [
+            'table_name' => Source::TABLE,
+            'import_controller' => 'ImportExcelController',
+            'requires_manual_periode' => 1,
+            'manual_periode_type' => 'month',
+        ]);
         $strategy = app(ImportStrategyFactory::class)->resolve((object) ['table_name' => Source::TABLE]);
         $this->assertInstanceOf(MonitoringKsbkImportStrategy::class, $strategy);
         $this->assertSame('monitoring_realisasi_ksbk_exact', $strategy->importMode());
         $this->assertFalse((new GenericCsvImportStrategy)->supports(null, Source::TABLE));
-        $this->assertNull(app(ImportPeriodGuardService::class)->policyFor(Source::TABLE));
+        $this->assertSame(['column' => 'periode', 'type' => 'date'], app(ImportPeriodGuardService::class)->policyFor(Source::TABLE));
         $this->assertTrue($strategy->validateSchema(Schema::getColumnListing(Source::TABLE))['ok']);
     }
 
-    public function test_upload_uses_ksbk_staging_without_a_manual_period_argument(): void
+    public function test_upload_uses_ksbk_staging_with_monthly_manual_period(): void
     {
         $source = Mockery::mock(Source::class);
-        $source->shouldReceive('stage')->once()->with(Storage::path('excel_imports/ksbk.xlsx'), Mockery::on(
-            static fn (string $path): bool => str_ends_with($path, '.csv') && str_contains($path, 'excel_imports')
-        ))->andReturn(['rows' => 1]);
+        $source->shouldReceive('stage')->once()->with(
+            Storage::path('excel_imports/ksbk.xlsx'),
+            Mockery::on(static fn (string $path): bool => str_ends_with($path, '.csv') && str_contains($path, 'excel_imports')),
+            '2026-11-01'
+        )->andReturn(['rows' => 1]);
         $this->app->instance(Source::class, $source);
 
         $normalized = (new ReflectionMethod(ImportExcelController::class, 'normalizeSsaSpreadsheetUpload'))->invoke(
-            new ImportExcelController, Source::TABLE, 'excel_imports/ksbk.xlsx'
+            new ImportExcelController, Source::TABLE, 'excel_imports/ksbk.xlsx', '2026-11'
         );
 
         $this->assertStringStartsWith('excel_imports/', $normalized);
         $this->assertStringEndsWith('.csv', $normalized);
+    }
+
+    public function test_upload_rejects_missing_manual_period_for_ksbk(): void
+    {
+        $source = Mockery::mock(Source::class);
+        $source->shouldNotReceive('stage');
+        $this->app->instance(Source::class, $source);
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('YYYY-MM');
+        (new ReflectionMethod(ImportExcelController::class, 'normalizeSsaSpreadsheetUpload'))->invoke(
+            new ImportExcelController, Source::TABLE, 'excel_imports/ksbk.xlsx'
+        );
     }
 
     public function test_upload_rejects_non_workbook_sources_before_staging(): void
@@ -124,7 +144,7 @@ class MonitoringKsbkIntegrationTest extends TestCase
         (require database_path('migrations/2026_10_20_000001_create_import_schema_drift_tables.php'))->up();
         (require database_path('migrations/2026_10_20_000002_create_import_source_header_baselines_table.php'))->up();
         $review = app(SchemaDriftImportGuard::class)->assertReady(Source::TABLE, $this->canonical());
-        $this->assertSame(13, $review['stats']['matched']);
+        $this->assertSame(14, $review['stats']['matched']);
         $this->assertFalse($review['has_blocking_issue']);
         $this->assertFalse($review['has_pending_decision']);
         $this->assertSame(0, DB::table(Source::TABLE)->count());
@@ -300,6 +320,6 @@ class MonitoringKsbkIntegrationTest extends TestCase
     private function row(): array
     {
         return ['003641', '00130026', '003520067011860000', 'CIF001', 'Nama Nasabah', '9007199254740993.01',
-            '2026-09-22 00:00:00', 'Kupedes <= 150juta', 'Lolos Pre-wash', '49', 'R', '1', '2026-09-25'];
+            '2026-09-22 00:00:00', 'Kupedes <= 150juta', 'Lolos Pre-wash', '49', 'R', '1', '2026-09-25', '2026-11-01'];
     }
 }

@@ -8,7 +8,7 @@ use Throwable;
 
 final class LandingPrognosaCardService
 {
-    private const CACHE_KEY = 'landing:prognosa:v3:'.PresentationPrognosaWeeklyService::SPREADSHEET_ID;
+    private const CACHE_KEY = 'landing:prognosa:v4:'.PresentationPrognosaWeeklyService::SPREADSHEET_ID;
 
     public function __construct(
         private readonly PresentationPrognosaWeeklyService $prognosaWeeklyService

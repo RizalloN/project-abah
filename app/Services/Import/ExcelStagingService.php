@@ -1123,7 +1123,8 @@ class ExcelStagingService
         array $requiredHeaders,
         string $stagedCsvPath,
         ?callable $send = null,
-        ?string $progressMessage = null
+        ?string $progressMessage = null,
+        bool $preserveSourceColumns = false,
     ): ?array {
         if (!$this->supportsNativeXlsxStreaming($sourcePath) || empty($requiredHeaders)) {
             return null;
@@ -1146,7 +1147,17 @@ class ExcelStagingService
                 return null;
             }
 
-            $sharedStrings = $this->readSharedStrings($zip);
+            if ($send !== null) {
+                $send('progress', [
+                    'percent' => 22,
+                    'message' => ($progressMessage ?? 'Menyiapkan CSV staging Excel...') . ' (membaca kamus teks...)',
+                    'rows_done' => 0,
+                    'total' => 0,
+                    'speed' => 0,
+                ]);
+            }
+
+            $sharedStrings = $this->readSharedStringsFromPath($sourcePath, $zip);
             $reader = new \XMLReader();
             if (!$reader->open('zip://' . str_replace('\\', '/', $sourcePath) . '#' . $worksheetEntry, null, LIBXML_NONET | LIBXML_COMPACT)) {
                 return null;
@@ -1159,9 +1170,12 @@ class ExcelStagingService
 
             $headerRowNumber = null;
             $sourceIndexByHeader = [];
+            $outputHeaders = array_values($requiredHeaders);
+            $outputIndexes = [];
             $writtenRows = 0;
             $processedRows = 0;
             $lastProgressAt = 0;
+            $lastSentTime = microtime(true);
             $buffer = '';
             $bufferSize = 0;
             $maxBufferSize = 4194304;
@@ -1178,7 +1192,7 @@ class ExcelStagingService
                         break;
                     }
 
-                    $rowValues = $this->extractWorksheetRowValues($reader, $sharedStrings, 256);
+                    $rowValues = $this->extractWorksheetRowValues($reader, $sharedStrings, $preserveSourceColumns ? null : 256);
                     $candidateLookup = [];
                     foreach ($rowValues as $index => $value) {
                         $normalized = $this->normalizeHeaderForStreamingComparison((string) ($value ?? ''));
@@ -1195,7 +1209,17 @@ class ExcelStagingService
 
                     if (count($sourceIndexByHeader) === count($requiredHeaders)) {
                         $headerRowNumber = $rowNumber;
-                        fwrite($outputHandle, $this->buildCsvLine(array_values($requiredHeaders)));
+                        if ($preserveSourceColumns) {
+                            $outputHeaders = array_map(static fn ($value): string => trim((string) $value), $rowValues);
+                            while ($outputHeaders !== [] && end($outputHeaders) === '') {
+                                array_pop($outputHeaders);
+                            }
+                            foreach ($sourceIndexByHeader as $header => $index) {
+                                $outputHeaders[$index] = $header;
+                            }
+                        }
+                        $outputIndexes = $preserveSourceColumns ? array_keys($outputHeaders) : array_values($sourceIndexByHeader);
+                        fwrite($outputHandle, $this->buildCsvLine($outputHeaders));
                     } else {
                         $sourceIndexByHeader = [];
                     }
@@ -1203,14 +1227,13 @@ class ExcelStagingService
                     continue;
                 }
 
-                $maxSourceIndex = max($sourceIndexByHeader);
-                $rowValues = $this->extractWorksheetRowValues($reader, $sharedStrings, $maxSourceIndex + 1);
+                $rowValues = $this->extractWorksheetRowValues($reader, $sharedStrings, $preserveSourceColumns ? null : max($outputIndexes) + 1);
                 $row = [];
                 $hasData = false;
 
-                foreach ($requiredHeaders as $header) {
-                    $sourceIndex = $sourceIndexByHeader[$header] ?? null;
-                    $value = $sourceIndex === null ? null : ($rowValues[$sourceIndex] ?? null);
+                foreach ($outputIndexes as $index => $sourceIndex) {
+                    $header = $outputHeaders[$index];
+                    $value = $rowValues[$sourceIndex] ?? null;
                     $value = $this->normalizeStreamingCellValue((string) $header, $value);
 
                     if ($value !== null && trim((string) $value) !== '') {
@@ -1218,6 +1241,15 @@ class ExcelStagingService
                     }
 
                     $row[] = $value;
+                }
+
+                if ($preserveSourceColumns) {
+                    $extraValues = array_slice($rowValues, count($outputHeaders));
+                    while ($extraValues !== [] && trim((string) end($extraValues)) === '') {
+                        array_pop($extraValues);
+                    }
+                    $row = array_merge($row, $extraValues);
+                    $hasData = $hasData || $extraValues !== [];
                 }
 
                 if (!$hasData) {
@@ -1236,8 +1268,9 @@ class ExcelStagingService
                     $bufferSize = 0;
                 }
 
-                if ($send !== null && ($processedRows - $lastProgressAt) >= 100000) {
+                if ($send !== null && (($processedRows - $lastProgressAt) >= 20000 || (microtime(true) - $lastSentTime) >= 4.0)) {
                     $lastProgressAt = $processedRows;
+                    $lastSentTime = microtime(true);
                     if ($bufferSize > 0) {
                         fwrite($outputHandle, $buffer);
                         $buffer = '';
@@ -1268,7 +1301,7 @@ class ExcelStagingService
                 'staged_csv_path' => $stagedCsvPath,
                 'total_rows' => $writtenRows,
                 'header_index' => 0,
-                'headers' => array_values($requiredHeaders),
+                'headers' => $outputHeaders,
             ];
         } catch (\Throwable) {
             @unlink($stagedCsvPath);
@@ -1451,6 +1484,45 @@ class ExcelStagingService
             : null;
     }
 
+    private function readSharedStringsFromPath(string $sourcePath, \ZipArchive $zip): array
+    {
+        if ($zip->locateName('xl/sharedStrings.xml') === false) {
+            return [];
+        }
+
+        $reader = new \XMLReader();
+        $uri = 'zip://' . str_replace('\\', '/', $sourcePath) . '#xl/sharedStrings.xml';
+        if (!@$reader->open($uri, null, LIBXML_NONET | LIBXML_COMPACT)) {
+            return $this->readSharedStrings($zip);
+        }
+
+        $strings = [];
+        $textBuffer = '';
+
+        try {
+            while ($reader->read()) {
+                if ($reader->nodeType === self::ELEMENT && $reader->name === 'si') {
+                    $textBuffer = '';
+                    continue;
+                }
+
+                if ($reader->nodeType === self::ELEMENT && $reader->name === 't') {
+                    $textBuffer .= $reader->readString();
+                    continue;
+                }
+
+                if ($reader->nodeType === self::END_ELEMENT && $reader->name === 'si') {
+                    $strings[] = $textBuffer;
+                    $textBuffer = '';
+                }
+            }
+        } finally {
+            $reader->close();
+        }
+
+        return $strings;
+    }
+
     private function readSharedStrings(\ZipArchive $zip): array
     {
         $sharedStringsXml = $zip->getFromName('xl/sharedStrings.xml');
@@ -1488,7 +1560,7 @@ class ExcelStagingService
         return $strings;
     }
 
-    private function extractWorksheetRowValues(\XMLReader $reader, array $sharedStrings, int $headerCount): array
+    private function extractWorksheetRowValues(\XMLReader $reader, array $sharedStrings, ?int $headerCount): array
     {
         $rowDepth = $reader->depth;
         $rowValues = [];
@@ -1508,7 +1580,7 @@ class ExcelStagingService
             // OPTIMASI: Use cached column reference calculation
             $columnIndex = $this->getColumnReferenceIndex($cellReference);
 
-            if ($columnIndex < 0 || $columnIndex >= $headerCount) {
+            if ($columnIndex < 0 || ($headerCount !== null && $columnIndex >= $headerCount)) {
                 $this->consumeCellNode($reader);
                 continue;
             }
@@ -1516,6 +1588,7 @@ class ExcelStagingService
             $rowValues[$columnIndex] = $this->readCellValue($reader, $cellType, $sharedStrings);
         }
 
+        $headerCount ??= $rowValues === [] ? 0 : max(array_keys($rowValues)) + 1;
         $normalized = array_fill(0, $headerCount, null);
         foreach ($rowValues as $index => $value) {
             if ($index >= 0 && $index < $headerCount) {
@@ -1556,15 +1629,18 @@ class ExcelStagingService
             }
 
             if ($reader->name === 'is') {
-                $inlineNode = $reader->expand();
-                if ($inlineNode) {
-                    $text = '';
-                    $textNodes = $inlineNode->getElementsByTagName('t');
-                    foreach ($textNodes as $textNode) {
-                        $text .= $textNode->textContent;
+                $isDepth = $reader->depth;
+                $text = '';
+                while ($reader->read()) {
+                    if ($reader->nodeType === self::END_ELEMENT && $reader->depth === $isDepth && $reader->name === 'is') {
+                        break;
                     }
-                    $value = $text;
+                    if ($reader->nodeType === self::ELEMENT && $reader->name === 't') {
+                        $text .= $reader->readString();
+                    }
                 }
+                $value = $text;
+                continue;
             }
         }
 
@@ -1581,22 +1657,26 @@ class ExcelStagingService
     }
 
     /**
-     * OPTIMASI PHASE 3: Cache column reference calculations
-     * Extract column letter part and cache the index for repeated references
+     * Cache column letter part only (never full cell coordinate with row number).
      */
     private function getColumnReferenceIndex(string $cellReference): int
     {
-        if (isset($this->columnRefIndexCache[$cellReference])) {
-            return $this->columnRefIndexCache[$cellReference];
+        $len = strspn($cellReference, 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz');
+        if ($len === 0) {
+            return -1;
         }
 
-        $result = $this->columnReferenceToIndex($cellReference);
-        
-        // Cache only reasonable references (not overflow cache with random data)
-        if (strlen($cellReference) <= 10) {
-            $this->columnRefIndexCache[$cellReference] = $result;
+        $letters = substr($cellReference, 0, $len);
+        if (isset($this->columnRefIndexCache[$letters])) {
+            return $this->columnRefIndexCache[$letters];
         }
-        
+
+        $result = $this->columnReferenceToIndex($letters);
+
+        if (count($this->columnRefIndexCache) < 2048) {
+            $this->columnRefIndexCache[$letters] = $result;
+        }
+
         return $result;
     }
 

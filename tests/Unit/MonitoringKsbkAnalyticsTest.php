@@ -264,9 +264,49 @@ class MonitoringKsbkAnalyticsTest extends TestCase
         $this->assertSame(2, array_sum(array_column($result['unit_groups'], 'total_count')));
     }
 
-    private function pipeline(string $cif, string $bo = '45', string $product = 'Kupedes <= 150juta'): void
+    public function test_monthly_period_isolates_records_and_caps_loan_lookup_to_target_month(): void
     {
-        DB::table(Source::TABLE)->insert(['uniqueid_namareport' => 'proposal-'.$cif, 'cifno' => $cif, 'nama' => 'Fixture', 'bo' => $bo, 'ro' => 'R', 'produk_sbk' => $product, 'hasil_cek' => 'Lolos']);
+        $this->pipeline('A', '45', 'Kupedes <= 150juta', '2026-11-01');
+        $this->pipeline('B', '45', 'Kupedes > 150juta', '2026-12-01');
+        $this->loan('lw321pn', '2026-11-20', 'A', '100000000.00', '8E');
+        $this->loan('lw321pn', '2026-12-10', 'A', '500000000.00', '8E');
+        $this->loan('lw321pn', '2026-12-10', 'B', '250000000.00', '1H');
+
+        $november = (new LandingMicroKsbkService)->payload(null, '2026-11-25');
+        $this->assertTrue($november['available']);
+        $this->assertSame('2026-11-01', $november['period']);
+        $this->assertSame('November 2026', $november['period_label']);
+        $this->assertSame('2026-11-20', $november['loan_period']);
+        $this->assertSame(1, $november['summary']['total_count']);
+        $this->assertSame('100000000.00', $november['summary']['ksbk_amount']);
+
+        $december = (new LandingMicroKsbkService)->payload(null, '2026-12-20');
+        $this->assertTrue($december['available']);
+        $this->assertSame('2026-12-01', $december['period']);
+        $this->assertSame('Desember 2026', $december['period_label']);
+        $this->assertSame('2026-12-10', $december['loan_period']);
+        $this->assertSame(1, $december['summary']['total_count']);
+        $this->assertSame('250000000.00', $december['summary']['non_ksbk_amount']);
+
+        $unimported = (new LandingMicroKsbkService)->payload(null, '2027-01-15');
+        $this->assertFalse($unimported['available']);
+        $this->assertSame('period_not_imported', $unimported['empty_reason']);
+        $this->assertStringContainsString('Januari 2027', $unimported['message']);
+        $this->assertStringContainsString('November 2026', $unimported['message']);
+    }
+
+    private function pipeline(string $cif, string $bo = '45', string $product = 'Kupedes <= 150juta', string $periode = '2026-11-01'): void
+    {
+        DB::table(Source::TABLE)->insert([
+            'uniqueid_namareport' => 'proposal-'.$periode.'-'.$cif,
+            'periode' => $periode,
+            'cifno' => $cif,
+            'nama' => 'Fixture',
+            'bo' => $bo,
+            'ro' => 'R',
+            'produk_sbk' => $product,
+            'hasil_cek' => 'Lolos',
+        ]);
     }
 
     private function loan(string $table, string $period, string $cif, ?string $amount, string $type, string $branch = '45', ?string $account = null, ?string $identity = null): void

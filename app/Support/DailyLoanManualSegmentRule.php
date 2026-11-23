@@ -202,11 +202,14 @@ final class DailyLoanManualSegmentRule
      *
      * @param mixed $query
      * @param array<int, string> $requiredColumns
+     * @param list<string>|null $availableColumns Lowercase column names from the same connection
      */
-    public static function applyPendingShadowPredicate($query, array $requiredColumns): void
+    public static function applyPendingShadowPredicate($query, array $requiredColumns, ?array $availableColumns = null): void
     {
-        if (Schema::hasColumn('daily_loan_dinamis', 'shadow_built_at')
-            && Schema::hasColumn('daily_loan_dinamis', 'updated_at')) {
+        $availableColumns ??= array_map(strtolower(...), Schema::getColumnListing('daily_loan_dinamis'));
+        $columns = array_fill_keys($availableColumns, true);
+
+        if (isset($columns['shadow_built_at'], $columns['updated_at'])) {
             $query
                 ->whereNull('shadow_built_at')
                 ->orWhereColumn('shadow_built_at', '<', 'updated_at');
@@ -216,12 +219,12 @@ final class DailyLoanManualSegmentRule
             }
         }
 
-        if (self::hasManualClassificationColumns()) {
+        if (isset($columns['description'], $columns['segmen_dashboard'], $columns['produk_dashboard'],
+            $columns['segmen_kinerja'], $columns['produk_kinerja'])) {
             $query->orWhereRaw(self::shadowMismatchSql());
         }
 
-        if (Schema::hasColumn('daily_loan_dinamis', 'pn_pemutus_normalized')
-            && Schema::hasColumn('daily_loan_dinamis', 'pn_pemutus1')) {
+        if (isset($columns['pn_pemutus_normalized'], $columns['pn_pemutus1'])) {
             $query->orWhere(function ($pnQuery): void {
                 $pnQuery->whereNull('pn_pemutus_normalized')
                     ->whereRaw("LENGTH(TRIM(COALESCE(pn_pemutus1, ''))) > 0");
@@ -235,13 +238,13 @@ final class DailyLoanManualSegmentRule
         $cases = [];
 
         foreach (self::normalizedRules() as $rule) {
-            $tokens = array_keys($rule['description_tokens']);
-            $tokenList = implode(', ', array_map(self::quoteSqlLiteral(...), $tokens));
             $result = self::quoteSqlLiteral($rule['segment']);
-            $cases[] = "WHEN {$descriptionSql} IN ({$tokenList}) THEN {$result}";
+            foreach (array_keys($rule['description_tokens']) as $token) {
+                $cases[] = 'WHEN ' . self::quoteSqlLiteral($token) . " THEN {$result}";
+            }
         }
 
-        return '(CASE ' . implode(' ', $cases) . " ELSE {$fallbackSql} END)";
+        return "(CASE {$descriptionSql} " . implode(' ', $cases) . " ELSE {$fallbackSql} END)";
     }
 
     private static function normalizedSegmentSql(string $column): string
@@ -311,22 +314,5 @@ final class DailyLoanManualSegmentRule
         }
 
         return $rules;
-    }
-
-    private static function hasManualClassificationColumns(): bool
-    {
-        foreach ([
-            'description',
-            'segmen_dashboard',
-            'produk_dashboard',
-            'segmen_kinerja',
-            'produk_kinerja',
-        ] as $column) {
-            if (!Schema::hasColumn('daily_loan_dinamis', $column)) {
-                return false;
-            }
-        }
-
-        return true;
     }
 }

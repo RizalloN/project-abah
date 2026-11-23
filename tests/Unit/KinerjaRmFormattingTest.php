@@ -618,6 +618,132 @@ class KinerjaRmFormattingTest extends TestCase
         $this->assertStringNotContainsString('17 RM tanpa realisasi 2 bulan disaring', $html);
     }
 
+    public function test_kinerjarm_view_enforces_white_header_contrast_for_table_and_modal(): void
+    {
+        $view = file_get_contents(resource_path('views/report/kinerjarm.blade.php'));
+
+        $this->assertStringContainsString('#rmDetailModal .kinerja-rm-modal__table thead th', $view);
+        $this->assertStringContainsString('color: #ffffff !important;', $view);
+        $this->assertStringContainsString('.content-wrapper .kinerja-rm-performance-table thead th', $view);
+        $this->assertStringContainsString('.content-wrapper .kinerja-rm-performance-table thead th small', $view);
+        $this->assertStringContainsString('color: #e6f0ff !important;', $view);
+        $this->assertDoesNotMatchRegularExpression(
+            '/\.kinerja-konsumer-filters\s*\{\s*display:\s*none\s*!important;\s*\}\s*\}/',
+            $view
+        );
+    }
+
+    public function test_consumer_performance_table_renders_monthly_baru_and_suplesi_breakdown(): void
+    {
+        $months = collect([
+            ['key' => '2026-01', 'short_label' => 'Jan 26', 'period' => '2026-01-31', 'period_label' => '31 Jan 2026', 'is_closed' => true],
+        ]);
+        $row = [
+            'unit_code' => '45',
+            'unit' => 'KC MADIUN',
+            'cabang' => 'KC MADIUN',
+            'rm' => '00079608 - Aris Sulistyawan',
+            'rm_display' => 'Aris Sulistyawan',
+            'target' => ['deb' => 19, 'rp' => 3700000000.0],
+            'months' => [
+                '2026-01' => [
+                    'deb' => 29,
+                    'rp' => 2410000000.0,
+                    'baru_deb' => 10,
+                    'baru_rp' => 1378000000.0,
+                    'suplesi_deb' => 19,
+                    'suplesi_rp' => 1032000000.0,
+                    'quadrant' => 3,
+                    'has_data' => true,
+                ],
+            ],
+            'delta' => ['ytd' => -1290000000.0, 'mtd' => -1290000000.0, 'mom' => null, 'dtd' => null],
+            'accumulated' => [
+                'deb' => 29,
+                'rp' => 2410000000.0,
+                'baru_deb' => 10,
+                'baru_rp' => 1378000000.0,
+                'suplesi_deb' => 19,
+                'suplesi_rp' => 1032000000.0,
+            ],
+            'quadrant' => 3,
+        ];
+        $total = [
+            'target' => $row['target'],
+            'months' => $row['months'],
+            'delta' => $row['delta'],
+            'accumulated' => $row['accumulated'],
+        ];
+
+        $html = view('report.kinerjarm-performance-table-section', [
+            'selectedSegmen' => 'CONSUMER',
+            'selectedPeriod' => '2026-01-31',
+            'performanceMonths' => $months,
+            'performanceRows' => [$row],
+            'performanceTotal' => $total,
+            'performanceMeta' => ['latest_period_label' => '31 Jan 2026'],
+        ])->render();
+
+        $this->assertStringContainsString('is-consumer-performance', $html);
+        $this->assertStringContainsString('Deb · Rp · Baru · Sup', $html);
+        $this->assertStringContainsString('perf-legend', $html);
+        $this->assertStringContainsString('perf-split-row is-baru', $html);
+        $this->assertStringContainsString('perf-split-row is-suplesi', $html);
+        $this->assertStringContainsString('10 / 1378', $html);
+        $this->assertStringContainsString('19 / 1032', $html);
+        $this->assertStringContainsString('2410', $html);
+        $this->assertStringContainsString('Q3', $html);
+    }
+
+    public function test_consumer_history_modal_renders_baru_suplesi_summary_grouped_headers_and_close_button(): void
+    {
+        $html = view('report.kinerjarm-detail-modal', [
+            'rm' => '00079608 - Aris Sulistyawan',
+            'segmen' => 'CONSUMER',
+            'detailMode' => 'consumer_surplus',
+            'historyRangeLabel' => 'Jan 2026 - Nov 2026',
+            'selectedHistoryYear' => 2026,
+            'details' => [
+                [
+                    'periode' => '31 Jan 2026',
+                    'periode_raw' => '2026-01-31',
+                    'year' => 2026,
+                    'previous_period' => '31 Des 2025',
+                    'is_summary' => true,
+                    'current_debitur' => 1463,
+                    'previous_debitur' => 1469,
+                    'debitur' => 29,
+                    'baru_debitur' => 10,
+                    'baru_os' => 1378000000,
+                    'suplesi_debitur' => 19,
+                    'suplesi_os' => 1032000000,
+                    'current_os' => 182301000000,
+                    'previous_os' => 182223000000,
+                    'delta_os' => 2410000000,
+                    'surplus_plafon' => 2410000000,
+                    'target_jg_deb' => 19,
+                    'target_jg_os' => 3700000000,
+                ],
+            ],
+            'formatAmount' => fn ($value, int $decimals = 0) => number_format(((float) $value) / 1000000, $decimals, ',', '.'),
+            'formatPercent' => fn ($value, int $decimals = 2) => number_format((float) $value, $decimals, ',', '.'),
+        ])->render();
+
+        $this->assertStringContainsString('kinerja-rm-modal__close', $html);
+        $this->assertStringContainsString('data-dismiss="modal"', $html);
+        $this->assertStringContainsString('Realisasi Baru 2026', $html);
+        $this->assertStringContainsString('Realisasi Suplesi 2026', $html);
+        $this->assertStringContainsString('modal-head-baru', $html);
+        $this->assertStringContainsString('modal-head-suplesi', $html);
+        $this->assertStringContainsString('modal-head-total', $html);
+        $this->assertStringContainsString('is-num', $html);
+        $this->assertStringContainsString('1.378', $html);
+        $this->assertStringContainsString('1.032', $html);
+        $this->assertStringContainsString('2.410', $html);
+        $this->assertStringContainsString('10 deb', $html);
+        $this->assertStringContainsString('19 deb', $html);
+    }
+
     private function invokePrivateMethod(object $object, string $method, array $arguments = []): mixed
     {
         $reflection = new ReflectionClass($object);

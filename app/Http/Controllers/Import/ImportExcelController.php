@@ -10852,38 +10852,7 @@ class ImportExcelController extends Controller
 
     private function getHeaderDatabaseCandidates(string $header): array
     {
-        $exact = strtolower(trim($header));
-        $raw = strtolower(trim($header));
-        $raw = preg_replace('/[^a-z0-9]+/', '_', $raw);
-        $raw = trim((string) $raw, '_');
-
-        $normalized = $this->normalizeHeaderForDatabase($header);
-        $candidates = [];
-
-        if ($exact !== '') {
-            $candidates[] = $exact;
-        }
-
-        if ($raw !== '') {
-            $candidates[] = $raw;
-        }
-
-        $rawWithoutNumericSuffix = trim((string) preg_replace('/(?:_)?\d+$/', '', $raw), '_');
-        if ($rawWithoutNumericSuffix !== '' && $rawWithoutNumericSuffix !== $raw) {
-            $candidates[] = $rawWithoutNumericSuffix;
-        }
-
-        if ($normalized !== '' && $normalized !== $raw) {
-            $candidates[] = $normalized;
-        }
-
-        $aliasMap = ImportHeaderAliases::CANDIDATE;
-
-        if (isset($aliasMap[$raw])) {
-            $candidates[] = $aliasMap[$raw];
-        }
-
-        return array_values(array_unique($candidates));
+        return ImportHeaderAliases::candidates($header);
     }
 
     private function resolveMappedDatabaseCandidates(string $header, array $tableColumnsLookup, array $tableColumnsByLower): array
@@ -10905,11 +10874,6 @@ class ImportExcelController extends Controller
             if (isset($tableColumnsLookup[$lowerCandidate])) {
                 return [$tableColumnsByLower[$lowerCandidate] ?? $candidateColumn];
             }
-        }
-
-        $aliasCandidate = $this->smartGuardService()->resolveAliasCandidate($header, array_keys($tableColumnsLookup));
-        if ($aliasCandidate !== null && isset($tableColumnsLookup[$aliasCandidate])) {
-            return [$tableColumnsByLower[$aliasCandidate] ?? $aliasCandidate];
         }
 
         return [];
@@ -12379,8 +12343,9 @@ class ImportExcelController extends Controller
             if (strtolower(pathinfo($path, PATHINFO_EXTENSION)) !== 'xlsx') {
                 throw new \RuntimeException('Gunakan workbook XLSX asli Monitoring Realisasi KSBK.');
             }
+            $normalizedPeriod = \App\Services\Import\MonitoringKsbkSourceService::normalizePeriode($manualPeriod);
             $normalizedPath = 'excel_imports/'.Str::uuid()->toString().'.csv';
-            app(\App\Services\Import\MonitoringKsbkSourceService::class)->stage(Storage::path($path), Storage::path($normalizedPath));
+            app(\App\Services\Import\MonitoringKsbkSourceService::class)->stage(Storage::path($path), Storage::path($normalizedPath), $normalizedPeriod);
 
             return $normalizedPath;
         }

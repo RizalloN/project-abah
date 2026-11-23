@@ -71,10 +71,10 @@ class SchemaDriftRegistry
 
         $table = (string) $report['table'];
         $fingerprint = (string) $report['fingerprint'];
-        // An approval to continue despite source issues belongs to these exact
-        // file contents. Another upload must receive its own review decision.
-        if ($this->pendingReviews((object) ['payload' => $report]) !== [] && !empty($report['source_fingerprint'])) {
-            $fingerprint = hash('sha256', $fingerprint . '|source:' . $report['source_fingerprint']);
+        $sourceFingerprint = (string) ($report['source_fingerprint'] ?? '');
+        $legacyFingerprint = $fingerprint;
+        if ($kind === self::KIND_NEW_COLUMNS && $sourceFingerprint !== '') {
+            $fingerprint = hash('sha256', $fingerprint . '|source:' . $sourceFingerprint);
         }
         if ($kind === self::KIND_INCOMPATIBLE) {
             $fingerprint = hash('sha256', $fingerprint . '|' . json_encode(array_map(
@@ -88,6 +88,14 @@ class SchemaDriftRegistry
         $summary = mb_substr($this->summary($kind, $report), 0, 500);
 
         $existing = DB::table(self::TABLE)->where('table_name', $table)->where('fingerprint', $fingerprint)->first();
+        if ($existing === null && $kind === self::KIND_NEW_COLUMNS && $sourceFingerprint !== '') {
+            // Preserve a pending decision created before all proposals were file-bound.
+            $legacy = DB::table(self::TABLE)->where('table_name', $table)->where('fingerprint', $legacyFingerprint)
+                ->whereIn('status', [self::STATUS_PENDING, self::STATUS_FAILED])->first();
+            if ($legacy !== null && ($this->hydrate($legacy)->payload['source_fingerprint'] ?? null) === $sourceFingerprint) {
+                $existing = $legacy;
+            }
+        }
         if ($existing !== null) {
             $update = [
                 'summary' => $summary,
@@ -105,10 +113,10 @@ class SchemaDriftRegistry
             }
             // A failed ALTER is not a permanent decision to discard columns.
             // A fresh scan must let the user correct and retry the proposal.
-            if ($existing->status === self::STATUS_FAILED && !empty($report['has_pending_decision'])) {
+            if (in_array($existing->status, [self::STATUS_FAILED, self::STATUS_RESOLVED], true) && !empty($report['has_pending_decision'])) {
                 $update += ['status' => self::STATUS_PENDING, 'payload' => $payload, 'error' => null, 'acknowledged_at' => null];
             }
-            DB::table(self::TABLE)->where('id', $existing->id)->update($update);
+            DB::table(self::TABLE)->where('id', $existing->id)->where('status', $existing->status)->update($update);
 
             return $this->find((int) $existing->id);
         }
@@ -161,7 +169,8 @@ class SchemaDriftRegistry
         }
 
         $table = strtolower((string) ($report['table'] ?? ''));
-        $matchedHeaders = [];
+        $decidedHeaders = [];
+        $skippedHeaders = [];
         $sourceHeaders = [];
         foreach ((array) ($report['columns'] ?? []) as $column) {
             $key = strtolower((string) ($column['canonical'] ?? ''));
@@ -170,7 +179,10 @@ class SchemaDriftRegistry
             }
             $sourceHeaders[$key] = true;
             if (($column['state'] ?? '') === 'matched') {
-                $matchedHeaders[$key] = true;
+                $decidedHeaders[$key] = true;
+            }
+            if (($column['state'] ?? '') === 'rejected') {
+                $skippedHeaders[$key] = true;
             }
         }
         $stillAdjusting = [];
@@ -181,6 +193,9 @@ class SchemaDriftRegistry
         }
 
         $resolved = [];
+        $layoutIgnoredHeaders = array_fill_keys((array) ($report['layout_ignored_headers'] ?? []), true);
+        $scan = $report['source']['structural_scan'] ?? [];
+        $repairedRows = (int) ($scan['merchant_name_pipe_repairs']['count'] ?? 0);
         $events = DB::table(self::TABLE)->where('table_name', $table)->where('status', self::STATUS_PENDING)->get();
         foreach ($events as $row) {
             if ($exceptEventId !== null && (int) $row->id === $exceptEventId) {
@@ -195,6 +210,16 @@ class SchemaDriftRegistry
             if ($pendingReviews !== []) {
                 $approved = array_fill_keys($this->approvedReviewKeys($table, (string) ($payload['source_fingerprint'] ?? '')), true);
                 foreach ($pendingReviews as $review) {
+                    // The same file can prove that an earlier width finding
+                    // was entirely explained by preserved pipes in names.
+                    if (($review['code'] ?? '') === 'row_width'
+                        && !empty($scan['complete']) && ($scan['misaligned_rows'] ?? null) === 0
+                        && $repairedRows > 0
+                        && $repairedRows === (int) ($payload['source']['structural_scan']['misaligned_rows'] ?? 0)
+                        && !empty($report['source_fingerprint'])
+                        && ($payload['source_fingerprint'] ?? '') === $report['source_fingerprint']) {
+                        continue;
+                    }
                     if (!isset($approved[(string) ($review['key'] ?? '')])) {
                         continue 2;
                     }
@@ -214,7 +239,8 @@ class SchemaDriftRegistry
                     continue;
                 }
                 $evidence = true;
-                if (!isset($matchedHeaders[$key])) {
+                if (!isset($decidedHeaders[$key]) && !((isset($skippedHeaders[$key]) || isset($layoutIgnoredHeaders[$key]))
+                    && ($payload['source_fingerprint'] ?? '') === ($report['source_fingerprint'] ?? ''))) {
                     $open = true;
                 }
             }
@@ -223,7 +249,10 @@ class SchemaDriftRegistry
                     continue;
                 }
                 $evidence = true;
-                if (isset($stillAdjusting[strtolower((string) $adjustment['column'])])) {
+                // A different upload may fit in the original column and cannot
+                // prove that the values in the reviewed file would now fit.
+                if (($payload['source_fingerprint'] ?? '') !== ($report['source_fingerprint'] ?? '')
+                    || isset($stillAdjusting[strtolower((string) $adjustment['column'])])) {
                     $open = true;
                 }
             }
@@ -234,7 +263,7 @@ class SchemaDriftRegistry
 
             DB::table(self::TABLE)->where('id', $row->id)->where('status', self::STATUS_PENDING)->update([
                 'status' => self::STATUS_RESOLVED,
-                'decided_by' => 'Sistem (struktur sudah sesuai)',
+                'decided_by' => 'Sistem (usulan sudah diselesaikan)',
                 'decided_at' => now(),
                 'acknowledged_at' => now(),
                 'updated_at' => now(),
@@ -259,17 +288,20 @@ class SchemaDriftRegistry
     /**
      * @return array<int, string> rejected new-column names and "adjust:<column>" keys
      */
-    public function rejectedColumns(string $table): array
+    public function rejectedColumns(string $table, ?string $sourceFingerprint = null): array
     {
-        if (!$this->isAvailable()) {
+        if ($sourceFingerprint === '' || !$this->isAvailable()) {
             return [];
         }
 
         $names = [];
-        DB::table(self::TABLE)
+        $query = DB::table(self::TABLE)
             ->where('table_name', strtolower($table))
-            ->whereNotNull('rejected_columns')
-            ->pluck('rejected_columns')
+            ->whereNotNull('rejected_columns');
+        if ($sourceFingerprint !== null) {
+            $query->where('payload->source_fingerprint', $sourceFingerprint);
+        }
+        $query->pluck('rejected_columns')
             ->each(function ($json) use (&$names): void {
                 foreach ((array) json_decode((string) $json, true) as $name) {
                     $names[strtolower((string) $name)] = true;
@@ -450,9 +482,13 @@ class SchemaDriftRegistry
                 continue;
             }
 
+            $type = strtoupper(trim((string) ($selection['type'] ?? $column['proposed_type'])));
+            if (!empty($column['preserve_as_text']) && !in_array($type, $column['type_options'], true)) {
+                throw new RuntimeException("Pilih tipe teks yang ditawarkan untuk {$column['header']} agar nilai sumber tetap utuh.");
+            }
             $toAdd[] = [
                 'name' => strtolower(trim((string) ($selection['name'] ?? $column['proposed_column']))),
-                'type' => strtoupper(trim((string) ($selection['type'] ?? $column['proposed_type']))),
+                'type' => $type,
                 'source_header' => $column['header'] ?? null,
                 'source_key' => $sourceKey,
             ];
@@ -490,8 +526,7 @@ class SchemaDriftRegistry
 
         $applied = $reviewed;
         try {
-            $widened = $toWiden === [] ? [] : $this->evolution->widenColumns($table, $toWiden);
-            $added = $toAdd === [] ? [] : $this->evolution->addColumns($table, $toAdd);
+            ['added' => $added, 'widened' => $widened] = $this->evolution->applyChanges($table, $toAdd, $toWiden);
 
             foreach ($added as $column) {
                 $requested = collect($toAdd)->firstWhere('name', $column['name']) ?? [];
@@ -508,13 +543,9 @@ class SchemaDriftRegistry
                 $applied[] = $column + ['action' => self::ACTION_WIDEN];
             }
         } catch (Throwable $e) {
-            // Only a still-open decision becomes "failed": a concurrent accept
-            // that already applied the change must not be overwritten.
+            // Leave the review open after a temporary database failure.
             DB::table(self::TABLE)->where('id', $id)->where('status', self::STATUS_PENDING)->update([
-                'status' => self::STATUS_FAILED,
                 'error' => mb_substr($e->getMessage(), 0, 2000),
-                'decided_by' => mb_substr($actor, 0, 150),
-                'decided_at' => now(),
                 'updated_at' => now(),
             ]);
 
@@ -522,6 +553,17 @@ class SchemaDriftRegistry
         }
 
         $payload = $event->payload;
+        $skipped = array_fill_keys($excluded, true);
+        foreach ($payload['new_columns'] ?? [] as $index => $column) {
+            if (($column['decision'] ?? 'pending') === 'pending') {
+                $payload['new_columns'][$index]['decision'] = isset($skipped[$column['proposed_column']]) ? 'rejected' : 'applied';
+            }
+        }
+        foreach ($payload['adjustments'] ?? [] as $index => $adjustment) {
+            if (($adjustment['decision'] ?? 'pending') === 'pending') {
+                $payload['adjustments'][$index]['decision'] = isset($skipped['adjust:' . $adjustment['column']]) ? 'rejected' : 'applied';
+            }
+        }
         foreach ($payload['review_issues'] ?? [] as $index => $review) {
             if (($review['decision'] ?? 'pending') === 'pending') {
                 $payload['review_issues'][$index]['decision'] = 'approved';
@@ -666,6 +708,7 @@ class SchemaDriftRegistry
             'status' => $event->status,
             'evolution_mode' => app(SchemaEvolutionPolicy::class)->modeFor((string) $event->table_name),
             'summary' => $event->summary,
+            'source_file' => $event->source_file ?? null,
             'occurrences' => (int) $event->occurrences,
             'last_seen_at' => $event->last_seen_at,
             'decided_by' => $event->decided_by,

@@ -1571,8 +1571,9 @@
 </style>
 @include('dashboard.partials.simpanan-landing-styles')
 @include('dashboard.partials.simpanan-section-styles')
+@include('dashboard.partials.portfolio-card-styles')
 
-<div class="db-shell">
+<div class="db-shell landing-cards-unified">
   {{-- EXECUTIVE HEADER (HARMONIZED WITH LANDING PINJAMAN) --}}
     {{-- EXECUTIVE HEADER (IDENTIK DENGAN LANDING PINJAMAN) --}}
   <div class="db-header">

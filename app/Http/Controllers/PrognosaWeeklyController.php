@@ -225,12 +225,10 @@ class PrognosaWeeklyController extends Controller
             Cache::forget($this->cacheKey($selectedSheetKey));
         }
 
-        $forecastPayload = Cache::get($this->cacheKey($selectedSheetKey));
-        if (! is_array($forecastPayload)) {
-            $forecastPayload = $this->fetchSheet($selectedSheetKey);
-            if (empty($forecastPayload['error'])) {
-                Cache::put($this->cacheKey($selectedSheetKey), $forecastPayload, now()->addMinutes(10));
-            }
+        // Each page/export reads the spreadsheet, without requiring a refresh button.
+        $forecastPayload = $this->fetchSheet($selectedSheetKey);
+        if (empty($forecastPayload['error'])) {
+            Cache::put($this->cacheKey($selectedSheetKey), $forecastPayload, now()->addMinutes(10));
         }
 
         if (! empty($forecastPayload['error'])) {
@@ -932,16 +930,17 @@ class PrognosaWeeklyController extends Controller
     ): void {
         $groupColors = [
             'identity' => ['bg' => '12385F', 'fg' => 'FFFFFF'],
-            'position' => ['bg' => '1A5A9E', 'fg' => 'FFFFFF'],
+            'position' => ['bg' => '12385F', 'fg' => 'FFFFFF'],
             'forecast' => ['bg' => 'FDF0D3', 'fg' => '8A5300'],
             'delta' => ['bg' => '0F766E', 'fg' => 'FFFFFF'],
-            'rka_current' => ['bg' => '2F6B4F', 'fg' => 'FFFFFF'],
-            'rka_december' => ['bg' => '2F6B4F', 'fg' => 'FFFFFF'],
+            'rka_current' => ['bg' => '17578C', 'fg' => 'FFFFFF'],
+            'rka_december' => ['bg' => '334E7E', 'fg' => 'FFFFFF'],
             'runoff' => ['bg' => '475569', 'fg' => 'FFFFFF'],
         ];
         $rowStyles = [
             'section' => ['bg' => 'DCE9F7', 'bold' => true],
             'category' => ['bg' => 'EEF4FB', 'bold' => true],
+            'subcategory' => ['bg' => 'F8FAFD', 'bold' => true],
             'subtotal' => ['bg' => 'F5F8FC', 'bold' => true],
             'metric' => ['bg' => 'FFFFFF', 'bold' => true],
             'detail' => ['bg' => 'FFFFFF', 'bold' => false],
@@ -992,15 +991,20 @@ class PrognosaWeeklyController extends Controller
         foreach ($columns as $offset => $column) {
             $letter = Coordinate::stringFromColumnIndex($offset + 1);
             $detail = trim((string) ($column['detail'] ?? ''));
-            $sheet->setCellValue($letter.$headRow, trim((string) $column['label']).($detail !== '' ? "\n".$detail : ''));
+            $heading = ! empty($column['period_key'])
+                ? ($detail !== '' ? $detail : '-')
+                : trim((string) $column['label']).($detail !== '' ? "\n".$detail : '');
+            $sheet->setCellValue($letter.$headRow, $heading);
             $colors = $groupColors[$column['group']] ?? $groupColors['identity'];
             $style = $sheet->getStyle($letter.$headRow);
-            $style->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB($column['group'] === 'forecast' ? 'FFF7E1' : 'EAF1F8');
-            $style->getFont()->setBold(true)->getColor()->setRGB($column['group'] === 'forecast' ? '8A5300' : '1E3A5F');
+            $style->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB($colors['bg']);
+            $style->getFont()->setBold(true)->getColor()->setRGB($colors['fg']);
             $style->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER)->setVertical(Alignment::VERTICAL_CENTER)->setWrapText(true);
             unset($colors);
         }
         $sheet->getRowDimension($headRow)->setRowHeight(32);
+        $sheet->getRowDimension($groupRow)->setRowHeight(28);
+        $sheet->getStyle("A1:{$lastLetter}5")->getFont()->setName('Calibri');
 
         $rowNumber = $headRow + 1;
         foreach ((array) ($payload['rows'] ?? []) as $row) {
@@ -1018,10 +1022,10 @@ class PrognosaWeeklyController extends Controller
                 if (! $isLabel && is_numeric($raw)) {
                     if (! empty($cell['percent'])) {
                         $sheet->setCellValue($coordinate, ((float) $raw) / 100);
-                        $sheet->getStyle($coordinate)->getNumberFormat()->setFormatCode('0.00%;[Red]-0.00%');
+                        $sheet->getStyle($coordinate)->getNumberFormat()->setFormatCode('0.00%;-0.00%');
                     } else {
                         $sheet->setCellValue($coordinate, (float) $raw);
-                        $sheet->getStyle($coordinate)->getNumberFormat()->setFormatCode('#,##0;[Red](#,##0)');
+                        $sheet->getStyle($coordinate)->getNumberFormat()->setFormatCode('#,##0;(#,##0)');
                     }
                 } else {
                     $sheet->setCellValueExplicit($coordinate, $text, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
@@ -1029,17 +1033,29 @@ class PrognosaWeeklyController extends Controller
 
                 $cellStyle = $sheet->getStyle($coordinate);
                 $cellStyle->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB($rowStyle['bg']);
+                $cellStyle->getFont()->setName('Calibri')->setSize(11);
+                $cellStyle->getAlignment()->setVertical(Alignment::VERTICAL_CENTER);
+                if (in_array($column['group'], ['rka_current', 'rka_december', 'delta'], true)) {
+                    $cellStyle->getFill()->getStartColor()->setRGB(match ($column['group']) {
+                        'rka_current' => 'EAF3FC',
+                        'rka_december' => 'EEF0FA',
+                        default => 'E8F6F3',
+                    });
+                }
                 $cellStyle->getFont()->setBold($rowStyle['bold'] || ! empty($cell['tone']));
                 if (! $isLabel) {
                     $cellStyle->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
                 }
                 $tone = (string) ($cell['tone'] ?? '');
                 if (in_array($tone, ['good', 'positive'], true)) {
-                    $cellStyle->getFont()->getColor()->setRGB('15803D');
+                    $cellStyle->getFont()->getColor()->setRGB('0F6847');
+                    $cellStyle->getFill()->getStartColor()->setRGB('E7F5EC');
                 } elseif (in_array($tone, ['bad', 'negative'], true)) {
-                    $cellStyle->getFont()->getColor()->setRGB('B91C1C');
+                    $cellStyle->getFont()->getColor()->setRGB('B42336');
+                    $cellStyle->getFill()->getStartColor()->setRGB('FDECEF');
                 }
             }
+            $sheet->getRowDimension($rowNumber)->setRowHeight(25);
             $rowNumber++;
         }
 
@@ -1049,7 +1065,7 @@ class PrognosaWeeklyController extends Controller
         foreach ($columns as $offset => $column) {
             $letter = Coordinate::stringFromColumnIndex($offset + 1);
             $sheet->getColumnDimension($letter)->setWidth(match ((int) $column['index']) {
-                0 => 6,
+                0 => 10,
                 1 => 34,
                 default => 15,
             });
@@ -1178,6 +1194,7 @@ class PrognosaWeeklyController extends Controller
             'dpk_scope' => '',
         ];
         $result = [];
+        $currentParentNumber = '';
         $officeKey = null;
         $officeRowsByLabel = [];
         foreach ($dailyRowsByKey as $key => $dailyRow) {
@@ -1224,9 +1241,50 @@ class PrognosaWeeklyController extends Controller
                 && in_array($context['loan_family'], ['sml', 'npl'], true);
             $isPercentage = $this->isPercentageIndicator($normalizedLabel);
 
+            $displayNumber = $number;
+            $displayLabel = $label;
+            $resolvedRowType = null;
+            $hasExplicitNo = $number !== '' && $number !== '-';
+
+            if (! $hasExplicitNo && preg_match('/^(\d+)\.([A-Za-z])\.(\d+)\.?\s*(.+)$/u', $label, $m) === 1) {
+                $currentParentNumber = $m[1];
+                $displayNumber = $m[1].'.'.strtoupper($m[2]).'.'.$m[3];
+                $displayLabel = trim($m[4]);
+                $resolvedRowType = 'subcategory';
+            } elseif (! $hasExplicitNo && preg_match('/^(\d+)\.([A-Za-z])\.?\s+(.+)$/u', $label, $m) === 1) {
+                $currentParentNumber = $m[1];
+                $displayNumber = $m[1].'.'.strtoupper($m[2]).'.';
+                $displayLabel = trim($m[3]);
+                $resolvedRowType = 'category';
+            } elseif (! $hasExplicitNo && preg_match('/^(\d+\.\d+(?:\.\d+)*)\.?\s+(.+)$/u', $label, $m) === 1) {
+                $displayNumber = $m[1];
+                $displayLabel = trim($m[2]);
+                $resolvedRowType = 'subcategory';
+            } elseif (preg_match('/^(\d+)(?:\.(?!\w)|\s+)(.+)$/u', $label, $numberedLabel) === 1
+                && (! $hasExplicitNo || $number === $numberedLabel[1])) {
+                $displayNumber = $numberedLabel[1];
+                $displayLabel = trim($numberedLabel[2]);
+                $currentParentNumber = $numberedLabel[1];
+            } elseif (! $hasExplicitNo && preg_match('/^([A-Za-z])\.(\d+)\.?\s*(.+)$/u', $label, $subOfficeLabel) === 1) {
+                $letter = strtoupper($subOfficeLabel[1]);
+                $displayNumber = $currentParentNumber !== ''
+                    ? $currentParentNumber.'.'.$letter.'.'.$subOfficeLabel[2]
+                    : $letter.'.'.$subOfficeLabel[2];
+                $displayLabel = trim($subOfficeLabel[3]);
+                $resolvedRowType = 'subcategory';
+            } elseif (! $hasExplicitNo && preg_match('/^([A-Za-z])\.(?!\d)\s*(.+)$/u', $label, $letteredLabel) === 1) {
+                $letter = strtoupper($letteredLabel[1]);
+                $displayNumber = $currentParentNumber !== ''
+                    ? $currentParentNumber.'.'.$letter.'.'
+                    : $letter.'.';
+                $displayLabel = trim($letteredLabel[2]);
+                $resolvedRowType = 'category';
+            } elseif ($this->forecastRowType($number, $normalizedLabel) === 'section') {
+                $currentParentNumber = '';
+            }
             $cells = [
-                $this->displayCell($number),
-                $this->displayCell($label),
+                $this->displayCell($displayNumber === '-' ? '' : $displayNumber),
+                $this->displayCell($displayLabel),
             ];
 
             $currentRaw = null;
@@ -1322,7 +1380,7 @@ class PrognosaWeeklyController extends Controller
             $result[] = [
                 'key' => 'r'.count($result),
                 'cells' => $cells,
-                'type' => $this->forecastRowType($number, $normalizedLabel),
+                'type' => $resolvedRowType ?? $this->forecastRowType($number, $normalizedLabel),
                 'section' => $context['section'],
                 'label' => $label,
                 'metric_keys' => $metricKeys,

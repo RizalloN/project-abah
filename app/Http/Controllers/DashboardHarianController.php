@@ -771,7 +771,8 @@ class DashboardHarianController extends Controller
         $segmentRows = [];
         $mutedRows = [];
         $rowDepths = [];
-        foreach (($payload['rows'] ?? []) as $row) {
+        $exportRows = $this->buildDashboardHarianExportRows($payload['rows'] ?? []);
+        foreach ($exportRows as $row) {
             $values = $row['values'] ?? [];
             $deltas = $row['deltas'] ?? [];
             $rkaComparison = $this->dashboardHarianRkaComparison($row);
@@ -813,12 +814,16 @@ class DashboardHarianController extends Controller
             $numberFormat = ($row['type'] ?? 'currency') === 'percent' ? '#,##0.00' : '#,##0';
             $sheet->getStyle("B{$rowIndex}:{$lastColumn}{$rowIndex}")->getNumberFormat()->setFormatCode($numberFormat);
             $rowKey = (string) ($row['key'] ?? '');
+            $sourceMetricKey = (string) ($row['source_metric_key'] ?? '');
             if (in_array($rowKey, $hiddenRows, true)) {
                 $sheet->getRowDimension($rowIndex)->setVisible(false);
             }
             $qualityRows[$rowIndex] = $this->isDashboardHarianQualityTarget($rowKey)
-                || $this->isDashboardHarianLdrTarget($rowKey);
-            $ldrRows[$rowIndex] = $this->isDashboardHarianLdrTarget($rowKey);
+                || $this->isDashboardHarianQualityTarget($sourceMetricKey)
+                || $this->isDashboardHarianLdrTarget($rowKey)
+                || $this->isDashboardHarianLdrTarget($sourceMetricKey);
+            $ldrRows[$rowIndex] = $this->isDashboardHarianLdrTarget($rowKey)
+                || $this->isDashboardHarianLdrTarget($sourceMetricKey);
             $accent = (string) ($row['accent'] ?? '');
             $blockRows[$rowIndex] = $accent === 'strong' || $this->isDashboardHarianExportBlockLabel($label);
             $segmentRows[$rowIndex] = $accent === 'section' || $this->isDashboardHarianExportSegmentLabel($label);
@@ -973,7 +978,7 @@ class DashboardHarianController extends Controller
         array $ldrRows = [],
         array $blockRows = [],
         array $segmentRows = [],
-        int $dataStartRow = 7
+        int $dataStartRow = 8
     ): void
     {
         if ($lastRow < $dataStartRow) {
@@ -1010,8 +1015,8 @@ class DashboardHarianController extends Controller
 
             foreach ([
                 Coordinate::stringFromColumnIndex($deltaStart) . $rowNumber . ':' . Coordinate::stringFromColumnIndex($deltaEnd) . $rowNumber,
-                Coordinate::stringFromColumnIndex($rkaDelta) . $rowNumber . ':' . Coordinate::stringFromColumnIndex($rkaDelta) . $rowNumber,
-                Coordinate::stringFromColumnIndex($rkaDecDelta) . $rowNumber . ':' . Coordinate::stringFromColumnIndex($rkaDecDelta) . $rowNumber,
+                Coordinate::stringFromColumnIndex($rkaDelta) . $rowNumber,
+                Coordinate::stringFromColumnIndex($rkaDecDelta) . $rowNumber,
             ] as $range) {
                 $sheet->getStyle($range)->setConditionalStyles($conditionalStyles);
             }
@@ -1019,19 +1024,16 @@ class DashboardHarianController extends Controller
 
         for ($rowNumber = $dataStartRow; $rowNumber <= $lastRow; $rowNumber++) {
             $isLdrRow = (bool) ($ldrRows[$rowNumber] ?? false);
-            $isStaticHighlightRow = (bool) ($blockRows[$rowNumber] ?? false)
-                || (bool) ($segmentRows[$rowNumber] ?? false);
             $achievementStyles = $isLdrRow
                 ? [
                     $downStyle(Conditional::OPERATOR_LESSTHAN, '100'),
                     $flatStyle(Conditional::OPERATOR_EQUAL, '100'),
                     $upStyle(Conditional::OPERATOR_GREATERTHAN, '100'),
                 ]
-                : array_values(array_filter([
+                : [
                     $downStyle(Conditional::OPERATOR_LESSTHAN, '100'),
-                    $isStaticHighlightRow ? null : $flatStyle(Conditional::OPERATOR_EQUAL, '100'),
                     $upStyle(Conditional::OPERATOR_GREATERTHANOREQUAL, '100'),
-                ]));
+                ];
 
             foreach ([$rkaAchievement, $rkaDecAchievement] as $achievementColumn) {
                 $cell = Coordinate::stringFromColumnIndex($achievementColumn) . $rowNumber;
@@ -1048,6 +1050,7 @@ class DashboardHarianController extends Controller
             $conditional->setConditionType(Conditional::CONDITION_CELLIS);
             $conditional->setOperatorType($operator);
             $conditional->addCondition($condition);
+            $conditional->setStopIfTrue(true);
             $conditional->getStyle()->getFont()->setBold(true);
             $conditional->getStyle()->getFont()->getColor()->setARGB('FF' . $fontColor);
             $conditional->getStyle()->getFill()->setFillType(Fill::FILL_SOLID);
@@ -1161,16 +1164,102 @@ class DashboardHarianController extends Controller
         return $type === 'percent' ? $numeric : $numeric / 1000000;
     }
 
+    /**
+     * Sisipkan 3 baris ringkasan produk simpanan (Tabungan, Deposito, Giro)
+     * tepat di atas baris 1. Simpanan hanya untuk export Excel.
+     *
+     * @param  array<int, array<string, mixed>>  $rows
+     * @return array<int, array<string, mixed>>
+     */
+    private function buildDashboardHarianExportRows(array $rows): array
+    {
+        $totalSimpananIndex = null;
+        foreach ($rows as $index => $row) {
+            if (($row['key'] ?? '') === 'total_simpanan') {
+                $totalSimpananIndex = $index;
+                break;
+            }
+        }
+
+        if ($totalSimpananIndex === null) {
+            return $rows;
+        }
+
+        $productDefinitions = [
+            [
+                'key' => 'export_total_tabungan',
+                'label' => 'Tabungan',
+                'sources' => ['tabungan_ritel', 'tabungan_mikro', 'tabungan_wholesale'],
+            ],
+            [
+                'key' => 'export_total_deposito',
+                'label' => 'Deposito',
+                'sources' => ['deposito_ritel', 'deposito_mikro', 'deposito_wholesale'],
+            ],
+            [
+                'key' => 'export_total_giro',
+                'label' => 'Giro',
+                'sources' => ['giro_ritel', 'giro_mikro', 'giro_wholesale'],
+            ],
+        ];
+
+        $valueKeys = ['yoy', 'ytd', 'm2', 'mtm', 'mtd', 'h1', 'current', 'rka', 'rka_dec'];
+        $deltaKeys = ['yoy', 'ytd', 'mtm', 'mtd', 'dtd'];
+
+        $matchedComponents = 0;
+        $summaryRows = [];
+
+        foreach ($productDefinitions as $definition) {
+            $sourceLookup = array_fill_keys($definition['sources'], true);
+            $values = array_fill_keys($valueKeys, 0.0);
+            $deltas = array_fill_keys($deltaKeys, 0.0);
+
+            foreach ($rows as $row) {
+                $sourceKey = (string) ($row['source_metric_key'] ?? $row['key'] ?? '');
+                if (!isset($sourceLookup[$sourceKey])) {
+                    continue;
+                }
+
+                $matchedComponents++;
+                foreach ($valueKeys as $key) {
+                    $values[$key] += (float) ($row['values'][$key] ?? 0);
+                }
+                foreach ($deltaKeys as $key) {
+                    $deltas[$key] += (float) ($row['deltas'][$key] ?? 0);
+                }
+            }
+
+            $summaryRows[] = [
+                'key' => $definition['key'],
+                'label' => $definition['label'],
+                'type' => 'currency',
+                'depth' => 0,
+                'accent' => 'section',
+                'values' => $values,
+                'deltas' => $deltas,
+            ];
+        }
+
+        if ($matchedComponents === 0) {
+            return $rows;
+        }
+
+        array_splice($rows, $totalSimpananIndex, 0, $summaryRows);
+
+        return $rows;
+    }
+
     private function dashboardHarianRkaComparison(array $row): array
     {
         $currentValue = (float) ($row['values']['current'] ?? 0);
         $rowKey = (string) ($row['key'] ?? '');
-        $reverse = $this->isDashboardHarianQualityTarget($rowKey) || $this->isDashboardHarianLdrTarget($rowKey);
-        $useCurrentMinusTargetDelta = $this->isDashboardHarianLdrTarget($rowKey);
-        $compare = function (float $targetValue) use ($currentValue, $reverse, $useCurrentMinusTargetDelta): array {
-            $delta = $useCurrentMinusTargetDelta
-                ? ($currentValue - $targetValue)
-                : ($reverse ? ($targetValue - $currentValue) : ($currentValue - $targetValue));
+        $sourceMetricKey = (string) ($row['source_metric_key'] ?? '');
+        $reverse = $this->isDashboardHarianQualityTarget($rowKey)
+            || $this->isDashboardHarianQualityTarget($sourceMetricKey)
+            || $this->isDashboardHarianLdrTarget($rowKey)
+            || $this->isDashboardHarianLdrTarget($sourceMetricKey);
+        $compare = function (float $targetValue) use ($currentValue, $reverse): array {
+            $delta = $currentValue - $targetValue;
             $achievement = 0.0;
 
             if ($reverse) {

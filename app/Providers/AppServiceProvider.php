@@ -128,7 +128,7 @@ class AppServiceProvider extends ServiceProvider
             $view->with('activeImportJobCount', $activeImportJobCount);
         });
 
-        View::composer(['import.preview', 'import.preview_excel'], \App\View\Composers\SchemaDriftPreviewComposer::class);
+        View::composer(['import.preview', 'import.preview_excel', 'input.import-preview', 'input.bod-boc-import-preview'], \App\View\Composers\SchemaDriftPreviewComposer::class);
     }
 
     private function registerSecurityRateLimiters(): void

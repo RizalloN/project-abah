@@ -130,7 +130,7 @@ it('only skips unknown headers after an explicit rejection and still asks about 
 
     $later = ($this->reviewAnalyze)(($this->writeReviewSource)([...$this->reviewHeaders, 'FLAG_PAYROLL', 'INSTANSI'], [[...$this->reviewRow, 'Y', 'BRI']]));
     expect($later['has_pending_decision'])->toBeTrue()
-        ->and(collect($later['new_columns'])->where('decision', 'pending')->pluck('header')->all())->toBe(['INSTANSI']);
+        ->and(collect($later['new_columns'])->where('decision', 'pending')->pluck('header')->all())->toBe(['FLAG_PAYROLL', 'INSTANSI']);
 });
 
 it('stores an approved new header in the user chosen database column through the actual row mapper', function () {

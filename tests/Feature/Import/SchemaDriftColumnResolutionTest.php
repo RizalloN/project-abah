@@ -83,6 +83,32 @@ it('still flags a header that genuinely appears twice in the source', function (
     expect(collect($report['columns'])->pluck('state')->all())->toBe(['matched', 'duplicate']);
 });
 
+it('blocks repeated new headers before they can create ambiguous mappings', function () {
+    $report = resolutionReport(['BAKI_DEBET1', 'CATATAN_BARU', 'CATATAN_BARU'], ['1.00', 'satu', 'dua']);
+
+    expect(collect($report['columns'])->pluck('state')->all())->toBe(['matched', 'new', 'duplicate'])
+        ->and($report['has_blocking_issue'])->toBeTrue()
+        ->and($report['new_columns'])->toHaveCount(1)
+        ->and($report['review_issues'][0]['code'])->toBe('duplicate_source');
+});
+
+it('blocks schema proposals when the Daily Loan core header is missing', function () {
+    $report = app(SchemaDriftDetector::class)->detect('daily_loan_dinamis', ['PERIODE', 'CABANG1', 'FLAG_BARU'], [
+        ['2026-11-22', 'KC Madiun', 'Y'],
+    ], [
+        'column_metadata' => [
+            'periode' => ['base_type' => 'date'],
+            'cabang1' => ['base_type' => 'varchar'],
+            'baki_debet1' => ['base_type' => 'decimal'],
+            'nomor_rekening1' => ['base_type' => 'varchar'],
+        ],
+    ]);
+
+    expect($report['has_blocking_issue'])->toBeTrue()
+        ->and($report['new_columns'])->toBe([])
+        ->and(array_column($report['review_issues'], 'key'))->toContain('required_header:baki_debet1', 'required_header:nomor_rekening1');
+});
+
 it('shares the import aliases so the preview and the import map the same way', function () {
     expect(ImportHeaderAliases::importColumnName('Textbox20'))->toBe('total_kewajiban')
         ->and(ImportHeaderAliases::importColumnName('Textbox21'))->toBe('os_idr')

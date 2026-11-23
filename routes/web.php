@@ -438,6 +438,9 @@ Route::middleware(['auth', 'auth.session', 'role:admin', 'user.branch.scope', 'r
     Route::get('/import/casa-brilink/stream', [ImportCasaBrilinkController::class, 'processImportStream'])->name('import.casabrilink.stream');
     Route::post('/import/casa-brilink/process', [ImportCasaBrilinkController::class, 'processImport'])->middleware(\App\Http\Middleware\EnsureImportSourceReviewed::class)->name('import.casabrilink.process');
     Route::post('/import/performance-pis/upload', [ImportPerformancePisPerProdukController::class, 'upload'])->name('import.performancepis.upload');
+    Route::post('/import/performance-pis/upload-chunk/init', [ImportPerformancePisPerProdukController::class, 'initChunkUpload'])->name('import.performancepis.upload-chunk.init');
+    Route::post('/import/performance-pis/upload-chunk', [ImportPerformancePisPerProdukController::class, 'uploadChunk'])->name('import.performancepis.upload-chunk');
+    Route::post('/import/performance-pis/upload-chunk/finalize', [ImportPerformancePisPerProdukController::class, 'finalizeChunkUpload'])->name('import.performancepis.upload-chunk.finalize');
     Route::get('/import/performance-pis/preview', [ImportPerformancePisPerProdukController::class, 'preview'])->name('import.performancepis.preview');
     Route::post('/import/performance-pis/preview', [ImportPerformancePisPerProdukController::class, 'preview'])->name('import.performancepis.preview.refresh');
     Route::get('/import/performance-pis/prepare-preview', [ImportPerformancePisPerProdukController::class, 'preparePreviewStream'])->name('import.performancepis.prepare-preview');
@@ -491,6 +494,7 @@ Route::middleware(['auth', 'auth.session', 'role:admin', 'user.branch.scope', 'r
 
     Route::post('/import/brimo/upload', [ImportFileBrimoController::class, 'upload'])->name('import.brimo.upload');
     Route::post('/import/brimo/preview', [ImportFileBrimoController::class, 'preview'])->name('import.brimo.preview');
+    Route::get('/import/brimo/preview/direct', [ImportFileBrimoController::class, 'preview'])->name('import.brimo.preview.direct');
     Route::post('/import/brimo/process', [ImportFileBrimoController::class, 'processImport'])->name('import.brimo.process');
 
     Route::prefix('import-excel')->group(function () {

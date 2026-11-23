@@ -16,6 +16,7 @@ class ManagedReportManagementService
     private const MANAGEMENT_HEAVY_TABLE_ROW_LIMIT = 1000000;
     private const MANAGEMENT_HEAVY_PERIODS_PER_PAGE = 1;
     private const LW325_BLANK_CREATED_AT_FALLBACK_MODE = 'lw325_blank_created_at';
+    private const BRILINK_SUMMARY_TABLE = 'brilink_web_laporan_summary_transaksi_brilink_web';
 
     private const SCOPE_COLUMN_CACHE_TTL = 86400;
     private const SCOPE_COLUMN_RESOLVER_VERSION = 'v3';
@@ -142,7 +143,7 @@ class ManagedReportManagementService
 
     private const MANAGEMENT_SCOPE_COLUMN_OVERRIDES = [
         'monitoring_realisasi_ksbk' => [
-            'period_priority' => ['tgl_inject'],
+            'period_priority' => ['periode'],
             'kanca_priority' => ['bo'],
         ],
         'pipeline_prewash' => [
@@ -224,6 +225,11 @@ class ManagedReportManagementService
         'gi405_recovery' => [
             'period_priority' => ['periode'],
             'no_kanca' => true,
+        ],
+        'cognos_recovery' => [
+            'period_priority' => ['periode'],
+            'kanca_priority' => ['cabang'],
+            'kanca_label_fallback_priority' => ['unit_kerja'],
         ],
         'cognos_ph' => [
             'period_priority' => ['periode'],
@@ -825,13 +831,15 @@ class ManagedReportManagementService
         $estimatedSourceRows = $this->estimateTableRows($tableName);
         $perPage = $this->resolveEffectiveManagementPerPage($perPage, $estimatedSourceRows);
 
-        $useExactPeriodCount = $pageTarget === 'last' || $estimatedSourceRows <= self::MANAGEMENT_EXACT_PERIOD_COUNT_ROW_LIMIT;
+        $hasTextMonthPeriods = $tableName === self::BRILINK_SUMMARY_TABLE;
+        $useExactPeriodCount = $hasTextMonthPeriods || $pageTarget === 'last'
+            || $estimatedSourceRows <= self::MANAGEMENT_EXACT_PERIOD_COUNT_ROW_LIMIT;
         $requestedPage = max(1, $page);
         $currentPage = $requestedPage;
         $offset = ($requestedPage - 1) * $perPage;
         $totalPeriods = null;
 
-        $periodListCacheKey = 'report_management:period_list:' . md5(implode('|', [
+        $periodListCacheKey = ($hasTextMonthPeriods ? 'report_management:month_list:' : 'report_management:period_list:') . md5(implode('|', [
             $tableName,
             $periodColumn,
             $requestedPage,
@@ -839,7 +847,11 @@ class ManagedReportManagementService
             $useExactPeriodCount ? $perPage : ($perPage + 1),
         ]));
 
-        $periodRowsRaw = $this->rememberCached($tableName, $periodListCacheKey, self::AGGREGATE_CACHE_TTL, function () use ($tableName, $periodColumn, $safePeriod, $offset, $useExactPeriodCount, $perPage, $pageTarget) {
+        $periodRowsRaw = $this->rememberCached($tableName, $periodListCacheKey, self::AGGREGATE_CACHE_TTL, function () use ($tableName, $periodColumn, $safePeriod, $offset, $useExactPeriodCount, $hasTextMonthPeriods, $perPage, $pageTarget) {
+            if ($hasTextMonthPeriods) {
+                return $this->fetchTextMonthPeriodPageRows($tableName, $periodColumn, $safePeriod, $offset, $perPage, $pageTarget);
+            }
+
             if ($useExactPeriodCount) {
                 return $this->fetchExactPeriodPageRows($tableName, $periodColumn, $safePeriod, $offset, $perPage, $pageTarget);
             }
@@ -876,7 +888,7 @@ class ManagedReportManagementService
                     $perPage,
                     $resolvedTotalPeriods,
                     $useExactPeriodCount,
-                    $hasNext
+                    $useExactPeriodCount ? null : $hasNext
                 ),
                 'truncated' => false,
                 'displayed_rows_total' => 0,
@@ -980,12 +992,37 @@ class ManagedReportManagementService
                 $perPage,
                 $resolvedTotalPeriods,
                 $useExactPeriodCount,
-                $hasNext
+                $useExactPeriodCount ? null : $hasNext
             ),
             'truncated' => $truncated,
             'displayed_rows_total' => $displayedRowsTotal,
             'total_groups' => count($rows),
         ];
+    }
+
+    private function fetchTextMonthPeriodPageRows(
+        string $tableName,
+        string $periodColumn,
+        string $safePeriod,
+        int $offset,
+        int $perPage,
+        string $pageTarget
+    ): array {
+        $byMonth = DB::table($tableName)
+            ->selectRaw("`{$safePeriod}` as period_value")
+            ->groupBy($periodColumn)
+            ->get()
+            ->groupBy(fn (object $period): string => $this->formatManagementPeriodLabel($period->period_value, $periodColumn))
+            ->sortKeysDesc(SORT_STRING);
+
+        $totalPeriods = $byMonth->count();
+        $lastOffset = intdiv(max(0, $totalPeriods - 1), $perPage) * $perPage;
+        $pageOffset = $pageTarget === 'last' ? $lastOffset : min($offset, $lastOffset);
+
+        // Keep the original values for the indexed lookup on the source table.
+        return $byMonth->slice($pageOffset, $perPage)->flatten(1)->each(function (object $period) use ($totalPeriods): void {
+            $period->total_periods = $totalPeriods;
+        })->all();
     }
 
     private function fetchExactPeriodPageRows(
@@ -1118,18 +1155,18 @@ class ManagedReportManagementService
             $kancaRaw = $kancaColumn !== null ? ($item->kanca_value ?? null) : null;
             $kancaFallbackRaw = $kancaLabelFallbackColumn !== null ? ($item->kanca_label_fallback_value ?? null) : null;
             $extraFilters = $this->buildManagementExtraFilters($tableName, $item, $extraScopeColumns);
-            $normalizedPeriodFilter = $periodRaw === null || trim((string) $periodRaw) === ''
+            $periodIsNull = $periodRaw === null || trim((string) $periodRaw) === '';
+            $kancaIsNull = $kancaRaw === null || trim((string) $kancaRaw) === '' || strcasecmp(trim((string) $kancaRaw), 'null') === 0;
+            $normalizedPeriodFilter = $periodIsNull
                 ? ''
                 : $this->normalizeManagementPeriodFilter($tableName, $periodRaw, $periodColumn);
-            $normalizedKancaFilter = $kancaRaw === null || trim((string) $kancaRaw) === ''
+            $normalizedKancaFilter = $kancaIsNull
                 ? ''
-                : $this->normalizeManagementKancaFilter($tableName, (string) $kancaRaw);
-            $kancaLabel = $kancaRaw === null || trim((string) $kancaRaw) === ''
+                : $this->normalizeManagementKancaFilter($tableName, (string) $kancaRaw, $kancaFallbackRaw);
+            $kancaLabel = $kancaIsNull
                 ? ($kancaColumn !== null ? '(Blank)' : '(Semua)')
                 : $this->resolveManagementKancaLabel($tableName, (string) $kancaRaw, $kancaFallbackRaw);
             $kancaLabel = $this->appendManagementExtraLabel($tableName, $kancaLabel, $extraFilters);
-            $periodIsNull = $periodRaw === null || trim((string) $periodRaw) === '';
-            $kancaIsNull = $kancaRaw === null || trim((string) $kancaRaw) === '';
             $aggregateKey = json_encode([
                 $periodIsNull,
                 $periodIsNull ? '' : $normalizedPeriodFilter,
@@ -1648,7 +1685,7 @@ class ManagedReportManagementService
     private function resolveManagementKancaLabel(string $tableName, string $kancaRaw, mixed $fallbackRaw = null): string
     {
         $kancaRaw = trim($kancaRaw);
-        if ($kancaRaw === '') {
+        if ($kancaRaw === '' || strcasecmp($kancaRaw, 'null') === 0) {
             return '(Blank)';
         }
 
@@ -1661,17 +1698,20 @@ class ManagedReportManagementService
             return $kancaRaw;
         }
 
-        if ($tableName !== 'cognos_ph') {
-            return $kancaRaw;
-        }
+        if (in_array($tableName, ['cognos_ph', 'cognos_recovery'], true)) {
+            $fallback = trim((string) ($fallbackRaw ?? ''));
+            if (
+                preg_match('/^\d+$/', $kancaRaw) === 1
+                && $fallback !== ''
+                && (
+                    preg_match('/^\d+\s*--\s*(KC|KCP)\b/i', $fallback) === 1
+                    || preg_match('/^(KC|KCP)\b/i', $fallback) === 1
+                )
+            ) {
+                return $fallback;
+            }
 
-        $fallback = trim((string) ($fallbackRaw ?? ''));
-        if (
-            preg_match('/^\d+$/', $kancaRaw) === 1
-            && $fallback !== ''
-            && preg_match('/^\d+\s*--\s*(KC|KCP)\b/i', $fallback) === 1
-        ) {
-            return $fallback;
+            return $kancaRaw;
         }
 
         return $kancaRaw;
@@ -1731,7 +1771,8 @@ class ManagedReportManagementService
         $query->where(function ($innerQuery) use ($column, $safeColumn, $isStringLike) {
             $innerQuery->whereNull($column);
             if ($isStringLike) {
-                $innerQuery->orWhereRaw("`{$safeColumn}` = ''");
+                $innerQuery->orWhereRaw("`{$safeColumn}` = ''")
+                    ->orWhereRaw("LOWER(TRIM(`{$safeColumn}`)) = 'null'");
             }
         });
     }
@@ -1741,7 +1782,8 @@ class ManagedReportManagementService
         $safeColumn = str_replace('`', '``', $column);
         $query->whereNotNull($column);
         if ($this->isStringLikeColumn($tableName, $column)) {
-            $query->whereRaw("`{$safeColumn}` <> ''");
+            $query->whereRaw("`{$safeColumn}` <> ''")
+                ->whereRaw("LOWER(TRIM(`{$safeColumn}`)) <> 'null'");
         }
     }
 
@@ -1803,9 +1845,27 @@ class ManagedReportManagementService
         return $this->columnIsStringMemo[$memoKey] = $stringLike;
     }
 
-    private function normalizeManagementKancaFilter(string $tableName, string $kancaRaw): string
+    private function normalizeManagementKancaFilter(string $tableName, string $kancaRaw, mixed $fallbackRaw = null): string
     {
         $normalized = trim($kancaRaw);
+        if (strcasecmp($normalized, 'null') === 0) {
+            return '';
+        }
+
+        if (in_array($tableName, ['cognos_ph', 'cognos_recovery'], true)) {
+            $fallback = trim((string) ($fallbackRaw ?? ''));
+            if (
+                preg_match('/^\d+$/', $normalized) === 1
+                && $fallback !== ''
+                && (
+                    preg_match('/^\d+\s*--\s*(KC|KCP)\b/i', $fallback) === 1
+                    || preg_match('/^(KC|KCP)\b/i', $fallback) === 1
+                )
+            ) {
+                return $fallback;
+            }
+        }
+
         $override = self::MANAGEMENT_SCOPE_COLUMN_OVERRIDES[$tableName] ?? null;
         $normalizeWhitespace = is_array($override) && (bool) ($override['normalize_kanca_whitespace'] ?? false);
 

@@ -13,6 +13,72 @@ use Tests\TestCase;
 
 class PresentationPrognosaWeeklyCsvTest extends TestCase
 {
+    public function test_old_partial_sml_cache_is_replaced_by_all_five_source_week_values(): void
+    {
+        Carbon::setTestNow('2026-11-15 12:00:00');
+        Cache::flush();
+        $fallbackPath = sys_get_temp_dir().DIRECTORY_SEPARATOR.'presentation-sml-'.uniqid('', true).'.xlsx';
+        config(['services.presentation_prognosa.local_path' => $fallbackPath]);
+        $sourceValues = ['1.044.583', '1.278.625', '1.600.856', '1.386.479', '743.946'];
+        $matrix = array_map(static fn ($line) => str_getcsv($line, ',', '"', ''), explode("\n", trim($this->dashboardCsvFixture(1_000))));
+        foreach (['7 NOV 26', '14 NOV 26', '21 NOV 26', '28 NOV 26', '30 NOV 26'] as $index => $date) {
+            $matrix[3][8 + $index] = 'WEEK '.($index + 1).' ('.$date.')';
+        }
+        $smlRow = array_search('Total SML (ABS) Non Commercial', array_column($matrix, 0), true);
+        foreach ($sourceValues as $index => $value) {
+            $matrix[$smlRow][8 + $index] = $value;
+        }
+        $stream = fopen('php://temp', 'r+');
+        foreach ($matrix as $row) {
+            fputcsv($stream, $row, ',', '"', '');
+        }
+        rewind($stream);
+        $csv = stream_get_contents($stream);
+        fclose($stream);
+        $oldPayload = ['meta' => ['available' => true], 'scopes' => ['area6' => ['metrics' => ['sml' => ['available' => false, 'value' => null]]]]];
+        foreach (['presentation:prognosa_weekly:v6:', 'presentation:prognosa_weekly:stable:v6:'] as $prefix) {
+            Cache::put($prefix.PresentationPrognosaWeeklyService::SPREADSHEET_ID, $oldPayload, now()->addDays(3));
+        }
+        Http::fake(['*' => Http::response($csv, 200, ['Content-Type' => 'text/csv'])]);
+
+        try {
+            $payload = app(PresentationPrognosaWeeklyService::class)->payload();
+            $this->assertTrue(data_get($payload, 'meta.available'));
+            $this->assertSame('W3', data_get($payload, 'meta.week_label'));
+            foreach ([1_044_583, 1_278_625, 1_600_856, 1_386_479, 743_946] as $index => $value) {
+                $key = 'scopes.area6.weeks.W'.($index + 1).'.metrics.sml';
+                $this->assertTrue(data_get($payload, $key.'.available'));
+                $this->assertSame($value * 1_000_000.0, data_get($payload, $key.'.value'));
+            }
+            $this->assertSame(1_600_856_000_000.0, data_get($payload, 'scopes.area6.metrics.sml.value'));
+            Http::assertSentCount(5);
+        } finally {
+            Carbon::setTestNow();
+            @unlink(substr($fallbackPath, 0, -5).'.json');
+        }
+    }
+
+    public function test_missing_or_formula_error_sml_forecast_stays_unavailable_while_valid_weeks_remain_available(): void
+    {
+        $matrix = array_map(static fn ($line) => str_getcsv($line, ',', '"', ''), explode("\n", trim($this->dashboardCsvFixture(1_000))));
+        $smlRow = array_search('Total SML (ABS) Non Commercial', array_column($matrix, 0), true);
+        $matrix[$smlRow][8] = '';
+        $matrix[$smlRow][9] = '#REF!';
+        $matrix[$smlRow][10] = '0';
+        $service = app(PresentationPrognosaWeeklyService::class);
+        $payload = (new \ReflectionMethod($service, 'parseMatrices'))->invoke($service, ['area6' => $matrix]);
+
+        foreach (['W1', 'W2'] as $week) {
+            $this->assertFalse(data_get($payload, 'scopes.area6.weeks.'.$week.'.metrics.sml.available'));
+            $this->assertNull(data_get($payload, 'scopes.area6.weeks.'.$week.'.metrics.sml.value'));
+            $this->assertTrue(data_get($payload, 'scopes.area6.weeks.'.$week.'.metrics.os.available'));
+            $this->assertTrue(data_get($payload, 'scopes.area6.weeks.'.$week.'.metrics.npl.available'));
+        }
+        $this->assertTrue(data_get($payload, 'scopes.area6.weeks.W3.metrics.sml.available'));
+        $this->assertSame(0.0, data_get($payload, 'scopes.area6.weeks.W3.metrics.sml.value'));
+        $this->assertTrue(data_get($payload, 'scopes.area6.weeks.W4.metrics.sml.available'));
+    }
+
     public function test_october_source_sums_office_products_and_preserves_english_grouped_amounts(): void
     {
         Carbon::setTestNow('2026-10-09 12:00:00');

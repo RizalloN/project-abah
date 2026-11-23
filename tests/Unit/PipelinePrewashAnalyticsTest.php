@@ -418,6 +418,37 @@ class PipelinePrewashAnalyticsTest extends TestCase
         $this->assertSame($before, $this->baseRows());
     }
 
+    public function test_year_period_isolates_2026_from_2027_and_reports_unimported_2027(): void
+    {
+        $this->pipeline('p26', 'C001', ['tahun' => 2026]);
+        $this->visit('v26', 'C001', '2026-02-01', 'DONE', '2026-11-12');
+        $this->daily('d26', 'C001', 'A26', '100.00', '2026-11-12', '2026-02-10');
+        $this->visit('v27', 'C002', '2027-01-10', 'DONE', '2027-01-31');
+        $this->daily('d27', 'C002', 'A27', '500.00', '2027-01-31', '2027-01-20');
+
+        $unimported2027 = $this->service()->payload('2027-01-31', null, true);
+        $this->assertFalse($unimported2027['available']);
+        $this->assertSame('not_imported', $unimported2027['empty_reason']);
+        $this->assertSame(2027, $unimported2027['year']);
+
+        $payload2026 = $this->service()->payload('2026-11-12', null, true);
+        $this->assertTrue($payload2026['available']);
+        $this->assertSame(2026, $payload2026['year']);
+        $this->assertSame('2026-11-12', $payload2026['visit_period']);
+        $this->assertSame('2026-11-12', $payload2026['loan_period']);
+        $this->assertSame(1, $payload2026['summary']['total_count']);
+        $this->assertSame('100.00', $payload2026['summary']['realized_amount']);
+
+        $this->pipeline('p27', 'C002', ['tahun' => 2027]);
+        $payload2027 = $this->service()->payload('2027-01-31', null, true);
+        $this->assertTrue($payload2027['available']);
+        $this->assertSame(2027, $payload2027['year']);
+        $this->assertSame('2027-01-31', $payload2027['visit_period']);
+        $this->assertSame('2027-01-31', $payload2027['loan_period']);
+        $this->assertSame(1, $payload2027['summary']['total_count']);
+        $this->assertSame('500.00', $payload2027['summary']['realized_amount']);
+    }
+
     public function test_an_explicit_bo_territory_assignment_takes_priority_over_the_unassigned_bo_label(): void
     {
         $this->pipeline('bo', null, ['branch' => '49', 'nama_kanca' => 'KC Magetan', 'nama_unit' => 'KC MAGETAN', 'pn_mantri' => null, 'nama_mantri' => null]);
@@ -472,11 +503,11 @@ class PipelinePrewashAnalyticsTest extends TestCase
         ], $values));
     }
 
-    private function visit(string $id, ?string $cif, string $date, string $status): void
+    private function visit(string $id, ?string $cif, string $date, string $status, string $period = '2026-11-12'): void
     {
         DB::table('evaluasi_aktivitas_kunjungan_pemasar')->insert([
             'uniqueid_namareport' => $id, 'cifno' => $cif, 'tgl_kunjungan' => $date,
-            'status_kunjungan' => $status, 'periode' => '2026-11-12',
+            'status_kunjungan' => $status, 'periode' => $period,
             'created_at' => '2026-11-12 09:16:45', 'updated_at' => '2026-11-12 09:16:45',
         ]);
     }

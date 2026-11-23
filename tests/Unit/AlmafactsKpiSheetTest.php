@@ -395,7 +395,7 @@ class AlmafactsKpiSheetTest extends TestCase
         $view = $this->kpiView('mbm');
         $data = $view->getData();
         $this->assertSame('-', $data['rows'][0][2]);
-        $this->assertSame(['2026-09', '2026-07', '2026-06'], array_keys($data['periodOptions']));
+        $this->assertSame(['2026-10', '2026-09', '2026-07', '2026-06'], array_keys($data['periodOptions']));
 
         $this->actingAs(new User([
             'pn' => 'test-kpi-period',

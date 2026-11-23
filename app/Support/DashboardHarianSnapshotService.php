@@ -21,6 +21,7 @@ class DashboardHarianSnapshotService
     private const SAVINGS_TABLE = 'ssa_simpanan';
     private const HOURLY_DPK_TABLE = 'hourly_dpk';
     private const LW325_RECENT_PERIOD_INDEX = 'idx_lw325ph_updated_period';
+    private const GI405_SINGLEROW_SCOPE_INDEX = 'idx_gi405_singlerow_scope';
     private const SOURCE_SIGNATURE_VERSION = 'landing-option-gi405-v1';
     private const AUTO_SYNC_RECENT_SOURCE_HOURS = 6;
     private const AREA_6_LABEL = 'Area 6';
@@ -4908,6 +4909,7 @@ class DashboardHarianSnapshotService
         }
 
         $queryTable = $table;
+        $hasUpdatedAt = Schema::hasColumn($table, 'updated_at');
         if ($table === 'lw325_ph') {
             $queryTable = DB::raw(
                 app(ReportIndexHintResolver::class)->qualify(
@@ -4916,6 +4918,10 @@ class DashboardHarianSnapshotService
                     [self::LW325_RECENT_PERIOD_INDEX]
                 )
             );
+        } elseif ($table === 'gi405_singlerow' && $hasUpdatedAt && $this->shouldIgnoreGi405ScopeIndex()) {
+            // A period-ordered scan uses secondary lookups for each updated_at check.
+            $wrappedTable = DB::connection()->getQueryGrammar()->wrapTable($table);
+            $queryTable = DB::raw($wrappedTable.' IGNORE INDEX (`'.self::GI405_SINGLEROW_SCOPE_INDEX.'`)');
         }
 
         $query = DB::table($queryTable)
@@ -4924,7 +4930,7 @@ class DashboardHarianSnapshotService
             ->orderByDesc($periodColumn)
             ->limit(10);
 
-        if (Schema::hasColumn($table, 'updated_at')) {
+        if ($hasUpdatedAt) {
             $query->where('updated_at', '>=', now()->subHours(self::AUTO_SYNC_RECENT_SOURCE_HOURS));
         }
 
@@ -4934,6 +4940,23 @@ class DashboardHarianSnapshotService
             ->filter()
             ->values()
             ->all();
+    }
+
+    private function shouldIgnoreGi405ScopeIndex(): bool
+    {
+        if (!in_array(DB::connection()->getDriverName(), ['mysql', 'mariadb'], true)) {
+            return false;
+        }
+
+        $hasScopeIndex = false;
+        foreach (Schema::getIndexes('gi405_singlerow') as $index) {
+            if (($index['columns'][0] ?? null) === 'updated_at') {
+                return false;
+            }
+            $hasScopeIndex = $hasScopeIndex || $index['name'] === self::GI405_SINGLEROW_SCOPE_INDEX;
+        }
+
+        return $hasScopeIndex;
     }
 
     private function resolveLatestSourcePeriod(string $table, string $periodColumn): ?string

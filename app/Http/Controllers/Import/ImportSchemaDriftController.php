@@ -37,7 +37,7 @@ class ImportSchemaDriftController extends Controller
         try {
             $report = $this->analyzer->analyze($source['table'], $source['path'], [
                 'source_name' => $source['name'],
-            ]);
+            ] + $source['options']);
 
             return response()->json(['status' => 'ok', 'report' => $report]);
         } catch (Throwable $e) {
@@ -94,9 +94,16 @@ class ImportSchemaDriftController extends Controller
 
     public function reject(Request $request, int $event): JsonResponse
     {
-        $validated = $request->validate(['source_fingerprint' => ['sometimes', 'nullable', 'string', 'size:64']]);
+        $validated = $request->validate([
+            'source_fingerprint' => ['sometimes', 'nullable', 'string', 'size:64'],
+            'source' => ['sometimes', 'string'],
+        ]);
 
-        return $this->decide(fn () => $this->registry->reject($event, $this->actor($request), $validated['source_fingerprint'] ?? null), 'Kolom baru dilewati sesuai keputusan Anda. Pemeriksaan bentuk/isi sumber tetap harus diselesaikan sebelum import.');
+        return $this->decide(function () use ($request, $event, $validated) {
+            $this->assertDecisionSource($event, $validated);
+
+            return $this->registry->reject($event, $this->actor($request), $validated['source_fingerprint'] ?? null);
+        }, 'Usulan kolom ditolak. Selesaikan pemeriksaan sumber yang masih terbuka sebelum import.');
     }
 
     public function acknowledge(Request $request, int $event): JsonResponse
@@ -106,13 +113,15 @@ class ImportSchemaDriftController extends Controller
 
     private function assertDecisionSource(int $eventId, array $validated): void
     {
-        // Legacy notification decisions have no source token. Preview decisions
-        // carry it and must still describe the file that was actually scanned.
+        $event = $this->registry->find($eventId);
         if (!array_key_exists('source', $validated)) {
+            if (!empty($event->payload['source_fingerprint'])) {
+                throw new RuntimeException('Buka preview file dan konfirmasi keputusan di panel pemeriksaan struktur.');
+            }
+
             return;
         }
         $source = SchemaDriftSourceToken::read($validated['source']);
-        $event = $this->registry->find($eventId);
         if ($source === null || $event === null
             || strtolower($source['table']) !== strtolower((string) $event->table_name)) {
             throw new RuntimeException('Referensi file tidak cocok dengan keputusan ini atau sudah kedaluwarsa. Pindai ulang preview.');

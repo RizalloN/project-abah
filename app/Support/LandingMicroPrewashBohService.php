@@ -13,7 +13,7 @@ final class LandingMicroPrewashBohService
     private const VISITS = 'evaluasi_aktivitas_kunjungan_pemasar';
     private const MONTHS = ['jan', 'feb', 'mar', 'apr', 'mei', 'jun', 'jul', 'agt', 'sep', 'okt', 'nov', 'des'];
 
-    public function payload(?array $branchScope): array
+    public function payload(?array $branchScope = null, ?string $requestedPeriod = null): array
     {
         $empty = ['available' => false, 'groups' => ['bo' => [], 'unit' => []], 'summary' => [], 'records' => []];
         if (! Schema::hasTable(self::TABLE) || ! DB::table(self::TABLE)->exists()) {
@@ -24,15 +24,29 @@ final class LandingMicroPrewashBohService
                 'message' => 'Impor laporan Pipeline Prewash PIC BOH melalui menu Import. Tab ini memakai dataset PIC BOH tersendiri.',
             ];
         }
-        $visitPeriod = Schema::hasTable(self::VISITS) ? DB::table(self::VISITS)->max('periode') : null;
-        $year = $visitPeriod ? (int) substr($visitPeriod, 0, 4) : (int) DB::table(self::TABLE)->max('tahun');
+        $year = $this->resolveTargetYear($requestedPeriod);
+        if (! DB::table(self::TABLE)->where('tahun', $year)->exists()) {
+            return $empty + [
+                'year' => $year,
+                'empty_reason' => 'not_imported',
+                'empty_title' => 'TL Pipeline Prewash PIC BOH tahun '.$year.' belum diimport',
+                'import_report' => 'Pipeline Prewash PIC BOH',
+                'message' => 'Dataset Pipeline Prewash PIC BOH tahun '.$year.' belum diimport. Impor laporan tahun '.$year.' melalui menu Import.',
+            ];
+        }
+        $visitPeriod = Schema::hasTable(self::VISITS)
+            ? DB::table(self::VISITS)->where('periode', '<=', $year.'-12-31')->max('periode')
+            : null;
+        if ($visitPeriod !== null && $visitPeriod < $year.'-01-01') {
+            $visitPeriod = null;
+        }
         $base = $this->pipelineQuery($year, $branchScope);
         $records = $base->orderBy('uniqueid_namareport')->get()->map(fn (object $row): array => (array) $row)->all();
         if ($records === []) {
             return $empty + ['year' => $year ?: null, 'visit_period' => $visitPeriod, 'empty_reason' => 'no_matching_scope', 'message' => 'Belum ada Pipeline Prewash PIC BOH untuk tahun laporan kunjungan dan cabang yang dipilih.'];
         }
 
-        [$loanSource, $loanPeriod] = $this->loanSource();
+        [$loanSource, $loanPeriod] = $this->loanSource($year, $requestedPeriod);
         $cifs = array_values(array_unique(array_filter(array_map(fn (array $row): string => trim((string) $row['cif']), $records), fn (string $cif): bool => $cif !== '')));
         $visits = $visitPeriod ? $this->visits($visitPeriod, $year, $branchScope) : [];
         // Without a visit report, the realization year cannot be reconciled.
@@ -78,10 +92,31 @@ final class LandingMicroPrewashBohService
         ];
     }
 
-    private function loanSource(): array
+    private function resolveTargetYear(?string $requestedPeriod): int
     {
-        $daily = Schema::hasTable('daily_loan_dinamis') ? DB::table('daily_loan_dinamis')->max('periode') : null;
-        $lw = Schema::hasTable('lw321pn') ? DB::table('lw321pn')->max('periode') : null;
+        $trimmed = trim((string) $requestedPeriod);
+        if ($trimmed !== '' && preg_match('/^(19|20|21)\d{2}/', $trimmed, $match) === 1) {
+            return (int) $match[0];
+        }
+        $visitPeriod = Schema::hasTable(self::VISITS) ? DB::table(self::VISITS)->max('periode') : null;
+
+        return $visitPeriod ? (int) substr($visitPeriod, 0, 4) : (int) DB::table(self::TABLE)->max('tahun');
+    }
+
+    private function loanSource(int $year, ?string $requestedPeriod = null): array
+    {
+        $end = $year.'-12-31';
+        $trimmed = trim((string) $requestedPeriod);
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/D', $trimmed) === 1 && substr($trimmed, 0, 4) === (string) $year) {
+            $end = min($trimmed, $end);
+        }
+        $start = $year.'-01-01';
+        $daily = Schema::hasTable('daily_loan_dinamis')
+            ? DB::table('daily_loan_dinamis')->where('periode', '>=', $start)->where('periode', '<=', $end)->max('periode')
+            : null;
+        $lw = Schema::hasTable('lw321pn')
+            ? DB::table('lw321pn')->where('periode', '>=', $start)->where('periode', '<=', $end)->max('periode')
+            : null;
 
         return $daily && (! $lw || $daily >= $lw) ? ['daily_loan_dinamis', $daily] : ($lw ? ['lw321pn', $lw] : [null, null]);
     }

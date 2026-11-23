@@ -7,11 +7,14 @@ use RuntimeException;
 /** Immutable KPI reference data, separate from personnel and productivity sources. */
 class KpiWorkbookSnapshotService
 {
-    private const SHEETS = ['mbm', 'ka-unit', 'mantri', 'mantri-briguna'];
+    private const SHEETS_BY_PERIOD = [
+        '2026-10' => ['mbm', 'rm-mikro', 'ka-unit', 'mantri'],
+        '2026-09' => ['mbm', 'ka-unit', 'mantri', 'mantri-briguna'],
+    ];
 
     public function available(string $sheetKey, string $period): bool
     {
-        return $period === '2026-09' && in_array($sheetKey, self::SHEETS, true);
+        return in_array($sheetKey, self::SHEETS_BY_PERIOD[$period] ?? [], true);
     }
 
     public function read(string $sheetKey, string $period): array

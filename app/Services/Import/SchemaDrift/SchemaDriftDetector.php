@@ -3,11 +3,9 @@
 namespace App\Services\Import\SchemaDrift;
 
 use App\Services\Import\SchemaIntrospectionService;
-use App\Services\Import\SmartContentHeaderGuardService;
 use App\Support\Import\ColumnValueProfiler;
 use App\Support\Import\ImportHeaderAliases;
 use App\Support\StrictDateParser;
-use Throwable;
 
 /**
  * Compares an incoming source (headers + sample rows) with the target table:
@@ -35,6 +33,12 @@ class SchemaDriftDetector
 
     private const MANAGED_COLUMNS = ['id', 'created_at', 'updated_at', 'deleted_at'];
 
+    private const REQUIRED_SOURCE_COLUMNS = [
+        'daily_loan_dinamis' => [['periode'], ['nomor_rekening1'], ['baki_debet1', 'baki_debet']],
+        'lw325_ph' => [['acctno']],
+        'gi405_recovery' => [['periode'], ['kode_uker'], ['pendapatan_koreksi_ppap_dr_angsuran_ph']],
+    ];
+
     private const RESERVED_WORDS = [
         'add', 'all', 'alter', 'and', 'as', 'asc', 'between', 'by', 'case', 'check', 'column', 'create',
         'database', 'default', 'delete', 'desc', 'distinct', 'drop', 'else', 'exists', 'from', 'group',
@@ -55,16 +59,18 @@ class SchemaDriftDetector
      * @param array<int, array<int, mixed>> $sampleRows positional data rows
      * @param array{
      *     canonical_headers?: array<int, string>,
+     *     column_metadata?: array<string, array>,
      *     ignored_headers?: array<int, string>,
      *     managed_columns?: array<int, string>,
      *     rejected_columns?: array<int, string>,
+     *     source_layout_error?: string|null,
      *     report_label?: string|null
      * } $options
      */
     public function detect(string $table, array $sourceHeaders, array $sampleRows, array $options = []): array
     {
         $table = strtolower(trim($table));
-        $meta = $this->schema->getColumnMetadata($table);
+        $meta = $options['column_metadata'] ?? $this->schema->getColumnMetadata($table);
         $tableColumnsLower = array_keys($meta);
         $canonicalHeaders = array_values((array) ($options['canonical_headers'] ?? []));
         $ignored = array_fill_keys(array_map('strtolower', (array) ($options['ignored_headers'] ?? [])), true);
@@ -83,14 +89,11 @@ class SchemaDriftDetector
             }
         }
         $previousDocument = (array) ($options['previous_document'] ?? []);
+        $sourceLayoutError = $options['source_layout_error'] ?? null;
         $sourceHeaders = array_values($sourceHeaders);
-        $profiles = $this->profiler->profileColumns($sourceHeaders, $sampleRows);
-        foreach ((array) ($options['profile_values'] ?? []) as $index => $values) {
-            if (isset($sourceHeaders[$index])) {
-                $profiles[$index] = $this->profiler->profile($values, (string) $sourceHeaders[$index]);
-            }
-        }
-        $resolution = $this->resolveColumns($sourceHeaders, $canonicalHeaders, $ignored, $aliases, $meta, $tableColumnsLower);
+        $profiles = $this->profiler->profileColumns($sourceHeaders, $sampleRows, (array) ($options['profile_values'] ?? []));
+        $resolution = $options['source_targets'] ?? $this->resolveColumns($sourceHeaders, $canonicalHeaders, $aliases, $meta);
+        $policy = app(SchemaEvolutionPolicy::class);
 
         $columns = [];
         $newColumns = [];
@@ -98,6 +101,7 @@ class SchemaDriftDetector
         $adjustments = [];
         $adaptations = [];
         $matchedDb = [];
+        $seenSourceKeys = [];
         $dateOrders = [];
         $proposedNames = [];
 
@@ -106,30 +110,34 @@ class SchemaDriftDetector
             $canonical = strtolower(trim((string) ($canonicalHeaders[$index] ?? $this->normalizeName($label))));
             $profile = $profiles[$index];
 
-            if ($label === '' || $canonical === '' || preg_match('/^col_\d+$/', $canonical) === 1 || isset($ignored[$canonical])) {
+            $dbColumn = $resolution[$index] ?? null;
+            if ($label === '' || $canonical === '' || ($dbColumn === null && (isset($ignored[$canonical]) || isset($ignored[$this->normalizeName($label)])))) {
                 $columns[] = $this->columnEntry($index, $label, $canonical, null, 'ignored', $profile, []);
                 continue;
             }
 
-            $dbColumn = $resolution[$index] ?? null;
-            if ($dbColumn !== null && isset($managed[$dbColumn])) {
+            if (isset($managed[$dbColumn ?? $canonical])) {
                 $columns[] = $this->columnEntry($index, $label, $canonical, $dbColumn, 'ignored', $profile, []);
                 continue;
             }
 
-            if ($dbColumn !== null && isset($matchedDb[$dbColumn])) {
+            if (isset($seenSourceKeys[$canonical]) || ($dbColumn !== null && isset($matchedDb[$dbColumn]))) {
+                $detail = $dbColumn !== null
+                    ? "Kolom \"{$label}\" menggunakan tujuan {$dbColumn} yang sudah diisi kolom sumber lain."
+                    : "Nama kolom \"{$label}\" muncul lebih dari sekali. Beri nama berbeda untuk setiap kolom sumber.";
                 $columns[] = $this->columnEntry($index, $label, $canonical, $dbColumn, 'duplicate', $profile, [[
                     'severity' => self::SEVERITY_WARNING,
                     'code' => 'duplicate_source',
                     'title' => 'Kolom ganda',
-                    'detail' => "Kolom \"{$label}\" memetakan ke {$dbColumn} yang sudah diisi kolom sumber lain; nilai kolom ini diabaikan.",
+                    'detail' => $detail,
                 ]]);
                 continue;
             }
+            $seenSourceKeys[$canonical] = true;
 
             if ($dbColumn !== null) {
                 $matchedDb[$dbColumn] = true;
-                $findings = $this->assess($table, $dbColumn, $meta[$dbColumn], $profile);
+                $findings = ($options['check_value_types'] ?? true) ? $this->assess($table, $dbColumn, $meta[$dbColumn], $profile) : [];
                 foreach ($findings as $finding) {
                     $adaptations[] = $finding + ['column' => $dbColumn, 'header' => $label];
                     if (isset($finding['adjustment'])) {
@@ -149,9 +157,22 @@ class SchemaDriftDetector
                 continue;
             }
 
+            if ($sourceLayoutError !== null) {
+                $columns[] = $this->columnEntry($index, $label, $canonical, null, 'unmapped', $profile, []);
+                continue;
+            }
+
             $proposedName = $this->proposeColumnName($canonical, $tableColumnsLower, $proposedNames);
             $proposedNames[] = $proposedName;
             $proposedType = $this->proposeSqlType($profile);
+            $keepRawText = !$policy->canStoreNewColumnType($table, $proposedType);
+            $typeOptions = self::TYPE_OPTIONS;
+            if ($keepRawText) {
+                $proposedType = $table === 'performance_pis_per_produk' ? 'TEXT' : $this->varcharTypeFor((int) $profile['max_length']);
+                $typeOptions = ['TEXT'];
+            } else {
+                $typeOptions = array_filter($typeOptions, fn (string $type): bool => $policy->canStoreNewColumnType($table, $type));
+            }
             $isRejected = isset($rejected[$proposedName]);
 
             // Observation is not consent to discard data. Even an empty or
@@ -163,13 +184,16 @@ class SchemaDriftDetector
                 'canonical' => $canonical,
                 'proposed_column' => $proposedName,
                 'proposed_type' => $proposedType,
-                'type_options' => array_values(array_unique(array_merge([$proposedType], self::TYPE_OPTIONS))),
+                'type_options' => array_values(array_unique(array_merge([$proposedType], $typeOptions))),
+                'preserve_as_text' => $keepRawText,
                 'kind' => $profile['kind'],
                 'label' => $profile['label'],
                 'confidence' => $profile['confidence'],
                 'samples' => $profile['samples'],
                 'non_empty' => $profile['non_empty'],
-                'reason' => $this->typeReason($profile, $proposedType),
+                'reason' => $keepRawText
+                    ? 'Gunakan teks agar komponen jam atau presisi nominal dari sumber tetap utuh.'
+                    : $this->typeReason($profile, $proposedType),
                 'decision' => $isRejected ? 'rejected' : 'pending',
             ];
             $columns[] = $this->columnEntry($index, $label, $canonical, null, $isRejected ? 'rejected' : 'new', $profile, []);
@@ -186,7 +210,15 @@ class SchemaDriftDetector
         // Columns the previous document of this report carried but this one does
         // not: either renamed in the source (map the new header onto them) or
         // dropped (the import would silently leave them empty).
-        $dropped = $this->droppedColumns($previousDocument, $matchedDb, $meta, $managed);
+        $requiredIssues = $this->requiredSourceIssues($table, $matchedDb, $meta);
+        if ($sourceLayoutError !== null) {
+            $requiredIssues[] = $this->reviewIssue('brilink_layout', 'brilink_layout', 'Layout sumber BRILink tidak sesuai', $sourceLayoutError, true);
+        }
+        if ($requiredIssues !== []) {
+            $newColumns = [];
+            $adjustments = [];
+        }
+        $dropped = $requiredIssues === [] ? $this->droppedColumns($previousDocument, $matchedDb, $meta, $managed) : [];
         $newColumns = $this->suggestRenames($table, $newColumns, $profiles, $dropped);
         $mappedTargets = array_filter(array_map(
             static fn (array $column): ?string => ($column['suggestion']['action'] ?? null) === 'map' ? $column['suggestion']['column'] : null,
@@ -206,13 +238,17 @@ class SchemaDriftDetector
 
         $pendingNew = array_values(array_filter($newColumns, static fn (array $column): bool => $column['decision'] === 'pending'));
         $pendingAdjustments = array_values(array_filter($adjustments, static fn (array $adjustment): bool => $adjustment['decision'] === 'pending'));
-        $reviews = [];
+        $reviews = $requiredIssues;
+        foreach (($options['source_issues'] ?? []) as $issue) {
+            $reviews[] = $this->reviewIssue($issue['key'], 'fixed_layout', $issue['title'], $issue['detail'], $issue['blocking']);
+        }
         foreach ($columns as $column) {
             if ($column['state'] === 'duplicate') {
                 $finding = $column['findings'][0];
-                $reviews[] = $this->reviewIssue('duplicate:'.$column['index'], $finding['code'], $finding['title'], $finding['detail'], true);
+                $reviews[] = $this->reviewIssue('duplicate:'.$column['index'], $finding['code'], $finding['title'], $finding['detail'], true)
+                    + ['column' => $column['db_column'] ?? $column['canonical']];
             }
-            if (trim((string) $column['header']) === '' && (int) ($options['structural_scan']['column_non_empty'][$column['index']] ?? 0) > 0) {
+            if (($column['canonical'] === '' || $column['header'] === '') && (int) ($options['structural_scan']['column_non_empty'][$column['index']] ?? 0) > 0) {
                 $reviews[] = $this->reviewIssue('unnamed:'.$column['index'], 'unnamed_header', 'Kolom berisi tanpa nama header', 'Isi kolom nomor '.($column['index'] + 1).' belum mempunyai header. Perbaiki header sumber agar nilainya dapat dipetakan.', true);
             }
         }
@@ -232,7 +268,8 @@ class SchemaDriftDetector
                 continue;
             }
             $blocking = in_array($code, ['not_date', 'not_numeric', 'unparsed_dates', 'unparsed_numbers'], true);
-            $reviews[] = $this->reviewIssue($code.':'.($finding['column'] ?? ''), $code, $finding['title'], $finding['detail'], $blocking);
+            $reviews[] = $this->reviewIssue($code.':'.($finding['column'] ?? ''), $code, $finding['title'], $finding['detail'], $blocking)
+                + ['column' => $finding['column']];
         }
         $scan = (array) ($options['structural_scan'] ?? []);
         if ((int) ($scan['misaligned_rows'] ?? 0) > 0) {
@@ -274,6 +311,8 @@ class SchemaDriftDetector
                 'dropped' => count($dropped) - count(array_intersect(array_keys($dropped), $mappedTargets)),
                 'adjustments' => count($pendingAdjustments),
                 'adaptations' => count($adaptations),
+                'format_columns' => count(array_unique(array_column(array_filter($adaptations, static fn (array $item): bool => $item['severity'] === self::SEVERITY_INFO), 'column'))),
+                'review_columns' => count(array_unique(array_merge(array_column($pendingReviews, 'column'), array_column($pendingAdjustments, 'column')))),
                 'sample_rows' => count($sampleRows),
             ],
             'columns' => $columns,
@@ -294,6 +333,29 @@ class SchemaDriftDetector
     private function reviewIssue(string $key, string $code, string $title, string $detail, bool $blocking): array
     {
         return ['key' => $key, 'code' => $code, 'title' => $title, 'detail' => $detail, 'severity' => $blocking ? self::SEVERITY_DANGER : self::SEVERITY_WARNING, 'blocking' => $blocking, 'decision' => 'pending'];
+    }
+
+    private function requiredSourceIssues(string $table, array $matched, array $metadata): array
+    {
+        $issues = [];
+        $required = self::REQUIRED_SOURCE_COLUMNS[$table] ?? array_map(static fn (string $column): array => [$column], ReportTemplateSource::columns($table));
+        foreach ($required as $alternatives) {
+            $destinations = array_intersect_key($metadata, array_fill_keys($alternatives, true));
+            if ($destinations === [] || array_intersect_key($matched, $destinations) !== []) {
+                continue;
+            }
+
+            $expected = strtoupper(implode(' / ', array_keys($destinations)));
+            $issues[] = $this->reviewIssue(
+                'required_header:'.$alternatives[0],
+                'required_header',
+                'Kolom wajib tidak ditemukan',
+                "Header yang memetakan ke {$expected} diperlukan untuk report ini. Periksa pilihan report dan dokumen sumber.",
+                true
+            ) + ['column' => $expected];
+        }
+
+        return $issues;
     }
 
     /**
@@ -651,37 +713,24 @@ class SchemaDriftDetector
     /**
      * Resolves every header before any is judged, mirroring the import:
      * accepted renames, exact names and the import's own aliases claim their
-     * columns first. A fuzzy family alias (any "balance" header onto any
-     * balance column) only fills a column nobody claimed, so a legitimate
-     * second column of the source can never become a "duplicate" of the first.
+     * columns first. Similar names and numeric suffixes alone do not prove
+     * two source fields represent the same data.
      *
      * @return array<int, string> source index => table column
      */
-    private function resolveColumns(array $sourceHeaders, array $canonicalHeaders, array $ignored, array $aliases, array $meta, array $tableColumnsLower): array
+    private function resolveColumns(array $sourceHeaders, array $canonicalHeaders, array $aliases, array $meta): array
     {
         $resolved = [];
-        $unresolved = [];
         foreach ($sourceHeaders as $index => $rawHeader) {
             $label = trim((string) $rawHeader);
             $canonical = strtolower(trim((string) ($canonicalHeaders[$index] ?? $this->normalizeName($label))));
-            if ($label === '' || $canonical === '' || preg_match('/^col_\d+$/', $canonical) === 1 || isset($ignored[$canonical])) {
+            if ($label === '' || $canonical === '') {
                 continue;
             }
 
             $column = $aliases[$canonical] ?? $this->resolveExactColumn($label, $canonical, $meta);
             if ($column !== null) {
                 $resolved[$index] = $column;
-            } else {
-                $unresolved[$index] = $label;
-            }
-        }
-
-        $claimed = array_fill_keys(array_values($resolved), true);
-        foreach ($unresolved as $index => $label) {
-            $column = $this->resolveFamilyAlias($label, $meta, $tableColumnsLower);
-            if ($column !== null && !isset($claimed[$column])) {
-                $resolved[$index] = $column;
-                $claimed[$column] = true;
             }
         }
 
@@ -703,20 +752,6 @@ class SchemaDriftDetector
             if (isset($meta[$candidate])) {
                 return $candidate;
             }
-        }
-
-        return null;
-    }
-
-    private function resolveFamilyAlias(string $label, array $meta, array $tableColumnsLower): ?string
-    {
-        try {
-            $candidate = app(SmartContentHeaderGuardService::class)->resolveAliasCandidate($label, $tableColumnsLower);
-            if (is_string($candidate) && isset($meta[strtolower($candidate)])) {
-                return strtolower($candidate);
-            }
-        } catch (Throwable) {
-            // Alias resolution is a best-effort enhancement.
         }
 
         return null;

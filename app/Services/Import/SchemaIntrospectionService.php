@@ -43,6 +43,13 @@ class SchemaIntrospectionService
         return $this->columnExists[$key];
     }
 
+    public function refreshColumnMetadata(string $tableName): array
+    {
+        unset($this->columnMetadata[$tableName]);
+
+        return $this->getColumnMetadata($tableName);
+    }
+
     public function getColumnMetadata(string $tableName): array
     {
         if (array_key_exists($tableName, $this->columnMetadata)) {

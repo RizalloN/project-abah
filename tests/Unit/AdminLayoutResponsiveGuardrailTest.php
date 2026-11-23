@@ -9,32 +9,34 @@ class AdminLayoutResponsiveGuardrailTest extends TestCase
     public function test_admin_layout_applies_responsive_table_guardrails_without_sticky_filters(): void
     {
         $layout = file_get_contents(resource_path('views/layouts/admin.blade.php'));
+        $script = file_get_contents(public_path('js/admin-table-enhancement.js'));
 
         $this->assertStringContainsString('.content-wrapper .abah-table-scroll', $layout);
         $this->assertStringContainsString('max-height: none !important;', $layout);
         $this->assertStringContainsString('.content-wrapper .abah-table-managed thead th', $layout);
         $this->assertStringContainsString('position: sticky;', $layout);
-        $this->assertStringContainsString('ensureWrapper', $layout);
-        $this->assertStringContainsString('syncReadableCellTitles', $layout);
-        $this->assertStringContainsString('syncStickyHeaderSurfaces', $layout);
-        $this->assertStringContainsString('syncHorizontalStickyLayers', $layout);
-        $this->assertStringContainsString("cell.classList.toggle('abah-table-sticky-x', isHorizontalSticky);", $layout);
-        $this->assertStringContainsString("cell.style.setProperty('z-index', String(minimumLayer), 'important');", $layout);
-        $this->assertStringContainsString("cell.dataset.abahManagedStickyLayer = '1';", $layout);
-        $this->assertStringContainsString("cell.style.setProperty('z-index', originalValue, originalPriority);", $layout);
+        $this->assertStringContainsString("asset('js/admin-table-enhancement.js')", $layout);
+        $this->assertStringContainsString('ensureWrapper', $script);
+        $this->assertStringContainsString('syncReadableCellTitles', $script);
+        $this->assertStringContainsString('syncStickyHeaderSurfaces', $script);
+        $this->assertStringContainsString('syncHorizontalStickyLayers', $script);
+        $this->assertStringContainsString("cell.classList.toggle('abah-table-sticky-x', isHorizontalSticky);", $script);
+        $this->assertStringContainsString("cell.style.setProperty('z-index', String(minimumLayer), 'important');", $script);
+        $this->assertStringContainsString("cell.dataset.abahManagedStickyLayer = '1';", $script);
+        $this->assertStringContainsString("cell.style.setProperty('z-index', originalValue, originalPriority);", $script);
         $this->assertStringContainsString('.abah-table-managed thead :is(th, td).abah-table-sticky-x', $layout);
         $this->assertStringContainsString('.abah-floating-table-header__table thead :is(th, td).abah-floating-sticky-x', $layout);
         $this->assertMatchesRegularExpression(
             '/\.abah-table-managed thead :is\(th, td\)\.abah-table-sticky-x\s*\{[^}]*z-index:\s*60\s*!important;[^}]*background-clip:\s*border-box;[^}]*isolation:\s*isolate;/s',
             $layout
         );
-        $this->assertStringContainsString("target.closest('table')", $layout);
+        $this->assertStringContainsString("target.closest('table')", $script);
         $this->assertStringContainsString('--abah-table-header-height', $layout);
         $this->assertStringContainsString('.abah-sticky-surface', $layout);
         $this->assertStringContainsString('tbody td:first-child:not(.sticky-col):not([colspan])', $layout);
-        $this->assertStringContainsString("target.querySelectorAll('table').forEach(function (table)", $layout);
-        $this->assertStringContainsString('tables.forEach(enhanceTable)', $layout);
-        $this->assertStringContainsString('scheduleEnhance(node)', $layout);
+        $this->assertStringContainsString("target.querySelectorAll('table').forEach(function (table)", $script);
+        $this->assertStringContainsString('tables.forEach(enhanceTable)', $script);
+        $this->assertStringContainsString('scheduleEnhance(node)', $script);
         $this->assertStringNotContainsString('.content-wrapper .card { position: sticky;', $layout);
         $this->assertStringNotContainsString('.content-wrapper form { position: sticky;', $layout);
     }
@@ -42,20 +44,21 @@ class AdminLayoutResponsiveGuardrailTest extends TestCase
     public function test_table_headers_follow_page_scroll_except_on_the_landing_pages(): void
     {
         $layout = file_get_contents(resource_path('views/layouts/admin.blade.php'));
+        $script = file_get_contents(public_path('js/admin-table-enhancement.js'));
 
         $this->assertStringContainsString("request()->routeIs('dashboard', 'dashboard.simpanan') ? 'off' : 'on'", $layout);
         $this->assertStringContainsString('body[data-abah-table-freeze="on"] .content-wrapper .abah-table-managed thead th', $layout);
         $this->assertMatchesRegularExpression('/\.main-header\.modern-navbar\s*\{[^}]*position:\s*sticky;/s', $layout);
         $this->assertStringContainsString('.abah-floating-table-header[hidden]', $layout);
-        $this->assertStringContainsString('const freezeTableHeaders = document.body.dataset.abahTableFreeze === \'on\';', $layout);
-        $this->assertStringContainsString('getFloatingCandidate', $layout);
-        $this->assertStringContainsString("table.querySelector(':scope > colgroup')", $layout);
-        $this->assertStringContainsString("cloneColumn.style.setProperty('width', columnWidth + 'px', 'important');", $layout);
-        $this->assertStringContainsString('floatingHeader.inert = true;', $layout);
-        $this->assertStringContainsString("document.addEventListener('scroll', function () { scheduleFloatingHeader(false); }", $layout);
-        $this->assertStringContainsString('syncScrollableWrapper(table, wrapper)', $layout);
-        $this->assertStringContainsString("wrapper.dataset.abahManagedRole = '1';", $layout);
-        $this->assertStringContainsString("wrapper.dataset.abahManagedLabel = '1';", $layout);
+        $this->assertStringContainsString('const freezeTableHeaders = document.body.dataset.abahTableFreeze === \'on\';', $script);
+        $this->assertStringContainsString('getFloatingCandidate', $script);
+        $this->assertStringContainsString("table.querySelector(':scope > colgroup')", $script);
+        $this->assertStringContainsString("cloneColumn.style.setProperty('width', columnWidth + 'px', 'important');", $script);
+        $this->assertStringContainsString('floatingHeader.inert = true;', $script);
+        $this->assertStringContainsString("document.addEventListener('scroll', function () { scheduleFloatingHeader(false); }", $script);
+        $this->assertStringContainsString('syncScrollableWrapper(table, wrapper)', $script);
+        $this->assertStringContainsString("wrapper.dataset.abahManagedRole = '1';", $script);
+        $this->assertStringContainsString("wrapper.dataset.abahManagedLabel = '1';", $script);
         $this->assertStringContainsString('href="#main-content"', $layout);
     }
 

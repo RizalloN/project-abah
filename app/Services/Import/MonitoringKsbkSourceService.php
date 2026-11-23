@@ -21,7 +21,7 @@ class MonitoringKsbkSourceService
 
     public const BASE_COLUMNS = ['branch', 'pernr', 'nik', 'cifno', 'nama', 'plafond_pengajuan', 'rencana_real_date', 'produk_sbk', 'hasil_cek', 'bo', 'ro', 'batch', 'tgl_inject'];
 
-    public const IMPORT_COLUMNS = self::BASE_COLUMNS;
+    public const IMPORT_COLUMNS = [...self::BASE_COLUMNS, 'periode'];
 
     public const SOURCE_HEADERS = ['branch', 'pernr', 'nik', 'cifno', 'nama', 'plafond_pengajuan', 'rencana_real_date', 'produk_sbk', 'hasil_cek', 'BO', 'RO', 'Batch', 'Tgl Inject', 'Cek Real', 'Plafond', 'Ln Type', 'KSBK/ Non'];
 
@@ -29,8 +29,30 @@ class MonitoringKsbkSourceService
 
     private int $excelCalendar = Date::CALENDAR_WINDOWS_1900;
 
-    public function stage(string $source, string $destination): array
+    public static function normalizePeriode(?string $value): string
     {
+        $trimmed = trim((string) $value);
+        if (preg_match('/^(\d{4})-(\d{2})$/D', $trimmed, $match) === 1) {
+            $year = (int) $match[1];
+            $month = (int) $match[2];
+            if ($year >= 2000 && $year <= 2100 && checkdate($month, 1, $year)) {
+                return sprintf('%04d-%02d-01', $year, $month);
+            }
+        } elseif (preg_match('/^(\d{4})-(\d{2})-(\d{2})$/D', $trimmed, $match) === 1) {
+            $year = (int) $match[1];
+            $month = (int) $match[2];
+            $day = (int) $match[3];
+            if ($year >= 2000 && $year <= 2100 && checkdate($month, $day, $year)) {
+                return sprintf('%04d-%02d-01', $year, $month);
+            }
+        }
+
+        throw new RuntimeException('Periode Monitoring Realisasi KSBK wajib dipilih dalam format bulan dan tahun (YYYY-MM).');
+    }
+
+    public function stage(string $source, string $destination, string $periode): array
+    {
+        $normalizedPeriod = self::normalizePeriode($periode);
         $this->assertDifferentPaths($source, $destination);
         $zip = new ZipArchive;
         if ($zip->open($source) !== true) {
@@ -91,6 +113,7 @@ class MonitoringKsbkSourceService
                     $row[] = $value;
                 }
                 $this->validateRow($row, $record);
+                $row[] = $normalizedPeriod;
                 $this->writeCsv($output, $row);
                 $rows++;
             }
@@ -120,7 +143,7 @@ class MonitoringKsbkSourceService
             libxml_use_internal_errors($previous);
         }
 
-        return ['rows' => $rows, 'derived_only_rows' => $derivedOnly, 'columns' => self::IMPORT_COLUMNS, 'sheet' => self::SHEET,
+        return ['rows' => $rows, 'derived_only_rows' => $derivedOnly, 'columns' => self::IMPORT_COLUMNS, 'periode' => $normalizedPeriod, 'sheet' => self::SHEET,
             'source_file' => basename($source), 'source_bytes' => filesize($source),
             'source_sha256' => hash_file('sha256', $source), 'canonical_sha256' => hash_file('sha256', $destination)];
     }
@@ -134,7 +157,7 @@ class MonitoringKsbkSourceService
         try {
             $this->assertCanonicalHeader(fgetcsv($input, 0, ',', '"', ''));
             while (($row = fgetcsv($input, 0, ',', '"', '')) !== false) {
-                $this->validateRow($row, $rows + 2);
+                $this->assertCanonicalRow($row, $rows + 2);
                 $rows++;
                 if ($rows <= 100) {
                     $preview[] = $row;
@@ -175,6 +198,7 @@ class MonitoringKsbkSourceService
         $input = $this->open($canonical, 'rb');
         $output = $this->open($destination, 'wb');
         $rows = $scanned = 0;
+        $periode = null;
         $timestamp = now()->format('Y-m-d H:i:s');
         try {
             $this->assertCanonicalHeader(fgetcsv($input, 0, ',', '"', ''));
@@ -188,7 +212,8 @@ class MonitoringKsbkSourceService
                 $rules[$sourceIndex] = array_fill_keys(array_map('strval', (array) $values), true);
             }
             while (($row = fgetcsv($input, 0, ',', '"', '')) !== false) {
-                $this->validateRow($row, ++$scanned + 1);
+                $rowPeriode = $this->assertCanonicalRow($row, ++$scanned + 1, $periode);
+                $periode ??= $rowPeriode;
                 $selected = true;
                 foreach ($rules as $index => $allowed) {
                     if (! isset($allowed[$row[$index] === '' ? '(Blank)' : $row[$index]])) {
@@ -197,8 +222,9 @@ class MonitoringKsbkSourceService
                     }
                 }
                 if ($selected) {
+                    $periodeTag = str_replace('-', '', substr($periode, 0, 7));
                     $values = array_map(static fn ($value) => trim($value) === '' ? null : $value, $row);
-                    $values = [...$values, 'ksbk_'.$scanned, $timestamp, $timestamp];
+                    $values = [...$values, 'ksbk_'.$periodeTag.'_'.$scanned, $timestamp, $timestamp];
                     $this->write($output, implode(',', array_map([$this, 'encodeMysqlField'], $values))."\n");
                     $rows++;
                 }
@@ -206,7 +232,7 @@ class MonitoringKsbkSourceService
                     $progress($scanned, $rows);
                 }
             }
-            if ($rows === 0) {
+            if ($rows === 0 || $periode === null) {
                 throw new RuntimeException('Tidak ada baris Monitoring KSBK yang terpilih untuk diimport.');
             }
         } catch (Throwable $error) {
@@ -221,19 +247,20 @@ class MonitoringKsbkSourceService
             }
         }
 
-        return ['rows' => $rows, 'scanned' => $scanned, 'columns' => [...self::IMPORT_COLUMNS, 'uniqueid_namareport', 'created_at', 'updated_at']];
+        return ['rows' => $rows, 'scanned' => $scanned, 'periode' => $periode, 'columns' => [...self::IMPORT_COLUMNS, 'uniqueid_namareport', 'created_at', 'updated_at']];
     }
 
-    /** Import an empty report atomically, after the entire staging has passed validation. */
-    public function loadBulk(string $path, int $expectedRows, ?PDO $pdo = null): int
+    /** Import one monthly period atomically, after the entire staging has passed validation. */
+    public function loadBulk(string $path, int $expectedRows, string $periode, ?PDO $pdo = null): int
     {
+        $normalizedPeriod = self::normalizePeriode($periode);
         if ($expectedRows < 1) {
             throw new RuntimeException('Jumlah baris Monitoring KSBK yang akan diimport tidak valid.');
         }
         $loader = app(MySqlBulkLoadService::class);
         $loader->assertTransactionalTable(self::TABLE, 'import Monitoring KSBK');
 
-        return $loader->withTableWriteLock(self::TABLE, function () use ($path, $expectedRows, $pdo, $loader): int {
+        return $loader->withTableWriteLock(self::TABLE, function () use ($path, $expectedRows, $normalizedPeriod, $pdo, $loader): int {
             $pdo ??= $loader->createPersistentPdo();
             if ($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) !== 'mysql') {
                 throw new RuntimeException('Import cepat Monitoring KSBK memerlukan MySQL/MariaDB.');
@@ -250,16 +277,20 @@ class MonitoringKsbkSourceService
                 .implode(', ', $variables).') SET '.implode(', ', $assignments);
             $pdo->beginTransaction();
             try {
-                if ((int) $pdo->query('SELECT COUNT(*) FROM `'.self::TABLE.'`')->fetchColumn() !== 0) {
-                    throw new RuntimeException('Monitoring KSBK sudah ada; hapus dataset melalui Kelola Report sebelum import ulang.');
+                $existingCount = $pdo->prepare('SELECT COUNT(*) FROM `'.self::TABLE.'` WHERE `periode` = ?');
+                $existingCount->execute([$normalizedPeriod]);
+                if ((int) $existingCount->fetchColumn() !== 0) {
+                    throw new RuntimeException('Monitoring KSBK periode '.$normalizedPeriod.' sudah ada; hapus periode terkait melalui Kelola Report sebelum import ulang.');
                 }
                 $affected = $pdo->exec($sql);
                 $warnings = (int) $pdo->query('SHOW COUNT(*) WARNINGS')->fetchColumn();
                 if ($warnings > 0 || $affected === false || (int) $affected !== $expectedRows) {
                     throw new RuntimeException('Import Monitoring KSBK dibatalkan: warning MySQL atau jumlah tersimpan berbeda dari sumber ('.(int) $affected.'/'.$expectedRows.', warnings '.$warnings.').');
                 }
-                if ((int) $pdo->query('SELECT COUNT(*) FROM `'.self::TABLE.'`')->fetchColumn() !== $expectedRows) {
-                    throw new RuntimeException('Verifikasi jumlah Monitoring KSBK tidak sesuai; transaksi dibatalkan.');
+                $periodCount = $pdo->prepare('SELECT COUNT(*) FROM `'.self::TABLE.'` WHERE `periode` = ?');
+                $periodCount->execute([$normalizedPeriod]);
+                if ((int) $periodCount->fetchColumn() !== $expectedRows) {
+                    throw new RuntimeException('Verifikasi jumlah Monitoring KSBK periode '.$normalizedPeriod.' tidak sesuai; transaksi dibatalkan.');
                 }
                 $pdo->commit();
 
@@ -282,7 +313,7 @@ class MonitoringKsbkSourceService
         try {
             $metadata = $this->prepareBulk($source, $bulk, $headers, $filters, $progress);
 
-            return $this->loadBulk($bulk, $metadata['rows']);
+            return $this->loadBulk($bulk, $metadata['rows'], $metadata['periode']);
         } finally {
             @unlink($bulk);
         }
@@ -357,6 +388,23 @@ class MonitoringKsbkSourceService
         if ($header !== self::IMPORT_COLUMNS) {
             throw new RuntimeException('Header staging Monitoring KSBK tidak sesuai; upload ulang workbook sumber.');
         }
+    }
+
+    private function assertCanonicalRow(array $row, int $record, ?string $expectedPeriode = null): string
+    {
+        if (count($row) !== count(self::IMPORT_COLUMNS)) {
+            throw new RuntimeException("Jumlah kolom staging Monitoring KSBK tidak sesuai pada record {$record}.");
+        }
+        $this->validateRow(array_slice($row, 0, count(self::BASE_COLUMNS)), $record);
+        $periode = trim((string) $row[count(self::BASE_COLUMNS)]);
+        if (preg_match('/^\d{4}-\d{2}-01$/D', $periode) !== 1 || self::normalizePeriode($periode) !== $periode) {
+            throw new RuntimeException("Periode staging Monitoring KSBK tidak valid pada record {$record}.");
+        }
+        if ($expectedPeriode !== null && $periode !== $expectedPeriode) {
+            throw new RuntimeException("Periode staging Monitoring KSBK berubah di record {$record}.");
+        }
+
+        return $periode;
     }
 
     private function sheetPath(string $source): string

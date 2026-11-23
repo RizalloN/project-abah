@@ -94,6 +94,8 @@ it('detects new columns, explains the date adaptation and records a pending deci
             'no_rekening_baru' => 'VARCHAR(50)',
         ])
         ->and(collect($report['adaptations'])->pluck('code')->all())->toContain('time_ignored', 'month_first')
+        ->and($report['stats']['format_columns'])->toBeLessThan($report['stats']['adaptations'])
+        ->and($report['stats']['review_columns'])->toBe(0)
         ->and($report['date_orders'])->toMatchArray(['periode' => 'mdy', 'tgl_ph' => 'dmy'])
         ->and($report['event']['status'])->toBe('pending')
         ->and(app(SchemaDriftRegistry::class)->notifications()['pending'])->toBe(1);
@@ -196,12 +198,19 @@ it('serves analysis, notifications and decisions to admins over http', function 
         ->assertOk()
         ->assertJsonPath('pending', 1);
 
+    $decisionUrl = route('import.schema-drift.accept', ['event' => $analysis->json('report.event.id')]);
+    $this->actingAs($admin)->postJson($decisionUrl)->assertUnprocessable();
+    expect(Schema::hasColumn('demo_ph', 'nilai_tambahan'))->toBeFalse();
+
     $this->actingAs($admin)
-        ->postJson(route('import.schema-drift.accept', ['event' => $analysis->json('report.event.id')]), [
+        ->postJson($decisionUrl, [
+            'source' => SchemaDriftSourceToken::issue('demo_ph', $path),
+            'source_fingerprint' => $analysis->json('report.source_fingerprint'),
             'columns' => [['proposed_column' => 'kolom_baru', 'name' => 'nilai_tambahan', 'type' => 'DECIMAL(20,2)']],
         ])
         ->assertOk()
         ->assertJsonPath('event.status', 'applied')
+        ->assertJsonPath('event.new_columns.0.decision', 'applied')
         ->assertJsonPath('feed.pending', 0);
 
     expect(Schema::hasColumn('demo_ph', 'nilai_tambahan'))->toBeTrue();

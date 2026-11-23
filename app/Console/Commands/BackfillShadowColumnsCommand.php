@@ -34,8 +34,11 @@ class BackfillShadowColumnsCommand extends Command
     private int $totalFailed = 0;
     private array $chunkStats = [];
     private array $errorLog = [];
-    private array $performanceMetrics = [];
+    private int $measuredChunks = 0;
+    private float $totalChunkDuration = 0.0;
+    private float $totalChunkThroughput = 0.0;
     private array $failedChunks = [];
+    private ?array $dailyLoanColumns = null;
     private const MAX_RETRY_PASSES = 3;
 
     // Auto-discover scans every period with a non-indexed predicate; a clean
@@ -49,6 +52,16 @@ class BackfillShadowColumnsCommand extends Command
 
     public function handle(): int
     {
+        // Artisan can invoke the same command instance for successive worker jobs.
+        $this->totalProcessed = 0;
+        $this->totalFailed = 0;
+        $this->chunkStats = [];
+        $this->errorLog = [];
+        $this->measuredChunks = 0;
+        $this->totalChunkDuration = 0.0;
+        $this->totalChunkThroughput = 0.0;
+        $this->dailyLoanColumns = null;
+
         try {
             $this->info('╔════════════════════════════════════════════════════════════════╗');
             $this->info('║  Shadow Columns Backfill - Fault-Tolerant Processing           ║');
@@ -139,16 +152,12 @@ class BackfillShadowColumnsCommand extends Command
             return [];
         }
 
-        $requiredColumns = [
-            'segmen_kinerja', 'produk_kinerja', 'cabang_normalized', 'unit_normalized',
-            'branch_normalized', 'rm_normalized', 'cifno_clean',
-        ];
+        $requiredColumns = $this->requiredDailyLoanShadowColumns();
 
-        foreach ($requiredColumns as $col) {
-            if (!Schema::hasColumn('daily_loan_dinamis', $col)) {
-                $this->line("   Auto-discover: column {$col} not yet migrated, skipping.");
-                return [];
-            }
+        $missingColumns = array_diff($requiredColumns, $this->dailyLoanColumns());
+        if ($missingColumns !== []) {
+            $this->line('   Auto-discover: column ' . reset($missingColumns) . ' not yet migrated, skipping.');
+            return [];
         }
 
         // Fast index-only scan to get distinct periods
@@ -298,9 +307,10 @@ class BackfillShadowColumnsCommand extends Command
                     $processed += $chunkProcessed;
                     $progressBar?->advance($chunkProcessed);
                 } else {
-                    $failedIds = array_slice($chunk, $chunkProcessed);
-                    $failedThisPass = array_merge($failedThisPass, $failedIds);
-                    $failed += count($failedIds);
+                    for ($failedIndex = $chunkProcessed; $failedIndex < $chunkCount; $failedIndex++) {
+                        $failedThisPass[] = $chunk[$failedIndex];
+                    }
+                    $failed += $chunkCount - $chunkProcessed;
                     $progressBar?->advance($chunkProcessed);
                     $this->errorLog[] = "Period {$period}, Chunk {$chunkNumber}: {$chunkProcessed}/" . $chunkCount . " processed";
                 }
@@ -498,13 +508,19 @@ class BackfillShadowColumnsCommand extends Command
         ];
     }
 
+    /** @return list<string> */
+    private function dailyLoanColumns(): array
+    {
+        return $this->dailyLoanColumns ??= array_map(strtolower(...), Schema::getColumnListing('daily_loan_dinamis'));
+    }
+
     /**
      * @param mixed $query
      * @param array<int, string> $requiredColumns
      */
     private function applyShadowBackfillPredicate($query, array $requiredColumns): void
     {
-        DailyLoanManualSegmentRule::applyPendingShadowPredicate($query, $requiredColumns);
+        DailyLoanManualSegmentRule::applyPendingShadowPredicate($query, $requiredColumns, $this->dailyLoanColumns());
     }
 
     private function validateCompletion(string $period, int $processedRows = 0): array
@@ -523,11 +539,9 @@ class BackfillShadowColumnsCommand extends Command
     {
         if ($duration > 0) {
             $rowsPerSec = $chunkSize / $duration;
-            $this->performanceMetrics[] = [
-                'chunk_size' => $chunkSize,
-                'duration' => $duration,
-                'rows_per_sec' => $rowsPerSec,
-            ];
+            $this->measuredChunks++;
+            $this->totalChunkDuration += $duration;
+            $this->totalChunkThroughput += $rowsPerSec;
 
             if ($rowsPerSec < 1000 && $rowsPerSec > 0) {
                 Log::warning('Shadow backfill performance degradation', [
@@ -559,12 +573,12 @@ class BackfillShadowColumnsCommand extends Command
             'cifno_clean' => DB::raw("UPPER(TRIM(COALESCE(cifno, '')))"),
         ];
 
-        if (Schema::hasColumn('daily_loan_dinamis', 'pn_pemutus_normalized')
-            && Schema::hasColumn('daily_loan_dinamis', 'pn_pemutus1')) {
+        $columns = array_fill_keys($this->dailyLoanColumns(), true);
+        if (isset($columns['pn_pemutus_normalized'], $columns['pn_pemutus1'])) {
             $updates['pn_pemutus_normalized'] = DB::raw("NULLIF(TRIM(LEADING '0' FROM TRIM(SUBSTRING_INDEX(COALESCE(pn_pemutus1, ''), '-', 1))), '')");
         }
 
-        if (Schema::hasColumn('daily_loan_dinamis', 'shadow_built_at')) {
+        if (isset($columns['shadow_built_at'])) {
             $updates['shadow_built_at'] = now();
         }
 
@@ -722,26 +736,14 @@ class BackfillShadowColumnsCommand extends Command
 
     private function getAveragePerformanceMetrics(): array
     {
-        if (empty($this->performanceMetrics)) {
+        if ($this->measuredChunks === 0) {
             return [];
         }
 
-        $avgRowsPerSec = array_reduce(
-            $this->performanceMetrics,
-            fn($carry, $metric) => $carry + $metric['rows_per_sec'],
-            0
-        ) / count($this->performanceMetrics);
-
-        $avgDuration = array_reduce(
-            $this->performanceMetrics,
-            fn($carry, $metric) => $carry + $metric['duration'],
-            0
-        ) / count($this->performanceMetrics);
-
         return [
-            'chunks_processed' => count($this->performanceMetrics),
-            'avg_rows_per_sec' => round($avgRowsPerSec, 0),
-            'avg_chunk_duration_sec' => round($avgDuration, 2),
+            'chunks_processed' => $this->measuredChunks,
+            'avg_rows_per_sec' => round($this->totalChunkThroughput / $this->measuredChunks, 0),
+            'avg_chunk_duration_sec' => round($this->totalChunkDuration / $this->measuredChunks, 2),
         ];
     }
 }

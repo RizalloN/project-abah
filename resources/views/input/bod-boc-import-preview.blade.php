@@ -5,6 +5,7 @@
 @section('content')
 <div class="row">
     <div class="col-12">
+        @include('import.partials.schema-drift-panel', ['schemaDriftFormId' => 'bodBocImportForm'])
         <form id="bodBocImportForm" method="POST" action="{{ route('bod-boc.store') }}">
             @csrf
             <input type="hidden" name="rows_payload" id="rowsPayload">

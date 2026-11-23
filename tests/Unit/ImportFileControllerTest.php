@@ -922,6 +922,119 @@ class ImportFileControllerTest extends TestCase
         $this->assertSame('periode', $dailyMappedPosisi);
     }
 
+    public function test_rar_upload_bypasses_select_page_for_single_and_auto_detected_files_and_falls_back_when_ambiguous(): void
+    {
+        Schema::create('nama_report', function ($table): void {
+            $table->integer('id_report')->primary();
+            $table->string('nama_report');
+            $table->string('table_name');
+        });
+        DB::table('nama_report')->insert([
+            [
+                'id_report' => 1,
+                'nama_report' => 'Jumlah Merchant Detail',
+                'table_name' => 'jumlah_merchant_detail',
+            ],
+            [
+                'id_report' => 34,
+                'nama_report' => 'Jumlah Merchant Qris Detail',
+                'table_name' => 'jumlah_merchant_qris_detail',
+            ],
+        ]);
+
+        $directory = storage_path('app/imports/generic_rar_' . \Illuminate\Support\Str::random(8));
+        \Illuminate\Support\Facades\File::ensureDirectoryExists($directory, 0750, true);
+        $merchantCsv = $directory . DIRECTORY_SEPARATOR . '1794791734_JUMLAH_MERCHANT_DETAIL_R_ALL.csv';
+        $qrisCsv = $directory . DIRECTORY_SEPARATOR . '1794791740_JUMLAH_MERCHANT_QRIS_DETAIL_R_ALL.csv';
+        $ambigA = $directory . DIRECTORY_SEPARATOR . 'part_alpha.csv';
+        $ambigB = $directory . DIRECTORY_SEPARATOR . 'part_beta.csv';
+        file_put_contents($merchantCsv, "POSISI|NAMA_KANCA|NAMA_UKER\n2026-11-16|KC Madiun|UNIT A\n");
+        file_put_contents($qrisCsv, "POSISI|MBDESC|BRDESC\n2026-11-16|KC Madiun|UNIT A\n");
+        file_put_contents($ambigA, "POSISI|NAMA_KANCA|NAMA_UKER\n2026-11-16|KC Madiun|UNIT A\n");
+        file_put_contents($ambigB, "POSISI|NAMA_KANCA|NAMA_UKER\n2026-11-16|KC Ngawi|UNIT B\n");
+
+        $makeController = static fn (array $extractedPaths): ImportFileController => new class($extractedPaths, $directory) extends ImportFileController {
+            public function __construct(private array $extractedPaths, private string $dir)
+            {
+            }
+
+            protected function createSecureImportDirectory(): string
+            {
+                return $this->dir;
+            }
+
+            protected function storeImportUpload(\Illuminate\Http\UploadedFile $file, string $directory): array
+            {
+                return [
+                    'name' => 'source.rar',
+                    'path' => $directory . DIRECTORY_SEPARATOR . 'source.rar',
+                    'extension' => 'rar',
+                ];
+            }
+
+            protected function extractImportArchive(string $archivePath, string $directory): array
+            {
+                return array_map(static fn (string $path): array => [
+                    'name' => basename($path),
+                    'path' => $path,
+                ], $this->extractedPaths);
+            }
+        };
+
+        try {
+            $singleController = $makeController([$merchantCsv]);
+            $ajaxRequest = \Illuminate\Http\Request::create('/import/upload', 'POST', [
+                'id_report' => 1,
+            ], [], [
+                'file' => \Illuminate\Http\UploadedFile::fake()->create('source.rar', 1, 'application/vnd.rar'),
+            ], [
+                'HTTP_ACCEPT' => 'application/json',
+                'HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest',
+            ]);
+
+            $singleAjaxResponse = $singleController->upload($ajaxRequest);
+            $this->assertSame(200, $singleAjaxResponse->getStatusCode());
+            $this->assertSame([
+                'status' => 'success',
+                'redirect' => route('import.preview.direct', ['file_path' => $merchantCsv]),
+            ], $singleAjaxResponse->getData(true));
+
+            $nonAjaxRequest = \Illuminate\Http\Request::create('/import/upload', 'POST', [
+                'id_report' => 1,
+            ], [], [
+                'file' => \Illuminate\Http\UploadedFile::fake()->create('source.rar', 1, 'application/vnd.rar'),
+            ]);
+            $singleRedirectResponse = $singleController->upload($nonAjaxRequest);
+            $this->assertSame(302, $singleRedirectResponse->getStatusCode());
+            $this->assertSame(route('import.preview.direct', ['file_path' => $merchantCsv]), $singleRedirectResponse->getTargetUrl());
+
+            $multiController = $makeController([$qrisCsv, $merchantCsv]);
+            $multiResponse = $multiController->upload(\Illuminate\Http\Request::create('/import/upload', 'POST', [
+                'id_report' => 34,
+            ], [], [
+                'file' => \Illuminate\Http\UploadedFile::fake()->create('source.rar', 1, 'application/vnd.rar'),
+            ], [
+                'HTTP_ACCEPT' => 'application/json',
+                'HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest',
+            ]));
+            $this->assertSame(200, $multiResponse->getStatusCode());
+            $this->assertSame([
+                'status' => 'success',
+                'redirect' => route('import.preview.direct', ['file_path' => $qrisCsv]),
+            ], $multiResponse->getData(true));
+
+            $ambigController = $makeController([$ambigA, $ambigB]);
+            $ambigResponse = $ambigController->upload($ajaxRequest);
+            $this->assertSame(200, $ambigResponse->getStatusCode());
+            $this->assertSame([
+                'status' => 'success',
+                'redirect' => route('import.select'),
+            ], $ambigResponse->getData(true));
+        } finally {
+            \Illuminate\Support\Facades\File::deleteDirectory($directory);
+        }
+    }
+
     private function invokeMethod(object $target, string $method, array $args = [])
     {
         $reflection = new \ReflectionClass($target);
